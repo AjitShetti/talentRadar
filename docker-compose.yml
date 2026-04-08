@@ -1,0 +1,62 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: talentradar-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-talentRadar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpassword}
+      POSTGRES_DB: ${POSTGRES_DB:-talentRadar}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-talentRadar}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - talentradar-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: talentradar-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - talentradar-net
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: talentradar-chromadb
+    environment:
+      CHROMA_SERVER_HTTP_HOST: 0.0.0.0
+      CHROMA_SERVER_HTTP_PORT: 8000
+      ANONYMIZED_TELEMETRY: "False"
+      # Set to "False" for strict in-memory behavior (as noted in README)
+      IS_PERSISTENT: "True"
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    restart: unless-stopped
+    networks:
+      - talentradar-net
+
+volumes:
+  postgres_data:
+  redis_data:
+  chroma_data:
+
+networks:
+  talentradar-net:
+    driver: bridge

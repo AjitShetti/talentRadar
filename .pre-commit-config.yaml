@@ -1,0 +1,52 @@
+# Pre-commit hooks for TalentRadar
+# Install: pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # --- General checks ---
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: ["--unsafe"]  # allow Airflow DAG YAML files
+      - id: check-toml
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      - id: detect-private-key
+      - id: check-merge-conflict
+
+  # --- Ruff (lint + fix) ---
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.5.0
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+        types_or: [python, pyi]
+      - id: ruff-format
+        types_or: [python, pyi]
+
+  # --- mypy (type checking) ---
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: mypy
+        language: system
+        types: [python]
+        require_serial: true
+        args: ["--ignore-missing-imports"]
+        files: ^(api|agents|config|ingestion|ml|storage)/
+
+  # --- pytest (fast tests only) ---
+  - repo: local
+    hooks:
+      - id: pytest-fast
+        name: pytest (fast only)
+        entry: pytest
+        language: system
+        types: [python]
+        pass_filenames: false
+        always_run: true
+        args: ["-m", "not slow and not integration", "--no-cov", "-q"]
