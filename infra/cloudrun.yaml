@@ -1,0 +1,73 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: talentradar-api
+  labels:
+    app: talentradar
+    component: api
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "10"
+        run.googleapis.com/cpu-throttling: "false"
+    spec:
+      containers:
+        - image: gcr.io/YOUR_PROJECT_ID/talentradar-api:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: POSTGRES_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: talentradar-secrets
+                  key: postgres_host
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: talentradar-secrets
+                  key: postgres_user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: talentradar-secrets
+                  key: postgres_password
+            - name: POSTGRES_DB
+              value: talentradar
+            - name: GROQ_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: talentradar-secrets
+                  key: groq_api_key
+            - name: TAVILY_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: talentradar-secrets
+                  key: tavily_api_key
+            - name: CHROMA_HOST
+              value: talentradar-chromadb
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: talentradar-secrets
+                  key: redis_url
+          resources:
+            limits:
+              cpu: "2"
+              memory: 2Gi
+            requests:
+              cpu: "500m"
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10

@@ -1,0 +1,159 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ─────────────────────────────────────────────────────────────
+  # LINT & TYPE CHECK
+  # ─────────────────────────────────────────────────────────────
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install .[dev]
+
+      - name: Run ruff linter
+        run: ruff check .
+
+      - name: Run type checks
+        run: mypy . || true  # Allow failures until fully typed
+
+  # ─────────────────────────────────────────────────────────────
+  # TESTS
+  # ─────────────────────────────────────────────────────────────
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: talentRadar
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: talentradar_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install .[dev,test]
+
+      - name: Run migrations
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: talentradar_test
+        run: alembic upgrade head
+
+      - name: Run tests
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: talentradar_test
+          GROQ_API_KEY: test_key
+          TAVILY_API_KEY: test_key
+        run: pytest tests/ -v --tb=short
+
+  # ─────────────────────────────────────────────────────────────
+  # BUILD & PUSH DOCKER IMAGE
+  # ─────────────────────────────────────────────────────────────
+  build:
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha
+            type=ref,event=branch
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: infra/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  # ─────────────────────────────────────────────────────────────
+  # DEPLOY TO CLOUD RUN (Google Cloud)
+  # ─────────────────────────────────────────────────────────────
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: talentradar-api
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main
+          region: us-central1
+          env_vars: |
+            POSTGRES_HOST=${{ secrets.POSTGRES_HOST }}
+            POSTGRES_USER=${{ secrets.POSTGRES_USER }}
+            POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+            GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}
+            TAVILY_API_KEY=${{ secrets.TAVILY_API_KEY }}
+
+      - name: Verify deployment
+        run: |
+          echo "Deployment complete! Verify at:"
+          echo "https://talentradar-api-$(gcloud run services describe talentradar-api --region us-central1 --format='value(status.url)')"

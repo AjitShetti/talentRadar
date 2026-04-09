@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker exec *)",
+      "Bash(timeout *)"
+    ]
+  },
+  "$version": 3
+}

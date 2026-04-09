@@ -34,252 +34,125 @@ depends_on: str | None = None
 
 def upgrade() -> None:
     # ------------------------------------------------------------------ #
-    # Postgres ENUM types                                                  #
+    # Pure SQL migration to avoid SQLAlchemy enum/type creation issues    #
     # ------------------------------------------------------------------ #
-    ingestion_status_enum = postgresql.ENUM(
-        "pending", "running", "success", "partial", "failed",
-        name="ingestion_status_enum",
-        create_type=True,
-    )
-    job_status_enum = postgresql.ENUM(
-        "active", "expired", "filled", "duplicate", "archived",
-        name="job_status_enum",
-        create_type=True,
-    )
-    employment_type_enum = postgresql.ENUM(
-        "full_time", "part_time", "contract", "internship", "freelance",
-        name="employment_type_enum",
-        create_type=True,
-    )
-    seniority_level_enum = postgresql.ENUM(
-        "intern", "junior", "mid", "senior", "lead",
-        "principal", "staff", "director", "vp", "c_level",
-        name="seniority_level_enum",
-        create_type=True,
-    )
+    
+    # Create ENUM types
+    op.execute("""
+        CREATE TYPE ingestion_status_enum AS ENUM ('pending', 'running', 'success', 'partial', 'failed')
+    """)
+    op.execute("""
+        CREATE TYPE job_status_enum AS ENUM ('active', 'expired', 'filled', 'duplicate', 'archived')
+    """)
+    op.execute("""
+        CREATE TYPE employment_type_enum AS ENUM ('full_time', 'part_time', 'contract', 'internship', 'freelance')
+    """)
+    op.execute("""
+        CREATE TYPE seniority_level_enum AS ENUM ('intern', 'junior', 'mid', 'senior', 'lead', 'principal', 'staff', 'director', 'vp', 'c_level')
+    """)
 
-    ingestion_status_enum.create(op.get_bind(), checkfirst=True)
-    job_status_enum.create(op.get_bind(), checkfirst=True)
-    employment_type_enum.create(op.get_bind(), checkfirst=True)
-    seniority_level_enum.create(op.get_bind(), checkfirst=True)
+    # Create companies table
+    op.execute("""
+        CREATE TABLE companies (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            name VARCHAR(256) NOT NULL,
+            domain VARCHAR(256),
+            linkedin_url VARCHAR(512),
+            website_url VARCHAR(512),
+            logo_url VARCHAR(1024),
+            industry VARCHAR(128),
+            hq_country VARCHAR(64),
+            hq_city VARCHAR(128),
+            employee_count_range VARCHAR(64),
+            founded_year INTEGER,
+            metadata JSONB,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+    """)
+    op.execute("CREATE INDEX ix_companies_name ON companies (name)")
+    op.execute("CREATE INDEX ix_companies_industry ON companies (industry)")
+    op.execute("CREATE INDEX ix_companies_hq_country ON companies (hq_country)")
+    op.execute("ALTER TABLE companies ADD CONSTRAINT uq_companies_domain UNIQUE (domain)")
 
-    # ------------------------------------------------------------------ #
-    # companies                                                            #
-    # ------------------------------------------------------------------ #
-    op.create_table(
-        "companies",
-        sa.Column(
-            "id",
-            postgresql.UUID(as_uuid=True),
-            primary_key=True,
-            server_default=sa.text("gen_random_uuid()"),
-            nullable=False,
-        ),
-        sa.Column("name", sa.String(256), nullable=False),
-        sa.Column("domain", sa.String(256), nullable=True),
-        sa.Column("linkedin_url", sa.String(512), nullable=True),
-        sa.Column("website_url", sa.String(512), nullable=True),
-        sa.Column("logo_url", sa.String(1024), nullable=True),
-        sa.Column("industry", sa.String(128), nullable=True),
-        sa.Column("hq_country", sa.String(64), nullable=True),
-        sa.Column("hq_city", sa.String(128), nullable=True),
-        sa.Column("employee_count_range", sa.String(64), nullable=True),
-        sa.Column("founded_year", sa.Integer, nullable=True),
-        sa.Column("metadata", postgresql.JSONB, nullable=True),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-    )
-    op.create_index("ix_companies_name", "companies", ["name"])
-    op.create_index("ix_companies_industry", "companies", ["industry"])
-    op.create_index("ix_companies_hq_country", "companies", ["hq_country"])
-    op.create_unique_constraint("uq_companies_domain", "companies", ["domain"])
+    # Create ingestion_runs table
+    op.execute("""
+        CREATE TABLE ingestion_runs (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id UUID REFERENCES companies(id) ON DELETE SET NULL,
+            source VARCHAR(128) NOT NULL,
+            status ingestion_status_enum NOT NULL DEFAULT 'pending',
+            started_at TIMESTAMPTZ,
+            finished_at TIMESTAMPTZ,
+            jobs_discovered INTEGER NOT NULL DEFAULT 0,
+            jobs_inserted INTEGER NOT NULL DEFAULT 0,
+            jobs_updated INTEGER NOT NULL DEFAULT 0,
+            jobs_skipped INTEGER NOT NULL DEFAULT 0,
+            error_message TEXT,
+            error_trace JSONB,
+            run_config JSONB,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+    """)
+    op.execute("CREATE INDEX ix_ingestion_runs_company_id ON ingestion_runs (company_id)")
+    op.execute("CREATE INDEX ix_ingestion_runs_source ON ingestion_runs (source)")
+    op.execute("CREATE INDEX ix_ingestion_runs_status ON ingestion_runs (status)")
+    op.execute("CREATE INDEX ix_ingestion_runs_started_at ON ingestion_runs (started_at)")
+    op.execute("CREATE INDEX ix_ingestion_runs_source_status ON ingestion_runs (source, status)")
 
-    # ------------------------------------------------------------------ #
-    # ingestion_runs                                                       #
-    # ------------------------------------------------------------------ #
-    op.create_table(
-        "ingestion_runs",
-        sa.Column(
-            "id",
-            postgresql.UUID(as_uuid=True),
-            primary_key=True,
-            server_default=sa.text("gen_random_uuid()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "company_id",
-            postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("companies.id", ondelete="SET NULL"),
-            nullable=True,
-        ),
-        sa.Column("source", sa.String(128), nullable=False),
-        sa.Column(
-            "status",
-            sa.Enum(
-                "pending", "running", "success", "partial", "failed",
-                name="ingestion_status_enum",
-                create_type=False,
-            ),
-            nullable=False,
-            server_default="pending",
-        ),
-        sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("jobs_discovered", sa.Integer, nullable=False, server_default="0"),
-        sa.Column("jobs_inserted", sa.Integer, nullable=False, server_default="0"),
-        sa.Column("jobs_updated", sa.Integer, nullable=False, server_default="0"),
-        sa.Column("jobs_skipped", sa.Integer, nullable=False, server_default="0"),
-        sa.Column("error_message", sa.Text, nullable=True),
-        sa.Column("error_trace", postgresql.JSONB, nullable=True),
-        sa.Column("run_config", postgresql.JSONB, nullable=True),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-    )
-    op.create_index("ix_ingestion_runs_company_id", "ingestion_runs", ["company_id"])
-    op.create_index("ix_ingestion_runs_source", "ingestion_runs", ["source"])
-    op.create_index("ix_ingestion_runs_status", "ingestion_runs", ["status"])
-    op.create_index("ix_ingestion_runs_started_at", "ingestion_runs", ["started_at"])
-    op.create_index(
-        "ix_ingestion_runs_source_status",
-        "ingestion_runs",
-        ["source", "status"],
-    )
-
-    # ------------------------------------------------------------------ #
-    # jobs                                                                 #
-    # ------------------------------------------------------------------ #
-    op.create_table(
-        "jobs",
-        sa.Column(
-            "id",
-            postgresql.UUID(as_uuid=True),
-            primary_key=True,
-            server_default=sa.text("gen_random_uuid()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "company_id",
-            postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("companies.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
-        sa.Column(
-            "ingestion_run_id",
-            postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("ingestion_runs.id", ondelete="SET NULL"),
-            nullable=True,
-        ),
-        sa.Column("external_id", sa.String(256), nullable=True),
-        sa.Column("source", sa.String(128), nullable=False),
-        sa.Column("source_url", sa.String(2048), nullable=True),
-        sa.Column("title", sa.String(512), nullable=False),
-        sa.Column("description_raw", sa.Text, nullable=True),
-        sa.Column("description_clean", sa.Text, nullable=True),
-        sa.Column(
-            "status",
-            sa.Enum(
-                "active", "expired", "filled", "duplicate", "archived",
-                name="job_status_enum",
-                create_type=False,
-            ),
-            nullable=False,
-            server_default="active",
-        ),
-        sa.Column(
-            "employment_type",
-            sa.Enum(
-                "full_time", "part_time", "contract", "internship", "freelance",
-                name="employment_type_enum",
-                create_type=False,
-            ),
-            nullable=True,
-        ),
-        sa.Column(
-            "seniority",
-            sa.Enum(
-                "intern", "junior", "mid", "senior", "lead",
-                "principal", "staff", "director", "vp", "c_level",
-                name="seniority_level_enum",
-                create_type=False,
-            ),
-            nullable=True,
-        ),
-        sa.Column("location_raw", sa.String(256), nullable=True),
-        sa.Column("country", sa.String(64), nullable=True),
-        sa.Column("city", sa.String(128), nullable=True),
-        sa.Column(
-            "is_remote", sa.Boolean, nullable=False, server_default=sa.false()
-        ),
-        sa.Column("salary_raw", sa.String(256), nullable=True),
-        sa.Column("salary_min", sa.Float, nullable=True),
-        sa.Column("salary_max", sa.Float, nullable=True),
-        sa.Column("salary_currency", sa.String(8), nullable=True),
-        sa.Column("skills", postgresql.ARRAY(sa.String), nullable=True),
-        sa.Column("tags", postgresql.ARRAY(sa.String), nullable=True),
-        sa.Column("embedding_id", sa.String(256), nullable=True),
-        sa.Column("view_count", sa.BigInteger, nullable=False, server_default="0"),
-        sa.Column("apply_count", sa.BigInteger, nullable=False, server_default="0"),
-        sa.Column("posted_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("metadata", postgresql.JSONB, nullable=True),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-    )
+    # Create jobs table
+    op.execute("""
+        CREATE TABLE jobs (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+            ingestion_run_id UUID REFERENCES ingestion_runs(id) ON DELETE SET NULL,
+            external_id VARCHAR(256),
+            source VARCHAR(128) NOT NULL,
+            source_url VARCHAR(2048),
+            title VARCHAR(512) NOT NULL,
+            description_raw TEXT,
+            description_clean TEXT,
+            status job_status_enum NOT NULL DEFAULT 'active',
+            employment_type employment_type_enum,
+            seniority seniority_level_enum,
+            location_raw VARCHAR(256),
+            country VARCHAR(64),
+            city VARCHAR(128),
+            is_remote BOOLEAN NOT NULL DEFAULT false,
+            salary_raw VARCHAR(256),
+            salary_min DOUBLE PRECISION,
+            salary_max DOUBLE PRECISION,
+            salary_currency VARCHAR(8),
+            skills VARCHAR[],
+            tags VARCHAR[],
+            embedding_id VARCHAR(256),
+            view_count BIGINT NOT NULL DEFAULT 0,
+            apply_count BIGINT NOT NULL DEFAULT 0,
+            posted_at TIMESTAMPTZ,
+            expires_at TIMESTAMPTZ,
+            metadata JSONB,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT uq_jobs_external_id_source UNIQUE (external_id, source)
+        )
+    """)
     # Standard B-tree indexes
-    op.create_index("ix_jobs_company_id", "jobs", ["company_id"])
-    op.create_index("ix_jobs_ingestion_run_id", "jobs", ["ingestion_run_id"])
-    op.create_index("ix_jobs_title", "jobs", ["title"])
-    op.create_index("ix_jobs_source", "jobs", ["source"])
-    op.create_index("ix_jobs_status", "jobs", ["status"])
-    op.create_index("ix_jobs_seniority", "jobs", ["seniority"])
-    op.create_index("ix_jobs_country", "jobs", ["country"])
-    op.create_index("ix_jobs_posted_at", "jobs", ["posted_at"])
-    op.create_index("ix_jobs_company_status", "jobs", ["company_id", "status"])
-    op.create_index("ix_jobs_posted_at_status", "jobs", ["posted_at", "status"])
-    op.create_index("ix_jobs_is_remote_seniority", "jobs", ["is_remote", "seniority"])
+    op.execute("CREATE INDEX ix_jobs_company_id ON jobs (company_id)")
+    op.execute("CREATE INDEX ix_jobs_ingestion_run_id ON jobs (ingestion_run_id)")
+    op.execute("CREATE INDEX ix_jobs_title ON jobs (title)")
+    op.execute("CREATE INDEX ix_jobs_source ON jobs (source)")
+    op.execute("CREATE INDEX ix_jobs_status ON jobs (status)")
+    op.execute("CREATE INDEX ix_jobs_seniority ON jobs (seniority)")
+    op.execute("CREATE INDEX ix_jobs_country ON jobs (country)")
+    op.execute("CREATE INDEX ix_jobs_posted_at ON jobs (posted_at)")
+    op.execute("CREATE INDEX ix_jobs_company_status ON jobs (company_id, status)")
+    op.execute("CREATE INDEX ix_jobs_posted_at_status ON jobs (posted_at, status)")
+    op.execute("CREATE INDEX ix_jobs_is_remote_seniority ON jobs (is_remote, seniority)")
 
-    # Deduplication constraint
-    op.create_unique_constraint(
-        "uq_jobs_external_id_source", "jobs", ["external_id", "source"]
-    )
-
-    # GIN indexes for ARRAY containment queries (skills @> '{Python}' etc.)
-    op.execute(
-        "CREATE INDEX ix_jobs_skills_gin ON jobs USING gin (skills);"
-    )
-    op.execute(
-        "CREATE INDEX ix_jobs_tags_gin ON jobs USING gin (tags);"
-    )
+    # GIN indexes for ARRAY containment queries
+    op.execute("CREATE INDEX ix_jobs_skills_gin ON jobs USING gin (skills)")
+    op.execute("CREATE INDEX ix_jobs_tags_gin ON jobs USING gin (tags)")
 
 
 def downgrade() -> None:

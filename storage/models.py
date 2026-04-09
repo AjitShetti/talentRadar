@@ -118,7 +118,11 @@ class Company(Base):
     founded_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Enrichment payload (arbitrary extra fields from data providers)
-    metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # NOTE: 'metadata' is reserved by SQLAlchemy Declarative API; the Python
+    # attribute is 'extra_metadata' but maps to the 'metadata' Postgres column.
+    extra_metadata: Mapped[dict | None] = mapped_column(
+        "metadata", JSONB, nullable=True
+    )
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
@@ -364,7 +368,11 @@ class Job(Base):
     )
 
     # Extra enrichment payload
-    metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # NOTE: 'metadata' is reserved by SQLAlchemy Declarative API; the Python
+    # attribute is 'extra_metadata' but maps to the 'metadata' Postgres column.
+    extra_metadata: Mapped[dict | None] = mapped_column(
+        "metadata", JSONB, nullable=True
+    )
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
