@@ -1,10 +1,20 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '@/lib/api';
 import { TrendData } from '@/lib/types';
 import Header from '@/components/Header';
 import { TrendingUp, DollarSign, MapPin, Briefcase, Loader2, AlertCircle, BarChart3 } from 'lucide-react';
+
+// Sanitize text for safe display
+function sanitizeText(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
 
 export default function TrendsPage() {
   const [trendData, setTrendData] = useState<TrendData | null>(null);
@@ -12,23 +22,38 @@ export default function TrendsPage() {
   const [error, setError] = useState<string | null>(null);
   const [days, setDays] = useState(30);
 
-  useEffect(() => {
-    loadTrends();
-  }, [days]);
+  // Ref to track the latest AbortController
+  const abortRef = useRef<AbortController | null>(null);
 
-  const loadTrends = async () => {
+  const loadTrends = useCallback(async (selectedDays: number) => {
+    // Abort any previous in-flight request
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setLoading(true);
     setError(null);
 
     try {
-      const data = await api.trends.get('Market trends and insights', days);
+      const data = await api.trends.get('Market trends and insights', selectedDays, controller.signal);
       setTrendData(data);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load trends');
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      const message = err instanceof Error ? err.message : 'An unexpected error occurred';
+      setError(message);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadTrends(days);
+
+    // Cleanup on unmount or days change
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, [days, loadTrends]);
 
   return (
     <div>
@@ -69,7 +94,7 @@ export default function TrendsPage() {
             <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
             <div>
               <p className="font-medium text-red-900">Failed to load trends</p>
-              <p className="text-red-700 text-sm">{error}</p>
+              <p className="text-red-700 text-sm">{sanitizeText(error)}</p>
             </div>
           </div>
         )}
@@ -93,8 +118,8 @@ export default function TrendsPage() {
                     <h3 className="font-semibold text-green-900 mb-2">Market Analysis</h3>
                     <div className="text-slate-700 prose prose-sm max-w-none">
                       {trendData.summary.split('\n').map((line, idx) => (
-                        <p key={idx} className={line.startsWith('-') ? 'ml-4' : ''}>
-                          {line}
+                        <p key={`trend-summary-${idx}`} className={line.startsWith('-') ? 'ml-4' : ''}>
+                          {sanitizeText(line)}
                         </p>
                       ))}
                     </div>
@@ -158,13 +183,13 @@ export default function TrendsPage() {
               <div className="bg-white p-6 rounded-xl border border-slate-200">
                 <h3 className="font-semibold text-slate-900 mb-4">Most In-Demand Skills</h3>
                 <div className="space-y-3">
-                  {trendData.top_skills.slice(0, 10).map((item, idx) => {
+                  {trendData.top_skills.slice(0, 10).map((item) => {
                     const maxCount = trendData.top_skills[0]?.count || 1;
                     const percentage = (item.count / maxCount) * 100;
                     return (
-                      <div key={idx}>
+                      <div key={item.skill}>
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm font-medium text-slate-700">{item.skill}</span>
+                          <span className="text-sm font-medium text-slate-700">{sanitizeText(item.skill)}</span>
                           <span className="text-sm text-slate-500">{item.count}</span>
                         </div>
                         <div className="w-full bg-slate-100 rounded-full h-2">
@@ -183,13 +208,13 @@ export default function TrendsPage() {
               <div className="bg-white p-6 rounded-xl border border-slate-200">
                 <h3 className="font-semibold text-slate-900 mb-4">Job Distribution by Location</h3>
                 <div className="space-y-3">
-                  {trendData.location_data.slice(0, 10).map((item, idx) => {
+                  {trendData.location_data.slice(0, 10).map((item) => {
                     const maxCount = trendData.location_data[0]?.count || 1;
                     const percentage = (item.count / maxCount) * 100;
                     return (
-                      <div key={idx}>
+                      <div key={item.location}>
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm font-medium text-slate-700">{item.location}</span>
+                          <span className="text-sm font-medium text-slate-700">{sanitizeText(item.location)}</span>
                           <span className="text-sm text-slate-500">{item.count}</span>
                         </div>
                         <div className="w-full bg-slate-100 rounded-full h-2">

@@ -149,7 +149,9 @@ export default function HomePage() {
             </div>
             <div className="flex items-center gap-6 text-slate-600">
               <a href="/api/docs" className="hover:text-primary-600">API Docs</a>
-              <a href="http://localhost:8080" className="hover:text-primary-600">Airflow UI</a>
+              {process.env.NEXT_PUBLIC_AIRFLOW_URL && (
+                <a href={process.env.NEXT_PUBLIC_AIRFLOW_URL} className="hover:text-primary-600">Airflow UI</a>
+              )}
               <a
                 href="https://github.com"
                 target="_blank"

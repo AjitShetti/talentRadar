@@ -67,9 +67,9 @@ export default function JobCard({ job, showScore = false }: JobCardProps) {
       {job.skills.length > 0 && (
         <div className="mb-4">
           <div className="flex flex-wrap gap-2">
-            {job.skills.slice(0, 6).map((skill, idx) => (
+            {job.skills.slice(0, 6).map((skill) => (
               <span
-                key={idx}
+                key={skill}
                 className="px-2 py-1 bg-slate-100 text-slate-700 rounded-md text-xs font-medium"
               >
                 {skill}
