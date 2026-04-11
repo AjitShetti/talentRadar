@@ -144,6 +144,18 @@ ENV/
 env.bak/
 venv.bak/
 
+# Next.js
+.next/
+out/
+next-env.d.ts
+
+# Node modules
+node_modules/
+frontend/node_modules/
+
+# Qwen Code editor
+.qwen/
+
 # Spyder project settings
 .spyderproject
 .spyproject
@@ -205,3 +217,4 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+"*.tsbuildinfo"  
