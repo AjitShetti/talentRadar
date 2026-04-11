@@ -41,8 +41,8 @@ export default function MatchPage() {
     setError(null);
 
     try {
-      const response = await api.recommend.match(
-        {
+      const response = await api.recommend.match({
+        candidate: {
           skills,
           desired_title: desiredTitle || undefined,
           location: location || undefined,
@@ -50,8 +50,8 @@ export default function MatchPage() {
           seniority: seniority || undefined,
           resume_text: resumeText || undefined,
         },
-        20
-      );
+        limit: 20,
+      });
       setMatches(response.matches);
       setSummary(response.summary || null);
     } catch (err: any) {

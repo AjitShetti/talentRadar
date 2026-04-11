@@ -21,7 +21,7 @@ export default function SearchPage() {
     setSummary(null);
 
     try {
-      const response = await api.search.semantic(query, 20, 0);
+      const response = await api.search.semantic({ query, limit: 20, offset: 0 });
       setJobs(response.results);
       setSummary(response.summary || null);
       setTotalFound(response.total_found);
