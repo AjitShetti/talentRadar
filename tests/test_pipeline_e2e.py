@@ -174,7 +174,7 @@ def test_layer1_schemas() -> None:
 # LAYER 2 — Tavily scraper (requires TAVILY_API_KEY)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def test_layer2_tavily(tmp_dir: Path) -> None:
+def test_layer2_tavily(tmp_path: Path) -> None:
     print("\n── Layer 2: Tavily Scraper ───────────────────────────────────────")
     from config.settings import get_settings
     settings = get_settings()
@@ -463,7 +463,7 @@ def test_layer5_chromadb() -> None:
 # LAYER 6 — Full E2E mini-pipeline (Tavily → Parser → Postgres → ChromaDB)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def test_layer6_full_pipeline(tmp_dir: Path) -> None:
+def test_layer6_full_pipeline(tmp_path: Path) -> None:
     print("\n── Layer 6: Full Pipeline (Tavily → LLM → Postgres → ChromaDB) ──")
     from config.settings import get_settings
     settings = get_settings()

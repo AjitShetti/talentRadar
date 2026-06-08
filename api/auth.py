@@ -128,12 +128,17 @@ async def require_role(required_role: str):
     """
     Dependency factory to require a specific user role.
 
+    Logic:
+        - Raise 403 if the user's role does NOT match the required role
+          AND the user is NOT an admin (admins are allowed everywhere).
+
     Usage:
         @router.get("/admin", dependencies=[Depends(require_role("admin"))])
     """
     async def _check_role(user: dict = Depends(get_current_user)):
         user_role = user.get("role", "user")
-        if user_role != required_role and required_role != "admin":
+        # Allow access if: user has the exact required role OR user is admin
+        if user_role != required_role and user_role != "admin":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions",

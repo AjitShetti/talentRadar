@@ -92,7 +92,6 @@ services:
     networks:
       - talentradar-net
 
-  # Airflow requires DB migration before scheduler/webserver start
   airflow-init:
     build:
       context: .
@@ -102,12 +101,12 @@ services:
       /bin/bash -c "
         airflow db migrate &&
         airflow users create \
-          --username admin \
+          --username ${AIRFLOW_ADMIN_USER:-admin} \
           --firstname Admin \
           --lastname User \
           --role Admin \
-          --email admin@talentradar.local \
-          --password admin || true
+          --email ${AIRFLOW_ADMIN_EMAIL:-admin@talentradar.local} \
+          --password ${AIRFLOW_ADMIN_PASSWORD:?AIRFLOW_ADMIN_PASSWORD must be set in .env}
       "
     env_file: .env
     environment:

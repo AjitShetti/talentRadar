@@ -138,13 +138,35 @@ class MLScorer:
         jobs: list[RetrievalResult],
         candidate_embedding: list[float] | None = None,
     ) -> list[MatchScore]:
-        """Score a candidate against multiple jobs and return sorted by overall_score."""
+        """Score a candidate against multiple jobs and return sorted by overall_score.
+
+        Job embeddings are fetched from ChromaDB in a single batch for efficiency.
+        Falls back gracefully (embedding_sim=0) if ChromaDB is unreachable.
+        """
+        # Fetch all job embeddings from ChromaDB in one round-trip
+        job_embeddings: dict[str, list[float] | None] = {}
+        try:
+            from ingestion.embeddings.chroma_store import ChromaJobStore
+            store = ChromaJobStore()
+            for job in jobs:
+                doc = store.get(job.job_id)
+                if doc and "embedding" in doc:
+                    job_embeddings[job.job_id] = doc["embedding"]
+                else:
+                    job_embeddings[job.job_id] = None
+        except Exception as exc:
+            logger.warning("Could not fetch job embeddings from ChromaDB: %s", exc)
+            job_embeddings = {job.job_id: None for job in jobs}
+
         scores = []
         for job in jobs:
-            job_embedding = None  # Would fetch from ChromaDB in production
-            score = self.score_match(candidate, job, candidate_embedding, job_embedding)
+            score = self.score_match(
+                candidate,
+                job,
+                candidate_embedding,
+                job_embeddings.get(job.job_id),
+            )
             scores.append(score)
-        # Sort by overall score descending
         scores.sort(key=lambda s: s.overall_score, reverse=True)
         return scores
 

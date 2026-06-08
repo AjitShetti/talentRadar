@@ -50,7 +50,7 @@ class Orchestrator:
 
     async def process_query(self, query: str, **kwargs: Any) -> AgentResponse:
         """
-        Process a user query end-to-end.
+        Process a user query end-to-end via the compiled LangGraph agent graph.
 
         Parameters
         ----------
@@ -64,39 +64,51 @@ class Orchestrator:
         AgentResponse
             Unified response from the appropriate agent.
         """
-        # Step 1: Classify intent and extract context
-        context = await self._classify_intent(query)
+        from agents.graph import agent_graph  # avoid circular import at module level
 
-        # Override with any explicit kwargs
-        if "limit" in kwargs:
-            context.limit = int(kwargs["limit"])
-        if "offset" in kwargs:
-            context.offset = int(kwargs["offset"])
+        initial_state = {
+            "query": query,
+            "user_id": kwargs.get("user_id"),
+        }
 
-        logger.info(
-            "Processing query: intent=%s, keywords=%s, limit=%d",
-            context.intent, context.keywords, context.limit,
-        )
-
-        # Step 2: Route to appropriate agent
-        if context.intent == IntentType.SEARCH_JOBS:
-            return await self._rag_agent.search_jobs(context)
-
-        elif context.intent == IntentType.MARKET_TRENDS:
-            return await self._trend_agent.get_market_trends(query)
-
-        elif context.intent == IntentType.FIND_CANDIDATES:
-            return await self._handle_candidate_matching(context)
-
-        elif context.intent == IntentType.COMPANY_INFO:
-            return await self._handle_company_info(context)
-
-        else:
+        try:
+            final_state = await agent_graph.ainvoke(initial_state)
+        except Exception as exc:
+            logger.error("Agent graph invocation failed: %s", exc, exc_info=True)
             return AgentResponse(
                 success=False,
                 intent=IntentType.GENERAL,
-                summary="I can help you search for jobs, analyze market trends, or find candidates. Try asking something like 'Find remote Python engineer jobs' or 'What skills are in demand?'",
+                error=str(exc),
             )
+
+        response_dict = final_state.get("final_response", {})
+        results_raw = final_state.get("retrieved_jobs", [])
+
+        # Re-hydrate RetrievalResult objects from the serialised dicts
+        from agents.state import RetrievalResult
+        results = [
+            RetrievalResult(
+                job_id=r["job_id"],
+                title=r["title"],
+                company=r["company"],
+                location=r.get("location"),
+                is_remote=r.get("is_remote", False),
+                skills=r.get("skills", []),
+                score=r.get("score", 0.0),
+                match_reason=r.get("match_reason"),
+                source_url=r.get("source_url"),
+            )
+            for r in results_raw
+        ]
+
+        return AgentResponse(
+            success=response_dict.get("success", False),
+            intent=IntentType(response_dict.get("intent", IntentType.GENERAL.value)),
+            results=results,
+            summary=response_dict.get("summary"),
+            error=response_dict.get("error"),
+            metadata=response_dict.get("metadata", {}),
+        )
 
     async def match_candidate_to_jobs(
         self, candidate: CandidateProfile, limit: int = 10
@@ -132,8 +144,14 @@ class Orchestrator:
                 if not search_results.success:
                     return search_results
 
-                # Score each job
-                candidate_embedding = None  # Would generate from resume_text
+                # Score each job — generate candidate embedding from resume text
+                from ingestion.embeddings.embedder import embed_texts
+                try:
+                    candidate_embedding = embed_texts([candidate.resume_text[:2000]])[0]
+                except Exception as emb_exc:
+                    logger.warning("Failed to embed candidate resume, scoring without embedding: %s", emb_exc)
+                    candidate_embedding = None
+
                 scored = self._ml_scorer.score_batch(
                     candidate, search_results.results, candidate_embedding
                 )

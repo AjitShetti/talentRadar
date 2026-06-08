@@ -53,9 +53,10 @@ app = FastAPI(
 )
 
 # CORS middleware
+settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -84,13 +85,14 @@ async def health_check():
 
 
 # Register routers
-from api.routers import search, query, recommend, trends, ingest  # noqa: E402
+from api.routers import search, query, recommend, trends, ingest, match  # noqa: E402
 
 app.include_router(search.router, prefix="/api/v1")
 app.include_router(query.router, prefix="/api/v1")
 app.include_router(recommend.router, prefix="/api/v1")
 app.include_router(trends.router, prefix="/api/v1")
 app.include_router(ingest.router, prefix="/api/v1")
+app.include_router(match.router, prefix="/api/v1")
 
 
 # API documentation

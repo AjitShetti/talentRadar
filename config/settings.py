@@ -81,6 +81,18 @@ class Settings(BaseSettings):
     # Frontend / CORS                                                      #
     # ------------------------------------------------------------------ #
     next_public_api_url: str = Field(default="http://localhost:8000")
+    # Comma-separated list of allowed CORS origins, e.g.:
+    # CORS_ORIGINS=http://localhost:3000,https://app.talentradar.com
+    cors_origins: str = Field(
+        default="http://localhost:3000",
+        description="Comma-separated allowed CORS origins",
+    )
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Parse cors_origins into a list for the middleware."""
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
 
 @lru_cache(maxsize=1)

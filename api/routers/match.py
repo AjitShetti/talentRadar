@@ -1,0 +1,267 @@
+"""
+api/routers/match.py
+~~~~~~~~~~~~~~~~~~~~
+Resume-to-job-description matching endpoints.
+
+Provides:
+- Single resume-JD matching
+- Batch matching for multiple resumes
+- Configurable scoring weights
+
+The matching pipeline considers:
+- Skills match (40% weight): How many required skills match the resume
+- Experience match (25% weight): Years of experience vs required
+- Education match (15% weight): Education level matching
+- Semantic similarity (20% weight): Overall text similarity using embeddings
+"""
+
+from __future__ import annotations
+
+import logging
+
+from fastapi import APIRouter, HTTPException
+
+from api.schemas.match_schemas import (
+    BatchMatchRequestSchema,
+    BatchMatchResponseSchema,
+    BatchMatchResultSchema,
+    MatchRequestSchema,
+    MatchWeightsSchema,
+    SingleMatchResultSchema,
+    ScoreBreakdownSchema,
+)
+from ml.config import PipelineConfig, ScoringWeights
+from ml.resume_matcher import ResumeMatcher
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/match", tags=["Match"])
+
+# Module-level matcher instance (lazy-loaded)
+_matcher: ResumeMatcher | None = None
+
+
+def get_matcher(config: PipelineConfig | None = None) -> ResumeMatcher:
+    """Get or create the matcher instance.
+
+    Uses a singleton pattern to avoid reloading the embedding model
+    for each request.
+
+    Args:
+        config: Optional custom configuration
+
+    Returns:
+        ResumeMatcher instance
+    """
+    global _matcher  # noqa: PLW0603
+    if _matcher is None:
+        _matcher = ResumeMatcher(config=config)
+    return _matcher
+
+
+@router.post("/", response_model=SingleMatchResultSchema)
+async def match_resume_to_job(request: MatchRequestSchema):
+    """Match a single resume against a job description.
+
+    Analyzes the resume text and returns a percentage match score with
+    detailed breakdown by category (skills, experience, education, semantic).
+
+    **Request body:**
+    - `resume_text`: Full resume text (plain text or HTML)
+    - `job_description`: Full job description text
+
+    **Response:**
+    - `match_percentage`: Overall match score (0-100)
+    - `breakdown`: Score by category
+    - `matched_skills`: Skills found in both
+    - `missing_skills`: Required skills not in resume
+    - `extra_skills`: Skills in resume but not required
+    - `confidence`: Confidence in the match (0-1)
+
+    **Example request:**
+    ```json
+    {
+        "resume_text": "Python developer with 5 years experience in FastAPI...",
+        "job_description": "Looking for a senior Python developer with FastAPI..."
+    }
+    ```
+
+    **Example response:**
+    ```json
+    {
+        "match_percentage": 85.5,
+        "breakdown": {
+            "skills": 90.0,
+            "experience": 80.0,
+            "education": 85.0,
+            "semantic": 82.0
+        },
+        "matched_skills": ["Python", "FastAPI", "PostgreSQL"],
+        "missing_skills": ["Docker", "Kubernetes"],
+        "extra_skills": ["Redis"],
+        "confidence": 0.85,
+        "processing_time_ms": 150.5
+    }
+    ```
+    """
+    try:
+        matcher = get_matcher()
+        result = matcher.match(
+            resume_text=request.resume_text,
+            job_description=request.job_description,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.error("Match request failed", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Matching failed: {e}") from e
+
+    return SingleMatchResultSchema(
+        match_percentage=result.overall_score,
+        breakdown=ScoreBreakdownSchema(
+            skills=result.breakdown.skills,
+            experience=result.breakdown.experience,
+            education=result.breakdown.education,
+            semantic=result.breakdown.semantic,
+        ),
+        matched_skills=result.matched_skills,
+        missing_skills=result.missing_skills,
+        extra_skills=result.extra_skills,
+        confidence=result.confidence,
+        processing_time_ms=result.processing_time_ms,
+        warnings=result.warnings,
+    )
+
+
+@router.post("/batch", response_model=BatchMatchResponseSchema)
+async def batch_match_resumes(request: BatchMatchRequestSchema):
+    """Match multiple resumes against a single job description.
+
+    Processes all resumes and returns results sorted by match score
+    (best matches first).
+
+    **Request body:**
+    - `resume_texts`: List of resume texts
+    - `job_description`: Job description to match against
+
+    **Response:**
+    - `results`: Match results sorted by score (descending)
+    - `total_processed`: Number of resumes processed
+    - `top_match_percentage`: Best match score
+
+    **Example request:**
+    ```json
+    {
+        "resume_texts": [
+            "Python developer with 5 years...",
+            "Java engineer with 3 years..."
+        ],
+        "job_description": "Senior Python developer..."
+    }
+    ```
+    """
+    try:
+        matcher = get_matcher()
+        results = matcher.match_batch(
+            resume_texts=request.resume_texts,
+            job_description=request.job_description,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.error("Batch match request failed", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Batch matching failed: {e}") from e
+
+    batch_results: list[BatchMatchResultSchema] = []
+    for result in results:
+        batch_results.append(
+            BatchMatchResultSchema(
+                match_percentage=result.overall_score,
+                breakdown=ScoreBreakdownSchema(
+                    skills=result.breakdown.skills,
+                    experience=result.breakdown.experience,
+                    education=result.breakdown.education,
+                    semantic=result.breakdown.semantic,
+                ),
+                matched_skills=result.matched_skills,
+                missing_skills=result.missing_skills,
+                extra_skills=result.extra_skills,
+                confidence=result.confidence,
+                resume_index=0,  # Index is lost after sorting; could be tracked
+            )
+        )
+
+    top_match = batch_results[0].match_percentage if batch_results else None
+
+    return BatchMatchResponseSchema(
+        results=batch_results,
+        total_processed=len(results),
+        top_match_percentage=top_match,
+    )
+
+
+@router.post("/weights", response_model=dict)
+async def update_weights(weights: MatchWeightsSchema):
+    """Update scoring weights for the matching pipeline.
+
+    Changes how much each component contributes to the overall score.
+    Weights must sum to 1.0.
+
+    **Default weights:**
+    - skills: 0.40 (40%)
+    - experience: 0.25 (25%)
+    - education: 0.15 (15%)
+    - semantic: 0.20 (20%)
+
+    **Example request:**
+    ```json
+    {
+        "skills": 0.50,
+        "experience": 0.20,
+        "education": 0.10,
+        "semantic": 0.20
+    }
+    ```
+    """
+    try:
+        global _matcher  # noqa: PLW0603
+        new_weights = ScoringWeights(
+            skills=weights.skills,
+            experience=weights.experience,
+            education=weights.education,
+            semantic=weights.semantic,
+        )
+        new_config = PipelineConfig(weights=new_weights)
+        _matcher = ResumeMatcher(config=new_config)
+
+        return {
+            "status": "updated",
+            "weights": {
+                "skills": weights.skills,
+                "experience": weights.experience,
+                "education": weights.education,
+                "semantic": weights.semantic,
+            },
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.error("Failed to update weights", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get("/weights", response_model=MatchWeightsSchema)
+async def get_weights():
+    """Get current scoring weights.
+
+    Returns the current weights used by the matching pipeline.
+    """
+    matcher = get_matcher()
+    w = matcher.config.weights
+
+    return MatchWeightsSchema(
+        skills=w.skills,
+        experience=w.experience,
+        education=w.education,
+        semantic=w.semantic,
+    )
