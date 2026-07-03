@@ -48,18 +48,41 @@ async def search_jobs_structured(
     - Salary range
     - Date range
     """
+    from storage.models import JobStatus, SeniorityLevel, EmploymentType
+    
+    status_enum = JobStatus.ACTIVE
+    if filters.status:
+        try:
+            status_enum = JobStatus(filters.status.upper())
+        except ValueError:
+            pass
+            
+    seniority_enum = None
+    if filters.seniority:
+        try:
+            seniority_enum = SeniorityLevel(filters.seniority.upper().replace("-", "_"))
+        except ValueError:
+            pass
+
+    employment_type_enum = None
+    if filters.employment_type:
+        try:
+            employment_type_enum = EmploymentType(filters.employment_type.upper().replace("-", "_"))
+        except ValueError:
+            pass
+
     jobs, total = await uow.jobs.search(
+        title=filters.query,
         skills=filters.skills,
-        location=filters.location,
         country=filters.country,
         city=filters.city,
         is_remote=filters.is_remote,
-        seniority=filters.seniority,
-        employment_type=filters.employment_type,
-        salary_min=filters.salary_min,
-        salary_max=filters.salary_max,
+        seniority=seniority_enum,
+        employment_type=employment_type_enum,
+        salary_min_gte=filters.salary_min,
+        salary_max_lte=filters.salary_max,
         posted_after=filters.posted_after,
-        status=filters.status,
+        status=status_enum,
         limit=filters.limit,
         offset=filters.offset,
     )

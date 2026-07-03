@@ -452,6 +452,22 @@ class JobRepository(BaseRepository[Job]):
         )
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
+    async def get_by_ids(self, ids: list[uuid.UUID]) -> Sequence[Job]:
+        """Fetch multiple jobs by their primary keys."""
+        if not ids:
+            return []
+        stmt = select(Job).where(Job.id.in_(ids))
+        return (await self.session.execute(stmt)).scalars().all()
+
+    async def get_by_external_ids(self, external_ids: list[str], source: str) -> Sequence[Job]:
+        """Fetch multiple jobs by their external IDs and source."""
+        if not external_ids:
+            return []
+        stmt = select(Job).where(
+            and_(Job.external_id.in_(external_ids), Job.source == source)
+        )
+        return (await self.session.execute(stmt)).scalars().all()
+
     # ------------------------------------------------------------------ #
     # Rich filter / search                                                  #
     # ------------------------------------------------------------------ #

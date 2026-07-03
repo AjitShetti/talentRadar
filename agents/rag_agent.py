@@ -26,7 +26,6 @@ from agents.prompts.rag_prompt import (
 )
 from config.settings import get_settings
 from ingestion.embeddings.chroma_store import ChromaJobStore
-from ingestion.embeddings.embedder import embed_texts
 from storage.repository import UnitOfWork
 from storage.database import AsyncSessionLocal
 
@@ -67,23 +66,30 @@ class RAGAgent:
             Retrieved jobs with optional LLM summary.
         """
         try:
-            # Step 1: Embed query
-            query_embedding = embed_texts([context.raw_query])[0]
+            # Step 1 & 2: Build filters and search ChromaDB
+            where = {}
+            if context.is_remote is not None:
+                where["is_remote"] = context.is_remote
+            if context.seniority:
+                where["seniority"] = context.seniority
+            if context.company:
+                where["company"] = context.company
 
-            # Step 2: Search ChromaDB
+            # Use chroma store search
             chroma_results = self._chroma.search(
-                query_embedding=query_embedding,
-                n_results=min(context.limit * 3, 50),  # Over-fetch for filtering
+                query=context.raw_query,
+                n_results=context.limit * 2,  # Slight over-fetch for python-side skill filtering
+                where=where if where else None,
             )
 
             # Step 3: Build RetrievalResult list
             results = await self._build_results(chroma_results, context)
 
-            # Step 4: Apply filters
+            # Step 4: Apply remaining filters (like skills, since Chroma doesn't natively do array contains well yet)
             results = self._apply_filters(results, context)
 
             # Step 5: Truncate to limit
-            results = results[context.offset : context.offset + context.limit]
+            results = results[:context.limit]
 
             # Step 6: Generate summary (optional)
             summary = None
@@ -107,29 +113,31 @@ class RAGAgent:
             )
 
     async def _build_results(
-        self, chroma_results: dict[str, Any], context: QueryContext
+        self, chroma_results: list[dict[str, Any]], context: QueryContext
     ) -> list[RetrievalResult]:
         """Convert ChromaDB results to RetrievalResult objects."""
         results = []
 
-        if not chroma_results or "ids" not in chroma_results:
+        if not chroma_results:
             return results
 
-        ids = chroma_results.get("ids", [[]])[0]
-        documents = chroma_results.get("documents", [[]])[0]
-        metadatas = chroma_results.get("metadatas", [[]])[0]
-        distances = chroma_results.get("distances", [[]])[0]
+        ids = [r["id"] for r in chroma_results]
 
         async with AsyncSessionLocal() as session:
             uow = UnitOfWork(session)
 
-            for idx, job_id in enumerate(ids):
-                metadata = metadatas[idx] if idx < len(metadatas) else {}
-                distance = distances[idx] if idx < len(distances) else 0.0
+            # Fetch full job records from DB in a single batch
+            jobs = await uow.jobs.get_by_external_ids(ids, "tavily")
+            jobs_by_ext_id = {job.external_id: job for job in jobs}
+
+            for row in chroma_results:
+                job_id = row["id"]
+                metadata = row["metadata"] or {}
+                distance = row["distance"]
                 score = 1.0 - distance  # Convert distance to score
 
-                # Fetch full job record from DB
-                job = await uow.jobs.get_by_external_id(job_id, "tavily")
+                # Fetch full job record from memory
+                job = jobs_by_ext_id.get(job_id)
                 if not job:
                     continue
 
@@ -161,24 +169,6 @@ class RAGAgent:
             filtered = [
                 r for r in filtered
                 if any(s.lower() in [rs.lower() for rs in r.skills] for s in context.skills)
-            ]
-
-        # Filter by remote
-        if context.is_remote is not None:
-            filtered = [r for r in filtered if r.is_remote == context.is_remote]
-
-        # Filter by seniority
-        if context.seniority:
-            filtered = [
-                r for r in filtered
-                if r.seniority and r.seniority.lower() == context.seniority.lower()
-            ]
-
-        # Filter by company
-        if context.company:
-            filtered = [
-                r for r in filtered
-                if context.company.lower() in r.company.lower()
             ]
 
         # Sort by score

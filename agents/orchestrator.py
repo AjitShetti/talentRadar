@@ -20,7 +20,6 @@ from typing import Any
 
 from groq import AsyncGroq
 
-from agents.ml_scorer import MLScorer
 from agents.prompts.intent_prompt import INTENT_EXTRACTION_PROMPT
 from agents.rag_agent import RAGAgent
 from agents.state import AgentResponse, CandidateProfile, IntentType, QueryContext
@@ -46,7 +45,6 @@ class Orchestrator:
         self._groq = AsyncGroq(api_key=settings.groq_api_key)
         self._rag_agent = RAGAgent()
         self._trend_agent = TrendAgent()
-        self._ml_scorer = MLScorer()
 
     async def process_query(self, query: str, **kwargs: Any) -> AgentResponse:
         """
@@ -114,76 +112,14 @@ class Orchestrator:
         self, candidate: CandidateProfile, limit: int = 10
     ) -> AgentResponse:
         """
-        Match a candidate profile to available jobs.
-
-        Parameters
-        ----------
-        candidate : CandidateProfile
-            The candidate's profile with skills, experience, etc.
-        limit : int
-            Maximum number of job matches to return.
-
-        Returns
-        -------
-        AgentResponse
-            Jobs ranked by match score.
+        Phase 3: LLM-as-a-judge candidate matching.
         """
-        try:
-            # Search for jobs matching candidate's profile text
-            if candidate.resume_text:
-                search_context = QueryContext(
-                    raw_query=candidate.resume_text[:1000],
-                    intent=IntentType.FIND_CANDIDATES,
-                    skills=candidate.skills,
-                    desired_title=candidate.desired_title,
-                    is_remote=candidate.is_remote,
-                    limit=limit * 2,  # Over-fetch for scoring
-                )
-                search_results = await self._rag_agent.search_jobs(search_context)
-
-                if not search_results.success:
-                    return search_results
-
-                # Score each job — generate candidate embedding from resume text
-                from ingestion.embeddings.embedder import embed_texts
-                try:
-                    candidate_embedding = embed_texts([candidate.resume_text[:2000]])[0]
-                except Exception as emb_exc:
-                    logger.warning("Failed to embed candidate resume, scoring without embedding: %s", emb_exc)
-                    candidate_embedding = None
-
-                scored = self._ml_scorer.score_batch(
-                    candidate, search_results.results, candidate_embedding
-                )
-
-                # Attach scores to results
-                result_map = {r.job_id: r for r in search_results.results}
-                for score in scored[:limit]:
-                    if score.job_id in result_map:
-                        result_map[score.job_id].score = score.overall_score
-                        result_map[score.job_id].match_reason = score.reasoning
-
-                return AgentResponse(
-                    success=True,
-                    intent=IntentType.FIND_CANDIDATES,
-                    results=search_results.results[:limit],
-                    summary=f"Found {len(scored)} job matches. Top match score: {scored[0].overall_score:.0%}" if scored else "No matches found.",
-                    metadata={"match_scores": [s.overall_score for s in scored[:limit]]},
-                )
-
-            return AgentResponse(
-                success=False,
-                intent=IntentType.FIND_CANDIDATES,
-                error="Candidate profile must include resume_text for matching.",
-            )
-
-        except Exception as exc:
-            logger.error("Candidate matching failed: %s", exc, exc_info=True)
-            return AgentResponse(
-                success=False,
-                intent=IntentType.FIND_CANDIDATES,
-                error=str(exc),
-            )
+        return AgentResponse(
+            success=False,
+            intent=IntentType.FIND_CANDIDATES,
+            summary="LLM-as-a-judge candidate matching will be implemented in Phase 3.",
+            error="Not Implemented",
+        )
 
     async def _classify_intent(self, query: str) -> QueryContext:
         """
@@ -241,8 +177,10 @@ class Orchestrator:
         response = await self._groq.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
+                {"role": "system", "content": "You must output a valid JSON object. No markdown formatting or extra text."},
                 {"role": "user", "content": prompt},
             ],
+            response_format={"type": "json_object"},
             temperature=0.0,
             max_tokens=200,
         )
@@ -251,13 +189,8 @@ class Orchestrator:
         if not content:
             return None
 
-        # Extract JSON from response
-        json_match = re.search(r"\{.*\}", content, re.DOTALL)
-        if not json_match:
-            return None
-
         try:
-            data = json.loads(json_match.group())
+            data = json.loads(content)
             return QueryContext(
                 raw_query=query,
                 intent=IntentType(data.get("intent", "general")),
@@ -272,20 +205,4 @@ class Orchestrator:
         except (json.JSONDecodeError, ValueError):
             return None
 
-    @staticmethod
-    async def _handle_candidate_matching(context: QueryContext) -> AgentResponse:
-        """Handle candidate search/matching intent."""
-        return AgentResponse(
-            success=False,
-            intent=IntentType.FIND_CANDIDATES,
-            summary="Candidate matching requires a candidate profile. Please provide candidate details or use job search instead.",
-        )
 
-    @staticmethod
-    async def _handle_company_info(context: QueryContext) -> AgentResponse:
-        """Handle company information requests."""
-        return AgentResponse(
-            success=False,
-            intent=IntentType.COMPANY_INFO,
-            summary="Company information feature is coming soon. Try searching for jobs at a specific company instead.",
-        )

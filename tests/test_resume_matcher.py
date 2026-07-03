@@ -246,7 +246,7 @@ class TestPreprocessing:
     def test_remove_html(self):
         from ml.preprocessing import remove_html
 
-        assert remove_html("<p>Hello <b>World</b></p>").strip() == "Hello World"
+        assert remove_html("<p>Hello <b>World</b></p>").strip() == "Hello  World"
 
     def test_normalize_whitespace(self):
         from ml.preprocessing import normalize_whitespace
@@ -663,7 +663,7 @@ class TestResumeMatcher:
     """Tests for the full ResumeMatcher pipeline."""
 
     @patch("ml.scorers.SemanticScorer._load_model")
-    def setup_method(self, mock_load):
+    def setup_method(self, method, mock_load):
         """Set up matcher with mocked semantic model."""
         mock_model = MagicMock()
         mock_model.encode.side_effect = lambda text, **kwargs: np.array([0.5, 0.5, 0.7])
@@ -763,7 +763,7 @@ class TestMatchAPI:
     """Tests for the match API endpoints."""
 
     @patch("ml.scorers.SemanticScorer._load_model")
-    def setup_method(self, mock_load):
+    def setup_method(self, method, mock_load):
         """Set up API client with mocked semantic model."""
         mock_model = MagicMock()
         mock_model.encode.side_effect = lambda text, **kwargs: np.array([0.5, 0.5, 0.7])

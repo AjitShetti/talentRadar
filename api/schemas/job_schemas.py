@@ -7,7 +7,7 @@ Pydantic schemas for job-related API requests and responses.
 from __future__ import annotations
 
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class JobFilterSchema(BaseModel):
@@ -56,8 +56,7 @@ class JobResponseSchema(BaseModel):
     embedding_id: str | None = None
     match_score: float | None = Field(None, description="Match score if from search")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class JobListResponseSchema(BaseModel):
