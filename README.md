@@ -18,7 +18,7 @@
 - **AI-Powered Insights** - LLM-generated summaries and market analysis
 - **Smart Candidate Matching** - ML scoring based on skills, seniority, and location
 - **Real-Time Market Trends** - Skill demands, salary insights, geographic distribution
-- **Automated Data Pipeline** - Airflow-driven ingestion from multiple sources
+- **Automated Data Pipeline** - Celery Beat-driven ingestion from multiple sources
 
 ### Technical Highlights
 
@@ -44,7 +44,7 @@
                      └──────┬────────┘     └──────────────┘
                             │
                      ┌──────▼────────┐
-                     │   Airflow     │
+                     │   Celery      │
                      │ (Scheduler)   │
                      └───────────────┘
 ```
@@ -58,7 +58,7 @@
 | **Database** | PostgreSQL 15 | Structured job/company data |
 | **Vector DB** | ChromaDB | Semantic search embeddings |
 | **Cache** | Redis 7 | Caching, session storage |
-| **Pipeline** | Apache Airflow 2.9 | Data ingestion automation |
+| **Pipeline** | Celery & Celery Beat | Data ingestion automation |
 | **AI** | Groq (Llama 3.1) | LLM parsing, summaries |
 
 ---
@@ -92,7 +92,7 @@ talentRadar/
 │   ├── scrapers/           # Data source connectors
 │   ├── parsers/            # LLM-powered JD parsing
 │   ├── embeddings/         # Vector embedding utilities
-│   └── dags/               # Airflow DAG definitions
+│   └── tasks.py            # Celery tasks definitions
 │
 ├── storage/                 # Data layer
 │   ├── models.py           # SQLAlchemy ORM models
@@ -107,7 +107,7 @@ talentRadar/
 │
 ├── infra/                   # Infrastructure
 │   ├── Dockerfile          # API container
-│   ├── Dockerfile.airflow  # Airflow container
+│   ├── Dockerfile          # Base container
 │   ├── kubernetes/         # K8s manifests
 │   ├── cloudrun.yaml       # Google Cloud Run config
 │   └── prometheus.yml      # Monitoring config
@@ -164,7 +164,7 @@ This starts:
 - **Redis** (port 6379)
 - **ChromaDB** (port 8001)
 - **API Server** (port 8000)
-- **Airflow** (port 8080)
+- **Celery Worker & Beat** (background processes)
 - **Frontend** (port 3000)
 
 ### 3. Run Database Migrations
@@ -184,9 +184,6 @@ open http://localhost:8000/docs
 
 # Frontend
 open http://localhost:3000
-
-# Airflow UI (admin/admin)
-open http://localhost:8080
 ```
 
 ---
@@ -280,7 +277,7 @@ gcloud run deploy talentradar-api \
 - **SQLAlchemy 2.0** - ORM
 - **Pydantic** - Validation & serialization
 - **Alembic** - Database migrations
-- **Apache Airflow** - Data pipeline orchestration
+- **Celery & Redis** - Data pipeline orchestration
 
 ### AI/ML
 - **Groq (Llama 3.1)** - LLM inference
@@ -353,7 +350,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Groq** - Ultra-fast LLM inference
 - **Tavily** - Job search API
 - **ChromaDB** - Open-source vector database
-- **Apache Airflow** - Data pipeline orchestration
+- **Celery & Redis** - Data pipeline orchestration
 
 ---
 
