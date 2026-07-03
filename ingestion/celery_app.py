@@ -8,7 +8,7 @@ celery_app = Celery(
     "talentRadar_ingestion",
     broker=settings.redis_url,
     backend=settings.redis_url,
-    include=["ingestion.tasks"]
+    include=["ingestion.tasks", "agents.tasks"]
 )
 
 celery_app.conf.update(

@@ -18,7 +18,9 @@ from fastapi import APIRouter
 
 from agents.orchestrator import Orchestrator
 from agents.state import CandidateProfile
+from agents.learning_path import LearningPathGenerator
 from api.schemas.query_schemas import MatchRequestSchema, MatchResponseSchema
+from api.schemas.ai_core_schemas import GenerateLearningPathRequest, GenerateLearningPathResponse
 
 logger = logging.getLogger(__name__)
 
@@ -92,3 +94,16 @@ async def analyze_skill_gaps(candidate_skills: list[str], target_role: str):
         "message": "Skill gap analysis is based on current job market data",
         "recommendation": f"Search for {target_role} jobs to see specific skill requirements",
     }
+
+@router.post("/learning-path", response_model=GenerateLearningPathResponse)
+async def generate_learning_path(request: GenerateLearningPathRequest):
+    """
+    Generate a markdown-formatted learning path to acquire missing skills.
+    """
+    try:
+        generator = LearningPathGenerator()
+        markdown = generator.generate(request.missing_skills)
+        return GenerateLearningPathResponse(learning_path_markdown=markdown)
+    except Exception as e:
+        logger.error("Failed to generate learning path", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e)) from e
