@@ -342,6 +342,7 @@ class JDParser:
             messages=messages,  # type: ignore[arg-type]
             max_tokens=_MAX_TOKENS,
             temperature=_TEMPERATURE,
+            response_format={"type": "json_object"},
         )
         content = response.choices[0].message.content or ""
         return content.strip()
@@ -349,35 +350,11 @@ class JDParser:
     @staticmethod
     def _extract_json(text: str) -> dict[str, Any]:
         """
-        Extract the first JSON object from a potentially decorated response.
-
-        Strategy:
-        1. Try to parse the entire response as JSON (happy path).
-        2. Extract the first ``{...}`` block using a greedy regex.
-        3. Raise ``ValueError`` if both attempts fail.
+        Extract the JSON object from the response.
+        Since we use response_format={"type": "json_object"}, 
+        the response is guaranteed to be JSON.
         """
-        # Strategy 1: whole response is valid JSON
         try:
             return json.loads(text)
-        except json.JSONDecodeError:
-            pass
-
-        # Strategy 2: extract first {...} block
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group())
-            except json.JSONDecodeError:
-                pass
-
-        # Strategy 3: strip markdown code fences and retry
-        clean = re.sub(r"```(?:json)?", "", text).strip()
-        try:
-            return json.loads(clean)
-        except json.JSONDecodeError:
-            pass
-
-        raise ValueError(
-            f"Could not extract valid JSON from LLM response. "
-            f"First 300 chars: {text[:300]!r}"
-        )
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Failed to parse JSON: {exc}. Text: {text[:300]}")

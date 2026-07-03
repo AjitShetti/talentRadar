@@ -12,7 +12,7 @@ from celery import shared_task
 from ingestion.celery_app import celery_app
 from ingestion.parsers.jd_parser import JDParser
 from ingestion.parsers.schemas import ParsedJobDescription, RawJobResult
-from ingestion.scrapers.tavily_client import TavilyJobScraper
+from ingestion.scrapers.ats_crawler import ATSCrawler
 from ingestion.embeddings.chroma_store import ChromaJobStore
 from storage.database import AsyncSessionLocal
 from storage.models import IngestionStatus
@@ -20,7 +20,7 @@ from storage.repository import UnitOfWork
 
 logger = logging.getLogger(__name__)
 
-_SOURCE_NAME = "tavily"
+_SOURCE_NAME = "ats_crawler"
 
 def _company_domain(company_name: str) -> str:
     """Create a deterministic pseudo-domain key from a company name."""
@@ -44,7 +44,7 @@ async def _run_pipeline(
     all_paths: list[str] = []
     total_fetched = 0
 
-    with TavilyJobScraper() as scraper:
+    with ATSCrawler() as scraper:
         for role in roles:
             for location in locations:
                 try:
@@ -186,21 +186,21 @@ async def _run_pipeline(
     }
 
 
-@shared_task(name="ingestion.tasks.scrape_tavily")
-def scrape_tavily(
+@shared_task(name="ingestion.tasks.run_crawler")
+def run_crawler(
     roles: list[str] | None = None,
     locations: list[str] | None = None,
     max_results_per_query: int = 5,
 ) -> dict[str, Any]:
     """
-    Celery task to scrape job postings from Tavily, parse them with LLM, 
+    Celery task to scrape job postings from ATS pages, parse them with LLM, 
     and store them in PostgreSQL and ChromaDB.
     """
     roles = roles or ["Software Engineer", "Data Scientist"]
     locations = locations or ["Remote", "New York"]
     run_id = str(uuid.uuid4())
     
-    logger.info("Starting scrape_tavily task run_id=%s roles=%s locations=%s max=%s", 
+    logger.info("Starting run_crawler task run_id=%s roles=%s locations=%s max=%s", 
                 run_id, roles, locations, max_results_per_query)
     
     # Run the async pipeline synchronously for Celery
