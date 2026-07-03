@@ -30,6 +30,17 @@ from api.schemas.match_schemas import (
     SingleMatchResultSchema,
     ScoreBreakdownSchema,
 )
+from api.schemas.ai_core_schemas import (
+    EvaluateCandidateRequest,
+    EvaluateCandidateResponse,
+    TailorResumeRequest,
+)
+from celery.result import AsyncResult
+from sse_starlette.sse import EventSourceResponse
+from fastapi.responses import StreamingResponse
+from agents.tasks import evaluate_candidate_task
+from agents.resume_tailor import ResumeTailor
+from api.utils.docx_generator import generate_resume_docx
 from ml.config import PipelineConfig, ScoringWeights
 from ml.resume_matcher import ResumeMatcher
 
@@ -265,3 +276,67 @@ async def get_weights():
         education=w.education,
         semantic=w.semantic,
     )
+
+@router.post("/evaluate", response_model=EvaluateCandidateResponse)
+async def evaluate_candidate(request: EvaluateCandidateRequest):
+    """
+    Dispatch an async Celery task to evaluate a candidate's resume using the LLM-as-a-judge.
+    Returns a task ID that can be tracked via the SSE endpoint.
+    """
+    try:
+        task = evaluate_candidate_task.delay(request.resume_text, request.job_description)
+        return EvaluateCandidateResponse(task_id=task.id)
+    except Exception as e:
+        logger.error("Evaluate request failed", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Evaluation dispatch failed: {e}") from e
+
+@router.get("/evaluate/stream/{task_id}")
+async def evaluate_stream(task_id: str):
+    """
+    Stream Celery task status updates via Server-Sent Events (SSE).
+    """
+    import asyncio
+    async def event_generator():
+        while True:
+            task = AsyncResult(task_id)
+            if task.ready():
+                if task.successful():
+                    yield {
+                        "event": "success",
+                        "data": json.dumps(task.result)
+                    }
+                else:
+                    yield {
+                        "event": "error",
+                        "data": str(task.result)
+                    }
+                break
+            else:
+                yield {
+                    "event": "processing",
+                    "data": task.status
+                }
+            await asyncio.sleep(1)
+
+    import json
+    return EventSourceResponse(event_generator())
+
+@router.post("/tailor-resume")
+async def tailor_resume(request: TailorResumeRequest):
+    """
+    Tailor a resume for a specific job description and return it as a .docx file.
+    """
+    try:
+        tailor = ResumeTailor()
+        tailored_text = tailor.tailor(request.resume_text, request.job_description)
+        
+        docx_stream = generate_resume_docx(tailored_text)
+        
+        return StreamingResponse(
+            docx_stream,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": "attachment; filename=Tailored_Resume.docx"}
+        )
+    except Exception as e:
+        logger.error("Failed to tailor resume", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e)) from e
