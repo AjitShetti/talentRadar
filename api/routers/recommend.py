@@ -15,7 +15,7 @@ import logging
 
 from fastapi import APIRouter
 
-from agents.ml_scorer import MLScorer
+
 from agents.orchestrator import Orchestrator
 from agents.state import CandidateProfile
 from api.schemas.query_schemas import MatchRequestSchema, MatchResponseSchema

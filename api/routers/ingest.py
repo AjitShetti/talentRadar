@@ -30,50 +30,26 @@ async def trigger_ingestion(
     uow: Any = Depends(get_unit_of_work),
 ):
     """
-    Trigger the ingestion pipeline via Airflow REST API.
+    Trigger the ingestion pipeline via Celery background tasks.
 
     This starts the fetch -> parse -> save -> embed pipeline
     with the specified roles and locations.
-
-    Note: Requires Airflow webserver to be running and accessible.
     """
     try:
-        # Trigger Airflow DAG via its REST API
-        import httpx
+        from ingestion.tasks import scrape_tavily
+        
+        task = scrape_tavily.delay(
+            roles=request.roles,
+            locations=request.locations,
+            max_results_per_query=request.max_results_per_query,
+        )
 
-        airflow_url = "http://airflow-webserver:8080/api/v1/dags/talentradar_fetch_and_parse/dagRuns"
-        auth = ("admin", "admin")  # Should be configurable
-
-        payload = {
-            "conf": {
-                "roles": request.roles,
-                "locations": request.locations,
-                "max_results_per_query": request.max_results_per_query,
-            }
-        }
-
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                airflow_url,
-                json=payload,
-                auth=auth,
-                timeout=10.0,
-            )
-
-        if response.status_code in (200, 201):
-            dag_run = response.json()
-            return IngestResponseSchema(
-                success=True,
-                message="Ingestion pipeline triggered successfully",
-                dag_run_id=dag_run.get("dag_run_id"),
-                estimated_time="5-15 minutes depending on result count",
-            )
-        else:
-            logger.error("Airflow trigger failed: %s", response.text)
-            return IngestResponseSchema(
-                success=False,
-                message=f"Airflow trigger failed: {response.status_code}",
-            )
+        return IngestResponseSchema(
+            success=True,
+            message="Ingestion pipeline triggered successfully",
+            dag_run_id=task.id,
+            estimated_time="Background task running",
+        )
 
     except Exception as exc:
         logger.error("Failed to trigger ingestion: %s", exc, exc_info=True)
