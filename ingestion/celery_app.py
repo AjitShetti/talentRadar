@@ -18,7 +18,7 @@ celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
     beat_schedule={
-        "daily_ats_crawler": {
+        "daily_tavily_crawler": {
             "task": "ingestion.tasks.run_crawler",
             "schedule": 86400.0, # Run every 24 hours
             "args": (["Software Engineer", "Data Scientist", "Product Manager"], ["Remote", "New York", "San Francisco"], 15)

@@ -20,7 +20,7 @@ from storage.repository import UnitOfWork
 
 logger = logging.getLogger(__name__)
 
-_SOURCE_NAME = "ats_crawler"
+_SOURCE_NAME = "tavily_scraper"
 
 def _company_domain(company_name: str) -> str:
     """Create a deterministic pseudo-domain key from a company name."""
