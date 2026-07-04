@@ -3,10 +3,9 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { Job } from '@/lib/types';
-import Header from '@/components/Header';
 import SearchBar from '@/components/SearchBar';
 import JobCard from '@/components/JobCard';
-import { AlertCircle, Loader2 } from 'lucide-react';
+import { AlertCircle, Loader2, Zap } from 'lucide-react';
 
 const PAGE_SIZE = 20;
 
@@ -32,7 +31,6 @@ export default function SearchPage() {
   }, []);
 
   const handleSearch = useCallback(async (query: string, isLoadMore = false) => {
-    // Abort any previous in-flight request
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -57,7 +55,6 @@ export default function SearchPage() {
       );
 
       if (isLoadMore) {
-        // Append new results to existing list
         setJobs((prev) => [...prev, ...response.results]);
         setOffset(currentOffset + PAGE_SIZE);
       } else {
@@ -88,7 +85,6 @@ export default function SearchPage() {
     handleSearch(currentQuery, true);
   }, [handleSearch, currentQuery]);
 
-  // Sanitize text for safe display (prevents XSS from user-provided content)
   const sanitizeText = (text: string): string => {
     return text
       .replace(/&/g, '&amp;')
@@ -100,110 +96,94 @@ export default function SearchPage() {
 
   return (
     <div>
-      <Header />
+      {/* Header Info */}
+      <div style={{ marginBottom: '2rem' }}>
+        <h1 style={{ fontSize: '3rem', display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem', fontFamily: 'var(--font-display)', fontWeight: 700 }}>
+          <Zap className="text-accent" size={40} />
+          SEMANTIC SEARCH
+        </h1>
+        <p style={{ color: 'var(--color-fg-muted)', fontSize: '1.25rem' }}>
+          Execute natural language queries to discover roles matching your specific criteria.
+        </p>
+      </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-slate-900 mb-2">Search Jobs</h1>
-          <p className="text-slate-600">
-            Use natural language to find jobs. Try &quot;remote Python engineer&quot; or &quot;senior ML engineer San Francisco&quot;
-          </p>
+      {/* Search Bar */}
+      <div style={{ marginBottom: '3rem' }}>
+        <SearchBar onSearch={(query) => handleSearch(query, false)} loading={loading} placeholder="e.g. Remote senior full-stack engineer using React and Python" />
+      </div>
+
+      {/* Error */}
+      {error && (
+        <div style={{ padding: '1rem', border: '1px solid #ef4444', background: 'rgba(239, 68, 68, 0.1)', color: '#fca5a5', display: 'flex', gap: '0.5rem', marginBottom: '2rem' }}>
+          <AlertCircle /> {sanitizeText(error)}
         </div>
+      )}
 
-        {/* Search Bar */}
-        <div className="mb-8">
-          <SearchBar onSearch={(query) => handleSearch(query, false)} loading={loading} placeholder="e.g., remote software engineer jobs" />
-        </div>
-
-        {/* Error */}
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="font-medium text-red-900">Search failed</p>
-              <p className="text-red-700 text-sm">{sanitizeText(error)}</p>
-            </div>
-          </div>
-        )}
-
-        {/* AI Summary */}
-        {summary && (
-          <div className="mb-6 p-6 bg-gradient-to-br from-primary-50 to-blue-50 border border-primary-200 rounded-xl">
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center flex-shrink-0">
-                <span className="text-white text-sm font-bold">AI</span>
-              </div>
-              <div>
-                <h3 className="font-semibold text-primary-900 mb-2">Search Summary</h3>
-                <div className="text-slate-700 prose prose-sm max-w-none">
-                  {summary.split('\n').map((line, idx) => (
-                    <p key={`summary-${idx}`} className={line.startsWith('-') ? 'ml-4' : ''}>
-                      {sanitizeText(line)}
-                    </p>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Results Count */}
-        {!loading && totalFound > 0 && (
-          <div className="mb-4 text-slate-600">
-            Showing <span className="font-semibold text-slate-900">{jobs.length}</span> of{' '}
-            <span className="font-semibold text-slate-900">{totalFound}</span> jobs
-          </div>
-        )}
-
-        {/* Loading State */}
-        {loading && (
-          <div className="flex items-center justify-center py-16">
-            <Loader2 className="w-8 h-8 text-primary-600 animate-spin" />
-            <span className="ml-3 text-slate-600">Searching jobs...</span>
-          </div>
-        )}
-
-        {/* Job List */}
-        {!loading && jobs.length > 0 && (
-          <div className="grid gap-4">
-            {jobs.map((job) => (
-              <JobCard key={job.id} job={job} showScore />
+      {/* AI Summary */}
+      {summary && (
+        <div className="panel" style={{ marginBottom: '2rem', borderLeft: '4px solid var(--color-accent)' }}>
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-accent)', marginBottom: '1rem', fontFamily: 'var(--font-display)', fontWeight: 700 }}>
+            <Zap size={18} />
+            AI SEARCH SUMMARY
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', color: 'var(--color-fg)' }}>
+            {summary.split('\n').map((line, idx) => (
+              <p key={`summary-${idx}`} style={{ margin: 0, paddingLeft: line.startsWith('-') ? '1rem' : '0' }}>
+                {sanitizeText(line)}
+              </p>
             ))}
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Load More Button */}
-        {!loading && hasMore && jobs.length > 0 && (
-          <div className="flex justify-center mt-8">
-            <button
-              onClick={handleLoadMore}
-              disabled={loadingMore}
-              className="px-6 py-3 bg-white border border-slate-300 text-slate-700 rounded-xl font-medium hover:bg-slate-50 hover:border-primary-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2"
-            >
-              {loadingMore ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Loading more...
-                </>
-              ) : (
-                'Load More Jobs'
-              )}
-            </button>
-          </div>
-        )}
+      {/* Results Count */}
+      {!loading && totalFound > 0 && (
+        <div style={{ marginBottom: '1.5rem', color: 'var(--color-fg-muted)', fontFamily: 'var(--font-display)', fontWeight: 600 }}>
+          SHOWING <span style={{ color: 'var(--color-fg)' }}>{jobs.length}</span> OF <span style={{ color: 'var(--color-fg)' }}>{totalFound}</span> JOBS
+        </div>
+      )}
 
-        {/* Empty State */}
-        {!loading && !loadingMore && jobs.length === 0 && !error && totalFound === 0 && (
-          <div className="text-center py-16">
-            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-3xl" role="img" aria-label="search">🔍</span>
-            </div>
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">Start your search</h3>
-            <p className="text-slate-600">Enter a search query above to find relevant jobs</p>
-          </div>
-        )}
-      </div>
+      {/* Loading State */}
+      {loading && (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '4rem 0', color: 'var(--color-fg-muted)' }}>
+          <Loader2 size={48} className="animate-spin text-accent" style={{ marginBottom: '1rem' }} />
+          <div style={{ fontFamily: 'var(--font-display)', letterSpacing: '0.1em' }}>SCANNING DATA SOURCES...</div>
+        </div>
+      )}
+
+      {/* Job List */}
+      {!loading && jobs.length > 0 && (
+        <div style={{ display: 'grid', gap: '1.5rem' }}>
+          {jobs.map((job) => (
+            <JobCard key={job.id} job={job} showScore={true} />
+          ))}
+        </div>
+      )}
+
+      {/* Load More Button */}
+      {!loading && hasMore && jobs.length > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '3rem' }}>
+          <button
+            onClick={handleLoadMore}
+            disabled={loadingMore}
+            className="btn"
+          >
+            {loadingMore ? (
+              <><Loader2 className="animate-spin text-accent" size={18} /> FETCHING...</>
+            ) : (
+              'LOAD MORE JOBS'
+            )}
+          </button>
+        </div>
+      )}
+
+      {/* Empty State */}
+      {!loading && !loadingMore && jobs.length === 0 && !error && totalFound === 0 && (
+        <div style={{ textAlign: 'center', padding: '4rem 0', color: 'var(--color-border)' }}>
+          <Zap size={64} style={{ margin: '0 auto 1rem auto', opacity: 0.5 }} />
+          <p style={{ fontFamily: 'var(--font-display)', letterSpacing: '0.1em' }}>AWAITING QUERY INPUT</p>
+        </div>
+      )}
     </div>
   );
 }

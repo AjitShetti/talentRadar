@@ -186,7 +186,7 @@ class IngestionRun(Base):
     )
 
     status: Mapped[IngestionStatus] = mapped_column(
-        Enum(IngestionStatus, name="ingestion_status_enum"),
+        Enum(IngestionStatus, name="ingestion_status_enum", values_callable=lambda obj: [e.value for e in obj]),
         nullable=False,
         default=IngestionStatus.PENDING,
         server_default=IngestionStatus.PENDING.value,
@@ -307,17 +307,17 @@ class Job(Base):
 
     # ---- Classification ----------------------------------------------- #
     status: Mapped[JobStatus] = mapped_column(
-        Enum(JobStatus, name="job_status_enum"),
+        Enum(JobStatus, name="job_status_enum", values_callable=lambda obj: [e.value for e in obj]),
         nullable=False,
         default=JobStatus.ACTIVE,
         server_default=JobStatus.ACTIVE.value,
         index=True,
     )
     employment_type: Mapped[EmploymentType | None] = mapped_column(
-        Enum(EmploymentType, name="employment_type_enum"), nullable=True
+        Enum(EmploymentType, name="employment_type_enum", values_callable=lambda obj: [e.value for e in obj]), nullable=True
     )
     seniority: Mapped[SeniorityLevel | None] = mapped_column(
-        Enum(SeniorityLevel, name="seniority_level_enum"), nullable=True, index=True
+        Enum(SeniorityLevel, name="seniority_level_enum", values_callable=lambda obj: [e.value for e in obj]), nullable=True, index=True
     )
 
     # ---- Location ------------------------------------------------------ #

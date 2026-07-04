@@ -27,7 +27,7 @@ from ingestion.parsers.schemas import RawJobResult
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_RAW_DIR = Path(os.getenv("RAW_DATA_DIR", "/data/raw"))
+_DEFAULT_RAW_DIR = Path(os.getenv("RAW_DATA_DIR", "data/raw"))
 
 _TARGET_DOMAINS = [
     "boards.greenhouse.io",

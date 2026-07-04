@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Space_Grotesk, Manrope } from 'next/font/google';
 import './globals.css';
+import Header from '@/components/Header';
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ['latin'],
@@ -27,6 +28,7 @@ export default function RootLayout({
       <body>
         <div className="grid-lines" />
         <div className="container" style={{ position: 'relative', zIndex: 1 }}>
+          <Header />
           {children}
         </div>
       </body>

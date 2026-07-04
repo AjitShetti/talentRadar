@@ -1,13 +1,6 @@
-import { type ClassValue, clsx } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-
 // ─────────────────────────────────────────────
-// Class merging utility
+// Utility Functions
 // ─────────────────────────────────────────────
-
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
 
 // ─────────────────────────────────────────────
 // Currency / Salary formatting

@@ -1,3 +1,5 @@
+'use client';
+
 import Link from 'next/link';
 import { Search, TrendingUp, Target, Zap, ArrowRight, Github } from 'lucide-react';
 
@@ -25,29 +27,6 @@ const features = [
 export default function HomePage() {
   return (
     <div style={{ position: 'relative', overflow: 'hidden' }}>
-      
-      {/* Header */}
-      <header style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '2rem 0',
-        borderBottom: '1px solid var(--color-border)',
-        marginBottom: '4rem'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <Zap className="text-accent" />
-          <span style={{ fontSize: '1.25rem', fontWeight: 700, fontFamily: 'var(--font-display)' }}>
-            TALENT_RADAR
-          </span>
-        </div>
-        <nav style={{ display: 'flex', gap: '2rem', alignItems: 'center' }}>
-          <Link href="/search">SEARCH</Link>
-          <Link href="/trends">TRENDS</Link>
-          <Link href="/match" className="text-accent">MATCH ENGINE</Link>
-        </nav>
-      </header>
-
       {/* Hero Section */}
       <section style={{ textAlign: 'center', marginBottom: '8rem' }}>
         <div style={{

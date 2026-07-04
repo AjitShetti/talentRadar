@@ -20,13 +20,13 @@ export default function SearchBar({ onSearch, placeholder = 'Search jobs...', lo
   };
 
   return (
-    <form onSubmit={handleSubmit} className="w-full">
-      <div className="relative">
-        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+    <form onSubmit={handleSubmit} style={{ width: '100%', position: 'relative' }}>
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+        <div style={{ position: 'absolute', left: '1rem', pointerEvents: 'none', color: 'var(--color-fg-muted)' }}>
           {loading ? (
-            <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
+            <Loader2 className="animate-spin text-accent" size={20} />
           ) : (
-            <SearchIcon className="w-5 h-5 text-slate-400" />
+            <SearchIcon size={20} />
           )}
         </div>
         <input
@@ -34,15 +34,24 @@ export default function SearchBar({ onSearch, placeholder = 'Search jobs...', lo
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={placeholder}
-          className="w-full pl-12 pr-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors"
           disabled={loading}
+          style={{
+            width: '100%',
+            padding: '1rem 8rem 1rem 3rem',
+            background: 'rgba(0,0,0,0.5)',
+            border: '1px solid var(--color-border)',
+            color: 'var(--color-fg)',
+            fontFamily: 'var(--font-body)',
+            fontSize: '1rem'
+          }}
         />
         <button
           type="submit"
           disabled={loading || !query.trim()}
-          className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="btn btn-primary"
+          style={{ position: 'absolute', right: '0.5rem', padding: '0.5rem 1rem' }}
         >
-          Search
+          SEARCH
         </button>
       </div>
     </form>

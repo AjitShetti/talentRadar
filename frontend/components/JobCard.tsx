@@ -12,88 +12,87 @@ interface JobCardProps {
 
 export default function JobCard({ job, showScore = false }: JobCardProps) {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-6 hover:shadow-lg hover:border-primary-300 transition-all group">
-      {/* Header */}
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex-1">
-          <h3 className="text-lg font-semibold text-slate-900 group-hover:text-primary-700 transition-colors">
-            <Link href={`/jobs/${job.id}`} className="hover:underline">
+    <div className="panel" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <h3 style={{ fontSize: '1.25rem', marginBottom: '0.25rem' }}>
+            <Link href={`/jobs/${job.id}`} style={{ textDecoration: 'none', color: 'var(--color-fg)' }}>
               {job.title}
             </Link>
           </h3>
           {job.company_name && (
-            <div className="flex items-center gap-2 mt-1 text-slate-600">
-              <Building2 className="w-4 h-4" />
-              <span className="text-sm">{job.company_name}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-fg-muted)' }}>
+              <Building2 size={16} />
+              <span>{job.company_name}</span>
             </div>
           )}
         </div>
-        {showScore && job.match_score && (
-          <div className="flex items-center gap-1 px-3 py-1 bg-green-50 text-green-700 rounded-full text-sm font-medium">
-            <Star className="w-4 h-4 fill-current" />
+        {showScore && job.match_score !== undefined && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '0.25rem',
+            padding: '0.25rem 0.5rem',
+            border: `1px solid ${job.match_score > 0.7 ? 'var(--color-accent)' : 'var(--color-border)'}`,
+            color: job.match_score > 0.7 ? 'var(--color-accent)' : 'var(--color-fg-muted)',
+            fontFamily: 'var(--font-display)',
+            fontSize: '0.875rem'
+          }}>
+            <Star size={14} />
             {Math.round(job.match_score * 100)}%
           </div>
         )}
       </div>
 
-      {/* Meta info */}
-      <div className="grid grid-cols-2 gap-3 mb-4 text-sm">
-        {/* Location */}
-        <div className="flex items-center gap-2 text-slate-600">
-          <MapPin className="w-4 h-4" />
-          <span>{job.is_remote ? '🌐 Remote' : job.location_raw || job.city || 'Location not specified'}</span>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.75rem', fontSize: '0.875rem', color: 'var(--color-fg-muted)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <MapPin size={14} />
+          <span>{job.is_remote ? '🌐 Remote' : job.location_raw || job.city || 'Not specified'}</span>
         </div>
-
-        {/* Salary */}
-        <div className="flex items-center gap-2 text-slate-600">
-          <DollarSign className="w-4 h-4" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <DollarSign size={14} />
           <span>{formatSalary(job.salary_min, job.salary_max, job.salary_currency)}</span>
         </div>
-
-        {/* Seniority */}
-        <div className="flex items-center gap-2 text-slate-600">
-          <Briefcase className="w-4 h-4" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <Briefcase size={14} />
           <span>{getSeniorityLabel(job.seniority)}</span>
         </div>
-
-        {/* Posted */}
-        <div className="flex items-center gap-2 text-slate-600">
-          <Calendar className="w-4 h-4" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <Calendar size={14} />
           <span>{formatDate(job.posted_at)}</span>
         </div>
       </div>
 
-      {/* Skills */}
       {job.skills.length > 0 && (
-        <div className="mb-4">
-          <div className="flex flex-wrap gap-2">
-            {job.skills.slice(0, 6).map((skill) => (
-              <span
-                key={skill}
-                className="px-2 py-1 bg-slate-100 text-slate-700 rounded-md text-xs font-medium"
-              >
-                {skill}
-              </span>
-            ))}
-            {job.skills.length > 6 && (
-              <span className="px-2 py-1 bg-slate-100 text-slate-700 rounded-md text-xs">
-                +{job.skills.length - 6} more
-              </span>
-            )}
-          </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem' }}>
+          {job.skills.slice(0, 6).map((skill) => (
+            <span key={skill} style={{
+              padding: '0.25rem 0.5rem',
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid var(--color-border)',
+              fontSize: '0.75rem'
+            }}>
+              {skill}
+            </span>
+          ))}
+          {job.skills.length > 6 && (
+            <span style={{ padding: '0.25rem 0.5rem', background: 'transparent', fontSize: '0.75rem', color: 'var(--color-fg-muted)' }}>
+              +{job.skills.length - 6} more
+            </span>
+          )}
         </div>
       )}
 
-      {/* Footer */}
-      <div className="flex items-center justify-between pt-4 border-t border-slate-100">
-        <div className="flex gap-2 text-xs text-slate-500">
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--color-border)'
+      }}>
+        <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.75rem', color: 'var(--color-fg-muted)' }}>
           {job.seniority && (
-            <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded">
+            <span style={{ padding: '0.25rem 0.5rem', border: '1px solid var(--color-border)' }}>
               {getSeniorityLabel(job.seniority)}
             </span>
           )}
           {job.employment_type && (
-            <span className="px-2 py-1 bg-purple-50 text-purple-700 rounded">
+            <span style={{ padding: '0.25rem 0.5rem', border: '1px solid var(--color-border)' }}>
               {getEmploymentTypeLabel(job.employment_type)}
             </span>
           )}
@@ -103,10 +102,10 @@ export default function JobCard({ job, showScore = false }: JobCardProps) {
             href={job.source_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1 text-sm text-primary-600 hover:text-primary-700 font-medium"
+            style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.875rem', color: 'var(--color-accent)', textDecoration: 'none', fontFamily: 'var(--font-display)', fontWeight: 600 }}
           >
-            Apply Now
-            <ExternalLink className="w-4 h-4" />
+            APPLY NOW
+            <ExternalLink size={14} />
           </a>
         )}
       </div>
