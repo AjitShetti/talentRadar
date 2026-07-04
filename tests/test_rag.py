@@ -268,7 +268,6 @@ class TestRAGAgentSearchJobs:
     ):
         with patch("agents.rag_agent.AsyncGroq"), \
              patch("agents.rag_agent.ChromaJobStore") as MockChroma, \
-             patch("agents.rag_agent.embed_texts", return_value=[[0.1] * 384]), \
              patch("agents.rag_agent.AsyncSessionLocal") as MockSession, \
              patch("agents.rag_agent.UnitOfWork") as MockUow:
 
@@ -306,10 +305,13 @@ class TestRAGAgentSearchJobs:
     @pytest.mark.asyncio
     async def test_returns_failure_response_on_exception(self, search_context):
         with patch("agents.rag_agent.AsyncGroq"), \
-             patch("agents.rag_agent.ChromaJobStore"), \
-             patch("agents.rag_agent.embed_texts", side_effect=RuntimeError("embedding failed")):
+             patch("agents.rag_agent.ChromaJobStore") as MockChroma:
+
+            mock_store = MockChroma.return_value
+            mock_store.search.side_effect = RuntimeError("embedding failed")
 
             agent = RAGAgent()
+            agent._chroma = mock_store
             response = await agent.search_jobs(search_context)
 
         assert response.success is False
@@ -318,18 +320,11 @@ class TestRAGAgentSearchJobs:
 
     @pytest.mark.asyncio
     async def test_empty_chroma_results_returns_success_with_no_results(self, search_context):
-        empty_chroma_result = {
-            "ids": [[]],
-            "documents": [[]],
-            "metadatas": [[]],
-            "distances": [[]],
-        }
         with patch("agents.rag_agent.AsyncGroq"), \
-             patch("agents.rag_agent.ChromaJobStore") as MockChroma, \
-             patch("agents.rag_agent.embed_texts", return_value=[[0.1] * 384]):
+             patch("agents.rag_agent.ChromaJobStore") as MockChroma:
 
             mock_store = MockChroma.return_value
-            mock_store.search.return_value = empty_chroma_result
+            mock_store.search.return_value = []
             agent = RAGAgent()
             agent._chroma = mock_store
             agent._groq = MagicMock()

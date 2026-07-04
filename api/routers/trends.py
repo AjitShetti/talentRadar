@@ -64,8 +64,13 @@ async def get_market_trends(request: TrendRequestSchema):
     )
 
 
+from fastapi import APIRouter, Query
+
 @router.get("/skills")
-async def get_top_skills(days: int = 30, limit: int = 20):
+async def get_top_skills(
+    days: int = Query(30, ge=7, le=365), 
+    limit: int = Query(20, ge=1, le=100)
+):
     """Get the most in-demand skills in the current market."""
     trend_agent = TrendAgent()
     response = await trend_agent.get_market_trends("top skills", days=days)

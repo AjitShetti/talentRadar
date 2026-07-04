@@ -140,6 +140,8 @@ async def search_jobs_semantic(request: SearchRequestSchema):
         offset=request.offset,
     )
 
+    from datetime import datetime
+    
     # Convert agent results to response schema
     job_results = []
     for result in response.results:
@@ -155,7 +157,8 @@ async def search_jobs_semantic(request: SearchRequestSchema):
             source_url=result.source_url,
             match_score=result.score,
             posted_at=result.posted_at,
-            created_at=None,  # Would need to fetch from DB
+            created_at=datetime.utcnow(),  # Would need to fetch from DB
+            source="system", # Default source
         ))
 
     return SearchResponseSchema(

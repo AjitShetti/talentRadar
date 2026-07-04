@@ -27,7 +27,7 @@ class QueryResponseSchema(BaseModel):
 
 class TrendRequestSchema(BaseModel):
     """Market trend query request."""
-    query: str = Field("General market trends", max_length=500)
+    query: str = Field("General market trends", min_length=1, max_length=500)
     days: int = Field(30, ge=7, le=365, description="Lookback window in days")
 
 
@@ -45,7 +45,7 @@ class TrendResponseSchema(BaseModel):
 class CandidateProfileSchema(BaseModel):
     """Candidate profile for matching."""
     name: str | None = None
-    skills: list[str] = []
+    skills: list[str] = Field(..., min_length=1, description="List of candidate skills")
     experience_years: int | None = None
     current_title: str | None = None
     desired_title: str | None = None

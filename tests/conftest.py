@@ -74,8 +74,34 @@ async def api_client():
     from api.main import app
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=True) as client:
         yield client
+
+from api.dependencies import get_unit_of_work, get_job_repository, get_company_repository
+from unittest.mock import AsyncMock
+
+def _global_make_empty_uow():
+    mock_uow = AsyncMock()
+    mock_uow.__aenter__ = AsyncMock(return_value=mock_uow)
+    mock_uow.__aexit__ = AsyncMock(return_value=False)
+    mock_uow.jobs.search = AsyncMock(return_value=([], 0))
+    return mock_uow
+
+async def _global_mock_repo():
+    mock_repo = AsyncMock()
+    mock_repo.get = AsyncMock(return_value=None)
+    mock_repo.get_top_skills = AsyncMock(return_value=[{"skill": "Python", "count": 500}, {"skill": "SQL", "count": 420}])
+    yield mock_repo
+
+@pytest.fixture(autouse=True)
+def override_dependencies():
+    from api.main import app
+    app.dependency_overrides[get_unit_of_work] = _global_make_empty_uow
+    app.dependency_overrides[get_job_repository] = _global_mock_repo
+    app.dependency_overrides[get_company_repository] = _global_mock_repo
+    yield
+    app.dependency_overrides.clear()
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────

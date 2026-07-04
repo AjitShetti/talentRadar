@@ -164,6 +164,21 @@ class RAGAgent:
         """Apply structured filters to retrieved results."""
         filtered = results
 
+        if context.is_remote is not None:
+            filtered = [r for r in filtered if r.is_remote == context.is_remote]
+
+        if context.seniority:
+            filtered = [
+                r for r in filtered
+                if r.seniority and r.seniority.lower() == context.seniority.lower()
+            ]
+
+        if context.company:
+            filtered = [
+                r for r in filtered
+                if r.company and context.company.lower() in r.company.lower()
+            ]
+
         # Filter by skills
         if context.skills:
             filtered = [

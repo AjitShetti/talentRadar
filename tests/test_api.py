@@ -25,6 +25,9 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+pytestmark = pytest.mark.asyncio
+
 from fastapi import status
 
 
@@ -167,11 +170,9 @@ class TestSemanticSearchEndpoint:
 
     async def test_semantic_search_returns_200_on_valid_query(self, api_client):
         mock_response = _make_mock_search_response(n_results=2)
-        with patch(
-            "api.routers.search.Orchestrator.process_query",
-            new_callable=AsyncMock,
-            return_value=mock_response,
-        ):
+        with patch("api.routers.search.Orchestrator") as mock_orchestrator:
+            instance = mock_orchestrator.return_value
+            instance.process_query = AsyncMock(return_value=mock_response)
             response = await api_client.post(
                 "/api/v1/search/semantic",
                 json={"query": "senior python engineer", "limit": 10},
@@ -183,11 +184,9 @@ class TestSemanticSearchEndpoint:
 
     async def test_semantic_search_includes_summary_in_response(self, api_client):
         mock_response = _make_mock_search_response(n_results=1)
-        with patch(
-            "api.routers.search.Orchestrator.process_query",
-            new_callable=AsyncMock,
-            return_value=mock_response,
-        ):
+        with patch("api.routers.search.Orchestrator") as mock_orchestrator:
+            instance = mock_orchestrator.return_value
+            instance.process_query = AsyncMock(return_value=mock_response)
             response = await api_client.post(
                 "/api/v1/search/semantic",
                 json={"query": "python jobs", "limit": 5},
@@ -224,11 +223,9 @@ class TestQueryEndpoint:
 
     async def test_valid_query_returns_200(self, api_client):
         mock_response = _make_mock_search_response(n_results=1)
-        with patch(
-            "api.routers.query.Orchestrator.process_query",
-            new_callable=AsyncMock,
-            return_value=mock_response,
-        ):
+        with patch("api.routers.query.Orchestrator") as mock_orchestrator:
+            instance = mock_orchestrator.return_value
+            instance.process_query = AsyncMock(return_value=mock_response)
             response = await api_client.post(
                 "/api/v1/query",
                 json={"query": "find me python jobs", "limit": 5},
@@ -249,15 +246,16 @@ class TestTrendsEndpoints:
             intent=IntentType.MARKET_TRENDS,
             summary="Python is trending.",
             results=[],
-            metadata={"top_skills": ["Python", "Rust"]},
+            metadata={
+                "top_skills": [{"skill": "Python", "count": 10}, {"skill": "Rust", "count": 5}],
+                "total_jobs": 1500,
+            },
         )
-        with patch(
-            "api.routers.trends.Orchestrator.process_query",
-            new_callable=AsyncMock,
-            return_value=mock_response,
-        ):
+        with patch("api.routers.trends.TrendAgent") as mock_agent:
+            instance = mock_agent.return_value
+            instance.get_market_trends = AsyncMock(return_value=mock_response)
             response = await api_client.post(
-                "/api/v1/trends",
+                "/api/v1/trends/",
                 json={"query": "Market trends in AI", "days": 30},
             )
         assert response.status_code == status.HTTP_200_OK
@@ -272,12 +270,15 @@ class TestTrendsEndpoints:
     async def test_get_top_skills_returns_200_with_mocked_db(self, api_client):
         """Top skills endpoint must return 200 with mocked storage — never 500."""
         mock_skills = [{"skill": "Python", "count": 500}, {"skill": "SQL", "count": 420}]
-        with patch(
-            "api.routers.trends.get_job_repository",
-        ) as mock_repo_dep:
-            mock_repo = AsyncMock()
-            mock_repo.get_top_skills = AsyncMock(return_value=mock_skills)
-            mock_repo_dep.return_value = mock_repo
+        from agents.state import AgentResponse, IntentType
+        mock_response = AgentResponse(
+            success=True,
+            intent=IntentType.MARKET_TRENDS,
+            metadata={"top_skills": mock_skills},
+        )
+        with patch("api.routers.trends.TrendAgent") as mock_agent:
+            instance = mock_agent.return_value
+            instance.get_market_trends = AsyncMock(return_value=mock_response)
             response = await api_client.get("/api/v1/trends/skills?days=30")
         assert response.status_code == status.HTTP_200_OK
 
@@ -309,11 +310,9 @@ class TestRecommendEndpoints:
 
     async def test_match_returns_200_with_mocked_orchestrator(self, api_client):
         mock_response = _make_mock_search_response(n_results=3)
-        with patch(
-            "api.routers.recommend.Orchestrator.match_candidate_to_jobs",
-            new_callable=AsyncMock,
-            return_value=mock_response,
-        ):
+        with patch("api.routers.recommend.Orchestrator") as mock_orchestrator:
+            instance = mock_orchestrator.return_value
+            instance.match_candidate_to_jobs = AsyncMock(return_value=mock_response)
             response = await api_client.post(
                 "/api/v1/recommend/match",
                 json={
@@ -339,7 +338,7 @@ class TestIngestEndpoints:
         It must NEVER return 500 — if Airflow is down the API should
         return a clear error code (e.g. 503), not an uncaught server error.
         """
-        with patch("api.routers.ingest.run_ingestion_pipeline", new_callable=AsyncMock):
+        with patch("ingestion.tasks.run_crawler.delay", new_callable=MagicMock):
             response = await api_client.post(
                 "/api/v1/ingest/trigger",
                 json={
@@ -380,7 +379,7 @@ class TestNotFoundBehaviour:
             mock_repo = AsyncMock()
             mock_repo.get = AsyncMock(return_value=None)
             mock_dep.return_value = mock_repo
-            response = await api_client.get("/api/v1/search/nonexistent-uuid-1234")
+            response = await api_client.get("/api/v1/search/00000000-0000-0000-0000-000000000000")
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
     async def test_404_response_body_has_detail(self, api_client):
@@ -388,6 +387,6 @@ class TestNotFoundBehaviour:
             mock_repo = AsyncMock()
             mock_repo.get = AsyncMock(return_value=None)
             mock_dep.return_value = mock_repo
-            response = await api_client.get("/api/v1/search/nonexistent-uuid-5678")
+            response = await api_client.get("/api/v1/search/11111111-1111-1111-1111-111111111111")
         data = response.json()
         assert "detail" in data

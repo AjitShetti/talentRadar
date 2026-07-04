@@ -22,6 +22,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+pytestmark = pytest.mark.asyncio
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Fixtures: Sample data
@@ -773,9 +774,9 @@ class TestMatchAPI:
         import api.routers.match as match_module
         match_module._matcher = None
 
-    def test_match_endpoint_success(self, api_client):
+    async def test_match_endpoint_success(self, api_client):
         """Test the POST /api/v1/match/ endpoint."""
-        response = api_client.post(
+        response = await api_client.post(
             "/api/v1/match/",
             json={
                 "resume_text": SAMPLE_RESUME,
@@ -790,9 +791,9 @@ class TestMatchAPI:
         assert "missing_skills" in data
         assert 0 <= data["match_percentage"] <= 100
 
-    def test_match_endpoint_empty_resume(self, api_client):
+    async def test_match_endpoint_empty_resume(self, api_client):
         """Test validation error for empty resume."""
-        response = api_client.post(
+        response = await api_client.post(
             "/api/v1/match/",
             json={
                 "resume_text": "",
@@ -801,9 +802,9 @@ class TestMatchAPI:
         )
         assert response.status_code == 422  # Validation error
 
-    def test_match_endpoint_empty_jd(self, api_client):
+    async def test_match_endpoint_empty_jd(self, api_client):
         """Test validation error for empty JD."""
-        response = api_client.post(
+        response = await api_client.post(
             "/api/v1/match/",
             json={
                 "resume_text": SAMPLE_RESUME,
@@ -812,9 +813,9 @@ class TestMatchAPI:
         )
         assert response.status_code == 422
 
-    def test_match_endpoint_short_resume(self, api_client):
+    async def test_match_endpoint_short_resume(self, api_client):
         """Test validation error for too-short resume (< 10 chars)."""
-        response = api_client.post(
+        response = await api_client.post(
             "/api/v1/match/",
             json={
                 "resume_text": "Hi",
@@ -823,9 +824,9 @@ class TestMatchAPI:
         )
         assert response.status_code == 422
 
-    def test_batch_match_endpoint(self, api_client):
+    async def test_batch_match_endpoint(self, api_client):
         """Test the POST /api/v1/match/batch endpoint."""
-        response = api_client.post(
+        response = await api_client.post(
             "/api/v1/match/batch",
             json={
                 "resume_texts": [SAMPLE_RESUME, SAMPLE_RESUME_NO_SKILLS],
@@ -838,9 +839,9 @@ class TestMatchAPI:
         assert "total_processed" in data
         assert data["total_processed"] == 2
 
-    def test_get_weights_endpoint(self, api_client):
+    async def test_get_weights_endpoint(self, api_client):
         """Test the GET /api/v1/match/weights endpoint."""
-        response = api_client.get("/api/v1/match/weights")
+        response = await api_client.get("/api/v1/match/weights")
         assert response.status_code == 200
         data = response.json()
         assert "skills" in data
@@ -848,9 +849,9 @@ class TestMatchAPI:
         assert "education" in data
         assert "semantic" in data
 
-    def test_update_weights_endpoint(self, api_client):
+    async def test_update_weights_endpoint(self, api_client):
         """Test the POST /api/v1/match/weights endpoint."""
-        response = api_client.post(
+        response = await api_client.post(
             "/api/v1/match/weights",
             json={
                 "skills": 0.50,
@@ -863,9 +864,9 @@ class TestMatchAPI:
         data = response.json()
         assert data["status"] == "updated"
 
-    def test_update_weights_invalid(self, api_client):
+    async def test_update_weights_invalid(self, api_client):
         """Test weight validation."""
-        response = api_client.post(
+        response = await api_client.post(
             "/api/v1/match/weights",
             json={
                 "skills": 0.50,

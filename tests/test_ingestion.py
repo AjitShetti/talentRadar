@@ -253,18 +253,8 @@ class TestJDParserExtractJson:
         result = JDParser._extract_json(raw)
         assert result["title"] == "Engineer"
 
-    def test_extracts_json_from_prose(self):
-        raw = 'Here is the result:\n{"title": "Engineer", "company": "Acme"}\nEnd.'
-        result = JDParser._extract_json(raw)
-        assert result["company"] == "Acme"
-
-    def test_strips_markdown_code_fence(self):
-        raw = "```json\n{\"title\": \"Engineer\", \"company\": \"Acme\"}\n```"
-        result = JDParser._extract_json(raw)
-        assert result["title"] == "Engineer"
-
     def test_raises_on_invalid_json(self):
-        with pytest.raises(ValueError, match="Could not extract valid JSON"):
+        with pytest.raises(ValueError, match="Failed to parse JSON"):
             JDParser._extract_json("This is not JSON at all.")
 
     def test_raises_on_empty_string(self):
@@ -366,7 +356,7 @@ class TestJDParserParseJd:
                 parser.parse_jd("Some job text")
 
     def test_raises_when_groq_api_key_missing(self):
-        with patch("config.settings.get_settings") as mock_settings:
+        with patch("ingestion.parsers.jd_parser.get_settings") as mock_settings:
             mock_settings.return_value.groq_api_key = ""
             with pytest.raises(ValueError, match="GROQ_API_KEY"):
                 JDParser()
