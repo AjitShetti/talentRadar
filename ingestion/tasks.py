@@ -12,7 +12,7 @@ from celery import shared_task
 from ingestion.celery_app import celery_app
 from ingestion.parsers.jd_parser import JDParser
 from ingestion.parsers.schemas import ParsedJobDescription, RawJobResult
-from ingestion.scrapers.ats_crawler import ATSCrawler
+from ingestion.scrapers.tavily_client import TavilyJobScraper
 from ingestion.embeddings.chroma_store import ChromaJobStore
 from storage.database import AsyncSessionLocal
 from storage.models import IngestionStatus
@@ -44,7 +44,7 @@ async def _run_pipeline(
     all_paths: list[str] = []
     total_fetched = 0
 
-    with ATSCrawler() as scraper:
+    with TavilyJobScraper() as scraper:
         for role in roles:
             for location in locations:
                 try:
@@ -120,7 +120,6 @@ async def _run_pipeline(
                 {
                     "company_id": company.id,
                     "ingestion_run_id": ingestion_run.id,
-                    "source": _SOURCE_NAME,
                 }
             )
 

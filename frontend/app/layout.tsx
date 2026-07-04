@@ -1,5 +1,17 @@
 import type { Metadata } from 'next';
+import { Space_Grotesk, Manrope } from 'next/font/google';
 import './globals.css';
+import Header from '@/components/Header';
+
+const spaceGrotesk = Space_Grotesk({
+  subsets: ['latin'],
+  variable: '--font-space-grotesk',
+});
+
+const manrope = Manrope({
+  subsets: ['latin'],
+  variable: '--font-manrope',
+});
 
 export const metadata: Metadata = {
   title: 'TalentRadar - AI-Powered Job Intelligence',
@@ -12,9 +24,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-        {children}
+    <html lang="en" className={`${spaceGrotesk.variable} ${manrope.variable}`}>
+      <body>
+        <div className="grid-lines" />
+        <div className="container" style={{ position: 'relative', zIndex: 1 }}>
+          <Header />
+          {children}
+        </div>
       </body>
     </html>
   );

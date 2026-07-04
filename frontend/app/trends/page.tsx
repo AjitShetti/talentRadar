@@ -3,10 +3,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '@/lib/api';
 import { TrendData } from '@/lib/types';
-import Header from '@/components/Header';
-import { TrendingUp, DollarSign, MapPin, Briefcase, Loader2, AlertCircle, BarChart3 } from 'lucide-react';
+import { TrendingUp, DollarSign, MapPin, Briefcase, Loader2, AlertCircle, BarChart3, Zap } from 'lucide-react';
 
-// Sanitize text for safe display
 function sanitizeText(text: string): string {
   return text
     .replace(/&/g, '&amp;')
@@ -22,11 +20,9 @@ export default function TrendsPage() {
   const [error, setError] = useState<string | null>(null);
   const [days, setDays] = useState(30);
 
-  // Ref to track the latest AbortController
   const abortRef = useRef<AbortController | null>(null);
 
   const loadTrends = useCallback(async (selectedDays: number) => {
-    // Abort any previous in-flight request
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -48,8 +44,6 @@ export default function TrendsPage() {
 
   useEffect(() => {
     loadTrends(days);
-
-    // Cleanup on unmount or days change
     return () => {
       abortRef.current?.abort();
     };
@@ -57,189 +51,167 @@ export default function TrendsPage() {
 
   return (
     <div>
-      <Header />
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-slate-900 mb-2">Market Trends</h1>
-          <p className="text-slate-600">
-            Real-time insights into the job market, skill demands, and salary trends
-          </p>
-        </div>
-
-        {/* Time Range Selector */}
-        <div className="flex items-center gap-4 mb-8">
-          <span className="text-sm font-medium text-slate-700">Time Range:</span>
-          <div className="flex gap-2">
-            {[7, 30, 90].map((d) => (
-              <button
-                key={d}
-                onClick={() => setDays(d)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  days === d
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-white text-slate-700 border border-slate-300 hover:border-primary-300'
-                }`}
-              >
-                {d === 7 ? '1 Week' : d === 30 ? '1 Month' : '3 Months'}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Error */}
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="font-medium text-red-900">Failed to load trends</p>
-              <p className="text-red-700 text-sm">{sanitizeText(error)}</p>
-            </div>
-          </div>
-        )}
-
-        {/* Loading */}
-        {loading ? (
-          <div className="flex items-center justify-center py-16">
-            <Loader2 className="w-8 h-8 text-primary-600 animate-spin" />
-            <span className="ml-3 text-slate-600">Loading trends...</span>
-          </div>
-        ) : trendData ? (
-          <div className="space-y-6">
-            {/* AI Summary */}
-            {trendData.summary && (
-              <div className="p-6 bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-xl">
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <TrendingUp className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-green-900 mb-2">Market Analysis</h3>
-                    <div className="text-slate-700 prose prose-sm max-w-none">
-                      {trendData.summary.split('\n').map((line, idx) => (
-                        <p key={`trend-summary-${idx}`} className={line.startsWith('-') ? 'ml-4' : ''}>
-                          {sanitizeText(line)}
-                        </p>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Stats Grid */}
-            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* Total Jobs */}
-              <div className="bg-white p-6 rounded-xl border border-slate-200">
-                <div className="flex items-center gap-3 mb-3">
-                  <BarChart3 className="w-5 h-5 text-primary-600" />
-                  <span className="text-sm font-medium text-slate-600">Active Jobs</span>
-                </div>
-                <div className="text-2xl font-bold text-slate-900">
-                  {trendData.total_jobs.toLocaleString()}
-                </div>
-              </div>
-
-              {/* Salary */}
-              <div className="bg-white p-6 rounded-xl border border-slate-200">
-                <div className="flex items-center gap-3 mb-3">
-                  <DollarSign className="w-5 h-5 text-green-600" />
-                  <span className="text-sm font-medium text-slate-600">Avg Salary</span>
-                </div>
-                <div className="text-2xl font-bold text-slate-900">
-                  {trendData.salary_data?.available
-                    ? `$${Math.round(trendData.salary_data.avg_min || 0).toLocaleString()} - $${Math.round(trendData.salary_data.avg_max || 0).toLocaleString()}`
-                    : 'N/A'}
-                </div>
-              </div>
-
-              {/* Top Location */}
-              <div className="bg-white p-6 rounded-xl border border-slate-200">
-                <div className="flex items-center gap-3 mb-3">
-                  <MapPin className="w-5 h-5 text-blue-600" />
-                  <span className="text-sm font-medium text-slate-600">Top Location</span>
-                </div>
-                <div className="text-lg font-bold text-slate-900">
-                  {trendData.location_data[0]?.location || 'N/A'}
-                </div>
-              </div>
-
-              {/* Top Skill */}
-              <div className="bg-white p-6 rounded-xl border border-slate-200">
-                <div className="flex items-center gap-3 mb-3">
-                  <Briefcase className="w-5 h-5 text-purple-600" />
-                  <span className="text-sm font-medium text-slate-600">Top Skill</span>
-                </div>
-                <div className="text-lg font-bold text-slate-900">
-                  {trendData.top_skills[0]?.skill || 'N/A'}
-                </div>
-              </div>
-            </div>
-
-            {/* Skills & Locations */}
-            <div className="grid md:grid-cols-2 gap-6">
-              {/* Top Skills */}
-              <div className="bg-white p-6 rounded-xl border border-slate-200">
-                <h3 className="font-semibold text-slate-900 mb-4">Most In-Demand Skills</h3>
-                <div className="space-y-3">
-                  {trendData.top_skills.slice(0, 10).map((item) => {
-                    const maxCount = trendData.top_skills[0]?.count || 1;
-                    const percentage = (item.count / maxCount) * 100;
-                    return (
-                      <div key={item.skill}>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm font-medium text-slate-700">{sanitizeText(item.skill)}</span>
-                          <span className="text-sm text-slate-500">{item.count}</span>
-                        </div>
-                        <div className="w-full bg-slate-100 rounded-full h-2">
-                          <div
-                            className="bg-primary-600 h-2 rounded-full transition-all"
-                            style={{ width: `${percentage}%` }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Locations */}
-              <div className="bg-white p-6 rounded-xl border border-slate-200">
-                <h3 className="font-semibold text-slate-900 mb-4">Job Distribution by Location</h3>
-                <div className="space-y-3">
-                  {trendData.location_data.slice(0, 10).map((item) => {
-                    const maxCount = trendData.location_data[0]?.count || 1;
-                    const percentage = (item.count / maxCount) * 100;
-                    return (
-                      <div key={item.location}>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm font-medium text-slate-700">{sanitizeText(item.location)}</span>
-                          <span className="text-sm text-slate-500">{item.count}</span>
-                        </div>
-                        <div className="w-full bg-slate-100 rounded-full h-2">
-                          <div
-                            className="bg-blue-600 h-2 rounded-full transition-all"
-                            style={{ width: `${percentage}%` }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="text-center py-16">
-            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <TrendingUp className="w-8 h-8 text-slate-400" />
-            </div>
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">No trend data available</h3>
-            <p className="text-slate-600">Run the ingestion pipeline to collect job market data</p>
-          </div>
-        )}
+      {/* Header Info */}
+      <div style={{ marginBottom: '2rem' }}>
+        <h1 style={{ fontSize: '3rem', display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem', fontFamily: 'var(--font-display)', fontWeight: 700 }}>
+          <TrendingUp className="text-accent" size={40} />
+          MARKET TRENDS
+        </h1>
+        <p style={{ color: 'var(--color-fg-muted)', fontSize: '1.25rem' }}>
+          Real-time telemetry and analysis on skill demands, locations, and compensation metrics.
+        </p>
       </div>
+
+      {/* Time Range Selector */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '3rem' }}>
+        <span style={{ fontSize: '0.875rem', color: 'var(--color-fg-muted)', fontFamily: 'var(--font-display)', fontWeight: 600 }}>TIME RANGE:</span>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          {[7, 30, 90].map((d) => (
+            <button
+              key={d}
+              onClick={() => setDays(d)}
+              className={days === d ? 'btn btn-primary' : 'btn'}
+              style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}
+            >
+              {d === 7 ? '7 DAYS' : d === 30 ? '30 DAYS' : '90 DAYS'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Error */}
+      {error && (
+        <div style={{ padding: '1rem', border: '1px solid #ef4444', background: 'rgba(239, 68, 68, 0.1)', color: '#fca5a5', display: 'flex', gap: '0.5rem', marginBottom: '2rem' }}>
+          <AlertCircle /> {sanitizeText(error)}
+        </div>
+      )}
+
+      {/* Loading */}
+      {loading ? (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '4rem 0', color: 'var(--color-fg-muted)' }}>
+          <Loader2 size={48} className="animate-spin text-accent" style={{ marginBottom: '1rem' }} />
+          <div style={{ fontFamily: 'var(--font-display)', letterSpacing: '0.1em' }}>AGGREGATING DATA...</div>
+        </div>
+      ) : trendData ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+          
+          {/* AI Summary */}
+          {trendData.summary && (
+            <div className="panel" style={{ borderLeft: '4px solid var(--color-accent)' }}>
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-accent)', marginBottom: '1rem', fontFamily: 'var(--font-display)', fontWeight: 700 }}>
+                <Zap size={18} />
+                AI MARKET ANALYSIS
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', color: 'var(--color-fg)' }}>
+                {trendData.summary.split('\n').map((line, idx) => (
+                  <p key={`trend-summary-${idx}`} style={{ margin: 0, paddingLeft: line.startsWith('-') ? '1rem' : '0' }}>
+                    {sanitizeText(line)}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Stats Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem' }}>
+            <div className="panel" style={{ padding: '1.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-fg-muted)', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+                <BarChart3 size={16} /> ACTIVE JOBS
+              </div>
+              <div style={{ fontSize: '2rem', fontFamily: 'var(--font-display)', fontWeight: 700, color: 'var(--color-fg)' }}>
+                {trendData.total_jobs.toLocaleString()}
+              </div>
+            </div>
+
+            <div className="panel" style={{ padding: '1.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-fg-muted)', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+                <DollarSign size={16} /> AVG SALARY
+              </div>
+              <div style={{ fontSize: '1.5rem', fontFamily: 'var(--font-display)', fontWeight: 700, color: 'var(--color-fg)' }}>
+                {trendData.salary_data?.available
+                  ? `$${Math.round(trendData.salary_data.avg_min || 0).toLocaleString()} - $${Math.round(trendData.salary_data.avg_max || 0).toLocaleString()}`
+                  : 'N/A'}
+              </div>
+            </div>
+
+            <div className="panel" style={{ padding: '1.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-fg-muted)', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+                <MapPin size={16} /> TOP LOCATION
+              </div>
+              <div style={{ fontSize: '1.5rem', fontFamily: 'var(--font-display)', fontWeight: 700, color: 'var(--color-fg)', wordBreak: 'break-word' }}>
+                {trendData.location_data[0]?.location || 'N/A'}
+              </div>
+            </div>
+
+            <div className="panel" style={{ padding: '1.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-fg-muted)', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+                <Briefcase size={16} /> TOP SKILL
+              </div>
+              <div style={{ fontSize: '1.5rem', fontFamily: 'var(--font-display)', fontWeight: 700, color: 'var(--color-fg)', wordBreak: 'break-word' }}>
+                {trendData.top_skills[0]?.skill || 'N/A'}
+              </div>
+            </div>
+          </div>
+
+          {/* Skills & Locations */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem' }}>
+            
+            {/* Top Skills */}
+            <div className="panel">
+              <h3 style={{ marginBottom: '1.5rem', fontSize: '1.25rem', fontFamily: 'var(--font-display)', fontWeight: 700 }}>
+                MOST IN-DEMAND SKILLS
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {trendData.top_skills.slice(0, 10).map((item) => {
+                  const maxCount = trendData.top_skills[0]?.count || 1;
+                  const percentage = (item.count / maxCount) * 100;
+                  return (
+                    <div key={item.skill}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem', fontSize: '0.875rem' }}>
+                        <span style={{ color: 'var(--color-fg)' }}>{sanitizeText(item.skill)}</span>
+                        <span style={{ color: 'var(--color-fg-muted)' }}>{item.count}</span>
+                      </div>
+                      <div style={{ width: '100%', height: '4px', background: 'var(--color-border)' }}>
+                        <div style={{ height: '100%', background: 'var(--color-accent)', width: `${percentage}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Locations */}
+            <div className="panel">
+              <h3 style={{ marginBottom: '1.5rem', fontSize: '1.25rem', fontFamily: 'var(--font-display)', fontWeight: 700 }}>
+                JOB DISTRIBUTION BY LOCATION
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {trendData.location_data.slice(0, 10).map((item) => {
+                  const maxCount = trendData.location_data[0]?.count || 1;
+                  const percentage = (item.count / maxCount) * 100;
+                  return (
+                    <div key={item.location}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem', fontSize: '0.875rem' }}>
+                        <span style={{ color: 'var(--color-fg)' }}>{sanitizeText(item.location)}</span>
+                        <span style={{ color: 'var(--color-fg-muted)' }}>{item.count}</span>
+                      </div>
+                      <div style={{ width: '100%', height: '4px', background: 'var(--color-border)' }}>
+                        <div style={{ height: '100%', background: 'var(--color-accent)', width: `${percentage}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+          </div>
+        </div>
+      ) : (
+        <div style={{ textAlign: 'center', padding: '4rem 0', color: 'var(--color-border)' }}>
+          <TrendingUp size={64} style={{ margin: '0 auto 1rem auto', opacity: 0.5 }} />
+          <p style={{ fontFamily: 'var(--font-display)', letterSpacing: '0.1em' }}>NO TREND DATA AVAILABLE</p>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,26 +1,114 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
 :root {
-  --foreground-rgb: 15, 23, 42;
-  --background-start-rgb: 248, 250, 252;
-  --background-end-rgb: 255, 255, 255;
+  --color-bg: #09090b; /* Obsidian Black */
+  --color-fg: #f4f4f5; /* Off-white for readability */
+  --color-fg-muted: #a1a1aa;
+  
+  --color-accent: #FF4500; /* Safety Orange */
+  --color-accent-hover: #e03d00;
+  
+  --color-border: #27272a;
+  --color-card-bg: rgba(24, 24, 27, 0.7); /* Translucent for glassmorphism */
+  
+  --font-display: var(--font-space-grotesk), sans-serif;
+  --font-body: var(--font-manrope), monospace;
+  
+  --border-radius: 0px; /* Industrial / Utilitarian = sharp corners */
+  --transition-speed: 150ms;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
 body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
+  background-color: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-body);
+  line-height: 1.6;
   min-height: 100vh;
+  /* Subtle grain texture overlay */
+  background-image: 
+    linear-gradient(var(--color-bg), var(--color-bg)),
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.05'/%3E%3C/svg%3E");
+  background-blend-mode: normal, screen;
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
+/* Typography */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Utilitarian Base Layout Elements */
+.container {
+  max-w: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+/* Interactive Base */
+button, .btn {
+  font-family: var(--font-display);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.75rem 1.5rem;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-fg);
+  cursor: pointer;
+  transition: all var(--transition-speed) ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+button:hover, .btn:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background: rgba(255, 69, 0, 0.05);
+}
+
+.btn-primary {
+  background: var(--color-accent);
+  color: #fff;
+  border-color: var(--color-accent);
+}
+
+.btn-primary:hover {
+  background: var(--color-accent-hover);
+  color: #fff;
+}
+
+/* Glassmorphism Panel */
+.panel {
+  background: var(--color-card-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--color-border);
+  padding: 2rem;
+  position: relative;
+}
+
+/* Structural Data Lines */
+.grid-lines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-size: 40px 40px;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+}
+
+.text-accent {
+  color: var(--color-accent);
 }
