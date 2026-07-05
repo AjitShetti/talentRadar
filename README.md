@@ -1,235 +1,168 @@
-# TalentRadar - AI-Powered Job Intelligence Platform
+# TalentRadar
 
-**Production-ready** platform for semantic job search, market trend analysis, and intelligent candidate matching powered by LLMs and vector embeddings.
+TalentRadar is an AI-powered job intelligence platform that ingests job postings, extracts structured signals via LLMs, and answers natural-language queries using Retrieval-Augmented Generation (RAG). It provides semantic job search, market trend analysis, and intelligent candidate matching.
 
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-green.svg)](https://fastapi.tiangolo.com/)
-[![Next.js 14](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org/)
-[![PostgreSQL 15](https://img.shields.io/badge/PostgreSQL-15-blue.svg)](https://www.postgresql.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+## Key Features
 
----
+- **Semantic Job Search**: Natural language queries powered by vector embeddings and ChromaDB.
+- **AI-Powered Insights**: LLM-generated summaries and market analysis using Groq (Llama 3.1).
+- **Smart Candidate Matching**: ML scoring based on skills, seniority, and location.
+- **Real-Time Market Trends**: Skill demands, salary insights, geographic distribution.
+- **Automated Data Pipeline**: Celery Beat-driven ingestion from multiple sources.
 
-## 🚀 Features
+## Tech Stack
 
-### Core Capabilities
+- **Language**: Python 3.11+
+- **Framework**: FastAPI (Backend), Next.js 14 (Frontend)
+- **Database**: PostgreSQL 15 (Relational), ChromaDB (Vector)
+- **Background Jobs**: Celery & Redis 7
+- **AI/ML**: LangGraph, LangChain, Groq, Sentence Transformers
+- **Styling**: Tailwind CSS, Lucide Icons
+- **Deployment**: Docker, Google Cloud Run
 
-- **Semantic Job Search** - Natural language queries powered by vector embeddings
-- **AI-Powered Insights** - LLM-generated summaries and market analysis
-- **Smart Candidate Matching** - ML scoring based on skills, seniority, and location
-- **Real-Time Market Trends** - Skill demands, salary insights, geographic distribution
-- **Automated Data Pipeline** - Celery Beat-driven ingestion from multiple sources
+## Prerequisites
 
-### Technical Highlights
+- Docker & Docker Compose
+- Python 3.11+ (for local development without Docker)
+- Node.js (if developing frontend locally)
+- API Keys:
+  - Groq API Key
+  - Tavily API Key
 
-- **Production-Ready Architecture** - Microservices with PostgreSQL, Redis, ChromaDB
-- **RESTful API** - FastAPI with OpenAPI documentation
-- **Modern Frontend** - Next.js 14 with Tailwind CSS
-- **Scalable Deployment** - Docker, Kubernetes, Cloud Run support
-- **CI/CD Ready** - GitHub Actions workflows for testing and deployment
+## Getting Started
 
----
-
-## 🏗️ Architecture
-
-```
-┌──────────────┐     ┌───────────────┐     ┌──────────────┐
-│   Frontend   │────▶│   FastAPI     │────▶│  PostgreSQL  │
-│  (Next.js)   │     │   (Python)    │    │   (v15)      │
-└──────────────┘     └──────┬────────┘     └──────────────┘
-                            │
-                     ┌──────▼────────┐     ┌──────────────┐
-                     │  AI Agents    │────▶│   ChromaDB   │
-                     │  (RAG/ML)     │     │  (Vectors)   │
-                     └──────┬────────┘     └──────────────┘
-                            │
-                     ┌──────▼────────┐
-                     │   Celery      │
-                     │ (Scheduler)   │
-                     └───────────────┘
-```
-
-### Component Overview
-
-| Component | Technology | Purpose |
-|-----------|-----------|---------|
-| **API Server** | FastAPI + Uvicorn | REST API, AI agent orchestration |
-| **Frontend** | Next.js 14 + Tailwind | User interface |
-| **Database** | PostgreSQL 15 | Structured job/company data |
-| **Vector DB** | ChromaDB | Semantic search embeddings |
-| **Cache** | Redis 7 | Caching, session storage |
-| **Pipeline** | Celery & Celery Beat | Data ingestion automation |
-| **AI** | Groq (Llama 3.1) | LLM parsing, summaries |
-
----
-
-## 📁 Project Structure
-
-```
-talentRadar/
-├── agents/                  # AI agent layer
-│   ├── prompts/            # System prompts for LLMs
-│   ├── orchestrator.py     # Intent classification & routing
-│   ├── rag_agent.py        # Retrieve-And-Generate agent
-│   ├── trend_agent.py      # Market trend analysis
-│   ├── ml_scorer.py        # ML-powered job matching
-│   ├── state.py            # Agent state definitions
-│   └── graph.py            # LangGraph state machine
-│
-├── api/                     # REST API
-│   ├── routers/            # Endpoint handlers
-│   │   ├── search.py       # Job search (structured + semantic)
-│   │   ├── query.py        # Natural language queries
-│   │   ├── recommend.py    # Candidate-job matching
-│   │   ├── trends.py       # Market trends
-│   │   └── ingest.py       # Pipeline management
-│   ├── schemas/            # Pydantic request/response models
-│   ├── main.py             # FastAPI application
-│   ├── auth.py             # JWT authentication
-│   └── dependencies.py     # DI providers
-│
-├── ingestion/               # Data pipeline
-│   ├── scrapers/           # Data source connectors
-│   ├── parsers/            # LLM-powered JD parsing
-│   ├── embeddings/         # Vector embedding utilities
-│   └── tasks.py            # Celery tasks definitions
-│
-├── storage/                 # Data layer
-│   ├── models.py           # SQLAlchemy ORM models
-│   ├── repository.py       # Data access layer
-│   ├── database.py         # Engine & session setup
-│   └── migrations/         # Alembic migrations
-│
-├── frontend/                # Next.js web app
-│   ├── app/                # Pages (App Router)
-│   ├── components/         # React components
-│   └── lib/                # API client, types, utils
-│
-├── infra/                   # Infrastructure
-│   ├── Dockerfile          # API container
-│   ├── Dockerfile          # Base container
-│   ├── kubernetes/         # K8s manifests
-│   ├── cloudrun.yaml       # Google Cloud Run config
-│   └── prometheus.yml      # Monitoring config
-│
-├── tests/                   # Test suite
-│   ├── conftest.py         # Pytest fixtures
-│   ├── test_api.py         # API endpoint tests
-│   ├── test_agents.py      # Agent layer tests
-│   └── test_pipeline_e2e.py # End-to-end pipeline tests
-│
-├── docs/                    # Documentation
-├── config/                  # Application settings
-├── data/                    # Shared data directory
-├── docker-compose.yml       # Local development stack
-├── pyproject.toml           # Python dependencies
-└── DEPLOYMENT.md            # Production deployment guide
-```
-
----
-
-## 🚦 Quick Start
-
-### Prerequisites
-
-- **Docker & Docker Compose** - [Install](https://docs.docker.com/get-docker/)
-- **Python 3.11+** (for local development)
-- **API Keys**:
-  - [Groq API](https://console.groq.com/) - LLM inference
-  - [Tavily API](https://tavily.com/) - Job search
-
-### 1. Clone & Configure
+### 1. Clone the Repository
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/your-org/talentRadar.git
 cd talentRadar
+```
+
+### 2. Environment Setup
+
+Copy the example environment file:
+
+```bash
 cp .env.example .env
 ```
 
-Edit `.env` and add your API keys:
+Configure the following variables in `.env`:
+
+| Variable | Description | Example |
+| --- | --- | --- |
+| `GROQ_API_KEY` | LLM parsing and generation | `gsk_...` |
+| `TAVILY_API_KEY` | Job posting search and scraping | `tvly-...` |
+| `JWT_SECRET_KEY` | Secret key for signing JWT tokens | `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
+
+### 3. Start Development Server with Docker (Recommended)
+
+Start all services including the API, Frontend, Database, Cache, Vector DB, and Celery workers:
 
 ```bash
-GROQ_API_KEY=your_groq_api_key
-TAVILY_API_KEY=your_tavily_api_key
+docker-compose up -d
 ```
 
-### 2. Start All Services
+### 4. Database Setup
 
-```bash
-docker compose up -d
-```
-
-This starts:
-- **PostgreSQL** (port 5432)
-- **Redis** (port 6379)
-- **ChromaDB** (port 8001)
-- **API Server** (port 8000)
-- **Celery Worker & Beat** (background processes)
-- **Frontend** (port 3000)
-
-### 3. Run Database Migrations
+If running via Docker, the database is automatically started. Run migrations to setup the schema:
 
 ```bash
 docker exec talentradar-api alembic upgrade head
 ```
 
-### 4. Verify Setup
+### 5. Access the Application
 
-```bash
-# API health check
-curl http://localhost:8000/health
+- **Frontend**: http://localhost:3000
+- **API Documentation**: http://localhost:8000/docs
+- **API Health Check**: http://localhost:8000/health
 
-# API documentation
-open http://localhost:8000/docs
+## Architecture
 
-# Frontend
-open http://localhost:3000
+### Directory Structure
+
+```
+talentRadar/
+├── agents/                  # AI agent layer (LangGraph, Prompts)
+├── api/                     # REST API (FastAPI)
+│   ├── routers/             # Endpoint handlers
+│   ├── schemas/             # Pydantic request/response models
+│   ├── main.py              # FastAPI application
+├── config/                  # Application settings
+├── data/                    # Shared data directory
+├── frontend/                # Next.js web app
+│   ├── app/                 # Pages (App Router)
+│   ├── components/          # React components
+│   └── lib/                 # API client, types, utils
+├── infra/                   # Infrastructure (Docker, K8s, Cloud Run)
+├── ingestion/               # Data pipeline (Scrapers, Celery Tasks)
+├── ml/                      # Machine Learning scoring models
+├── storage/                 # Data layer (SQLAlchemy, Alembic)
+└── tests/                   # Test suite (pytest)
 ```
 
----
+### Data Flow
 
-## 📡 API Endpoints
+```
+User Query -> Next.js Frontend -> FastAPI Endpoint -> LangGraph Agent -> ChromaDB (Retrieval) / Groq LLM (Generation) -> Response -> Frontend
+```
 
-### Search
+### Key Components
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/v1/search/structured` | Filter-based job search |
-| `POST` | `/api/v1/search/semantic` | Natural language search |
-| `GET` | `/api/v1/search/{job_id}` | Job details |
+**API Server**
+- Built with FastAPI for high performance.
+- Uses Pydantic for validation and serialization.
 
-### AI-Powered
+**AI Agents**
+- Orchestrated using LangGraph.
+- Agents include Intent Classification, RAG, Market Trend Analysis, and ML-powered job matching.
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/v1/query` | Unified AI query |
-| `POST` | `/api/v1/recommend/match` | Candidate-job matching |
-| `POST` | `/api/v1/trends` | Market trend analysis |
-| `GET` | `/api/v1/trends/skills` | Top in-demand skills |
-| `GET` | `/api/v1/trends/salaries` | Salary insights |
+**Data Ingestion Pipeline**
+- Powered by Celery and Redis.
+- Scrapes data via Tavily and parses job descriptions using LLMs to extract structured data.
 
-### Pipeline
+## Environment Variables
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/v1/ingest/trigger` | Start data ingestion |
-| `GET` | `/api/v1/ingest/runs` | View pipeline status |
+### Required
 
-**Full API Documentation:** http://localhost:8000/docs
+| Variable | Description | Default |
+| --- | --- | --- |
+| `GROQ_API_KEY` | Groq API Key | - |
+| `TAVILY_API_KEY` | Tavily API Key | - |
+| `POSTGRES_USER` | PostgreSQL user | `talentRadar` |
+| `POSTGRES_PASSWORD` | PostgreSQL password | `devpassword` |
+| `POSTGRES_DB` | PostgreSQL database name | `talentRadar` |
+| `JWT_SECRET_KEY` | JWT signing secret | - |
 
----
+### Optional
 
-## 🧪 Testing
+| Variable | Description | Default |
+| --- | --- | --- |
+| `LOG_LEVEL` | Logging verbosity | `INFO` |
+| `DEBUG` | FastAPI debug mode | `false` |
+| `RATE_LIMIT_PER_MINUTE` | Max requests per minute per IP | `60` |
+
+## Available Scripts
+
+| Command | Description |
+| --- | --- |
+| `docker-compose up -d` | Start full local development stack |
+| `docker exec talentradar-api alembic upgrade head` | Run database migrations |
+| `pytest tests/ -v` | Run all tests |
+| `ruff format .` | Format codebase |
+
+## Testing
+
+Install development dependencies:
 
 ```bash
-# Install test dependencies
-pip install .[test,dev]
+pip install -e ".[dev,lint,docs]"
+```
 
+Run tests:
+
+```bash
 # Run all tests
 pytest tests/ -v
-
-# Run specific test suite
-pytest tests/test_agents.py -v
 
 # Run with coverage
 pytest tests/ --cov=. --cov-report=html
@@ -238,21 +171,18 @@ pytest tests/ --cov=. --cov-report=html
 python tests/test_pipeline_e2e.py --quick
 ```
 
----
+## Deployment
 
-## 🚀 Production Deployment
+### Docker
 
-See **[DEPLOYMENT.md](DEPLOYMENT.md)** for complete deployment guides:
+Build and run manually:
 
-- ✅ Google Cloud Run (Serverless)
-- ✅ AWS ECS/Fargate
-- ✅ Kubernetes (Any Cloud)
-- ✅ Environment configuration
-- ✅ Monitoring & alerts
-- ✅ Security checklist
-- ✅ Scaling guide
+```bash
+docker build -t talentradar-api -f infra/Dockerfile .
+docker run -p 8000:8000 --env-file .env talentradar-api
+```
 
-### Quick Deploy to Cloud Run
+### Google Cloud Run
 
 ```bash
 # Build and push
@@ -267,99 +197,22 @@ gcloud run deploy talentradar-api \
   --set-env-vars POSTGRES_HOST=your-db,POSTGRES_PASSWORD=your-pass,GROQ_API_KEY=your-key
 ```
 
----
+## Troubleshooting
 
-## 📊 Tech Stack
+### Database Connection Issues
 
-### Backend
-- **Python 3.11** - Primary language
-- **FastAPI** - Web framework
-- **SQLAlchemy 2.0** - ORM
-- **Pydantic** - Validation & serialization
-- **Alembic** - Database migrations
-- **Celery & Redis** - Data pipeline orchestration
+**Error:** `could not connect to server: Connection refused`
 
-### AI/ML
-- **Groq (Llama 3.1)** - LLM inference
-- **ChromaDB** - Vector database
-- **Sentence Transformers** - Embeddings
-- **Custom ML Scorer** - Job matching algorithm
+**Solution:**
+1. Verify PostgreSQL container is running: `docker ps`
+2. Check network configuration in `docker-compose.yml`.
 
-### Frontend
-- **Next.js 14** - React framework
-- **TypeScript** - Type safety
-- **Tailwind CSS** - Styling
-- **Lucide Icons** - Icon library
+### Missing Dependencies
 
-### Infrastructure
-- **PostgreSQL 15** - Primary database
-- **Redis 7** - Caching
-- **Docker** - Containerization
-- **Kubernetes** - Orchestration
-- **GitHub Actions** - CI/CD
+**Error:** `ModuleNotFoundError: No module named '...'`
 
----
-
-## 📖 Documentation
-
-- **[QUICKSTART.md](QUICKSTART.md)** - Step-by-step setup guide
-- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Production deployment guides
-- **[docs/PYPROJECT_SUMMARY.md](docs/PYPROJECT_SUMMARY.md)** - Project configuration
-- **[docs/DEPENDENCIES.md](docs/DEPENDENCIES.md)** - Dependency documentation
-- **API Docs** - http://localhost:8000/docs (when running)
-
----
-
-## 🔒 Security
-
-- JWT authentication for protected endpoints
-- CORS configuration for specific origins
-- Environment variable secret management
-- SQL injection prevention (parameterized queries)
-- Rate limiting ready
-
-**Before production deployment:** Review the [Security Checklist](DEPLOYMENT.md#security-checklist) in DEPLOYMENT.md.
-
----
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-### Development Guidelines
-
-- Follow PEP 8 for Python code
-- Use TypeScript strict mode
-- Write tests for new features
-- Update documentation for API changes
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 🙏 Acknowledgments
-
-- **Groq** - Ultra-fast LLM inference
-- **Tavily** - Job search API
-- **ChromaDB** - Open-source vector database
-- **Celery & Redis** - Data pipeline orchestration
-
----
-
-## 📧 Support
-
-- **Issues:** [GitHub Issues](https://github.com/your-org/talentRadar/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/your-org/talentRadar/discussions)
-- **API Docs:** http://localhost:8000/docs
-
----
-
-**Built with ❤️ for connecting talent with opportunities**
+**Solution:**
+Ensure you have installed all dependencies inside your virtual environment or Docker container:
+```bash
+pip install -e .
+```
