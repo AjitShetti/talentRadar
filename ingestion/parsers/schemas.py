@@ -169,6 +169,13 @@ class ParsedJobDescription(BaseModel):
     # Validators
     # ─────────────────────────────────────────────────────────────
 
+    @field_validator("title", "company", mode="before")
+    @classmethod
+    def normalise_strings(cls, v: object) -> str:
+        if not v:
+            return "Unknown"
+        return str(v)
+
     @field_validator("skills", mode="before")
     @classmethod
     def deduplicate_skills(cls, v: object) -> list[str]:

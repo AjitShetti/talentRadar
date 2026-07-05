@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '@/lib/api';
 import { TrendData } from '@/lib/types';
 import { TrendingUp, DollarSign, MapPin, Briefcase, Loader2, AlertCircle, BarChart3, Zap } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 
 function sanitizeText(text: string): string {
   return text
@@ -102,12 +103,8 @@ export default function TrendsPage() {
                 <Zap size={18} />
                 AI MARKET ANALYSIS
               </h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', color: 'var(--color-fg)' }}>
-                {trendData.summary.split('\n').map((line, idx) => (
-                  <p key={`trend-summary-${idx}`} style={{ margin: 0, paddingLeft: line.startsWith('-') ? '1rem' : '0' }}>
-                    {sanitizeText(line)}
-                  </p>
-                ))}
+              <div className="markdown-content" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', color: 'var(--color-fg)' }}>
+                <ReactMarkdown>{trendData.summary}</ReactMarkdown>
               </div>
             </div>
           )}

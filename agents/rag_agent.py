@@ -197,7 +197,7 @@ Summarize the top results and highlight key insights.
 
         try:
             response = await self._groq.chat.completions.create(
-                model="llama-3.1-70b-versatile",
+                model="llama-3.3-70b-versatile",
                 messages=[
                     {"role": "system", "content": SYSTEM_RESULT_SUMMARY},
                     {"role": "user", "content": prompt},

@@ -49,10 +49,10 @@ export default function MatchAnalyzer() {
 
     try {
       // 1. Dispatch Task
-      const res = await fetch('http://127.0.0.1:8000/match/evaluate', {
+      const res = await fetch('http://127.0.0.1:8000/api/v1/match/evaluate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ resume, jd })
+        body: JSON.stringify({ resume_text: resume, job_description: jd })
       });
 
       if (!res.ok) {
@@ -63,24 +63,30 @@ export default function MatchAnalyzer() {
       const taskId = data.task_id;
 
       // 2. Connect to SSE Stream
-      const sse = new EventSource(`http://127.0.0.1:8000/match/evaluate/stream/${taskId}`);
+      const sse = new EventSource(`http://127.0.0.1:8000/api/v1/match/evaluate/stream/${taskId}`);
       eventSourceRef.current = sse;
 
-      sse.onmessage = (event) => {
-        const payload = JSON.parse(event.data);
-        if (payload.status === 'processing') {
-          setStatus(payload.message || 'Analyzing tokens...');
-        } else if (payload.status === 'completed') {
-          setResult(payload.result);
+      sse.addEventListener('processing', (event: any) => {
+        setStatus(event.data === 'PENDING' || !event.data ? 'Analyzing tokens...' : event.data);
+      });
+
+      sse.addEventListener('success', (event: any) => {
+        try {
+          const result = JSON.parse(event.data);
+          setResult(result);
           setStatus('Analysis complete.');
-          setLoading(false);
-          sse.close();
-        } else if (payload.status === 'error') {
-          setError(payload.message || 'An error occurred during evaluation.');
-          setLoading(false);
-          sse.close();
+        } catch (e) {
+          setError('Failed to parse evaluation results.');
         }
-      };
+        setLoading(false);
+        sse.close();
+      });
+
+      sse.addEventListener('error', (event: any) => {
+        setError(event.data || 'An error occurred during evaluation.');
+        setLoading(false);
+        sse.close();
+      });
 
       sse.onerror = (err) => {
         console.error('SSE Error:', err);
@@ -98,7 +104,7 @@ export default function MatchAnalyzer() {
     if (!result || result.missing_skills.length === 0) return;
     setGeneratingPath(true);
     try {
-      const res = await fetch('http://127.0.0.1:8000/recommend/learning-path', {
+      const res = await fetch('http://127.0.0.1:8000/api/v1/recommend/learning-path', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ missing_skills: result.missing_skills })
@@ -116,10 +122,10 @@ export default function MatchAnalyzer() {
   const downloadTailoredResume = async () => {
     setTailoringResume(true);
     try {
-      const res = await fetch('http://127.0.0.1:8000/match/tailor-resume', {
+      const res = await fetch('http://127.0.0.1:8000/api/v1/match/tailor-resume', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ resume, jd })
+        body: JSON.stringify({ resume_text: resume, job_description: jd })
       });
       if (!res.ok) throw new Error('Failed to tailor resume');
       

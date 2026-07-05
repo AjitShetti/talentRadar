@@ -39,7 +39,7 @@ services:
       - talentradar-net
 
   chromadb:
-    image: chromadb/chroma:latest
+    image: chromadb/chroma:0.6.3
     container_name: talentradar-chromadb
     environment:
       CHROMA_SERVER_HTTP_HOST: 0.0.0.0

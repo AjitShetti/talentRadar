@@ -231,7 +231,7 @@ Provide a comprehensive market analysis.
 
         try:
             response = await self._groq.chat.completions.create(
-                model="llama-3.1-70b-versatile",
+                model="llama-3.3-70b-versatile",
                 messages=[
                     {"role": "system", "content": TREND_ANALYSIS_PROMPT},
                     {"role": "user", "content": prompt},
@@ -248,7 +248,7 @@ Provide a comprehensive market analysis.
     def _fallback_summary(total_jobs, top_skills, salary_data):
         """Generate a basic summary if LLM fails."""
         skills = ", ".join(s["skill"] for s in top_skills[:5])
-        summary = f"\ud83d\udcca Market Overview\n\n"
+        summary = f"\U0001f4ca Market Overview\n\n"
         summary += f"- **{total_jobs}** active jobs in the database\n"
         summary += f"- **Most in-demand skills**: {skills}\n"
         if salary_data.get("available"):
