@@ -159,10 +159,10 @@ docs = [
 
 # --- Apache Airflow (optional — heavy: ~400 MB, 200+ transitive deps) ---
 # Install with: pip install talentRadar[airflow]
-airflow = [
-    "apache-airflow>=2.9.0,<3.0.0",
-    "apache-airflow-providers-http>=4.0.0",
-]
+# airflow = [
+#     "apache-airflow>=3.0.0.dev0", # updated to allow newer sqlalchemy
+#     "apache-airflow-providers-http>=4.0.0",
+# ]
 
 # --- All development deps combined ---
 all = [
@@ -309,5 +309,4 @@ talentradar = "api.main:main"
 # UV / pip resolution hints (optional, for faster installs)
 # ===========================================================================
 [tool.uv]
-# Prefer pre-built binary wheels where available
-prefer-binary = true
+# Removed prefer-binary to fix uv parsing error

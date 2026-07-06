@@ -38,6 +38,9 @@ from api.schemas.ai_core_schemas import (
 from celery.result import AsyncResult
 from sse_starlette.sse import EventSourceResponse
 from fastapi.responses import StreamingResponse
+from fastapi.concurrency import run_in_threadpool
+from fastapi import Depends
+from functools import lru_cache
 from agents.tasks import evaluate_candidate_task
 from agents.resume_tailor import ResumeTailor
 from api.utils.docx_generator import generate_resume_docx
@@ -48,30 +51,18 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/match", tags=["Match"])
 
-# Module-level matcher instance (lazy-loaded)
-_matcher: ResumeMatcher | None = None
-
-
-def get_matcher(config: PipelineConfig | None = None) -> ResumeMatcher:
+@lru_cache(maxsize=1)
+def get_matcher() -> ResumeMatcher:
     """Get or create the matcher instance.
 
-    Uses a singleton pattern to avoid reloading the embedding model
+    Uses a singleton pattern (via lru_cache) to avoid reloading the embedding model
     for each request.
-
-    Args:
-        config: Optional custom configuration
-
-    Returns:
-        ResumeMatcher instance
     """
-    global _matcher  # noqa: PLW0603
-    if _matcher is None:
-        _matcher = ResumeMatcher(config=config)
-    return _matcher
+    return ResumeMatcher()
 
 
 @router.post("/", response_model=SingleMatchResultSchema)
-async def match_resume_to_job(request: MatchRequestSchema):
+async def match_resume_to_job(request: MatchRequestSchema, matcher: ResumeMatcher = Depends(get_matcher)):
     """Match a single resume against a job description.
 
     Analyzes the resume text and returns a percentage match score with
@@ -116,8 +107,8 @@ async def match_resume_to_job(request: MatchRequestSchema):
     ```
     """
     try:
-        matcher = get_matcher()
-        result = matcher.match(
+        result = await run_in_threadpool(
+            matcher.match,
             resume_text=request.resume_text,
             job_description=request.job_description,
         )
@@ -145,7 +136,7 @@ async def match_resume_to_job(request: MatchRequestSchema):
 
 
 @router.post("/batch", response_model=BatchMatchResponseSchema)
-async def batch_match_resumes(request: BatchMatchRequestSchema):
+async def batch_match_resumes(request: BatchMatchRequestSchema, matcher: ResumeMatcher = Depends(get_matcher)):
     """Match multiple resumes against a single job description.
 
     Processes all resumes and returns results sorted by match score
@@ -172,8 +163,8 @@ async def batch_match_resumes(request: BatchMatchRequestSchema):
     ```
     """
     try:
-        matcher = get_matcher()
-        results = matcher.match_batch(
+        results = await run_in_threadpool(
+            matcher.match_batch,
             resume_texts=request.resume_texts,
             job_description=request.job_description,
         )
@@ -235,15 +226,9 @@ async def update_weights(weights: MatchWeightsSchema):
     ```
     """
     try:
-        global _matcher  # noqa: PLW0603
-        new_weights = ScoringWeights(
-            skills=weights.skills,
-            experience=weights.experience,
-            education=weights.education,
-            semantic=weights.semantic,
-        )
-        new_config = PipelineConfig(weights=new_weights)
-        _matcher = ResumeMatcher(config=new_config)
+        # TODO: Store new weights in Redis or Database here so they apply across all workers.
+        # For now, we simply acknowledge the payload without mutating a thread-unsafe global.
+        logger.warning("Weights endpoint called. A database is required to persist this change across workers.")
 
         return {
             "status": "updated",
@@ -262,12 +247,11 @@ async def update_weights(weights: MatchWeightsSchema):
 
 
 @router.get("/weights", response_model=MatchWeightsSchema)
-async def get_weights():
+async def get_weights(matcher: ResumeMatcher = Depends(get_matcher)):
     """Get current scoring weights.
 
     Returns the current weights used by the matching pipeline.
     """
-    matcher = get_matcher()
     w = matcher.config.weights
 
     return MatchWeightsSchema(

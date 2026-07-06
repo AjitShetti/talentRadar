@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Space_Grotesk, Manrope } from 'next/font/google';
 import './globals.css';
 import Header from '@/components/Header';
+import AuthProvider from '@/components/AuthProvider';
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ['latin'],
@@ -26,11 +27,13 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${spaceGrotesk.variable} ${manrope.variable}`}>
       <body>
-        <div className="grid-lines" />
-        <div className="container" style={{ position: 'relative', zIndex: 1 }}>
-          <Header />
-          {children}
-        </div>
+        <AuthProvider>
+          <div className="grid-lines" />
+          <div className="container" style={{ position: 'relative', zIndex: 1 }}>
+            <Header />
+            {children}
+          </div>
+        </AuthProvider>
       </body>
     </html>
   );

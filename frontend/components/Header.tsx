@@ -2,10 +2,12 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useSession, signOut } from 'next-auth/react';
 import { Zap } from 'lucide-react';
 
 export default function Header() {
   const pathname = usePathname();
+  const { status } = useSession();
 
   return (
     <header style={{
@@ -41,6 +43,30 @@ export default function Header() {
         >
           MATCH ENGINE
         </Link>
+        {status === 'authenticated' ? (
+          <button 
+            onClick={() => signOut()}
+            style={{ 
+              textDecoration: 'none', 
+              color: 'var(--color-fg-muted)', 
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              fontWeight: 'inherit',
+              fontSize: 'inherit'
+            }}
+          >
+            SIGN OUT
+          </button>
+        ) : (
+          <Link 
+            href="/login" 
+            style={{ textDecoration: 'none', color: 'var(--color-accent)' }}
+          >
+            SIGN IN
+          </Link>
+        )}
       </nav>
     </header>
   );

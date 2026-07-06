@@ -18,6 +18,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from config.settings import get_settings
 from storage.database import close_engine
 
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -25,6 +30,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Initialize Rate Limiter (In-Memory for now, can be wired to Redis later)
+limiter = Limiter(key_func=get_remote_address, default_limits=["100/minute"])
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -51,6 +58,11 @@ app = FastAPI(
     redoc_url="/redoc",
     lifespan=lifespan,
 )
+
+# Register rate limiter
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 # CORS middleware
 settings = get_settings()
@@ -85,8 +97,9 @@ async def health_check():
 
 
 # Register routers
-from api.routers import search, query, recommend, trends, ingest, match  # noqa: E402
+from api.routers import search, query, recommend, trends, ingest, match, auth  # noqa: E402
 
+app.include_router(auth.router)
 app.include_router(search.router, prefix="/api/v1")
 app.include_router(query.router, prefix="/api/v1")
 app.include_router(recommend.router, prefix="/api/v1")

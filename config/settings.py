@@ -23,14 +23,14 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------ #
     # LLM / AI                                                             #
     # ------------------------------------------------------------------ #
-    groq_api_key: str = Field(default="", description="Groq API key")
+    groq_api_key: str = Field(description="Groq API key")
     tavily_api_key: str = Field(default="", description="Tavily search API key")
 
     # ------------------------------------------------------------------ #
     # PostgreSQL                                                           #
     # ------------------------------------------------------------------ #
     postgres_user: str = Field(default="talentRadar")
-    postgres_password: str = Field(default="devpassword")
+    postgres_password: str = Field(description="PostgreSQL password")
     postgres_db: str = Field(default="talentRadar")
     postgres_host: str = Field(default="localhost")
     postgres_port: int = Field(default=5432)
@@ -67,7 +67,7 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------ #
     # JWT                                                                  #
     # ------------------------------------------------------------------ #
-    jwt_secret_key: str = Field(default="change-me-min-32-chars-secret!!")
+    jwt_secret_key: str = Field(min_length=32, description="JWT Secret key, at least 32 characters")
     jwt_algorithm: str = Field(default="HS256")
     jwt_expiry_minutes: int = Field(default=60)
 

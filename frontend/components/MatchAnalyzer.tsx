@@ -26,6 +26,8 @@ export default function MatchAnalyzer() {
   const [tailoringResume, setTailoringResume] = useState(false);
 
   const eventSourceRef = useRef<EventSource | null>(null);
+  
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
 
   useEffect(() => {
     return () => {
@@ -49,7 +51,7 @@ export default function MatchAnalyzer() {
 
     try {
       // 1. Dispatch Task
-      const res = await fetch('http://127.0.0.1:8000/api/v1/match/evaluate', {
+      const res = await fetch(`${API_URL}/api/v1/match/evaluate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ resume_text: resume, job_description: jd })
@@ -63,7 +65,7 @@ export default function MatchAnalyzer() {
       const taskId = data.task_id;
 
       // 2. Connect to SSE Stream
-      const sse = new EventSource(`http://127.0.0.1:8000/api/v1/match/evaluate/stream/${taskId}`);
+      const sse = new EventSource(`${API_URL}/api/v1/match/evaluate/stream/${taskId}`);
       eventSourceRef.current = sse;
 
       sse.addEventListener('processing', (event: any) => {
@@ -104,7 +106,7 @@ export default function MatchAnalyzer() {
     if (!result || result.missing_skills.length === 0) return;
     setGeneratingPath(true);
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/v1/recommend/learning-path', {
+      const res = await fetch(`${API_URL}/api/v1/recommend/learning-path`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ missing_skills: result.missing_skills })
@@ -122,7 +124,7 @@ export default function MatchAnalyzer() {
   const downloadTailoredResume = async () => {
     setTailoringResume(true);
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/v1/match/tailor-resume', {
+      const res = await fetch(`${API_URL}/api/v1/match/tailor-resume`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ resume_text: resume, job_description: jd })

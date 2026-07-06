@@ -100,81 +100,98 @@ async def _run_pipeline(
         )
         await session.commit()
 
-        for data in parsed_dicts:
-            try:
-                pjd = ParsedJobDescription(**data)
-            except Exception as exc:
-                logger.warning("Skipping invalid parsed job: %s", exc)
-                skipped += 1
-                continue
+        try:
+            for data in parsed_dicts:
+                try:
+                    pjd = ParsedJobDescription(**data)
+                except Exception as exc:
+                    logger.warning("Skipping invalid parsed job: %s", exc)
+                    skipped += 1
+                    continue
 
-            company_slug = _company_domain(pjd.company)
-            company, _ = await uow.companies.upsert_by_domain(
-                domain=company_slug,
-                defaults={"name": pjd.company},
-            )
+                company_slug = _company_domain(pjd.company)
+                company, _ = await uow.companies.upsert_by_domain(
+                    domain=company_slug,
+                    defaults={"name": pjd.company},
+                )
 
-            external_id = _stable_id(pjd.source_url or pjd.title + pjd.company)
-            job_kwargs = pjd.to_job_kwargs()
-            job_kwargs.update(
-                {
-                    "company_id": company.id,
-                    "ingestion_run_id": ingestion_run.id,
+                external_id = _stable_id(pjd.source_url or pjd.title + pjd.company)
+                job_kwargs = pjd.to_job_kwargs()
+                job_kwargs.update(
+                    {
+                        "company_id": company.id,
+                        "ingestion_run_id": ingestion_run.id,
+                    }
+                )
+
+                job, created = await uow.jobs.upsert_by_external_id(
+                    external_id=external_id,
+                    source=_SOURCE_NAME,
+                    defaults=job_kwargs,
+                )
+                if created:
+                    inserted += 1
+                else:
+                    updated += 1
+
+                # Prepare ChromaDB embedding data
+                metadata = {
+                    "title": pjd.title,
+                    "company": pjd.company,
+                    "location": pjd.location or "",
+                    "is_remote": pjd.is_remote,
+                    "seniority": pjd.seniority or "",
+                    "employment_type": pjd.employment_type or "",
+                    "skills_str": ", ".join(pjd.skills),
+                    "source_url": pjd.source_url or "",
+                    "salary": pjd.salary or "",
                 }
-            )
 
-            job, created = await uow.jobs.upsert_by_external_id(
-                external_id=external_id,
-                source=_SOURCE_NAME,
-                defaults=job_kwargs,
-            )
-            if created:
-                inserted += 1
-            else:
-                updated += 1
-                
-            # Prepare ChromaDB embedding data
-            metadata = {
-                "title": pjd.title,
-                "company": pjd.company,
-                "location": pjd.location or "",
-                "is_remote": pjd.is_remote,
-                "seniority": pjd.seniority or "",
-                "employment_type": pjd.employment_type or "",
-                "skills_str": ", ".join(pjd.skills),
-                "source_url": pjd.source_url or "",
-                "salary": pjd.salary or "",
-            }
+                chroma_items.append({
+                    "job_id": external_id,
+                    "text": pjd.raw_text[:4096],
+                    "metadata": metadata,
+                    "internal_job_id": job.id,
+                })
 
-            chroma_items.append({
-                "job_id": external_id,
-                "text": pjd.raw_text[:4096],
-                "metadata": metadata,
-                "internal_job_id": job.id,
-            })
-
-        await session.commit()
-
-        # 4. Embed to ChromaDB
-        store = ChromaJobStore()
-        embedded = 0
-        if chroma_items:
-            embedded = store.add_batch(chroma_items)
-
-            # Link embeddings in PostgreSQL
-            for item in chroma_items:
-                await uow.jobs.set_embedding_id(item["internal_job_id"], item["job_id"])
             await session.commit()
 
-        await uow.ingestion_runs.finish(
-            ingestion_run.id,
-            status=IngestionStatus.SUCCESS,
-            jobs_discovered=len(parsed_dicts),
-            jobs_inserted=inserted,
-            jobs_updated=updated,
-            jobs_skipped=skipped,
-        )
-        await session.commit()
+            # 4. Embed to ChromaDB
+            store = ChromaJobStore()
+            embedded = 0
+            if chroma_items:
+                embedded = store.add_batch(chroma_items)
+
+                # Link embeddings in PostgreSQL
+                for item in chroma_items:
+                    await uow.jobs.set_embedding_id(item["internal_job_id"], item["job_id"])
+                await session.commit()
+
+            await uow.ingestion_runs.finish(
+                ingestion_run.id,
+                status=IngestionStatus.SUCCESS,
+                jobs_discovered=len(parsed_dicts),
+                jobs_inserted=inserted,
+                jobs_updated=updated,
+                jobs_skipped=skipped,
+            )
+            await session.commit()
+
+        except Exception as exc:
+            # Always finalize the run record — never leave it stuck as RUNNING
+            import traceback
+            err_trace = {"traceback": traceback.format_exc()}
+            logger.exception("Pipeline failed mid-run run_id=%s: %s", run_id, exc)
+            try:
+                await uow.ingestion_runs.fail(
+                    ingestion_run.id,
+                    error_message=str(exc),
+                    error_trace=err_trace,
+                )
+                await session.commit()
+            except Exception as finalize_exc:
+                logger.error("Could not finalize failed run record: %s", finalize_exc)
+            raise
 
     return {
         "fetched": total_fetched,
@@ -185,27 +202,46 @@ async def _run_pipeline(
     }
 
 
-@shared_task(name="ingestion.tasks.run_crawler")
+@shared_task(name="ingestion.tasks.run_crawler", bind=True, max_retries=0)
 def run_crawler(
+    self,
     roles: list[str] | None = None,
     locations: list[str] | None = None,
     max_results_per_query: int = 5,
 ) -> dict[str, Any]:
     """
-    Celery task to scrape job postings from ATS pages, parse them with LLM, 
+    Celery task to scrape job postings from ATS pages, parse them with LLM,
     and store them in PostgreSQL and ChromaDB.
+
+    Uses ``bind=True`` so that on failure we can access the task ID for
+    diagnostic logging. ``max_retries=0`` prevents silent retry loops that
+    would create duplicate ingestion_runs records.
     """
     roles = roles or ["Software Engineer", "Data Scientist"]
     locations = locations or ["Remote", "New York"]
     run_id = str(uuid.uuid4())
-    
-    logger.info("Starting run_crawler task run_id=%s roles=%s locations=%s max=%s", 
-                run_id, roles, locations, max_results_per_query)
-    
-    # Run the async pipeline synchronously for Celery
-    return asyncio.run(_run_pipeline(
-        roles=roles,
-        locations=locations,
-        max_results_per_query=max_results_per_query,
-        run_id=run_id,
-    ))
+
+    logger.info(
+        "Starting run_crawler task task_id=%s run_id=%s roles=%s locations=%s max=%s",
+        self.request.id, run_id, roles, locations, max_results_per_query,
+    )
+
+    try:
+        result = asyncio.run(_run_pipeline(
+            roles=roles,
+            locations=locations,
+            max_results_per_query=max_results_per_query,
+            run_id=run_id,
+        ))
+        logger.info("run_crawler completed successfully: %s", result)
+        return result
+    except Exception as exc:
+        logger.exception(
+            "run_crawler failed task_id=%s run_id=%s error=%s",
+            self.request.id, run_id, exc,
+        )
+        # Re-raise so Celery marks the task FAILURE in Redis.
+        # The ingestion_run DB record is finalized inside _run_pipeline's
+        # error handler; if the crash happened before that, it will remain
+        # RUNNING until the cleanup job resets it.
+        raise
