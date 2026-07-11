@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from api.schemas.auth import UserCreate, UserLogin, UserResponse, Token
-from storage.database import get_db
+from storage.database import get_db_dep
 from storage.models import User
 from api.auth import get_password_hash, verify_password, create_access_token
 
@@ -11,7 +11,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 @router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def signup(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
+async def signup(user_data: UserCreate, db: AsyncSession = Depends(get_db_dep)):
     # Check if user already exists
     result = await db.execute(select(User).where(User.email == user_data.email))
     if result.scalars().first():
@@ -30,7 +30,7 @@ async def signup(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/login", response_model=Token)
-async def login(login_data: UserLogin, db: AsyncSession = Depends(get_db)):
+async def login(login_data: UserLogin, db: AsyncSession = Depends(get_db_dep)):
     result = await db.execute(select(User).where(User.email == login_data.email))
     user = result.scalars().first()
     

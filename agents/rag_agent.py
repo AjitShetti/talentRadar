@@ -126,8 +126,9 @@ class RAGAgent:
         async with AsyncSessionLocal() as session:
             uow = UnitOfWork(session)
 
-            # Fetch full job records from DB in a single batch
-            jobs = await uow.jobs.get_by_external_ids(ids, "tavily")
+            # Fetch full job records from DB in a single batch.
+            # NOTE: external_id is a stable MD5 fingerprint — no source filter needed.
+            jobs = await uow.jobs.get_by_external_ids(ids)
             jobs_by_ext_id = {job.external_id: job for job in jobs}
 
             for row in chroma_results:

@@ -14,13 +14,12 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from groq import AsyncGroq
-from sqlalchemy import func, select, text
+from sqlalchemy import text
 
 from agents.prompts.trend_prompt import TREND_ANALYSIS_PROMPT
 from agents.state import AgentResponse, IntentType
 from config.settings import get_settings
 from storage.database import AsyncSessionLocal
-from storage.models import Job, JobStatus
 
 logger = logging.getLogger(__name__)
 
@@ -105,12 +104,14 @@ class TrendAgent:
     async def _count_active_jobs(session, days: int) -> int:
         """Count active jobs in the last N days."""
         cutoff = datetime.now(tz=timezone.utc) - timedelta(days=days)
-        stmt = (
-            select(func.count(Job.id))
-            .where(Job.status == JobStatus.ACTIVE)
-            .where(Job.posted_at >= cutoff)
-        )
-        result = await session.execute(stmt)
+        # COALESCE: use created_at as fallback when posted_at is NULL
+        # (ATS pages rarely expose a publish date, so ingestion time is used).
+        stmt = text("""
+            SELECT COUNT(id) FROM jobs
+            WHERE status = 'active'
+              AND COALESCE(posted_at, created_at) >= :cutoff
+        """)
+        result = await session.execute(stmt, {"cutoff": cutoff})
         return result.scalar() or 0
 
     @staticmethod
@@ -118,12 +119,12 @@ class TrendAgent:
         """Get most frequently mentioned skills."""
         cutoff = datetime.now(tz=timezone.utc) - timedelta(days=days)
 
-        # Unnest the skills array and count
+        # Unnest the skills array and count; COALESCE posted_at with created_at
         stmt = text("""
             SELECT unnest(jobs.skills) AS skill, COUNT(*) AS count
             FROM jobs
             WHERE jobs.status = 'active'
-              AND jobs.posted_at >= :cutoff
+              AND COALESCE(jobs.posted_at, jobs.created_at) >= :cutoff
               AND jobs.skills IS NOT NULL
             GROUP BY skill
             ORDER BY count DESC
@@ -138,19 +139,19 @@ class TrendAgent:
         """Get aggregate salary statistics."""
         cutoff = datetime.now(tz=timezone.utc) - timedelta(days=days)
 
-        stmt = (
-            select(
-                func.avg(Job.salary_min).label("avg_min"),
-                func.avg(Job.salary_max).label("avg_max"),
-                func.min(Job.salary_min).label("min"),
-                func.max(Job.salary_max).label("max"),
-                func.count(Job.id).label("count_with_salary"),
-            )
-            .where(Job.status == JobStatus.ACTIVE)
-            .where(Job.posted_at >= cutoff)
-            .where(Job.salary_min.isnot(None))
-        )
-        result = await session.execute(stmt)
+        stmt = text("""
+            SELECT
+                AVG(salary_min) AS avg_min,
+                AVG(salary_max) AS avg_max,
+                MIN(salary_min) AS min,
+                MAX(salary_max) AS max,
+                COUNT(id) AS count_with_salary
+            FROM jobs
+            WHERE status = 'active'
+              AND COALESCE(posted_at, created_at) >= :cutoff
+              AND salary_min IS NOT NULL
+        """)
+        result = await session.execute(stmt, {"cutoff": cutoff})
         row = result.first()
 
         if not row or row.count_with_salary == 0:
@@ -176,7 +177,7 @@ class TrendAgent:
                 COUNT(*) AS count
             FROM jobs
             WHERE status = 'active'
-              AND posted_at >= :cutoff
+              AND COALESCE(posted_at, created_at) >= :cutoff
             GROUP BY location
             ORDER BY count DESC
             LIMIT 10
@@ -190,14 +191,15 @@ class TrendAgent:
         """Get job distribution by seniority level."""
         cutoff = datetime.now(tz=timezone.utc) - timedelta(days=days)
 
-        stmt = (
-            select(Job.seniority, func.count(Job.id))
-            .where(Job.status == JobStatus.ACTIVE)
-            .where(Job.posted_at >= cutoff)
-            .group_by(Job.seniority)
-            .order_by(func.count(Job.id).desc())
-        )
-        result = await session.execute(stmt)
+        stmt = text("""
+            SELECT seniority, COUNT(id) AS cnt
+            FROM jobs
+            WHERE status = 'active'
+              AND COALESCE(posted_at, created_at) >= :cutoff
+            GROUP BY seniority
+            ORDER BY cnt DESC
+        """)
+        result = await session.execute(stmt, {"cutoff": cutoff})
         rows = result.fetchall()
         return [{"seniority": row[0] or "unspecified", "count": row[1]} for row in rows]
 

@@ -56,7 +56,26 @@ class Base(DeclarativeBase):
 # ---------------------------------------------------------------------------
 @asynccontextmanager
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """Async context-manager; use in FastAPI Depends or standalone scripts."""
+    """Async context-manager; use in standalone scripts or service-layer code."""
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+
+
+async def get_db_dep() -> AsyncGenerator[AsyncSession, None]:
+    """
+    FastAPI dependency that yields an async DB session.
+
+    Use as ``db: AsyncSession = Depends(get_db_dep)`` in route handlers.
+    Unlike ``get_db``, this is a plain async generator — FastAPI's Depends()
+    requires a generator, not an asynccontextmanager.
+    """
     async with AsyncSessionLocal() as session:
         try:
             yield session

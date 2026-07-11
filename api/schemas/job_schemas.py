@@ -34,14 +34,15 @@ class JobResponseSchema(BaseModel):
     """Single job response payload."""
     id: str
     title: str
-    company_id: str
+    company_id: str = ""
     company_name: str | None = None
-    source: str
+    company: str | None = None          # Convenience alias for semantic search results
+    source: str | None = None           # Optional — not always available from vector search
     source_url: str | None = None
     location_raw: str | None = None
     country: str | None = None
     city: str | None = None
-    is_remote: bool
+    is_remote: bool = False
     seniority: str | None = None
     employment_type: str | None = None
     salary_raw: str | None = None
@@ -52,7 +53,7 @@ class JobResponseSchema(BaseModel):
     tags: list[str] = []
     description_clean: str | None = None
     posted_at: datetime | None = None
-    created_at: datetime
+    created_at: datetime | None = None  # Optional — not available in vector-only results
     embedding_id: str | None = None
     match_score: float | None = Field(None, description="Match score if from search")
 

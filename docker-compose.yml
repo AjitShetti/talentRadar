@@ -161,7 +161,11 @@ services:
     ports:
       - "3000:3000"
     environment:
+      # Browser-side API URL (used by client components via fetch)
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      # Server-side API URL (used by NextAuth authorize() running inside Docker)
+      # Must use the internal Docker service name, not localhost.
+      INTERNAL_API_URL: ${INTERNAL_API_URL:-http://api:8000}
       NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-supersecretkey1234567890}
       HOSTNAME: "0.0.0.0"

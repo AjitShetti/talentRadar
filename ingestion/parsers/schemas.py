@@ -239,10 +239,27 @@ class ParsedJobDescription(BaseModel):
           salary       → salary_raw
           location     → location_raw
         """
+        from datetime import datetime, timezone
+        import re
+
+        # Strip common navigation / markdown noise from raw text for a cleaner
+        # description that is useful for display and ChromaDB embeddings.
+        def _clean(text: str) -> str:
+            # Remove markdown links [text](url)
+            text = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', text)
+            # Remove bare URLs
+            text = re.sub(r'https?://\S+', '', text)
+            # Drop lines that look like navigation (very short or all caps menu items)
+            lines = [
+                line for line in text.splitlines()
+                if len(line.strip()) > 30 or (line.strip() and not line.strip().isupper())
+            ]
+            return '\n'.join(lines).strip()
+
         return {
             "title": self.title,
             "description_raw": self.raw_text,
-            "description_clean": self.raw_text,
+            "description_clean": _clean(self.raw_text),
             "location_raw": self.location,
             "is_remote": self.is_remote,
             "salary_raw": self.salary,
@@ -251,6 +268,10 @@ class ParsedJobDescription(BaseModel):
             "salary_currency": self.salary_currency,
             "skills": self.skills or None,
             "source_url": self.source_url,
+            # Set posted_at to now so jobs appear in trend date-range queries.
+            # Real publish dates are rarely available from ATS pages; using
+            # ingestion time is the best available proxy.
+            "posted_at": datetime.now(tz=timezone.utc),
             # employment_type / seniority are Postgres enum columns —
             # the caller must cast these to EmploymentType / SeniorityLevel
             # before passing to the ORM. Stored as raw strings here.
