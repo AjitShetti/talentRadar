@@ -140,13 +140,14 @@ async def search_jobs_semantic(request: SearchRequestSchema):
         offset=request.offset,
     )
 
-    # Convert agent results to response schema
-    job_results = []
-    for result in response.results:
-        job_results.append(JobResponseSchema(
+    # Convert agent results to response schema.
+    # RetrievalResult only carries the fields returned from ChromaDB metadata +
+    # DB lookup — fields not available there (company_id, created_at) are left
+    # as None via the now-optional schema defaults.
+    job_results = [
+        JobResponseSchema(
             id=result.job_id,
             title=result.title,
-            company_id="",  # Would need to fetch from DB
             company=result.company,
             location_raw=result.location,
             is_remote=result.is_remote,
@@ -154,9 +155,9 @@ async def search_jobs_semantic(request: SearchRequestSchema):
             skills=result.skills,
             source_url=result.source_url,
             match_score=result.score,
-            posted_at=result.posted_at,
-            created_at=None,  # Would need to fetch from DB
-        ))
+        )
+        for result in response.results
+    ]
 
     return SearchResponseSchema(
         results=job_results,

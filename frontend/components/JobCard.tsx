@@ -20,10 +20,10 @@ export default function JobCard({ job, showScore = false }: JobCardProps) {
               {job.title}
             </Link>
           </h3>
-          {job.company_name && (
+          {(job.company_name || job.company) && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-fg-muted)' }}>
               <Building2 size={16} />
-              <span>{job.company_name}</span>
+              <span>{job.company_name || job.company}</span>
             </div>
           )}
         </div>

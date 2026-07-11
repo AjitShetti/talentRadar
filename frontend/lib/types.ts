@@ -6,8 +6,9 @@ export interface Job {
   id: string;
   title: string;
   company_name?: string;
-  company_id: string;
-  source: string;
+  company?: string;           // Populated from semantic search results
+  company_id?: string;
+  source?: string;
   source_url?: string;
   location_raw?: string;
   country?: string;
@@ -23,7 +24,7 @@ export interface Job {
   tags: string[];
   description_clean?: string;
   posted_at?: string;
-  created_at: string;
+  created_at?: string;
   match_score?: number;
   views?: number;
 }

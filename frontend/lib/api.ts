@@ -184,7 +184,7 @@ export const api = {
 
   // ── Health ─────────────────────────────────
   health: (signal?: AbortSignal) =>
-    fetchAPI<HealthResponse>('/api/v1/health', {
+    fetchAPI<HealthResponse>('/health', {
       method: 'GET',
       signal,
     }),

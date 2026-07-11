@@ -1,7 +1,14 @@
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Server-side URL: used by NextAuth's authorize() which runs in the Node.js
+// server process (inside Docker). Must use the internal service name.
+// NEXT_PUBLIC_API_URL is a browser-only var — resolves to localhost inside Docker,
+// which points to the frontend container itself, not the API.
+const SERVER_API_URL =
+  process.env.INTERNAL_API_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  "http://localhost:8000";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -17,7 +24,7 @@ export const authOptions: NextAuthOptions = {
         }
 
         try {
-          const res = await fetch(`${API_URL}/api/auth/login`, {
+          const res = await fetch(`${SERVER_API_URL}/api/auth/login`, {
             method: 'POST',
             body: JSON.stringify(credentials),
             headers: { "Content-Type": "application/json" }

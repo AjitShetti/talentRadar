@@ -149,7 +149,9 @@ async def _run_pipeline(
 
                 chroma_items.append({
                     "job_id": external_id,
-                    "text": pjd.raw_text[:4096],
+                    # Prefer cleaned description for embedding quality;
+                    # fall back to raw_text only if description_clean is absent.
+                    "text": (job_kwargs.get("description_clean") or pjd.raw_text)[:4096],
                     "metadata": metadata,
                     "internal_job_id": job.id,
                 })

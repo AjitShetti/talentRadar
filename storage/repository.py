@@ -459,13 +459,23 @@ class JobRepository(BaseRepository[Job]):
         stmt = select(Job).where(Job.id.in_(ids))
         return (await self.session.execute(stmt)).scalars().all()
 
-    async def get_by_external_ids(self, external_ids: list[str], source: str) -> Sequence[Job]:
-        """Fetch multiple jobs by their external IDs and source."""
+    async def get_by_external_ids(self, external_ids: list[str], source: str | None = None) -> Sequence[Job]:
+        """Fetch multiple jobs by their external IDs.
+
+        Parameters
+        ----------
+        external_ids:
+            List of stable MD5 fingerprint IDs (matches ChromaDB document IDs).
+        source:
+            Optional source filter (e.g. 'ats_crawler'). When omitted, all
+            sources are searched — required for cross-source lookups like RAG.
+        """
         if not external_ids:
             return []
-        stmt = select(Job).where(
-            and_(Job.external_id.in_(external_ids), Job.source == source)
-        )
+        conditions = [Job.external_id.in_(external_ids)]
+        if source is not None:
+            conditions.append(Job.source == source)
+        stmt = select(Job).where(and_(*conditions))
         return (await self.session.execute(stmt)).scalars().all()
 
     # ------------------------------------------------------------------ #

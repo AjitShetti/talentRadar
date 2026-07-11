@@ -13,31 +13,40 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import Any
+import hashlib
 
+import bcrypt
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from passlib.context import CryptContext
 
 from config.settings import get_settings
-
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Bearer token scheme
 security = HTTPBearer()
 
 settings = get_settings()
 
+def _prehash(password: str) -> bytes:
+    """
+    SHA-256 pre-hash the password before bcrypt.
+
+    This sidesteps bcrypt's 72-byte input limit (longer passwords are silently
+    truncated by the underlying C library) and is widely recommended when using
+    bcrypt for password storage.
+    """
+    return hashlib.sha256(password.encode()).hexdigest().encode()
+
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against its hash."""
-    return pwd_context.verify(plain_password, hashed_password)
+    """Verify a password against its bcrypt hash."""
+    return bcrypt.checkpw(_prehash(plain_password), hashed_password.encode())
 
 
 def get_password_hash(password: str) -> str:
-    """Hash a password."""
-    return pwd_context.hash(password)
+    """Hash a password with bcrypt (SHA-256 prehash to handle >72-byte inputs)."""
+    salt = bcrypt.gensalt(rounds=12)
+    return bcrypt.hashpw(_prehash(password), salt).decode()
 
 
 def create_access_token(

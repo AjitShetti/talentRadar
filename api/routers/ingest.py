@@ -36,9 +36,9 @@ async def trigger_ingestion(
     with the specified roles and locations.
     """
     try:
-        from ingestion.tasks import scrape_tavily
-        
-        task = scrape_tavily.delay(
+        from ingestion.tasks import run_crawler
+
+        task = run_crawler.delay(
             roles=request.roles,
             locations=request.locations,
             max_results_per_query=request.max_results_per_query,
