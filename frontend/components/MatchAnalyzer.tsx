@@ -113,7 +113,7 @@ export default function MatchAnalyzer() {
       });
       if (!res.ok) throw new Error('Failed to generate learning path');
       const data = await res.json();
-      setLearningPath(data.learning_path);
+      setLearningPath(data.learning_path_markdown);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -131,11 +131,17 @@ export default function MatchAnalyzer() {
       });
       if (!res.ok) throw new Error('Failed to tailor resume');
       
+      const contentDisposition = res.headers.get('Content-Disposition');
+      let filename = 'Tailored_Resume.pdf';
+      if (contentDisposition && contentDisposition.includes('filename=')) {
+        filename = contentDisposition.split('filename=')[1].replace(/["']/g, '');
+      }
+      
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'Tailored_Resume.docx';
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -293,7 +299,7 @@ export default function MatchAnalyzer() {
                 style={{ width: '100%', justifyContent: 'center' }}
               >
                 {tailoringResume ? <Loader2 className="animate-spin" /> : <Download size={18} />}
-                EXPORT TAILORED RESUME (.DOCX)
+                EXPORT TAILORED RESUME (.PDF)
               </button>
             </div>
           </div>

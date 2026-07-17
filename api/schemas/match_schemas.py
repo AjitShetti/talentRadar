@@ -61,6 +61,13 @@ class SingleMatchResultSchema(BaseModel):
     warnings: list[str] = Field(default_factory=list, description="Any warnings during processing")
 
 
+class MatchAndTailorResponseSchema(SingleMatchResultSchema):
+    """Result for a combined match and tailor request."""
+    file_base64: str = Field(..., description="Base64 encoded string of the tailored resume PDF")
+    filename: str = Field(..., description="The name of the downloaded file (e.g. John_Doe_resume.pdf)")
+
+
+
 class BatchMatchResultSchema(BaseModel):
     """Result for a single match in a batch request."""
     match_percentage: float = Field(..., ge=0, le=100)

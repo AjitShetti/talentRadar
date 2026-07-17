@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 
 from api.schemas.match_schemas import (
     BatchMatchRequestSchema,
@@ -28,6 +28,7 @@ from api.schemas.match_schemas import (
     MatchRequestSchema,
     MatchWeightsSchema,
     SingleMatchResultSchema,
+    MatchAndTailorResponseSchema,
     ScoreBreakdownSchema,
 )
 from api.schemas.ai_core_schemas import (
@@ -43,7 +44,9 @@ from fastapi import Depends
 from functools import lru_cache
 from agents.tasks import evaluate_candidate_task
 from agents.resume_tailor import ResumeTailor
-from api.utils.docx_generator import generate_resume_docx
+from api.utils.latex_compiler import compile_latex_to_pdf
+from api.utils.file_parser import extract_text_from_bytes
+import base64
 from ml.config import PipelineConfig, ScoringWeights
 from ml.resume_matcher import ResumeMatcher
 
@@ -61,64 +64,60 @@ def get_matcher() -> ResumeMatcher:
     return ResumeMatcher()
 
 
-@router.post("/", response_model=SingleMatchResultSchema)
-async def match_resume_to_job(request: MatchRequestSchema, matcher: ResumeMatcher = Depends(get_matcher)):
-    """Match a single resume against a job description.
+@router.post("/", response_model=MatchAndTailorResponseSchema)
+async def match_resume_to_job(
+    resume_file: UploadFile = File(..., description="The resume file in PDF or DOCX format"),
+    job_description: str = Form(..., description="Full job description text"),
+    job_title: str = Form(..., description="Target job title"),
+    matcher: ResumeMatcher = Depends(get_matcher)
+):
+    """Match a resume file against a job description and return a tailored resume.
 
-    Analyzes the resume text and returns a percentage match score with
-    detailed breakdown by category (skills, experience, education, semantic).
-
-    **Request body:**
-    - `resume_text`: Full resume text (plain text or HTML)
-    - `job_description`: Full job description text
-
-    **Response:**
-    - `match_percentage`: Overall match score (0-100)
-    - `breakdown`: Score by category
-    - `matched_skills`: Skills found in both
-    - `missing_skills`: Required skills not in resume
-    - `extra_skills`: Skills in resume but not required
-    - `confidence`: Confidence in the match (0-1)
-
-    **Example request:**
-    ```json
-    {
-        "resume_text": "Python developer with 5 years experience in FastAPI...",
-        "job_description": "Looking for a senior Python developer with FastAPI..."
-    }
-    ```
-
-    **Example response:**
-    ```json
-    {
-        "match_percentage": 85.5,
-        "breakdown": {
-            "skills": 90.0,
-            "experience": 80.0,
-            "education": 85.0,
-            "semantic": 82.0
-        },
-        "matched_skills": ["Python", "FastAPI", "PostgreSQL"],
-        "missing_skills": ["Docker", "Kubernetes"],
-        "extra_skills": ["Redis"],
-        "confidence": 0.85,
-        "processing_time_ms": 150.5
-    }
-    ```
+    Parses the uploaded resume file (PDF or DOCX), calculates a match score 
+    against the provided job description, and returns a tailored resume formatted 
+    as a DOCX file encoded in Base64.
     """
     try:
+        file_bytes = await resume_file.read()
+        filename = resume_file.filename or "resume.txt"
+        resume_text = extract_text_from_bytes(file_bytes, filename)
+    except Exception as e:
+        logger.error("File extraction failed", exc_info=True)
+        raise HTTPException(status_code=400, detail=f"Failed to read file: {e}") from e
+
+    try:
+        combined_jd = f"Job Title: {job_title}\n\nJob Description:\n{job_description}"
+        
+        # Match score
         result = await run_in_threadpool(
             matcher.match,
-            resume_text=request.resume_text,
-            job_description=request.job_description,
+            resume_text=resume_text,
+            job_description=combined_jd,
         )
+        
+        # Tailor resume
+        tailor = ResumeTailor()
+        tailored_result = await run_in_threadpool(
+            tailor.tailor,
+            resume_text, 
+            combined_jd
+        )
+        
+        # Extract candidate name and compile LaTeX
+        candidate_name = tailored_result.get("candidate_name", "Applicant").strip().replace(" ", "_")
+        latex_content = tailored_result.get("latex_content", "")
+        
+        pdf_bytes = compile_latex_to_pdf(latex_content)
+        file_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+        filename = f"{candidate_name}_resume.pdf"
+        
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        logger.error("Match request failed", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Matching failed: {e}") from e
+        logger.error("Match and tailor request failed", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Processing failed: {e}") from e
 
-    return SingleMatchResultSchema(
+    return MatchAndTailorResponseSchema(
         match_percentage=result.overall_score,
         breakdown=ScoreBreakdownSchema(
             skills=result.breakdown.skills,
@@ -132,6 +131,8 @@ async def match_resume_to_job(request: MatchRequestSchema, matcher: ResumeMatche
         confidence=result.confidence,
         processing_time_ms=result.processing_time_ms,
         warnings=result.warnings,
+        file_base64=file_base64,
+        filename=filename,
     )
 
 
@@ -308,18 +309,24 @@ async def evaluate_stream(task_id: str):
 @router.post("/tailor-resume")
 async def tailor_resume(request: TailorResumeRequest):
     """
-    Tailor a resume for a specific job description and return it as a .docx file.
+    Tailor a resume for a specific job description and return it as a .pdf file.
     """
     try:
         tailor = ResumeTailor()
-        tailored_text = tailor.tailor(request.resume_text, request.job_description)
+        tailored_result = tailor.tailor(request.resume_text, request.job_description)
         
-        docx_stream = generate_resume_docx(tailored_text)
+        candidate_name = tailored_result.get("candidate_name", "Applicant").strip().replace(" ", "_")
+        latex_content = tailored_result.get("latex_content", "")
+        
+        pdf_bytes = compile_latex_to_pdf(latex_content)
+        
+        from io import BytesIO
+        pdf_stream = BytesIO(pdf_bytes)
         
         return StreamingResponse(
-            docx_stream,
-            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={"Content-Disposition": "attachment; filename=Tailored_Resume.docx"}
+            pdf_stream,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={candidate_name}_resume.pdf"}
         )
     except Exception as e:
         logger.error("Failed to tailor resume", exc_info=True)
