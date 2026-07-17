@@ -43,6 +43,12 @@ export default function Header() {
         >
           MATCH ENGINE
         </Link>
+        <Link 
+          href="/interview" 
+          style={{ textDecoration: 'none', color: pathname.startsWith('/interview') ? 'var(--color-accent)' : 'var(--color-fg-muted)', transition: 'color var(--transition-speed) ease' }}
+        >
+          INTERVIEWS
+        </Link>
         {status === 'authenticated' ? (
           <button 
             onClick={() => signOut()}
