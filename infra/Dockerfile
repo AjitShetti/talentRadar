@@ -30,8 +30,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install curl for healthcheck (not available in slim by default)
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+# Install curl for healthcheck (not available in slim by default) and LaTeX for resume generation
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    texlive-latex-base \
+    texlive-fonts-recommended \
+    texlive-latex-extra \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy installed packages from builder

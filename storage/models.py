@@ -438,3 +438,211 @@ class User(Base):
 
     def __repr__(self) -> str:
         return f"<User id={self.id} email={self.email!r} role={self.role!r}>"
+
+
+# ---------------------------------------------------------------------------
+# interview_sessions / interview_answer_scores
+# ---------------------------------------------------------------------------
+
+class InterviewTrack(str, PyEnum):
+    """Available mock interview catalog tracks."""
+    PYTHON_DSA     = "python_dsa"
+    PYTHON_BACKEND = "python_backend"
+    SQL            = "sql"
+    SYSTEM_DESIGN  = "system_design"
+
+
+class InterviewDifficulty(str, PyEnum):
+    """Difficulty level chosen by the user per session."""
+    BEGINNER = "beginner"
+    MID      = "mid"
+    SENIOR   = "senior"
+
+
+class InterviewSession(Base):
+    """
+    One mock interview session for a user.
+
+    Design decisions
+    ----------------
+    * Session metadata and final aggregate score only — raw transcripts are
+      never persisted (privacy-first decision).
+    * ``completed`` distinguishes a gracefully finished session from one that
+      was abandoned mid-way (tab closed, network drop, etc.).
+    * Scores are stored as floats 0–100 for human-readable display.
+    """
+    __tablename__ = "interview_sessions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+
+    # Owner
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # Session config
+    track: Mapped[InterviewTrack] = mapped_column(
+        Enum(
+            InterviewTrack,
+            name="interview_track_enum",
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
+        nullable=False,
+        index=True,
+    )
+    difficulty: Mapped[InterviewDifficulty] = mapped_column(
+        Enum(
+            InterviewDifficulty,
+            name="interview_difficulty_enum",
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
+        nullable=False,
+    )
+
+    # Outcome
+    duration_seconds: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="Wall-clock seconds from start to end/abort",
+    )
+    total_score: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+        comment="Aggregate score 0–100, NULL until session is completed",
+    )
+    completed: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment="True = gracefully ended; False = abandoned mid-session",
+    )
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    # Relationships
+    answer_scores: Mapped[list["InterviewAnswerScore"]] = relationship(
+        "InterviewAnswerScore",
+        back_populates="session",
+        cascade="all, delete-orphan",
+        order_by="InterviewAnswerScore.question_index",
+    )
+
+    __table_args__ = (
+        Index("ix_interview_sessions_user_created", "user_id", "created_at"),
+        Index("ix_interview_sessions_track_difficulty", "track", "difficulty"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<InterviewSession id={self.id} track={self.track.value!r} "
+            f"difficulty={self.difficulty.value!r} score={self.total_score}>"
+        )
+
+
+class InterviewAnswerScore(Base):
+    """
+    Per-question score record within a single interview session.
+
+    Design decisions
+    ----------------
+    * Stores ``question_text`` and a brief ``answer_summary`` (NOT the full
+      transcript) so the score card can be rendered without raw audio data.
+    * Three sub-scores (correctness / clarity / depth) each 0–10 so the
+      frontend can display a breakdown radar chart in future.
+    * ``was_followup`` distinguishes a follow-up probe from an original Q.
+    """
+    __tablename__ = "interview_answer_scores"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("interview_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    question_index: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        comment="0-based position in the session (including follow-ups)",
+    )
+    question_text: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        comment="The exact question text posed to the user",
+    )
+    answer_summary: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Brief LLM-generated summary of the user's answer (not full transcript)",
+    )
+
+    # Sub-scores (0.0 – 10.0 each)
+    score_correctness: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.0,
+        comment="Factual accuracy of the answer",
+    )
+    score_clarity: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.0,
+        comment="How clearly and concisely the answer was communicated",
+    )
+    score_depth: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.0,
+        comment="Technical depth and nuance demonstrated",
+    )
+
+    was_followup: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment="True if this row is a follow-up probe, not the original question",
+    )
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # Relationships
+    session: Mapped["InterviewSession"] = relationship(
+        "InterviewSession", back_populates="answer_scores"
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_interview_answer_scores_session_idx",
+            "session_id",
+            "question_index",
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<InterviewAnswerScore session={self.session_id} "
+            f"q={self.question_index} followup={self.was_followup}>"
+        )
