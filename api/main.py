@@ -98,6 +98,7 @@ async def health_check():
 
 # Register routers
 from api.routers import search, query, recommend, trends, ingest, match, auth  # noqa: E402
+from api.routers import interview  # noqa: E402
 
 app.include_router(auth.router)
 app.include_router(search.router, prefix="/api/v1")
@@ -106,6 +107,7 @@ app.include_router(recommend.router, prefix="/api/v1")
 app.include_router(trends.router, prefix="/api/v1")
 app.include_router(ingest.router, prefix="/api/v1")
 app.include_router(match.router, prefix="/api/v1")
+app.include_router(interview.router, prefix="/api/v1")
 
 
 # API documentation
@@ -137,6 +139,13 @@ async def api_root():
                 "trigger": "POST /api/v1/ingest/trigger",
                 "runs": "GET /api/v1/ingest/runs",
                 "run_detail": "GET /api/v1/ingest/runs/{run_id}",
+            },
+            "interview": {
+                "start":       "POST /api/v1/interview/sessions/start",
+                "answer":      "POST /api/v1/interview/sessions/answer",
+                "end":         "POST /api/v1/interview/sessions/end",
+                "history":     "GET  /api/v1/interview/sessions/history",
+                "transcribe":  "POST /api/v1/interview/voice/transcribe",
             },
         },
         "docs": "/docs",
