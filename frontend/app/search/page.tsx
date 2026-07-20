@@ -11,7 +11,6 @@ const PAGE_SIZE = 20;
 
 export default function SearchPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [summary, setSummary] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +37,6 @@ export default function SearchPage() {
     if (!isLoadMore) {
       setLoading(true);
       setError(null);
-      setSummary(null);
       setJobs([]);
       setOffset(0);
       setCurrentQuery(query);
@@ -62,9 +60,8 @@ export default function SearchPage() {
         setOffset(PAGE_SIZE);
       }
 
-      if (!isLoadMore) {
-        setSummary(response.summary || null);
-      }
+      // Summary removed
+
       setTotalFound(response.total_found);
       setHasMore(response.results.length === PAGE_SIZE);
     } catch (err) {
@@ -73,7 +70,6 @@ export default function SearchPage() {
       setError(message);
       if (!isLoadMore) {
         setJobs([]);
-        setSummary(null);
       }
     } finally {
       setLoading(false);
@@ -119,22 +115,7 @@ export default function SearchPage() {
         </div>
       )}
 
-      {/* AI Summary */}
-      {summary && (
-        <div className="panel" style={{ marginBottom: '2rem', borderLeft: '4px solid var(--color-accent)' }}>
-          <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-accent)', marginBottom: '1rem', fontFamily: 'var(--font-display)', fontWeight: 700 }}>
-            <Zap size={18} />
-            AI SEARCH SUMMARY
-          </h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', color: 'var(--color-fg)' }}>
-            {summary.split('\n').map((line, idx) => (
-              <p key={`summary-${idx}`} style={{ margin: 0, paddingLeft: line.startsWith('-') ? '1rem' : '0' }}>
-                {sanitizeText(line)}
-              </p>
-            ))}
-          </div>
-        </div>
-      )}
+
 
       {/* Results Count */}
       {!loading && totalFound > 0 && (

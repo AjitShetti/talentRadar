@@ -135,3 +135,11 @@ button:hover, .btn:hover {
 .markdown-content strong {
   color: #fff;
 }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
