@@ -18,11 +18,8 @@ export default function MatchAnalyzer() {
   const [result, setResult] = useState<EvaluationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   
-  // Learning Path
-  const [learningPath, setLearningPath] = useState<string | null>(null);
-  const [generatingPath, setGeneratingPath] = useState(false);
-
   // Resume Download
+
   const [tailoringResume, setTailoringResume] = useState(false);
 
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -46,7 +43,6 @@ export default function MatchAnalyzer() {
     setLoading(true);
     setError(null);
     setResult(null);
-    setLearningPath(null);
     setStatus('Initializing evaluation engine...');
 
     try {
@@ -99,25 +95,6 @@ export default function MatchAnalyzer() {
     } catch (err: any) {
       setError(err.message);
       setLoading(false);
-    }
-  };
-
-  const generateLearningPath = async () => {
-    if (!result || result.missing_skills.length === 0) return;
-    setGeneratingPath(true);
-    try {
-      const res = await fetch(`${API_URL}/api/v1/recommend/learning-path`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ missing_skills: result.missing_skills })
-      });
-      if (!res.ok) throw new Error('Failed to generate learning path');
-      const data = await res.json();
-      setLearningPath(data.learning_path_markdown);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setGeneratingPath(false);
     }
   };
 
@@ -262,32 +239,6 @@ export default function MatchAnalyzer() {
                   ))}
                 </div>
                 
-                {!learningPath && (
-                  <button 
-                    className="btn" 
-                    onClick={generateLearningPath} 
-                    disabled={generatingPath}
-                    style={{ marginTop: '1.5rem', width: '100%', justifyContent: 'center', fontSize: '0.8rem' }}
-                  >
-                    {generatingPath ? <Loader2 className="animate-spin" size={16} /> : <Briefcase size={16} />}
-                    GENERATE LEARNING PATH
-                  </button>
-                )}
-              </div>
-            )}
-
-            {learningPath && (
-              <div style={{ 
-                marginTop: '2rem', 
-                padding: '1.5rem', 
-                background: 'rgba(0,0,0,0.3)', 
-                border: '1px solid var(--color-border)',
-                borderLeft: '4px solid var(--color-accent)'
-              }}>
-                <h3 style={{ marginBottom: '1rem', color: 'var(--color-accent)' }}>RECOMMENDED LEARNING PATH</h3>
-                <div style={{ fontSize: '0.9rem', color: 'var(--color-fg)' }}>
-                  <ReactMarkdown>{learningPath}</ReactMarkdown>
-                </div>
               </div>
             )}
 

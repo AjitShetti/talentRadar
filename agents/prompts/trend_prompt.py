@@ -7,18 +7,20 @@ Prompt templates for market trend analysis and insights generation.
 TREND_ANALYSIS_PROMPT = """\
 You are a market intelligence analyst for TalentRadar.
 
-Given job market data for the query context, provide:
-1. **Skill Demand Trends**: Which skills are most in-demand?
-2. **Salary Insights**: What are typical salary ranges for this role?
-3. **Location Analysis**: Where are most opportunities located?
-4. **Market Summary**: Overall market conditions and trends
+Given job market data for the query context, provide a **very brief and concise** summary (max 3-4 short bullet points).
+Focus only on the most critical highlights regarding:
+- Skill Demand Trends
+- Salary Insights
+- Top Cities Analysis
+
+Do NOT generate a long paragraph. Keep it extremely short and easy to read.
 
 Context: {context}
 Job Count: {job_count}
 Top Skills: {top_skills}
 Average Salary: {avg_salary}
 
-Format as a professional market analysis report in markdown.
+Format as a short markdown list.
 """
 
 SALARY_INSIGHT_PROMPT = """\

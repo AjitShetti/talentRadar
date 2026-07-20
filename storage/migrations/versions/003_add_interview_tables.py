@@ -46,179 +46,86 @@ interview_difficulty_enum = sa.Enum(
 # upgrade
 # ---------------------------------------------------------------------------
 def upgrade() -> None:
-    # -- Create ENUM types first (must exist before the column is added) ----
-    interview_track_enum.create(op.get_bind(), checkfirst=True)
-    interview_difficulty_enum.create(op.get_bind(), checkfirst=True)
+    bind = op.get_bind()
 
-    # -- interview_sessions -------------------------------------------------
-    op.create_table(
-        "interview_sessions",
-        sa.Column(
-            "id",
-            postgresql.UUID(as_uuid=True),
-            server_default=sa.text("gen_random_uuid()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "user_id",
-            postgresql.UUID(as_uuid=True),
-            nullable=False,
-        ),
-        sa.Column(
-            "track",
-            sa.Enum(*TRACK_VALUES, name="interview_track_enum", create_type=False),
-            nullable=False,
-        ),
-        sa.Column(
-            "difficulty",
-            sa.Enum(*DIFFICULTY_VALUES, name="interview_difficulty_enum", create_type=False),
-            nullable=False,
-        ),
-        sa.Column(
-            "duration_seconds",
-            sa.Integer(),
-            nullable=True,
-            comment="Wall-clock seconds from start to end/abort",
-        ),
-        sa.Column(
-            "total_score",
-            sa.Float(),
-            nullable=True,
-            comment="Aggregate score 0-100, NULL until session is completed",
-        ),
-        sa.Column(
-            "completed",
-            sa.Boolean(),
-            server_default=sa.text("false"),
-            nullable=False,
-            comment="True = gracefully ended; False = abandoned mid-session",
-        ),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["user_id"],
-            ["users.id"],
-            ondelete="CASCADE",
-        ),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    # Indexes for common query patterns
-    op.create_index(
-        "ix_interview_sessions_user_id",
-        "interview_sessions",
-        ["user_id"],
-    )
-    op.create_index(
-        "ix_interview_sessions_track",
-        "interview_sessions",
-        ["track"],
-    )
-    op.create_index(
-        "ix_interview_sessions_user_created",
-        "interview_sessions",
-        ["user_id", "created_at"],
-    )
-    op.create_index(
-        "ix_interview_sessions_track_difficulty",
-        "interview_sessions",
-        ["track", "difficulty"],
-    )
+    # -- Create ENUM types (idempotent via pg_type check) ------------------
+    bind.execute(sa.text("""
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'interview_track_enum') THEN
+                CREATE TYPE interview_track_enum
+                    AS ENUM ('python_dsa', 'python_backend', 'sql', 'system_design');
+            END IF;
+        END $$
+    """))
+    bind.execute(sa.text("""
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'interview_difficulty_enum') THEN
+                CREATE TYPE interview_difficulty_enum
+                    AS ENUM ('beginner', 'mid', 'senior');
+            END IF;
+        END $$
+    """))
 
-    # -- interview_answer_scores --------------------------------------------
-    op.create_table(
-        "interview_answer_scores",
-        sa.Column(
-            "id",
-            postgresql.UUID(as_uuid=True),
-            server_default=sa.text("gen_random_uuid()"),
-            nullable=False,
-        ),
-        sa.Column(
-            "session_id",
-            postgresql.UUID(as_uuid=True),
-            nullable=False,
-        ),
-        sa.Column(
-            "question_index",
-            sa.Integer(),
-            nullable=False,
-            comment="0-based position in the session (including follow-ups)",
-        ),
-        sa.Column(
-            "question_text",
-            sa.Text(),
-            nullable=False,
-            comment="The exact question text posed to the user",
-        ),
-        sa.Column(
-            "answer_summary",
-            sa.Text(),
-            nullable=True,
-            comment="Brief LLM-generated summary of the answer (not full transcript)",
-        ),
-        # Sub-scores: 0.0 – 10.0 each
-        sa.Column(
-            "score_correctness",
-            sa.Float(),
-            server_default=sa.text("0.0"),
-            nullable=False,
-            comment="Factual accuracy of the answer",
-        ),
-        sa.Column(
-            "score_clarity",
-            sa.Float(),
-            server_default=sa.text("0.0"),
-            nullable=False,
-            comment="How clearly and concisely the answer was communicated",
-        ),
-        sa.Column(
-            "score_depth",
-            sa.Float(),
-            server_default=sa.text("0.0"),
-            nullable=False,
-            comment="Technical depth and nuance demonstrated",
-        ),
-        sa.Column(
-            "was_followup",
-            sa.Boolean(),
-            server_default=sa.text("false"),
-            nullable=False,
-            comment="True if this row is a follow-up probe, not the original question",
-        ),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(
-            ["session_id"],
-            ["interview_sessions.id"],
-            ondelete="CASCADE",
-        ),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    # Composite index for fetching all scores of a session in order
-    op.create_index(
-        "ix_interview_answer_scores_session_id",
-        "interview_answer_scores",
-        ["session_id"],
-    )
-    op.create_index(
-        "ix_interview_answer_scores_session_idx",
-        "interview_answer_scores",
-        ["session_id", "question_index"],
-    )
+    # -- interview_sessions ------------------------------------------------
+    bind.execute(sa.text("""
+        CREATE TABLE IF NOT EXISTS interview_sessions (
+            id               UUID        NOT NULL DEFAULT gen_random_uuid(),
+            user_id          UUID        NOT NULL,
+            track            interview_track_enum       NOT NULL,
+            difficulty       interview_difficulty_enum  NOT NULL,
+            duration_seconds INTEGER,
+            total_score      DOUBLE PRECISION,
+            completed        BOOLEAN     NOT NULL DEFAULT false,
+            created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (id),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    """))
+
+    bind.execute(sa.text(
+        "CREATE INDEX IF NOT EXISTS ix_interview_sessions_user_id "
+        "ON interview_sessions (user_id)"
+    ))
+    bind.execute(sa.text(
+        "CREATE INDEX IF NOT EXISTS ix_interview_sessions_track "
+        "ON interview_sessions (track)"
+    ))
+    bind.execute(sa.text(
+        "CREATE INDEX IF NOT EXISTS ix_interview_sessions_user_created "
+        "ON interview_sessions (user_id, created_at)"
+    ))
+    bind.execute(sa.text(
+        "CREATE INDEX IF NOT EXISTS ix_interview_sessions_track_difficulty "
+        "ON interview_sessions (track, difficulty)"
+    ))
+
+    # -- interview_answer_scores -------------------------------------------
+    bind.execute(sa.text("""
+        CREATE TABLE IF NOT EXISTS interview_answer_scores (
+            id               UUID        NOT NULL DEFAULT gen_random_uuid(),
+            session_id       UUID        NOT NULL,
+            question_index   INTEGER     NOT NULL,
+            question_text    TEXT        NOT NULL,
+            answer_summary   TEXT,
+            score_correctness DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            score_clarity     DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            score_depth       DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            was_followup      BOOLEAN    NOT NULL DEFAULT false,
+            created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (id),
+            FOREIGN KEY (session_id) REFERENCES interview_sessions(id) ON DELETE CASCADE
+        )
+    """))
+
+    bind.execute(sa.text(
+        "CREATE INDEX IF NOT EXISTS ix_interview_answer_scores_session_id "
+        "ON interview_answer_scores (session_id)"
+    ))
+    bind.execute(sa.text(
+        "CREATE INDEX IF NOT EXISTS ix_interview_answer_scores_session_idx "
+        "ON interview_answer_scores (session_id, question_index)"
+    ))
 
 
 # ---------------------------------------------------------------------------

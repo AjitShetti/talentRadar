@@ -173,7 +173,7 @@ class TrendAgent:
 
         stmt = text("""
             SELECT
-                CASE WHEN is_remote THEN 'Remote' ELSE COALESCE(country, 'Unknown') END AS location,
+                CASE WHEN is_remote THEN 'Remote' ELSE COALESCE(city, country, 'Unknown') END AS location,
                 COUNT(*) AS count
             FROM jobs
             WHERE status = 'active'
@@ -225,7 +225,7 @@ Market Data (last 30 days):
 - Total Active Jobs: {total_jobs}
 - Top Skills: {top_skills_text}
 - Average Salary Range: {avg_salary}
-- Top Locations: {', '.join(f"{l['location']} ({l['count']})" for l in location_data[:5])}
+- Top Cities: {', '.join(f"{l['location']} ({l['count']})" for l in location_data[:10])}
 - Seniority Distribution: {', '.join(f"{s['seniority']} ({s['count']})" for s in seniority_data[:5])}
 
 Provide a comprehensive market analysis.
