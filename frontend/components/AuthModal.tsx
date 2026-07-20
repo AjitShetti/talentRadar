@@ -1,240 +1,439 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import { Mail, Lock, ArrowRight, Loader2, AlertCircle, X } from "lucide-react";
+import { useState, useEffect, useCallback } from 'react';
+import { signIn } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
+import {
+  X,
+  Mail,
+  Lock,
+  ArrowRight,
+  Loader2,
+  AlertCircle,
+  Zap,
+  Eye,
+  EyeOff,
+  CheckCircle2,
+} from 'lucide-react';
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialMode?: "login" | "signup";
+  defaultTab?: 'login' | 'signup';
 }
 
-export default function AuthModal({ isOpen, onClose, initialMode = "login" }: AuthModalProps) {
-  const [mode, setMode] = useState<"login" | "signup">(initialMode);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+export default function AuthModal({ isOpen, onClose, defaultTab = 'login' }: AuthModalProps) {
+  const [tab, setTab] = useState<'login' | 'signup'>(defaultTab);
   const router = useRouter();
 
-  if (!isOpen) return null;
+  // Login state
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
 
-  const validatePassword = (pass: string) => {
-    if (pass.length < 8) return "Password must be at least 8 characters long.";
-    return null;
+  // Signup state
+  const [signupEmail, setSignupEmail] = useState('');
+  const [signupPassword, setSignupPassword] = useState('');
+  const [signupConfirm, setSignupConfirm] = useState('');
+  const [signupError, setSignupError] = useState('');
+  const [signupLoading, setSignupLoading] = useState(false);
+  const [signupSuccess, setSignupSuccess] = useState(false);
+
+  // Show/hide password toggles
+  const [showLoginPass, setShowLoginPass] = useState(false);
+  const [showSignupPass, setShowSignupPass] = useState(false);
+  const [showConfirmPass, setShowConfirmPass] = useState(false);
+
+  // Reset state when tab changes
+  useEffect(() => {
+    setLoginError('');
+    setSignupError('');
+    setSignupSuccess(false);
+  }, [tab]);
+
+  // Sync defaultTab when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setTab(defaultTab);
+    }
+  }, [isOpen, defaultTab]);
+
+  // Close on Escape key
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    },
+    [onClose]
+  );
+
+  useEffect(() => {
+    if (isOpen) {
+      document.addEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = '';
+    };
+  }, [isOpen, handleKeyDown]);
+
+  // Password strength helper
+  const getPasswordStrength = (pass: string): { label: string; color: string; width: string } => {
+    if (!pass) return { label: '', color: 'transparent', width: '0%' };
+    if (pass.length < 6) return { label: 'Weak', color: '#ef4444', width: '25%' };
+    if (pass.length < 8) return { label: 'Fair', color: '#f97316', width: '50%' };
+    if (pass.length < 12 || !/[A-Z]/.test(pass) || !/[0-9]/.test(pass))
+      return { label: 'Good', color: '#eab308', width: '75%' };
+    return { label: 'Strong', color: '#22c55e', width: '100%' };
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const pwStrength = getPasswordStrength(signupPassword);
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
-    setError("");
-
-    if (mode === "signup") {
-      if (password !== confirmPassword) {
-        setError("Passwords do not match.");
-        setIsLoading(false);
-        return;
+    setLoginLoading(true);
+    setLoginError('');
+    try {
+      const res = await signIn('credentials', {
+        redirect: false,
+        email: loginEmail,
+        password: loginPassword,
+      });
+      if (res?.error) {
+        setLoginError('Invalid email or password. Please try again.');
+      } else {
+        onClose();
+        router.refresh();
       }
-
-      const passwordError = validatePassword(password);
-      if (passwordError) {
-        setError(passwordError);
-        setIsLoading(false);
-        return;
-      }
-
-      try {
-        const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-        const res = await fetch(`${API_URL}/api/auth/signup`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
-        });
-
-        if (!res.ok) {
-          const data = await res.json();
-          setError(data.detail || "Registration failed. Please try again.");
-          setIsLoading(false);
-          return;
-        }
-
-        const signInRes = await signIn("credentials", {
-          redirect: false,
-          email,
-          password,
-        });
-
-        if (signInRes?.error) {
-          setError("Account created, but automatic sign in failed. Please log in manually.");
-          setMode("login");
-        } else {
-          onClose();
-          router.push("/search");
-        }
-      } catch (err) {
-        setError("An unexpected error occurred. Could not reach server.");
-      } finally {
-        setIsLoading(false);
-      }
-    } else {
-      // Login mode
-      try {
-        const res = await signIn("credentials", {
-          redirect: false,
-          email,
-          password,
-        });
-
-        if (res?.error) {
-          setError("Invalid email or password");
-        } else {
-          onClose();
-          router.push("/search");
-        }
-      } catch (err) {
-        setError("An unexpected error occurred.");
-      } finally {
-        setIsLoading(false);
-      }
+    } catch {
+      setLoginError('An unexpected error occurred.');
+    } finally {
+      setLoginLoading(false);
     }
   };
 
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSignupError('');
+
+    if (signupPassword !== signupConfirm) {
+      setSignupError('Passwords do not match.');
+      return;
+    }
+    if (signupPassword.length < 8) {
+      setSignupError('Password must be at least 8 characters.');
+      return;
+    }
+
+    setSignupLoading(true);
+    try {
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const res = await fetch(`${API_URL}/api/auth/signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: signupEmail, password: signupPassword }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        setSignupError(data.detail || 'Registration failed. Please try again.');
+        setSignupLoading(false);
+        return;
+      }
+
+      const signInRes = await signIn('credentials', {
+        redirect: false,
+        email: signupEmail,
+        password: signupPassword,
+      });
+
+      if (signInRes?.error) {
+        setSignupSuccess(true);
+        setTimeout(() => {
+          setTab('login');
+        }, 2000);
+      } else {
+        onClose();
+        router.refresh();
+        router.push('/search');
+      }
+    } catch {
+      setSignupError('Could not reach server. Please check your connection.');
+    } finally {
+      setSignupLoading(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
   return (
-    <div 
-      style={{ 
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        zIndex: 50,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '1rem',
-        background: 'rgba(0, 0, 0, 0.6)', 
-        backdropFilter: 'blur(4px)' 
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Authentication"
+      className="auth-modal-overlay"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div 
-        className="panel relative" 
-        style={{ width: '100%', maxWidth: '400px', animation: 'fadeIn 0.3s ease-out' }}
-      >
-        <button 
+      <div className="auth-modal-container">
+        {/* Decorative corner accents */}
+        <span className="auth-corner auth-corner-tl" aria-hidden="true" />
+        <span className="auth-corner auth-corner-br" aria-hidden="true" />
+
+        {/* Close button */}
+        <button
           onClick={onClose}
-          style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--color-fg-muted)' }}
+          className="auth-close-btn"
+          aria-label="Close authentication modal"
         >
-          <X size={20} />
+          <X size={18} />
         </button>
 
-        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <h1 className="text-accent" style={{ marginBottom: '0.5rem', fontSize: '1.5rem' }}>
-            {mode === "login" ? "WELCOME BACK" : "CREATE ACCOUNT"}
-          </h1>
-          <p style={{ color: 'var(--color-fg-muted)', fontSize: '0.875rem' }}>
-            {mode === "login" 
-              ? "Sign in to TalentRadar to continue your journey." 
-              : "Join TalentRadar and discover your next role."}
-          </p>
+        {/* Header with logo */}
+        <div className="auth-modal-header">
+          <div className="auth-logo">
+            <Zap size={20} />
+          </div>
+          <span className="auth-logo-text">TALENT_RADAR</span>
         </div>
 
-        {error && (
-          <div style={{ padding: '0.75rem', border: '1px solid #ef4444', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#fca5a5', marginBottom: '1.5rem', display: 'flex', alignItems: 'flex-start', gap: '0.5rem', fontSize: '0.875rem' }}>
-            <AlertCircle size={18} style={{ flexShrink: 0, marginTop: '0.125rem' }} />
-            <span>{error}</span>
-          </div>
-        )}
+        {/* Tab switcher */}
+        <div className="auth-tabs" role="tablist">
+          <button
+            role="tab"
+            aria-selected={tab === 'login'}
+            className={`auth-tab ${tab === 'login' ? 'auth-tab--active' : ''}`}
+            onClick={() => setTab('login')}
+          >
+            SIGN IN
+          </button>
+          <button
+            role="tab"
+            aria-selected={tab === 'signup'}
+            className={`auth-tab ${tab === 'signup' ? 'auth-tab--active' : ''}`}
+            onClick={() => setTab('signup')}
+          >
+            CREATE ACCOUNT
+          </button>
+          <div
+            className="auth-tab-indicator"
+            style={{ transform: tab === 'signup' ? 'translateX(100%)' : 'translateX(0%)' }}
+            aria-hidden="true"
+          />
+        </div>
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <label style={{ fontSize: '0.875rem', color: 'var(--color-fg-muted)', fontFamily: 'var(--font-display)' }}>EMAIL</label>
-            <div style={{ position: 'relative' }}>
-              <div style={{ position: 'absolute', inset: '0', right: 'auto', paddingLeft: '0.75rem', display: 'flex', alignItems: 'center', pointerEvents: 'none' }}>
-                <Mail size={18} style={{ color: 'var(--color-fg-muted)' }} />
-              </div>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                style={{ width: '100%', padding: '0.75rem 0.75rem 0.75rem 2.5rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--color-border)', color: 'var(--color-fg)', fontFamily: 'var(--font-body)', borderRadius: '0.5rem' }}
-              />
+        {/* ─── LOGIN PANEL ─── */}
+        <div
+          role="tabpanel"
+          className={`auth-panel ${tab === 'login' ? 'auth-panel--visible' : 'auth-panel--hidden'}`}
+          aria-hidden={tab !== 'login'}
+        >
+          <p className="auth-subtitle">Welcome back. Enter your credentials to continue.</p>
+
+          {loginError && (
+            <div className="auth-error" role="alert">
+              <AlertCircle size={16} />
+              <span>{loginError}</span>
             </div>
-          </div>
+          )}
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <label style={{ fontSize: '0.875rem', color: 'var(--color-fg-muted)', fontFamily: 'var(--font-display)' }}>PASSWORD</label>
-            <div style={{ position: 'relative' }}>
-              <div style={{ position: 'absolute', inset: '0', right: 'auto', paddingLeft: '0.75rem', display: 'flex', alignItems: 'center', pointerEvents: 'none' }}>
-                <Lock size={18} style={{ color: 'var(--color-fg-muted)' }} />
-              </div>
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={mode === "signup" ? "At least 8 characters" : "••••••••"}
-                style={{ width: '100%', padding: '0.75rem 0.75rem 0.75rem 2.5rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--color-border)', color: 'var(--color-fg)', fontFamily: 'var(--font-body)', borderRadius: '0.5rem' }}
-              />
-            </div>
-          </div>
-
-          {mode === "signup" && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <label style={{ fontSize: '0.875rem', color: 'var(--color-fg-muted)', fontFamily: 'var(--font-display)' }}>CONFIRM PASSWORD</label>
-              <div style={{ position: 'relative' }}>
-                <div style={{ position: 'absolute', inset: '0', right: 'auto', paddingLeft: '0.75rem', display: 'flex', alignItems: 'center', pointerEvents: 'none' }}>
-                  <Lock size={18} style={{ color: 'var(--color-fg-muted)' }} />
-                </div>
+          <form onSubmit={handleLogin} className="auth-form">
+            <div className="auth-field">
+              <label htmlFor="login-email" className="auth-label">EMAIL</label>
+              <div className="auth-input-wrap">
+                <Mail size={16} className="auth-input-icon" aria-hidden="true" />
                 <input
-                  type="password"
+                  id="login-email"
+                  type="email"
                   required
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="••••••••"
-                  style={{ width: '100%', padding: '0.75rem 0.75rem 0.75rem 2.5rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--color-border)', color: 'var(--color-fg)', fontFamily: 'var(--font-body)', borderRadius: '0.5rem' }}
+                  autoComplete="email"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="auth-input"
                 />
               </div>
             </div>
+
+            <div className="auth-field">
+              <label htmlFor="login-password" className="auth-label">PASSWORD</label>
+              <div className="auth-input-wrap">
+                <Lock size={16} className="auth-input-icon" aria-hidden="true" />
+                <input
+                  id="login-password"
+                  type={showLoginPass ? 'text' : 'password'}
+                  required
+                  autoComplete="current-password"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="auth-input"
+                />
+                <button
+                  type="button"
+                  className="auth-eye-btn"
+                  onClick={() => setShowLoginPass((v) => !v)}
+                  aria-label={showLoginPass ? 'Hide password' : 'Show password'}
+                >
+                  {showLoginPass ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loginLoading}
+              className="auth-submit-btn"
+            >
+              {loginLoading ? (
+                <Loader2 size={18} className="auth-spinner" />
+              ) : (
+                <>
+                  <span>SIGN IN</span>
+                  <ArrowRight size={16} className="auth-btn-arrow" />
+                </>
+              )}
+            </button>
+          </form>
+
+          <p className="auth-switch-text">
+            No account?{' '}
+            <button className="auth-switch-link" onClick={() => setTab('signup')}>
+              Create one — it's free
+            </button>
+          </p>
+        </div>
+
+        {/* ─── SIGNUP PANEL ─── */}
+        <div
+          role="tabpanel"
+          className={`auth-panel ${tab === 'signup' ? 'auth-panel--visible' : 'auth-panel--hidden'}`}
+          aria-hidden={tab !== 'signup'}
+        >
+          <p className="auth-subtitle">Join TalentRadar. Discover your next opportunity.</p>
+
+          {signupError && (
+            <div className="auth-error" role="alert">
+              <AlertCircle size={16} />
+              <span>{signupError}</span>
+            </div>
           )}
 
-          <button type="submit" disabled={isLoading} className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', marginTop: '0.5rem' }}>
-            {isLoading ? <Loader2 className="animate-spin" size={18} /> : (
-              <>{mode === "login" ? "SIGN IN" : "SIGN UP"} <ArrowRight size={18} /></>
-            )}
-          </button>
-        </form>
-
-        <div style={{ marginTop: '1.5rem', textAlign: 'center', fontSize: '0.875rem', color: 'var(--color-fg-muted)' }}>
-          {mode === "login" ? (
-            <>
-              Don't have an account?{' '}
-              <button 
-                type="button" 
-                onClick={() => { setMode("signup"); setError(""); }} 
-                className="text-accent" 
-                style={{ textDecoration: 'underline', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}
-              >
-                Sign up
-              </button>
-            </>
-          ) : (
-            <>
-              Already have an account?{' '}
-              <button 
-                type="button" 
-                onClick={() => { setMode("login"); setError(""); }} 
-                className="text-accent" 
-                style={{ textDecoration: 'underline', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}
-              >
-                Log in
-              </button>
-            </>
+          {signupSuccess && (
+            <div className="auth-success" role="status">
+              <CheckCircle2 size={16} />
+              <span>Account created! Redirecting to sign in…</span>
+            </div>
           )}
+
+          <form onSubmit={handleSignup} className="auth-form">
+            <div className="auth-field">
+              <label htmlFor="signup-email" className="auth-label">EMAIL</label>
+              <div className="auth-input-wrap">
+                <Mail size={16} className="auth-input-icon" aria-hidden="true" />
+                <input
+                  id="signup-email"
+                  type="email"
+                  required
+                  autoComplete="email"
+                  value={signupEmail}
+                  onChange={(e) => setSignupEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="auth-input"
+                />
+              </div>
+            </div>
+
+            <div className="auth-field">
+              <label htmlFor="signup-password" className="auth-label">PASSWORD</label>
+              <div className="auth-input-wrap">
+                <Lock size={16} className="auth-input-icon" aria-hidden="true" />
+                <input
+                  id="signup-password"
+                  type={showSignupPass ? 'text' : 'password'}
+                  required
+                  autoComplete="new-password"
+                  value={signupPassword}
+                  onChange={(e) => setSignupPassword(e.target.value)}
+                  placeholder="At least 8 characters"
+                  className="auth-input"
+                />
+                <button
+                  type="button"
+                  className="auth-eye-btn"
+                  onClick={() => setShowSignupPass((v) => !v)}
+                  aria-label={showSignupPass ? 'Hide password' : 'Show password'}
+                >
+                  {showSignupPass ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+              {/* Password strength meter */}
+              {signupPassword && (
+                <div className="auth-pw-strength" aria-live="polite">
+                  <div className="auth-pw-bar">
+                    <div
+                      className="auth-pw-fill"
+                      style={{ width: pwStrength.width, background: pwStrength.color }}
+                    />
+                  </div>
+                  <span className="auth-pw-label" style={{ color: pwStrength.color }}>
+                    {pwStrength.label}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="auth-field">
+              <label htmlFor="signup-confirm" className="auth-label">CONFIRM PASSWORD</label>
+              <div className="auth-input-wrap">
+                <Lock size={16} className="auth-input-icon" aria-hidden="true" />
+                <input
+                  id="signup-confirm"
+                  type={showConfirmPass ? 'text' : 'password'}
+                  required
+                  autoComplete="new-password"
+                  value={signupConfirm}
+                  onChange={(e) => setSignupConfirm(e.target.value)}
+                  placeholder="••••••••"
+                  className="auth-input"
+                />
+                <button
+                  type="button"
+                  className="auth-eye-btn"
+                  onClick={() => setShowConfirmPass((v) => !v)}
+                  aria-label={showConfirmPass ? 'Hide confirm password' : 'Show confirm password'}
+                >
+                  {showConfirmPass ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={signupLoading || signupSuccess}
+              className="auth-submit-btn"
+            >
+              {signupLoading ? (
+                <Loader2 size={18} className="auth-spinner" />
+              ) : (
+                <>
+                  <span>CREATE ACCOUNT</span>
+                  <ArrowRight size={16} className="auth-btn-arrow" />
+                </>
+              )}
+            </button>
+          </form>
+
+          <p className="auth-switch-text">
+            Already have an account?{' '}
+            <button className="auth-switch-link" onClick={() => setTab('login')}>
+              Sign in
+            </button>
+          </p>
         </div>
       </div>
     </div>
