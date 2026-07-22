@@ -421,6 +421,59 @@ class IngestionRunRepository(BaseRepository[IngestionRun]):
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
 
+SYNONYM_MAP: dict[str, list[str]] = {
+    "dev": ["dev", "developer", "development", "engineer"],
+    "developer": ["developer", "dev", "engineer", "development"],
+    "engineer": ["engineer", "developer", "dev"],
+    "swe": ["swe", "software engineer", "software developer", "software dev"],
+    "fe": ["fe", "frontend", "front-end", "front end"],
+    "be": ["be", "backend", "back-end", "back end"],
+    "fs": ["fs", "fullstack", "full-stack", "full stack"],
+    "qa": ["qa", "quality assurance", "test engineer", "sdet"],
+    "java": ["java", "j2ee", "spring", "spring boot"],
+    "python": ["python", "django", "fastapi", "flask"],
+    "js": ["javascript", "js", "typescript", "ts", "node"],
+    "software": ["software", "swe", "application"],
+}
+
+
+def tokenize_and_expand_query(query_str: str) -> list[list[str]]:
+    """Tokenizes a query string into term groups with expanded synonyms."""
+    import re
+    stop_words = {
+        "in", "at", "for", "a", "an", "the", "with", "and", "or",
+        "job", "jobs", "role", "roles", "position", "positions",
+    }
+    raw_tokens = [
+        re.sub(r"[^\w\-\+]", "", t.lower())
+        for t in query_str.split()
+    ]
+    tokens = [t for t in raw_tokens if t and t not in stop_words]
+
+    expanded_groups = []
+    for token in tokens:
+        synonyms = SYNONYM_MAP.get(token, [token])
+        if token not in synonyms:
+            synonyms = [token] + synonyms
+        expanded_groups.append(synonyms)
+
+    return expanded_groups
+
+
+def _build_term_group_clause(terms: list[str]):
+    """Build an OR clause across fields for a group of term synonyms."""
+    group_or_clauses = []
+    for term in terms:
+        pattern = f"%{term}%"
+        group_or_clauses.extend([
+            Job.title.ilike(pattern),
+            Job.description_clean.ilike(pattern),
+            func.array_to_string(Job.skills, " ").ilike(pattern),
+            func.array_to_string(Job.tags, " ").ilike(pattern),
+        ])
+    return or_(*group_or_clauses)
+
+
 # ===========================================================================
 # JobRepository
 # ===========================================================================
@@ -487,6 +540,7 @@ class JobRepository(BaseRepository[Job]):
         *,
         # Text search
         title: str | None = None,
+        query: str | None = None,
         # Classification filters
         status: JobStatus | None = JobStatus.ACTIVE,
         employment_type: EmploymentType | None = None,
@@ -512,63 +566,109 @@ class JobRepository(BaseRepository[Job]):
         offset: int = 0,
         order_by: str = "posted_at",
         desc_order: bool = True,
+        min_results: int = 3,
     ) -> tuple[Sequence[Job], int]:
         """
-        Full-featured job search with optional filters.
+        Full-featured job search with multi-field token matching and smart fallback.
 
         Returns
         -------
         (jobs, total_count)
         """
-        filters = []
+        search_text = query or title
+        base_filters = []
 
-        if title:
-            filters.append(Job.title.ilike(f"%{title}%"))
         if status:
-            filters.append(Job.status == status)
+            base_filters.append(Job.status == status)
         if employment_type:
-            filters.append(Job.employment_type == employment_type)
+            base_filters.append(Job.employment_type == employment_type)
         if seniority:
-            filters.append(Job.seniority == seniority)
+            base_filters.append(Job.seniority == seniority)
         if country:
-            filters.append(Job.country.ilike(f"%{country}%"))
+            base_filters.append(Job.country.ilike(f"%{country}%"))
         if city:
-            filters.append(Job.city.ilike(f"%{city}%"))
+            base_filters.append(Job.city.ilike(f"%{city}%"))
         if is_remote is not None:
-            filters.append(Job.is_remote == is_remote)
+            base_filters.append(Job.is_remote == is_remote)
         if salary_min_gte is not None:
-            filters.append(Job.salary_min >= salary_min_gte)
+            base_filters.append(Job.salary_min >= salary_min_gte)
         if salary_max_lte is not None:
-            filters.append(Job.salary_max <= salary_max_lte)
+            base_filters.append(Job.salary_max <= salary_max_lte)
         if company_id:
-            filters.append(Job.company_id == company_id)
+            base_filters.append(Job.company_id == company_id)
         if ingestion_run_id:
-            filters.append(Job.ingestion_run_id == ingestion_run_id)
+            base_filters.append(Job.ingestion_run_id == ingestion_run_id)
         if posted_after:
-            filters.append(Job.posted_at >= posted_after)
+            base_filters.append(Job.posted_at >= posted_after)
         if posted_before:
-            filters.append(Job.posted_at <= posted_before)
+            base_filters.append(Job.posted_at <= posted_before)
 
-        # ARRAY containment: jobs.skills @> ARRAY['Python', 'SQL']
         if skills:
-            filters.append(
-                Job.skills.contains(cast(skills, ARRAY(String)))  # type: ignore[arg-type]
-            )
+            skill_or_clauses = [
+                func.array_to_string(Job.skills, " ").ilike(f"%{s}%")
+                for s in skills
+            ]
+            base_filters.append(or_(*skill_or_clauses))
         if tags:
-            filters.append(
+            base_filters.append(
                 Job.tags.contains(cast(tags, ARRAY(String)))  # type: ignore[arg-type]
             )
-
-        where = and_(*filters) if filters else True  # type: ignore[arg-type]
-
-        count_stmt = select(func.count()).select_from(Job).where(where)
-        total: int = (await self.session.execute(count_stmt)).scalar_one()
 
         col = getattr(Job, order_by, Job.posted_at)
         order = desc(col) if desc_order else col
 
+        if search_text:
+            term_groups = tokenize_and_expand_query(search_text)
+            if term_groups:
+                # Step 1: Strict AND across all expanded term groups
+                and_term_clauses = [
+                    _build_term_group_clause(group) for group in term_groups
+                ]
+                strict_where = and_(*base_filters, *and_term_clauses) if base_filters else and_(*and_term_clauses)
+
+                count_stmt = select(func.count()).select_from(Job).where(strict_where)
+                total: int = (await self.session.execute(count_stmt)).scalar_one()
+
+                if total >= min_results:
+                    stmt = (
+                        select(Job)
+                        .options(selectinload(Job.company))
+                        .where(strict_where)
+                        .order_by(order)
+                        .limit(limit)
+                        .offset(offset)
+                    )
+                    rows = (await self.session.execute(stmt)).scalars().all()
+                    return rows, total
+
+                # Step 2: Fallback to OR across term groups if AND returned < min_results
+                or_term_clauses = [
+                    _build_term_group_clause(group) for group in term_groups
+                ]
+                relaxed_where = and_(*base_filters, or_(*or_term_clauses)) if base_filters else or_(*or_term_clauses)
+
+                count_stmt_rel = select(func.count()).select_from(Job).where(relaxed_where)
+                total_rel: int = (await self.session.execute(count_stmt_rel)).scalar_one()
+
+                stmt_rel = (
+                    select(Job)
+                    .options(selectinload(Job.company))
+                    .where(relaxed_where)
+                    .order_by(order)
+                    .limit(limit)
+                    .offset(offset)
+                )
+                rows_rel = (await self.session.execute(stmt_rel)).scalars().all()
+                return rows_rel, total_rel
+
+        where = and_(*base_filters) if base_filters else True  # type: ignore[arg-type]
+
+        count_stmt = select(func.count()).select_from(Job).where(where)
+        total: int = (await self.session.execute(count_stmt)).scalar_one()
+
         stmt = (
             select(Job)
+            .options(selectinload(Job.company))
             .where(where)
             .order_by(order)
             .limit(limit)

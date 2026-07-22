@@ -17,6 +17,37 @@ def _slugify(text: str) -> str:
     return text[:64]
 
 
+INDIAN_JOB_DOMAINS = [
+    "linkedin.com",
+    "naukri.com",
+    "indeed.com",
+    "in.indeed.com",
+]
+
+
+def detect_source_from_url(url: str) -> str:
+    """
+    Identify the origin job platform from a URL.
+    Returns: 'linkedin' | 'naukri' | 'indeed' | 'greenhouse' | 'lever' | 'ashby' | 'tavily_search'
+    """
+    if not url:
+        return "tavily_search"
+    url_lower = url.lower()
+    if "linkedin.com" in url_lower:
+        return "linkedin"
+    elif "naukri.com" in url_lower:
+        return "naukri"
+    elif "indeed.com" in url_lower:
+        return "indeed"
+    elif "greenhouse.io" in url_lower:
+        return "greenhouse"
+    elif "lever.co" in url_lower:
+        return "lever"
+    elif "ashbyhq.com" in url_lower:
+        return "ashby"
+    return "tavily_search"
+
+
 class TavilyJobScraper:
     def __init__(self, api_key: Optional[str] = None, raw_data_dir: Optional[str | Path] = None):
         if not api_key:
@@ -34,7 +65,13 @@ class TavilyJobScraper:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self._client.close()
 
-    def search(self, query: str, max_results: int = 10) -> List[RawJobResult]:
+    def search(
+        self,
+        query: str,
+        max_results: int = 10,
+        include_domains: Optional[List[str]] = None,
+        exclude_domains: Optional[List[str]] = None,
+    ) -> List[RawJobResult]:
         payload = {
             "api_key": self._api_key,
             "query": query,
@@ -42,6 +79,10 @@ class TavilyJobScraper:
             "max_results": max_results,
             "include_raw_content": True
         }
+        if include_domains:
+            payload["include_domains"] = include_domains
+        if exclude_domains:
+            payload["exclude_domains"] = exclude_domains
         
         response = self._client.post("https://api.tavily.com/search", json=payload)
         response.raise_for_status()
@@ -68,9 +109,24 @@ class TavilyJobScraper:
                 
         return results
 
-    def search_jobs(self, role: str, location: str, count: int = 10) -> List[RawJobResult]:
-        query = f"{role} jobs in {location}"
-        return self.search(query, max_results=count)
+    def search_jobs(
+        self,
+        role: str,
+        location: str,
+        count: int = 10,
+        include_domains: Optional[List[str]] = None,
+        use_site_operators: bool = False,
+    ) -> List[RawJobResult]:
+        query_str = f"{role} jobs in {location}"
+        if use_site_operators and include_domains:
+            site_query = " OR ".join([f"site:{d}" for d in include_domains])
+            query_str = f"{query_str} ({site_query})"
+
+        return self.search(
+            query_str,
+            max_results=count,
+            include_domains=include_domains,
+        )
 
     def save_raw(self, results: List[RawJobResult], run_id: str, role: str, location: str) -> List[Path]:
         role_slug = _slugify(role)

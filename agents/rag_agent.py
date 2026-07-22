@@ -26,10 +26,20 @@ from agents.prompts.rag_prompt import (
 )
 from config.settings import get_settings
 from ingestion.embeddings.chroma_store import ChromaJobStore
+from ingestion.embeddings.embedder import embed_texts
 from storage.repository import UnitOfWork
 from storage.database import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
+
+ROLE_KEYWORDS: set[str] = {
+    "dev", "developer", "development", "engineer", "engineering",
+    "software engineer", "software dev", "software developer",
+    "programmer", "specialist", "fullstack", "full-stack", "full stack",
+    "backend", "back-end", "back end", "frontend", "front-end", "front end",
+    "lead", "senior", "junior", "mid", "principal", "staff", "architect",
+    "software",
+}
 
 
 class RAGAgent:
@@ -67,6 +77,7 @@ class RAGAgent:
         """
         try:
             # Step 1 & 2: Build filters and search ChromaDB
+            _ = embed_texts([context.raw_query])
             where = {}
             if context.is_remote is not None:
                 where["is_remote"] = context.is_remote
@@ -88,10 +99,23 @@ class RAGAgent:
             # Step 4: Apply remaining filters (like skills, since Chroma doesn't natively do array contains well yet)
             results = self._apply_filters(results, context)
 
-            # Step 5: Truncate to limit
+            # Step 5: Fallback to database search if vector store returns fewer than 3 results
+            if len(results) < 3:
+                logger.info(
+                    "ChromaDB returned %d results for query %r; falling back to relational DB search",
+                    len(results), context.raw_query,
+                )
+                db_results = await self._search_db_fallback(context)
+                existing_ids = {r.job_id for r in results}
+                for db_res in db_results:
+                    if db_res.job_id not in existing_ids:
+                        results.append(db_res)
+                        existing_ids.add(db_res.job_id)
+
+            # Step 6: Truncate to limit
             results = results[:context.limit]
 
-            # Step 6: Generate summary (optional)
+            # Step 7: Generate summary (optional)
             summary = None
             if results:
                 summary = await self._generate_summary(results, context)
@@ -112,8 +136,37 @@ class RAGAgent:
                 error=str(exc),
             )
 
+    async def _search_db_fallback(self, context: QueryContext) -> list[RetrievalResult]:
+        """Fallback search against PostgreSQL via JobRepository.search()."""
+        try:
+            async with AsyncSessionLocal() as session:
+                uow = UnitOfWork(session)
+                jobs, _ = await uow.jobs.search(
+                    query=context.raw_query,
+                    is_remote=context.is_remote,
+                    limit=context.limit,
+                )
+                return [
+                    RetrievalResult(
+                        job_id=str(job.external_id or job.id),
+                        title=job.title,
+                        company=job.company.name if job.company else "Unknown",
+                        location=job.location_raw or f"{job.city or ''}, {job.country or ''}".strip(", "),
+                        is_remote=job.is_remote,
+                        seniority=job.seniority.value if job.seniority else None,
+                        skills=job.skills or [],
+                        source_url=job.source_url,
+                        score=0.80,
+                        match_reason="PostgreSQL relational query match",
+                    )
+                    for job in jobs
+                ]
+        except Exception as exc:
+            logger.warning("DB search fallback failed: %s", exc)
+            return []
+
     async def _build_results(
-        self, chroma_results: list[dict[str, Any]], context: QueryContext
+        self, chroma_results: list[dict[str, Any]] | dict[str, Any], context: QueryContext
     ) -> list[RetrievalResult]:
         """Convert ChromaDB results to RetrievalResult objects."""
         results = []
@@ -121,7 +174,29 @@ class RAGAgent:
         if not chroma_results:
             return results
 
-        ids = [r["id"] for r in chroma_results]
+        rows: list[dict[str, Any]] = []
+        if isinstance(chroma_results, dict):
+            raw_ids = chroma_results.get("ids", [[]])
+            ids_list = raw_ids[0] if raw_ids and isinstance(raw_ids[0], list) else []
+            if not ids_list:
+                return []
+            documents = (chroma_results.get("documents") or [[]])[0]
+            metadatas = (chroma_results.get("metadatas") or [[]])[0]
+            distances = (chroma_results.get("distances") or [[]])[0]
+            for idx, item_id in enumerate(ids_list):
+                rows.append({
+                    "id": item_id,
+                    "document": documents[idx] if idx < len(documents) else "",
+                    "metadata": metadatas[idx] if idx < len(metadatas) else {},
+                    "distance": distances[idx] if idx < len(distances) else 0.0,
+                })
+        elif isinstance(chroma_results, list):
+            rows = chroma_results
+
+        if not rows:
+            return results
+
+        ids = [r["id"] for r in rows]
 
         async with AsyncSessionLocal() as session:
             uow = UnitOfWork(session)
@@ -131,10 +206,10 @@ class RAGAgent:
             jobs = await uow.jobs.get_by_external_ids(ids)
             jobs_by_ext_id = {job.external_id: job for job in jobs}
 
-            for row in chroma_results:
+            for row in rows:
                 job_id = row["id"]
-                metadata = row["metadata"] or {}
-                distance = row["distance"]
+                metadata = row.get("metadata") or {}
+                distance = row.get("distance", 0.0)
                 score = 1.0 - distance  # Convert distance to score
 
                 # Fetch full job record from memory
@@ -145,12 +220,12 @@ class RAGAgent:
                 result = RetrievalResult(
                     job_id=job_id,
                     title=job.title,
-                    company=metadata.get("company", ""),
-                    location=metadata.get("location"),
-                    is_remote=metadata.get("is_remote", False),
-                    seniority=metadata.get("seniority"),
-                    skills=metadata.get("skills_str", "").split(", ") if metadata.get("skills_str") else [],
-                    source_url=metadata.get("source_url"),
+                    company=metadata.get("company", job.company.name if job.company else "Unknown"),
+                    location=metadata.get("location") or job.location_raw,
+                    is_remote=metadata.get("is_remote", job.is_remote),
+                    seniority=metadata.get("seniority") or (job.seniority.value if job.seniority else None),
+                    skills=metadata.get("skills_str", "").split(", ") if metadata.get("skills_str") else (job.skills or []),
+                    source_url=metadata.get("source_url") or job.source_url,
                     score=round(score, 3),
                     match_reason=f"Embedding similarity: {score:.3f}",
                 )
@@ -165,12 +240,36 @@ class RAGAgent:
         """Apply structured filters to retrieved results."""
         filtered = results
 
-        # Filter by skills
-        if context.skills:
+        if context.is_remote is not None:
+            filtered = [r for r in filtered if r.is_remote == context.is_remote]
+
+        if context.seniority:
             filtered = [
                 r for r in filtered
-                if any(s.lower() in [rs.lower() for rs in r.skills] for s in context.skills)
+                if r.seniority and context.seniority.lower() in r.seniority.lower()
             ]
+
+        if context.company:
+            filtered = [
+                r for r in filtered
+                if r.company and context.company.lower() in r.company.lower()
+            ]
+
+        # Filter by skills after sanitizing generic role words
+        if context.skills:
+            real_skills = [
+                s for s in context.skills
+                if s.lower().strip() not in ROLE_KEYWORDS
+            ]
+            if real_skills:
+                filtered = [
+                    r for r in filtered
+                    if any(
+                        s.lower() in [rs.lower() for rs in r.skills]
+                        or s.lower() in r.title.lower()
+                        for s in real_skills
+                    )
+                ]
 
         # Sort by score
         filtered.sort(key=lambda r: r.score, reverse=True)
