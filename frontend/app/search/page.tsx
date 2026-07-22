@@ -18,6 +18,8 @@ export default function SearchPage() {
   const [offset, setOffset] = useState(0);
   const [currentQuery, setCurrentQuery] = useState('');
   const [hasMore, setHasMore] = useState(false);
+  // true = results come from a typed query; false = showing all jobs
+  const [isFiltered, setIsFiltered] = useState(false);
 
   // Ref to track the latest AbortController for cancelling in-flight requests
   const abortRef = useRef<AbortController | null>(null);
@@ -29,7 +31,46 @@ export default function SearchPage() {
     };
   }, []);
 
+  // ── Load ALL jobs on first render ──────────
+  const loadAllJobs = useCallback(async () => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setLoading(true);
+    setError(null);
+    setCurrentQuery('');
+    setIsFiltered(false);
+
+    try {
+      const response = await api.search.structured(
+        { limit: PAGE_SIZE, offset: 0 },
+        controller.signal
+      );
+      setJobs(response.jobs);
+      setTotalFound(response.total);
+      setOffset(PAGE_SIZE);
+      setHasMore(response.has_more);
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      setError(err instanceof Error ? err.message : 'Failed to load jobs.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadAllJobs();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleSearch = useCallback(async (query: string, isLoadMore = false) => {
+    // Empty query → show all jobs
+    if (!query.trim()) {
+      loadAllJobs();
+      return;
+    }
+
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -40,6 +81,7 @@ export default function SearchPage() {
       setJobs([]);
       setOffset(0);
       setCurrentQuery(query);
+      setIsFiltered(true);
     } else {
       setLoadingMore(true);
     }
@@ -60,8 +102,6 @@ export default function SearchPage() {
         setOffset(PAGE_SIZE);
       }
 
-      // Summary removed
-
       setTotalFound(response.total_found);
       setHasMore(response.results.length === PAGE_SIZE);
     } catch (err) {
@@ -75,7 +115,7 @@ export default function SearchPage() {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [offset]);
+  }, [offset, loadAllJobs]);
 
   const handleLoadMore = useCallback(() => {
     handleSearch(currentQuery, true);
@@ -120,7 +160,9 @@ export default function SearchPage() {
       {/* Results Count */}
       {!loading && totalFound > 0 && (
         <div style={{ marginBottom: '1.5rem', color: 'var(--color-fg-muted)', fontFamily: 'var(--font-display)', fontWeight: 600 }}>
-          SHOWING <span style={{ color: 'var(--color-fg)' }}>{jobs.length}</span> OF <span style={{ color: 'var(--color-fg)' }}>{totalFound}</span> JOBS
+          {isFiltered
+            ? <>{jobs.length} MATCH{jobs.length !== 1 ? 'ES' : ''} FOR &ldquo;<span style={{ color: 'var(--color-accent)' }}>{currentQuery}</span>&rdquo;</>
+            : <>SHOWING <span style={{ color: 'var(--color-fg)' }}>{jobs.length}</span> OF <span style={{ color: 'var(--color-fg)' }}>{totalFound}</span> JOBS</>}
         </div>
       )}
 
@@ -158,11 +200,11 @@ export default function SearchPage() {
         </div>
       )}
 
-      {/* Empty State */}
-      {!loading && !loadingMore && jobs.length === 0 && !error && totalFound === 0 && (
+      {/* Empty State — only shown when a search returned zero results */}
+      {!loading && !loadingMore && jobs.length === 0 && !error && isFiltered && (
         <div style={{ textAlign: 'center', padding: '4rem 0', color: 'var(--color-border)' }}>
           <Zap size={64} style={{ margin: '0 auto 1rem auto', opacity: 0.5 }} />
-          <p style={{ fontFamily: 'var(--font-display)', letterSpacing: '0.1em' }}>AWAITING QUERY INPUT</p>
+          <p style={{ fontFamily: 'var(--font-display)', letterSpacing: '0.1em' }}>NO JOBS MATCH YOUR QUERY</p>
         </div>
       )}
     </div>

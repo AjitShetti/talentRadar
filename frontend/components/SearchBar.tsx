@@ -14,8 +14,16 @@ export default function SearchBar({ onSearch, placeholder = 'Search jobs...', lo
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (query.trim()) {
-      onSearch(query.trim());
+    // Allow empty submit to clear the filter
+    onSearch(query.trim());
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setQuery(value);
+    // Immediately restore all jobs when the field is cleared
+    if (!value) {
+      onSearch('');
     }
   };
 
@@ -32,7 +40,7 @@ export default function SearchBar({ onSearch, placeholder = 'Search jobs...', lo
         <input
           type="text"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={handleChange}
           placeholder={placeholder}
           disabled={loading}
           style={{
@@ -47,7 +55,7 @@ export default function SearchBar({ onSearch, placeholder = 'Search jobs...', lo
         />
         <button
           type="submit"
-          disabled={loading || !query.trim()}
+          disabled={loading}
           className="btn btn-primary"
           style={{ position: 'absolute', right: '0.5rem', padding: '0.5rem 1rem' }}
         >
