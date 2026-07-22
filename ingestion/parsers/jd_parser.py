@@ -84,12 +84,12 @@ valid JSON object.
 - Return ONLY the JSON object, with NO additional text, preamble, or explanation.
 - If a field cannot be determined from the text, use null (not an empty string).
 - Never invent data. Only extract what is explicitly stated.
-- Normalise salary to annual figures when the posting states monthly or hourly rates.
+- Normalise salary to annual figures when the posting states monthly, hourly, or LPA (Lakhs Per Annum) rates. Note: 1 Lakh = 100,000 INR (e.g., 15-25 LPA = 1,500,000 to 2,500,000 INR).
 - Extract ALL skills mentioned in the requirements or responsibilities sections.
 """
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Few-shot examples — two representative (input, expected output) pairs
+# Few-shot examples — representative (input, expected output) pairs
 # ─────────────────────────────────────────────────────────────────────────────
 
 _FEW_SHOT_EXAMPLES: list[dict[str, str]] = [
@@ -170,6 +170,41 @@ Rate: $60-80/hour""",
   "seniority": "mid"
 }""",
     },
+    # ── Example 3: Indian tech posting with LPA salary ────────────────────
+    {
+        "user": """\
+Senior Backend Engineer – Swiggy
+Location: Bangalore, Karnataka, India (Hybrid)
+
+About the role:
+Swiggy is looking for a Senior Backend Engineer to join our Delivery Platform team in Bangalore.
+
+Key Responsibilities:
+- Build high-scale microservices using Java, Go, and PostgreSQL
+- Optimize Redis caching and Kafka message queues for high-concurrency order tracking
+- Deploy services on AWS (EKS, S3, DynamoDB)
+
+Requirements:
+- 4-7 years of backend engineering experience
+- Strong knowledge of Java, Go, Microservices, PostgreSQL, and Kafka
+
+Compensation: ₹2,000,000 - ₹3,500,000 per annum (20 - 35 LPA) + stock options""",
+        "assistant": """\
+{
+  "title": "Senior Backend Engineer",
+  "company": "Swiggy",
+  "skills": ["Java", "Go", "PostgreSQL", "Redis", "Kafka", "AWS", "EKS", "S3", "DynamoDB", "Microservices"],
+  "experience": "4-7 years",
+  "location": "Bangalore, India",
+  "is_remote": false,
+  "salary": "₹2,000,000 - ₹3,500,000 per annum (20 - 35 LPA)",
+  "salary_min": 2000000,
+  "salary_max": 3500000,
+  "salary_currency": "INR",
+  "employment_type": "full_time",
+  "seniority": "senior"
+}""",
+    },
 ]
 
 
@@ -205,8 +240,9 @@ class JDParser:
         model: str = _DEFAULT_MODEL,
         inter_request_delay: float = 0.5,
     ) -> None:
+        from config.settings import get_settings
         settings = get_settings()
-        _key = api_key or settings.groq_api_key
+        _key = api_key if api_key is not None else settings.groq_api_key
         if not _key:
             raise ValueError(
                 "GROQ_API_KEY is not set. Add it to your .env file or pass it explicitly."
@@ -350,11 +386,14 @@ class JDParser:
     @staticmethod
     def _extract_json(text: str) -> dict[str, Any]:
         """
-        Extract the JSON object from the response.
-        Since we use response_format={"type": "json_object"}, 
-        the response is guaranteed to be JSON.
+        Extract the JSON object from the response using greedy regex matching.
+        This handles cases where the LLM includes markdown code blocks or
+        explanatory text around the JSON.
         """
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if not match:
+            raise ValueError(f"Could not extract valid JSON from LLM response. Text: {text[:300]}")
         try:
-            return json.loads(text)
+            return json.loads(match.group(0))
         except json.JSONDecodeError as exc:
-            raise ValueError(f"Failed to parse JSON: {exc}. Text: {text[:300]}")
+            raise ValueError(f"Could not extract valid JSON from LLM response: {exc}. Text: {text[:300]}")

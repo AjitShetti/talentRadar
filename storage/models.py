@@ -24,15 +24,58 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     String,
     Text,
+    TypeDecorator,
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from storage.database import Base
+
+
+from sqlalchemy.sql.functions import Function
+
+
+@compiles(JSONB, "sqlite")
+def _compile_jsonb_sqlite(type_, compiler, **kw):
+    return "JSON"
+
+
+@compiles(ARRAY, "sqlite")
+def _compile_array_sqlite(type_, compiler, **kw):
+    return "JSON"
+
+
+@compiles(Function, "sqlite")
+def _compile_function_sqlite(element, compiler, **kw):
+    if element.name.lower() == "array_to_string":
+        args = list(element.clauses)
+        if args:
+            return f"coalesce({compiler.process(args[0], **kw)}, '')"
+        return "''"
+    return compiler.visit_function(element, **kw)
+
+
+
+
+
+
+class StringArray(TypeDecorator):
+    """PostgreSQL ARRAY(String) with SQLite JSON fallback for testing."""
+    impl = ARRAY(String)
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "sqlite":
+            return dialect.type_descriptor(JSON())
+        return dialect.type_descriptor(ARRAY(String))
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -336,11 +379,11 @@ class Job(Base):
 
     # ---- Skills / tags ------------------------------------------------- #
     skills: Mapped[list[str] | None] = mapped_column(
-        ARRAY(String), nullable=True,
+        StringArray, nullable=True,
         comment="Parsed skill tokens (Python, SQL, …)",
     )
     tags: Mapped[list[str] | None] = mapped_column(
-        ARRAY(String), nullable=True,
+        StringArray, nullable=True,
         comment="Free-form taxonomy tags added during enrichment",
     )
 

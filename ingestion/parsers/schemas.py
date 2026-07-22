@@ -64,6 +64,19 @@ class RawJobResult(BaseModel):
 # LLM-parsed job description
 # ─────────────────────────────────────────────────────────────────────────────
 
+_CURRENCY_SYMBOL_MAP = {
+    "₹": "INR",
+    "RS": "INR",
+    "RS.": "INR",
+    "RUPEES": "INR",
+    "INR.": "INR",
+    "$": "USD",
+    "US$": "USD",
+    "USD.": "USD",
+    "€": "EUR",
+    "£": "GBP",
+}
+
 _KNOWN_CURRENCIES = {"USD", "EUR", "GBP", "INR", "CAD", "AUD", "SGD", "AED"}
 
 _SENIORITY_CHOICES = {
@@ -213,6 +226,8 @@ class ParsedJobDescription(BaseModel):
         if v is None:
             return None
         upper = str(v).upper().strip()
+        if upper in _CURRENCY_SYMBOL_MAP:
+            return _CURRENCY_SYMBOL_MAP[upper]
         return upper if upper in _KNOWN_CURRENCIES else None
 
     @model_validator(mode="after")

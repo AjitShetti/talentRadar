@@ -32,42 +32,59 @@ export default function SearchPage() {
   }, []);
 
   // ── Load ALL jobs on first render ──────────
-  const loadAllJobs = useCallback(async () => {
+  const loadAllJobs = useCallback(async (isLoadMore = false) => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
 
-    setLoading(true);
-    setError(null);
-    setCurrentQuery('');
-    setIsFiltered(false);
+    if (!isLoadMore) {
+      setLoading(true);
+      setError(null);
+      setCurrentQuery('');
+      setIsFiltered(false);
+      setJobs([]);
+      setOffset(0);
+    } else {
+      setLoadingMore(true);
+    }
+
+    const currentOffset = isLoadMore ? offset : 0;
 
     try {
       const response = await api.search.structured(
-        { limit: PAGE_SIZE, offset: 0 },
+        { limit: PAGE_SIZE, offset: currentOffset },
         controller.signal
       );
-      setJobs(response.jobs);
+      
+      if (isLoadMore) {
+        setJobs((prev) => [...prev, ...response.jobs]);
+        setOffset(currentOffset + PAGE_SIZE);
+      } else {
+        setJobs(response.jobs);
+        setOffset(PAGE_SIZE);
+      }
+      
       setTotalFound(response.total);
-      setOffset(PAGE_SIZE);
       setHasMore(response.has_more);
     } catch (err) {
       if (controller.signal.aborted) return;
       setError(err instanceof Error ? err.message : 'Failed to load jobs.');
+      if (!isLoadMore) setJobs([]);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
-  }, []);
+  }, [offset]);
 
   useEffect(() => {
-    loadAllJobs();
+    loadAllJobs(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleSearch = useCallback(async (query: string, isLoadMore = false) => {
     // Empty query → show all jobs
     if (!query.trim()) {
-      loadAllJobs();
+      loadAllJobs(isLoadMore);
       return;
     }
 

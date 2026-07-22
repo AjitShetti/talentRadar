@@ -20,7 +20,24 @@ from storage.repository import UnitOfWork
 
 logger = logging.getLogger(__name__)
 
-_SOURCE_NAME = "ats_crawler"
+_SOURCE_NAME = "tavily_crawler"
+
+DEFAULT_INDIAN_LOCATIONS = [
+    "Remote",
+    "Bangalore",
+    "Mumbai",
+    "Delhi",
+    "Hyderabad",
+    "Pune",
+    "India",
+]
+
+DEFAULT_INDIAN_DOMAINS = [
+    "linkedin.com",
+    "naukri.com",
+    "indeed.com",
+    "in.indeed.com",
+]
 
 def _company_domain(company_name: str) -> str:
     """Create a deterministic pseudo-domain key from a company name."""
@@ -37,7 +54,9 @@ async def _run_pipeline(
     roles: list[str],
     locations: list[str],
     max_results_per_query: int,
-    run_id: str
+    run_id: str,
+    include_domains: list[str] | None = None,
+    source_name: str | None = None,
 ) -> dict[str, Any]:
     """Execute the full ingestion pipeline asynchronously."""
     # 1. Fetch Raw
@@ -48,7 +67,12 @@ async def _run_pipeline(
         for role in roles:
             for location in locations:
                 try:
-                    results = scraper.search_jobs(role, location, count=max_results_per_query)
+                    results = scraper.search_jobs(
+                        role,
+                        location,
+                        count=max_results_per_query,
+                        include_domains=include_domains,
+                    )
                     paths = scraper.save_raw(
                         results,
                         run_id=run_id,
@@ -88,15 +112,16 @@ async def _run_pipeline(
     # 3. Save to Postgres
     inserted = updated = skipped = 0
     chroma_items: list[dict[str, Any]] = []
-    
+    pipeline_source = source_name or _SOURCE_NAME
+
     async with AsyncSessionLocal() as session:
         uow = UnitOfWork(session)
 
         ingestion_run = await uow.ingestion_runs.create(
-            source=_SOURCE_NAME,
+            source=pipeline_source,
             status=IngestionStatus.RUNNING,
             started_at=datetime.now(tz=timezone.utc),
-            run_config={"celery_run_id": run_id},
+            run_config={"celery_run_id": run_id, "include_domains": include_domains},
         )
         await session.commit()
 
@@ -108,6 +133,9 @@ async def _run_pipeline(
                     logger.warning("Skipping invalid parsed job: %s", exc)
                     skipped += 1
                     continue
+
+                from ingestion.scrapers.tavily_client import detect_source_from_url
+                job_source = detect_source_from_url(pjd.source_url or "") if pjd.source_url else pipeline_source
 
                 company_slug = _company_domain(pjd.company)
                 company, _ = await uow.companies.upsert_by_domain(
@@ -126,7 +154,7 @@ async def _run_pipeline(
 
                 job, created = await uow.jobs.upsert_by_external_id(
                     external_id=external_id,
-                    source=_SOURCE_NAME,
+                    source=job_source,
                     defaults=job_kwargs,
                 )
                 if created:
@@ -145,6 +173,7 @@ async def _run_pipeline(
                     "skills_str": ", ".join(pjd.skills),
                     "source_url": pjd.source_url or "",
                     "salary": pjd.salary or "",
+                    "source": job_source,
                 }
 
                 chroma_items.append({
@@ -209,7 +238,9 @@ def run_crawler(
     self,
     roles: list[str] | None = None,
     locations: list[str] | None = None,
+    include_domains: list[str] | None = None,
     max_results_per_query: int = 5,
+    source_name: str | None = None,
 ) -> dict[str, Any]:
     """
     Celery task to scrape job postings from ATS pages, parse them with LLM,
@@ -220,12 +251,13 @@ def run_crawler(
     would create duplicate ingestion_runs records.
     """
     roles = roles or ["Software Engineer", "Data Scientist"]
-    locations = locations or ["Remote", "New York"]
+    locations = locations or DEFAULT_INDIAN_LOCATIONS
+    include_domains = include_domains or DEFAULT_INDIAN_DOMAINS
     run_id = str(uuid.uuid4())
 
     logger.info(
-        "Starting run_crawler task task_id=%s run_id=%s roles=%s locations=%s max=%s",
-        self.request.id, run_id, roles, locations, max_results_per_query,
+        "Starting run_crawler task task_id=%s run_id=%s roles=%s locations=%s domains=%s max=%s",
+        self.request.id, run_id, roles, locations, include_domains, max_results_per_query,
     )
 
     try:
@@ -234,6 +266,8 @@ def run_crawler(
             locations=locations,
             max_results_per_query=max_results_per_query,
             run_id=run_id,
+            include_domains=include_domains,
+            source_name=source_name,
         ))
         logger.info("run_crawler completed successfully: %s", result)
         return result

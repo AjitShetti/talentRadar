@@ -134,6 +134,7 @@ dev = [
     # Database test fixtures
     "pytest-postgresql>=6.0.0",      # spinning up test PostgreSQL instances
     "testcontainers[postgresql]>=4.0.0",
+    "aiosqlite>=0.20.0",
 ]
 
 # --- Linting & type checking ---
@@ -176,6 +177,7 @@ all = [
 
 [tool.pytest.ini_options]
 minversion = "8.0"
+pythonpath = ["."]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
