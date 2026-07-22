@@ -498,6 +498,9 @@ button:hover, .btn:hover {
 .auth-spinner {
   animation: spin 700ms linear infinite;
 }
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
 @keyframes spin {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
