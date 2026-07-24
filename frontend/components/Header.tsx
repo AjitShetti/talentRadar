@@ -84,6 +84,13 @@ export default function Header() {
         >
           INTERVIEWS
         </Link>
+        <Link 
+          href="/applications" 
+          style={navLinkStyle('/applications')}
+        >
+          APPLICATIONS
+        </Link>
+
 
         {status === 'authenticated' ? (
           <div style={{ position: 'relative' }} ref={dropdownRef}>
@@ -142,6 +149,25 @@ export default function Header() {
                 >
                   <History size={16} className="text-accent" />
                   Interview History
+                </Link>
+                <Link 
+                  href="/dashboard" 
+                  onClick={() => setDropdownOpen(false)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    padding: '0.75rem',
+                    textDecoration: 'none',
+                    color: 'var(--color-fg)',
+                    borderRadius: '0.25rem',
+                    transition: 'background var(--transition-speed) ease'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                >
+                  <Zap size={16} className="text-accent" />
+                  Dashboard
                 </Link>
                 <div style={{ height: '1px', background: 'var(--color-border)', margin: '0.25rem 0' }} />
                 <button 

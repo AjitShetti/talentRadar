@@ -16,6 +16,7 @@ Design notes
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -211,3 +212,27 @@ class TranscribeResponse(BaseModel):
         "groq_whisper",
         description="Which STT provider was used (groq_whisper | browser_fallback)",
     )
+
+
+class AnswerScoreDetailSchema(BaseModel):
+    """Full per-question score for session detail page."""
+    question_index: int
+    question_text: str
+    answer_summary: str | None
+    score_correctness: float
+    score_clarity: float
+    score_depth: float
+    was_followup: bool
+
+
+class SessionDetailResponse(BaseModel):
+    """Full session with all per-question scores."""
+    id: str
+    track: str
+    difficulty: str
+    total_score: float | None
+    completed: bool
+    duration_seconds: int | None
+    created_at: datetime
+    score_breakdown: dict[str, float]
+    answer_scores: list[AnswerScoreDetailSchema]

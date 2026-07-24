@@ -178,8 +178,14 @@ services:
 
 volumes:
   postgres_data:
+    external: true
+    name: talentradar_postgres_data
   redis_data:
+    external: true
+    name: talentradar_redis_data
   chroma_data:
+    external: true
+    name: talentradar_chroma_data
 
 networks:
   talentradar-net:

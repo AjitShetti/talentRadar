@@ -97,7 +97,7 @@ async def health_check():
 
 
 # Register routers
-from api.routers import search, query, recommend, trends, ingest, match, auth  # noqa: E402
+from api.routers import search, query, recommend, trends, ingest, match, auth, applications  # noqa: E402
 from api.routers import interview  # noqa: E402
 
 app.include_router(auth.router)
@@ -108,6 +108,7 @@ app.include_router(trends.router, prefix="/api/v1")
 app.include_router(ingest.router, prefix="/api/v1")
 app.include_router(match.router, prefix="/api/v1")
 app.include_router(interview.router, prefix="/api/v1")
+app.include_router(applications.router, prefix="/api/v1")
 
 
 # API documentation

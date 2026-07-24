@@ -52,6 +52,8 @@ from api.schemas.interview_schemas import (
     SubmitAnswerRequest,
     SubmitAnswerResponse,
     TranscribeResponse,
+    AnswerScoreDetailSchema,
+    SessionDetailResponse,
 )
 from api.utils.voice_pipeline import STTError, VoicePipeline
 from storage.database import get_db_dep
@@ -66,40 +68,21 @@ router = APIRouter(prefix="/interview", tags=["Interview"])
 # Auth dependency (reuses the existing JWT bearer pattern)
 # ---------------------------------------------------------------------------
 
-_bearer = HTTPBearer(auto_error=True)
-
+from api.auth import get_current_user
 
 async def get_current_user_id(
-    credentials: Annotated[HTTPAuthorizationCredentials, Depends(_bearer)],
+    user: Annotated[dict, Depends(get_current_user)],
 ) -> str:
     """
     Validate JWT and return user_id string.
-
-    Reuses the same JWT secret and algorithm as the rest of the API.
-    Returns the ``sub`` claim which is the user's UUID as a string.
     """
-    from jose import JWTError, jwt
-    from config.settings import get_settings
-
-    settings = get_settings()
-    try:
-        payload = jwt.decode(
-            credentials.credentials,
-            settings.jwt_secret_key,
-            algorithms=[settings.jwt_algorithm],
-        )
-        user_id: str | None = payload.get("sub")
-        if not user_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token: missing sub claim",
-            )
-        return user_id
-    except JWTError as exc:
+    user_id = user.get("sub")
+    if not user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid or expired token: {exc}",
-        ) from exc
+            detail="Invalid token: missing sub claim",
+        )
+    return str(user_id)
 
 
 # ---------------------------------------------------------------------------
@@ -398,6 +381,62 @@ async def get_session_history(
         total=len(sessions),
         limit=limit,
         offset=offset,
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /interview/sessions/{session_id}  - Session detail with per-Q scores
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/sessions/{session_id}",
+    response_model=SessionDetailResponse,
+    summary="Get full detail for a single interview session",
+)
+async def get_session_detail(
+    session_id: str,
+    user_id: CurrentUserId,
+    db: DBSession,
+) -> SessionDetailResponse:
+    """Return session metadata plus all per-question answer scores.
+    Only the owning user may access their session.
+    """
+    try:
+        sid = uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session_id")
+
+    repo = InterviewRepository()
+    session = await repo.get_session(db, sid)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if str(session.user_id) != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    scores = await repo.get_session_scores(db, sid)
+    breakdown = await repo.compute_score_breakdown(db, sid)
+
+    return SessionDetailResponse(
+        id=str(session.id),
+        track=session.track.value,
+        difficulty=session.difficulty.value,
+        total_score=session.total_score,
+        completed=session.completed,
+        duration_seconds=session.duration_seconds,
+        created_at=session.created_at,
+        score_breakdown=breakdown,
+        answer_scores=[
+            AnswerScoreDetailSchema(
+                question_index=s.question_index,
+                question_text=s.question_text,
+                answer_summary=s.answer_summary,
+                score_correctness=s.score_correctness,
+                score_clarity=s.score_clarity,
+                score_depth=s.score_depth,
+                was_followup=s.was_followup,
+            )
+            for s in scores
+        ],
     )
 
 

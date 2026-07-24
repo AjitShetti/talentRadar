@@ -111,7 +111,7 @@ export default function HistoryPage() {
             return (
               <Link
                 key={s.id}
-                href="/interview"
+                href={`/interview/history/${s.id}`}
                 style={{ textDecoration: 'none' }}
               >
                 <div style={{

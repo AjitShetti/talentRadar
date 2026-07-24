@@ -220,7 +220,7 @@ class RAGAgent:
                 result = RetrievalResult(
                     job_id=job_id,
                     title=job.title,
-                    company=metadata.get("company", job.company.name if job.company else "Unknown"),
+                    company=metadata.get("company", "Unknown"),
                     location=metadata.get("location") or job.location_raw,
                     is_remote=metadata.get("is_remote", job.is_remote),
                     seniority=metadata.get("seniority") or (job.seniority.value if job.seniority else None),
