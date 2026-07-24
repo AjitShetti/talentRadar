@@ -483,6 +483,64 @@ class User(Base):
         return f"<User id={self.id} email={self.email!r} role={self.role!r}>"
 
 
+class ApplicationStatus(str, PyEnum):
+    SAVED      = "saved"
+    APPLIED    = "applied"
+    SCREENING  = "screening"
+    INTERVIEW  = "interview"
+    OFFER      = "offer"
+    REJECTED   = "rejected"
+    WITHDRAWN  = "withdrawn"
+
+
+class JobApplication(Base):
+    __tablename__ = "job_applications"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    job_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("jobs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    status: Mapped[ApplicationStatus] = mapped_column(
+        Enum(ApplicationStatus, name="application_status_enum", values_callable=lambda obj: [e.value for e in obj]),
+        nullable=False,
+        default=ApplicationStatus.SAVED,
+        server_default="saved",
+        index=True,
+    )
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "job_id", name="uq_job_applications_user_job"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<JobApplication id={self.id} status={self.status.value}>"
+
+
 # ---------------------------------------------------------------------------
 # interview_sessions / interview_answer_scores
 # ---------------------------------------------------------------------------

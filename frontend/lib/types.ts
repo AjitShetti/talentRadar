@@ -228,3 +228,48 @@ export interface PaginationState {
   limit: number;
   offset: number;
 }
+
+// ─── Applications ─────────────────────────────
+
+export type ApplicationStatus =
+  | 'saved' | 'applied' | 'screening' | 'interview'
+  | 'offer' | 'rejected' | 'withdrawn';
+
+export interface ApplicationJob {
+  id: string;
+  title: string;
+  company_name?: string;
+  location_raw?: string;
+  is_remote: boolean;
+  source_url?: string;
+  salary_raw?: string;
+  skills: string[];
+}
+
+export interface JobApplication {
+  id: string;
+  job_id: string | null;
+  status: ApplicationStatus;
+  notes: string | null;
+  applied_at: string | null;
+  created_at: string;
+  updated_at: string;
+  job: ApplicationJob | null;
+}
+
+export interface ApplicationListResponse {
+  applications: JobApplication[];
+  total: number;
+}
+
+export interface ApplicationCreateRequest {
+  job_id: string;
+  status?: ApplicationStatus;
+  notes?: string;
+}
+
+export interface ApplicationUpdateRequest {
+  status?: ApplicationStatus;
+  notes?: string;
+  applied_at?: string;
+}

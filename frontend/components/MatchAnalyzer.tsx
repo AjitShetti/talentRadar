@@ -21,6 +21,8 @@ export default function MatchAnalyzer() {
   // Resume Download
 
   const [tailoringResume, setTailoringResume] = useState(false);
+  const [learningPath, setLearningPath] = useState<string | null>(null);
+  const [loadingPath, setLoadingPath] = useState(false);
 
   const eventSourceRef = useRef<EventSource | null>(null);
   
@@ -226,7 +228,7 @@ export default function MatchAnalyzer() {
                 <h3 style={{ marginBottom: '1rem', fontSize: '1rem', textTransform: 'uppercase', borderBottom: '1px solid var(--color-border)', paddingBottom: '0.5rem' }}>
                   Missing Competencies
                 </h3>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1.5rem' }}>
                   {result.missing_skills.map((skill, idx) => (
                     <span key={idx} style={{ 
                       padding: '0.25rem 0.75rem', 
@@ -238,7 +240,41 @@ export default function MatchAnalyzer() {
                     </span>
                   ))}
                 </div>
-                
+
+                {!learningPath && (
+                  <button 
+                    className="btn" 
+                    onClick={async () => {
+                      setLoadingPath(true);
+                      try {
+                        const res = await fetch(`${API_URL}/api/v1/recommend/learning-path`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ missing_skills: result.missing_skills, target_role: 'Software Engineer' })
+                        });
+                        if (!res.ok) throw new Error('Failed to generate learning path');
+                        const data = await res.json();
+                        setLearningPath(data.learning_path);
+                      } catch (err: any) {
+                        setError(err.message);
+                      } finally {
+                        setLoadingPath(false);
+                      }
+                    }}
+                    disabled={loadingPath}
+                    style={{ width: '100%', justifyContent: 'center' }}
+                  >
+                    {loadingPath ? <><Loader2 size={16} className="animate-spin text-accent" /> GENERATING ROADMAP...</> : <><Zap size={16} className="text-accent" /> GENERATE SKILL ROADMAP</>}
+                  </button>
+                )}
+                {learningPath && (
+                  <div style={{ marginTop: '1.5rem', padding: '1.5rem', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--color-border)' }}>
+                    <h4 style={{ marginBottom: '1rem', color: 'var(--color-accent)', textTransform: 'uppercase', fontSize: '0.85rem' }}>Personalized Learning Path</h4>
+                    <div style={{ fontSize: '0.9rem', lineHeight: 1.6, color: 'var(--color-fg)' }}>
+                      <ReactMarkdown>{learningPath}</ReactMarkdown>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

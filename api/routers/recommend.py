@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, status
 
 
 from agents.orchestrator import Orchestrator
@@ -41,40 +41,9 @@ async def match_candidate_to_jobs(request: MatchRequestSchema):
     - Seniority alignment (15%)
     - Location compatibility (15%)
     """
-    candidate = CandidateProfile(
-        name=request.candidate.name,
-        skills=request.candidate.skills,
-        experience_years=request.candidate.experience_years,
-        current_title=request.candidate.current_title,
-        desired_title=request.candidate.desired_title,
-        location=request.candidate.location,
-        is_remote=request.candidate.is_remote,
-        seniority=request.candidate.seniority,
-        resume_text=request.candidate.resume_text,
-    )
-
-    orchestrator = Orchestrator()
-    response = await orchestrator.match_candidate_to_jobs(candidate, limit=request.limit)
-
-    matches = []
-    for result in response.results:
-        matches.append({
-            "job_id": result.job_id,
-            "title": result.title,
-            "company": result.company,
-            "location": result.location,
-            "is_remote": result.is_remote,
-            "skills": result.skills,
-            "score": result.score,
-            "match_reason": result.match_reason,
-        })
-
-    top_score = matches[0]["score"] if matches else None
-
-    return MatchResponseSchema(
-        matches=matches,
-        summary=response.summary,
-        top_score=top_score,
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Candidate-to-job matching is not yet implemented",
     )
 
 

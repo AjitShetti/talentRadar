@@ -2,8 +2,11 @@
 
 import { Job } from '@/lib/types';
 import { formatSalary, formatDate, getSeniorityLabel, getEmploymentTypeLabel } from '@/lib/utils';
-import { MapPin, Building2, DollarSign, Calendar, ExternalLink, Briefcase, Star } from 'lucide-react';
+import { MapPin, Building2, DollarSign, Calendar, ExternalLink, Briefcase, Star, Bookmark, BookmarkCheck } from 'lucide-react';
 import Link from 'next/link';
+import { useSession } from 'next-auth/react';
+import { applicationsApi } from '@/lib/applications-api';
+import { useState } from 'react';
 
 interface JobCardProps {
   job: Job;
@@ -11,9 +14,46 @@ interface JobCardProps {
 }
 
 export default function JobCard({ job, showScore = false }: JobCardProps) {
+  const { data: session } = useSession();
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+
   return (
-    <div className="panel" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+    <div className="panel" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', position: 'relative' }}>
+      
+      <div style={{ position: 'absolute', top: '1rem', right: '1rem', zIndex: 10 }}>
+        <button
+          onClick={async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!session?.accessToken || saving) return;
+            setSaving(true);
+            try {
+              await applicationsApi.create(session.accessToken as string, { job_id: job.id });
+              setSaved(true);
+            } catch (err) {
+              if (err instanceof Error && err.message.includes('already exists')) setSaved(true);
+            } finally {
+              setSaving(false);
+            }
+          }}
+          title={saved ? 'Saved' : 'Save job'}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: session?.accessToken ? 'pointer' : 'default',
+            color: saved ? 'var(--color-accent)' : 'var(--color-fg-muted)',
+            display: 'flex',
+            alignItems: 'center',
+            padding: '0.25rem',
+            transition: 'color 150ms ease',
+          }}
+        >
+          {saved ? <BookmarkCheck size={16} /> : <Bookmark size={16} />}
+        </button>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', paddingRight: '2.5rem' }}>
         <div>
           <h3 style={{ fontSize: '1.25rem', marginBottom: '0.25rem' }}>
             <Link href={`/jobs/${job.id}`} style={{ textDecoration: 'none', color: 'var(--color-fg)' }}>

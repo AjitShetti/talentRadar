@@ -18,6 +18,7 @@ The matching pipeline considers:
 from __future__ import annotations
 
 import logging
+import json
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 
@@ -303,7 +304,6 @@ async def evaluate_stream(task_id: str):
                 }
             await asyncio.sleep(1)
 
-    import json
     return EventSourceResponse(event_generator())
 
 @router.post("/tailor-resume")
