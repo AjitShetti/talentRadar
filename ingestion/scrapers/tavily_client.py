@@ -1,13 +1,17 @@
 import hashlib
 import json
+import logging
 import re
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List
+from urllib.parse import urlparse
 
 import httpx
 
 from ingestion.parsers.schemas import RawJobResult
+
+logger = logging.getLogger(__name__)
 
 def _slugify(text: str) -> str:
     """Convert text to a slug."""
@@ -25,25 +29,57 @@ INDIAN_JOB_DOMAINS = [
 ]
 
 
+def _validate_url(url: str) -> bool:
+    """Return True only for well-formed http/https URLs."""
+    try:
+        parsed = urlparse(url)
+        return parsed.scheme in ("http", "https") and bool(parsed.netloc)
+    except Exception:
+        return False
+
+
+def _url_matches_domain(url: str, domain: str) -> bool:
+    """
+    Check whether *url* belongs to *domain* using proper URL parsing.
+
+    Matches both bare domains and subdomains:
+        _url_matches_domain("https://in.indeed.com/jobs", "indeed.com")  → True
+        _url_matches_domain("https://www.linkedin.com/jobs", "linkedin.com")  → True
+    """
+    try:
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower()
+    except Exception:
+        return False
+    domain = domain.lower().strip(".")
+    return host == domain or host.endswith("." + domain)
+
+
+def _matches_any_domain(url: str, domains: List[str]) -> bool:
+    """Return True if *url* matches any entry in *domains*."""
+    return any(_url_matches_domain(url, d) for d in domains)
+
+
 def detect_source_from_url(url: str) -> str:
     """
     Identify the origin job platform from a URL.
     Returns: 'linkedin' | 'naukri' | 'indeed' | 'greenhouse' | 'lever' | 'ashby' | 'tavily_search'
     """
-    if not url:
+    if not url or not _validate_url(url):
         return "tavily_search"
-    url_lower = url.lower()
-    if "linkedin.com" in url_lower:
+    host = urlparse(url).hostname or ""
+    host = host.lower()
+    if "linkedin.com" in host:
         return "linkedin"
-    elif "naukri.com" in url_lower:
+    elif "naukri.com" in host:
         return "naukri"
-    elif "indeed.com" in url_lower:
+    elif "indeed.com" in host:
         return "indeed"
-    elif "greenhouse.io" in url_lower:
+    elif "greenhouse.io" in host:
         return "greenhouse"
-    elif "lever.co" in url_lower:
+    elif "lever.co" in host:
         return "lever"
-    elif "ashbyhq.com" in url_lower:
+    elif "ashbyhq.com" in host:
         return "ashby"
     return "tavily_search"
 
@@ -93,6 +129,15 @@ class TavilyJobScraper:
             url = item.get("url", "").strip()
             if not url:
                 continue
+
+            if not _validate_url(url):
+                logger.debug("Skipping malformed URL: %s", url)
+                continue
+
+            if include_domains and not _matches_any_domain(url, include_domains):
+                continue
+            if exclude_domains and _matches_any_domain(url, exclude_domains):
+                continue
             
             try:
                 result = RawJobResult(
@@ -117,10 +162,12 @@ class TavilyJobScraper:
         include_domains: Optional[List[str]] = None,
         use_site_operators: bool = False,
     ) -> List[RawJobResult]:
-        query_str = f"{role} jobs in {location}"
-        if use_site_operators and include_domains:
-            site_query = " OR ".join([f"site:{d}" for d in include_domains])
-            query_str = f"{query_str} ({site_query})"
+        # NOTE: Tavily's API does not support `site:` operators correctly in
+        # the query string — they cause irrelevant software-engineering articles
+        # to be returned instead of job postings. Domain filtering is handled
+        # exclusively via the `include_domains` API parameter, which is the
+        # supported mechanism for restricting results to specific job boards.
+        query_str = f"{role} job openings in {location} hiring"
 
         return self.search(
             query_str,

@@ -103,16 +103,18 @@ def mock_groq_client():
 @pytest.fixture
 def mock_tavily_client():
     """Mock Tavily API client."""
+    from ingestion.parsers.schemas import RawJobResult
+    
     mock = MagicMock()
     mock.search_jobs = MagicMock(
         return_value=[
-            {
-                "title": "Software Engineer",
-                "url": "https://example.com/job1",
-                "content": "We're looking for a Python engineer...",
-                "score": 0.95,
-                "published_date": "2026-04-01",
-            }
+            RawJobResult(
+                title="Software Engineer",
+                url="https://example.com/job1",
+                content="We're looking for a Python engineer...",
+                score=0.95,
+                published_date="2026-04-01",
+            )
         ]
     )
     return mock

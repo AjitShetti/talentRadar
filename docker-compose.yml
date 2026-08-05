@@ -79,6 +79,8 @@ services:
         condition: service_healthy
       chromadb:
         condition: service_started
+      db-seeder:
+        condition: service_completed_successfully
     volumes:
       - ./api:/app/api
       - ./storage:/app/storage
@@ -151,7 +153,31 @@ services:
     networks:
       - talentradar-net
 
-
+  db-seeder:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile
+    container_name: talentradar-db-seeder
+    command: python -m ingestion.seed_db
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      CHROMA_HOST: chromadb
+      CHROMA_PORT: 8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      chromadb:
+        condition: service_started
+    volumes:
+      - ./api:/app/api
+      - ./storage:/app/storage
+      - ./config:/app/config
+      - ./ingestion:/app/ingestion
+      - ./data:/app/data
+    networks:
+      - talentradar-net
 
   frontend:
     build:

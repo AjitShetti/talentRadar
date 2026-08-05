@@ -72,6 +72,7 @@ async def _run_pipeline(
                         location,
                         count=max_results_per_query,
                         include_domains=include_domains,
+                        use_site_operators=True,
                     )
                     paths = scraper.save_raw(
                         results,

@@ -333,13 +333,16 @@ class TestRecommendEndpoints:
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestIngestEndpoints:
-    async def test_trigger_ingestion_returns_202_with_mocked_pipeline(self, api_client):
+    async def test_trigger_ingestion_returns_200_with_mocked_pipeline(self, api_client):
         """
-        Trigger must return 202 Accepted when the pipeline is mocked.
+        Trigger must return 200 OK when the pipeline is mocked.
         It must NEVER return 500 — if Airflow is down the API should
         return a clear error code (e.g. 503), not an uncaught server error.
         """
-        with patch("api.routers.ingest.run_ingestion_pipeline", new_callable=AsyncMock):
+        mock_task = MagicMock()
+        mock_task.id = "mock-task-id-123"
+        with patch("ingestion.tasks.run_crawler") as mock_run_crawler:
+            mock_run_crawler.delay.return_value = mock_task
             response = await api_client.post(
                 "/api/v1/ingest/trigger",
                 json={
@@ -348,11 +351,10 @@ class TestIngestEndpoints:
                     "max_results_per_query": 5,
                 },
             )
-        # Accept 200 or 202; 500 is never acceptable
-        assert response.status_code in [
-            status.HTTP_200_OK,
-            status.HTTP_202_ACCEPTED,
-        ]
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["dag_run_id"] == "mock-task-id-123"
+        mock_run_crawler.delay.assert_called_once()
 
     async def test_trigger_ingestion_rejects_empty_roles(self, api_client):
         """Empty roles list should be rejected at the schema level."""

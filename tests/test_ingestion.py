@@ -26,7 +26,13 @@ import pytest
 
 from ingestion.parsers.schemas import ParsedJobDescription, RawJobResult
 from ingestion.parsers.jd_parser import JDParser
-from ingestion.scrapers.tavily_client import TavilyJobScraper, _slugify
+from ingestion.scrapers.tavily_client import (
+    TavilyJobScraper,
+    _matches_any_domain,
+    _slugify,
+    _url_matches_domain,
+    _validate_url,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -584,3 +590,127 @@ class TestSlugify:
     def test_truncates_to_64_chars(self):
         long = "a" * 100
         assert len(_slugify(long)) == 64
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _validate_url helper
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestValidateUrl:
+    def test_valid_https_url(self):
+        assert _validate_url("https://example.com/jobs/123") is True
+
+    def test_valid_http_url(self):
+        assert _validate_url("http://example.com/jobs/123") is True
+
+    def test_malformed_url_no_scheme(self):
+        assert _validate_url("example.com/jobs") is False
+
+    def test_empty_string(self):
+        assert _validate_url("") is False
+
+    def test_ftp_scheme_rejected(self):
+        assert _validate_url("ftp://example.com/file") is False
+
+    def test_url_with_port(self):
+        assert _validate_url("https://example.com:8080/api") is True
+
+    def test_url_with_query_params(self):
+        assert _validate_url("https://example.com/search?q=python&page=1") is True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _url_matches_domain helper
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestUrlMatchesDomain:
+    def test_exact_domain_match(self):
+        assert _url_matches_domain("https://linkedin.com/jobs/123", "linkedin.com") is True
+
+    def test_subdomain_match(self):
+        assert _url_matches_domain("https://in.indeed.com/jobs", "indeed.com") is True
+
+    def test_www_subdomain_match(self):
+        assert _url_matches_domain("https://www.linkedin.com/jobs", "linkedin.com") is True
+
+    def test_no_match_different_domain(self):
+        assert _url_matches_domain("https://glassdoor.com/jobs", "linkedin.com") is False
+
+    def test_case_insensitive(self):
+        assert _url_matches_domain("https://LinkedIn.com/jobs", "linkedin.com") is True
+
+    def test_empty_url_returns_false(self):
+        assert _url_matches_domain("", "linkedin.com") is False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _matches_any_domain helper
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestMatchesAnyDomain:
+    def test_matches_first_domain(self):
+        domains = ["linkedin.com", "naukri.com", "indeed.com"]
+        assert _matches_any_domain("https://linkedin.com/jobs/1", domains) is True
+
+    def test_matches_second_domain(self):
+        domains = ["linkedin.com", "naukri.com", "indeed.com"]
+        assert _matches_any_domain("https://naukri.com/jobs/1", domains) is True
+
+    def test_no_match(self):
+        domains = ["linkedin.com", "naukri.com"]
+        assert _matches_any_domain("https://glassdoor.com/jobs", domains) is False
+
+    def test_empty_domains_list(self):
+        assert _matches_any_domain("https://linkedin.com/jobs", []) is False
+
+    def test_subdomain_match_in_list(self):
+        domains = ["linkedin.com", "indeed.com"]
+        assert _matches_any_domain("https://in.indeed.com/jobs", domains) is True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TavilyJobScraper.search domain filtering
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestTavilyJobScraperDomainFiltering:
+    def test_include_domains_filters_out_non_matching(self):
+        """Results not in include_domains should be filtered out."""
+        tavily_response = {
+            "results": [
+                {"title": "LinkedIn Job", "url": "https://linkedin.com/jobs/1", "content": "text1", "score": 0.9},
+                {"title": "Glassdoor Job", "url": "https://glassdoor.com/jobs/2", "content": "text2", "score": 0.8},
+                {"title": "Indeed Job", "url": "https://indeed.com/jobs/3", "content": "text3", "score": 0.85},
+            ]
+        }
+        with patch("ingestion.scrapers.tavily_client.httpx.Client") as MockClient:
+            mock_client = MockClient.return_value
+            mock_response = MagicMock()
+            mock_response.json.return_value = tavily_response
+            mock_response.raise_for_status = MagicMock()
+            mock_client.post.return_value = mock_response
+            scraper = TavilyJobScraper(api_key="fake-key")
+            scraper._client = mock_client
+            results = scraper.search("engineer", include_domains=["linkedin.com", "indeed.com"])
+        assert len(results) == 2
+        urls = [r.url for r in results]
+        assert "https://glassdoor.com/jobs/2" not in urls
+
+    def test_exclude_domains_filters_out_matching(self):
+        """Results in exclude_domains should be filtered out."""
+        tavily_response = {
+            "results": [
+                {"title": "LinkedIn Job", "url": "https://linkedin.com/jobs/1", "content": "text1", "score": 0.9},
+                {"title": "Company Job", "url": "https://acme.com/careers/2", "content": "text2", "score": 0.8},
+            ]
+        }
+        with patch("ingestion.scrapers.tavily_client.httpx.Client") as MockClient:
+            mock_client = MockClient.return_value
+            mock_response = MagicMock()
+            mock_response.json.return_value = tavily_response
+            mock_response.raise_for_status = MagicMock()
+            mock_client.post.return_value = mock_response
+            scraper = TavilyJobScraper(api_key="fake-key")
+            scraper._client = mock_client
+            results = scraper.search("engineer", exclude_domains=["linkedin.com"])
+        assert len(results) == 1
+        assert results[0].url == "https://acme.com/careers/2"
