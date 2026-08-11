@@ -99,6 +99,7 @@ async def health_check():
 # Register routers
 from api.routers import search, query, recommend, trends, ingest, match, auth, applications  # noqa: E402
 from api.routers import interview  # noqa: E402
+from api.routers import profile, resumes, company_intel, career, agent, dashboard  # noqa: E402
 
 app.include_router(auth.router)
 app.include_router(search.router, prefix="/api/v1")
@@ -109,6 +110,12 @@ app.include_router(ingest.router, prefix="/api/v1")
 app.include_router(match.router, prefix="/api/v1")
 app.include_router(interview.router, prefix="/api/v1")
 app.include_router(applications.router, prefix="/api/v1")
+app.include_router(profile.router, prefix="/api/v1")
+app.include_router(resumes.router, prefix="/api/v1")
+app.include_router(company_intel.router, prefix="/api/v1")
+app.include_router(career.router, prefix="/api/v1")
+app.include_router(agent.router, prefix="/api/v1")
+app.include_router(dashboard.router, prefix="/api/v1")
 
 
 # API documentation
@@ -147,6 +154,31 @@ async def api_root():
                 "end":         "POST /api/v1/interview/sessions/end",
                 "history":     "GET  /api/v1/interview/sessions/history",
                 "transcribe":  "POST /api/v1/interview/voice/transcribe",
+            },
+            "profile": {
+                "get":    "GET  /api/v1/profile",
+                "upsert": "POST /api/v1/profile",
+            },
+            "resumes": {
+                "analyze": "POST /api/v1/resumes/analyze",
+                "tailor":  "POST /api/v1/resumes/tailor",
+                "cover_letter": "POST /api/v1/resumes/cover-letter",
+                "gaps":    "POST /api/v1/resumes/gaps",
+            },
+            "company_intel": {
+                "by_id": "GET /api/v1/company-intel/{company_id}",
+                "search": "GET /api/v1/company-intel?name=...",
+            },
+            "career": {
+                "weaknesses": "GET  /api/v1/career/weaknesses",
+                "recommend":  "POST /api/v1/career/recommend",
+            },
+            "agent": {
+                "next_action": "GET  /api/v1/agent/next-action",
+                "memories":    "GET/POST /api/v1/agent/memories",
+            },
+            "dashboard": {
+                "overview": "GET /api/v1/dashboard/overview",
             },
         },
         "docs": "/docs",
