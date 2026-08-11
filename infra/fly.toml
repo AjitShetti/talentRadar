@@ -1,0 +1,82 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Fly.io deployment configuration for TalentRadar
+# ─────────────────────────────────────────────────────────────────────────────
+# Deploy:  fly deploy
+# Logs:    fly logs
+# SSH:     fly ssh console
+# Status:  fly status
+# ─────────────────────────────────────────────────────────────────────────────
+
+app = "talentradar-api"
+primary_region = "sin"                       # Singapore — pick closest to users
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "infra/Dockerfile"
+
+[env]
+  PYTHONUNBUFFERED = "1"
+  LOG_LEVEL = "INFO"
+  DEBUG = "false"
+  SQL_ECHO = "false"
+  RATE_LIMIT_PER_MINUTE = "60"
+  CORS_ORIGINS = "http://localhost:3000,https://talentradar.fly.dev"
+  JWT_ALGORITHM = "HS256"
+  JWT_EXPIRY_MINUTES = "10080"                # 7 days
+  NEXT_PUBLIC_API_URL = "https://talentradar-api.fly.dev"
+  # Secrets (set via `fly secrets set KEY=VAL`, NOT here):
+  #   GROQ_API_KEY, TAVILY_API_KEY, JWT_SECRET_KEY,
+  #   POSTGRES_* (or DATABASE_URL), REDIS_URL
+
+[processes]
+  web = "uvicorn api.main:app --host 0.0.0.0 --port 8000 --workers 2"
+  worker = "celery -A ingestion.celery_app worker --loglevel=info --concurrency=2"
+  beat = "celery -A ingestion.celery_app beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 2
+  memory_mb = 2048
+  processes = ["web"]
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 1024
+  processes = ["worker"]
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512
+  processes = ["beat"]
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["web"]
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 100
+    soft_limit = 80
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "10s"
+    grace_period = "15s"
+    method = "GET"
+    path = "/health"
+    protocol = "http"
+
+[deploy]
+  release_command = "alembic upgrade head"
+  strategy = "rolling"
+
+[mounts]
+  source = "talentradar_uploads"
+  destination = "/app/data/uploads"

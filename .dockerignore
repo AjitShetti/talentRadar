@@ -1,18 +1,65 @@
+# Git
 .git
-.github
-.venv
+.gitignore
+
+# Python
 __pycache__
-*.pyc
-*.pyo
+*.py[cod]
+*$py.class
+*.egg-info
+.eggs
+build/
+dist/
+*.egg
+
+# Virtual envs
+.venv
+venv/
+env/
+
+# Testing
 .pytest_cache
+htmlcov
+.coverage
+.tox
+.nox
+
+# Type checking / linting
 .mypy_cache
 .ruff_cache
-htmlcov
-*.egg-info
-dist
-build
-node_modules
-frontend/.next
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Docs
+docs/_build
+site
+
+# Local env files
+.env
+.env.local
+.env.*.local
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.docker
+
+# Fly
+fly.toml
+
+# Node (frontend builds independently)
 frontend/node_modules
-docs
-.pre-commit-config.yaml
+frontend/.next
+frontend/out
+
+# Data (large / local only)
+data/raw/*.json
+!data/raw/.gitkeep
+
+# Misc
+*.log
+.DS_Store
