@@ -90,6 +90,18 @@ export default function Header() {
         >
           APPLICATIONS
         </Link>
+        <Link 
+          href="/resume-studio" 
+          style={navLinkStyle('/resume-studio')}
+        >
+          RESUME STUDIO
+        </Link>
+        <Link 
+          href="/company-intel" 
+          style={navLinkStyle('/company-intel')}
+        >
+          COMPANIES
+        </Link>
 
 
         {status === 'authenticated' ? (
@@ -131,8 +143,8 @@ export default function Header() {
                 zIndex: 50,
                 boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
               }}>
-                <Link 
-                  href="/interview/history" 
+                <Link
+                  href="/interview/history"
                   onClick={() => setDropdownOpen(false)}
                   style={{
                     display: 'flex',
@@ -149,6 +161,44 @@ export default function Header() {
                 >
                   <History size={16} className="text-accent" />
                   Interview History
+                </Link>
+                <Link 
+                  href="/onboarding" 
+                  onClick={() => setDropdownOpen(false)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    padding: '0.75rem',
+                    textDecoration: 'none',
+                    color: 'var(--color-fg)',
+                    borderRadius: '0.25rem',
+                    transition: 'background var(--transition-speed) ease'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                >
+                  <User size={16} className="text-accent" />
+                  My Profile
+                </Link>
+                <Link 
+                  href="/agent" 
+                  onClick={() => setDropdownOpen(false)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    padding: '0.75rem',
+                    textDecoration: 'none',
+                    color: 'var(--color-fg)',
+                    borderRadius: '0.25rem',
+                    transition: 'background var(--transition-speed) ease'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                >
+                  <Zap size={16} className="text-accent" />
+                  Career Agent
                 </Link>
                 <Link 
                   href="/dashboard" 

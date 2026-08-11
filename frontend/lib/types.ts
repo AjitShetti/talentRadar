@@ -273,3 +273,198 @@ export interface ApplicationUpdateRequest {
   notes?: string;
   applied_at?: string;
 }
+
+// ─── Profile / Onboarding ───────────────────────
+
+export interface ProfileSkill {
+  name: string;
+  proficiency?: number;
+}
+
+export interface ProfileUpsertRequest {
+  full_name?: string;
+  headline?: string;
+  summary?: string;
+  target_roles?: string[];
+  target_locations?: string[];
+  is_remote_preferred?: boolean;
+  target_salary_min?: number;
+  target_salary_max?: number;
+  salary_currency?: string;
+  years_experience?: number;
+  current_role?: string;
+  career_goals?: string;
+  active_resume_id?: string;
+  skills?: ProfileSkill[] | string[];
+}
+
+export interface ProfileResponse {
+  onboarding_completed: boolean;
+  profile: {
+    id: string;
+    user_id: string;
+    full_name: string | null;
+    headline: string | null;
+    summary: string | null;
+    target_roles: string[] | null;
+    target_locations: string[] | null;
+    is_remote_preferred: boolean;
+    target_salary_min: number | null;
+    target_salary_max: number | null;
+    salary_currency: string | null;
+    years_experience: number | null;
+    current_role: string | null;
+    career_goals: string | null;
+    onboarding_completed: boolean;
+    created_at: string;
+    updated_at: string;
+  } | null;
+}
+
+// ─── Resume Studio ──────────────────────────────
+
+export interface ResumeAnalyzeRequest {
+  resume_text: string;
+  job_description: string;
+  job_title?: string;
+}
+
+export interface ResumeAnalyzeResponse {
+  ats_score: number;
+  analysis: Record<string, unknown>;
+  skills_match?: Record<string, unknown>;
+  suggestions?: string[];
+}
+
+export interface ResumeTailorRequest {
+  resume_text: string;
+  job_description: string;
+  job_title?: string;
+}
+
+export interface ResumeTailorResponse {
+  latex?: string;
+  pdf_url?: string;
+  tailored_text?: string;
+  changes?: string[];
+}
+
+export interface CoverLetterRequest {
+  resume_text: string;
+  job_description: string;
+  job_title: string;
+  company: string;
+  tone?: string;
+}
+
+export interface CoverLetterResponse {
+  content: string;
+  tone: string;
+}
+
+export interface ResumeGapsRequest {
+  resume_skills?: string[];
+  resume_text?: string;
+  job_skills?: string[];
+  job_description?: string;
+}
+
+export interface ResumeGapsResponse {
+  missing_skills: string[];
+  matching_skills: string[];
+  match_percentage: number;
+  recommendations?: string[];
+}
+
+// ─── Company Intelligence ───────────────────────
+
+export interface CompanyIntelResponse {
+  company: {
+    id: string;
+    name: string;
+    domain: string | null;
+    industry: string | null;
+    hq_city: string | null;
+    hq_country: string | null;
+    employee_count_range: string | null;
+    website_url: string | null;
+  };
+  profile: {
+    tech_stack: string[] | null;
+    salary_ranges: Record<string, unknown> | null;
+    interview_patterns: Record<string, unknown> | null;
+    hiring_trends: Record<string, unknown> | null;
+    culture_summary: string | null;
+  } | null;
+  open_jobs: Array<{
+    id: string;
+    title: string;
+    location_raw: string | null;
+    is_remote: boolean;
+    seniority: string | null;
+    skills: string[];
+  }>;
+}
+
+export interface CompanySearchResponse {
+  id: string;
+  name: string;
+  domain: string | null;
+  industry: string | null;
+  hq_city: string | null;
+  hq_country: string | null;
+  open_jobs_count?: number;
+}
+
+// ─── Career Coach ───────────────────────────────
+
+export interface WeaknessResponse {
+  skill: string;
+  current_level?: number;
+  target_level?: number;
+  gap: number;
+}
+
+export interface WeaknessesResponse {
+  weaknesses: WeaknessResponse[];
+  target_role: string | null;
+  summary?: string;
+}
+
+export interface CareerRecommendRequest {
+  persist?: boolean;
+}
+
+export interface LearningTaskResponse {
+  id: string;
+  skill_name: string;
+  title: string;
+  description: string | null;
+  resources: string[] | null;
+  priority: number | null;
+  status: string;
+}
+
+export interface CareerRecommendResponse {
+  tasks: LearningTaskResponse[];
+  generated: number;
+  persisted: number;
+}
+
+// ─── Personal AI Agent ──────────────────────────
+
+export interface AgentNextAction {
+  action: string;
+  reason: string;
+  priority: 'high' | 'medium' | 'low';
+  context?: Record<string, unknown>;
+}
+
+export interface AgentMemory {
+  id: string;
+  memory_type: string;
+  content: string;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+  expires_at: string | null;
+}
