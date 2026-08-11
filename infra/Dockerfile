@@ -30,12 +30,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install curl for healthcheck (not available in slim by default) and LaTeX for resume generation
+# Install curl for healthcheck, LaTeX for resume generation, and supervisord for multi-process containers
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     texlive-latex-base \
     texlive-fonts-recommended \
     texlive-latex-extra \
+    supervisor \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy installed packages from builder
@@ -44,12 +45,18 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy application code
 COPY api/ api/
+COPY services/ services/
+COPY core/ core/
+COPY domain/ domain/
 COPY config/ config/
 COPY storage/ storage/
 COPY agents/ agents/
 COPY ingestion/ ingestion/
 COPY ml/ ml/
 COPY data/ data/
+
+# Copy alembic config
+COPY alembic.ini alembic.ini
 
 # Create non-root user
 RUN useradd --create-home --shell /bin/bash app && \
@@ -61,4 +68,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
+# Default: run uvicorn only (for Cloud Run / multi-container setups)
+# For single-container (Fly.io), override CMD with supervisord:
+#   CMD ["/usr/bin/supervisord", "-c", "/app/infra/supervisord.conf"]
 CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

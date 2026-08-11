@@ -6,6 +6,7 @@ LangGraph state machine for the TalentRadar agent pipeline.
 Graph topology:
     classify → route → retrieve → generate → END
                    ↘ trend_retrieve → END
+                   ↘ studio_agents → END
                    ↘ error → END
 
 Each node receives and returns the full AgentState dict.
@@ -147,6 +148,61 @@ async def node_trend_retrieve(state: AgentState) -> AgentState:
     }
 
 
+async def node_studio_agent(state: AgentState) -> AgentState:
+    """
+    Route COMPANY_INFO / CAREER_COACH / APPLICATION_TRACKER /
+    PERSONAL_AGENT / RESUME_STUDIO intents to the matching thin agent.
+    """
+    from agents.studio_agents import (
+        ApplicationAgent,
+        CareerCoachAgent,
+        CompanyAgent,
+        PersonalAgent,
+        ResumeStudioAgent,
+    )
+
+    intent = state.get("intent", IntentType.GENERAL.value)
+    user_id = state.get("user_id")
+    result: dict[str, Any] = {"success": False, "error": "Unhandled intent", "data": None}
+
+    if intent == IntentType.COMPANY_INFO.value:
+        result = await CompanyAgent().profile(name=state.get("context", {}).get("company"))
+    elif intent == IntentType.CAREER_COACH.value:
+        if user_id:
+            result = await CareerCoachAgent().recommend(user_id=user_id, persist=False)
+        else:
+            result = {"success": False, "error": "user_id required for career coach", "data": None}
+    elif intent == IntentType.APPLICATION_TRACKER.value:
+        if user_id:
+            result = await ApplicationAgent().funnel(user_id=user_id)
+        else:
+            result = {"success": False, "error": "user_id required for application tracker", "data": None}
+    elif intent == IntentType.PERSONAL_AGENT.value:
+        if user_id:
+            result = await PersonalAgent().next_action(user_id=user_id)
+        else:
+            result = {"success": False, "error": "user_id required for personal agent", "data": None}
+    elif intent == IntentType.RESUME_STUDIO.value:
+        result = {
+            "success": True,
+            "data": {"message": "Resume Studio requires the file-upload API."},
+            "error": None,
+        }
+
+    return {
+        "retrieved_jobs": [],
+        "total_retrieved": 0,
+        "summary": (result.get("data") or {}).get("recommendation") if isinstance(result.get("data"), dict) else None,
+        "final_response": {
+            "success": result.get("success", False),
+            "intent": intent,
+            "summary": None,
+            "error": result.get("error"),
+            "metadata": {"data": result.get("data")},
+        },
+    }
+
+
 async def node_error(state: AgentState) -> AgentState:
     """Terminal error node — formats an error response."""
     intent = state.get("intent", IntentType.GENERAL.value)
@@ -169,16 +225,23 @@ async def node_error(state: AgentState) -> AgentState:
 
 def route_by_intent(
     state: AgentState,
-) -> Literal["node_rag_retrieve", "node_trend_retrieve", "node_error"]:
+) -> Literal["node_rag_retrieve", "node_trend_retrieve", "node_studio_agent", "node_error"]:
     """Determine which retrieval node to call based on classified intent."""
     intent = state.get("intent", IntentType.GENERAL.value)
     if intent in (IntentType.SEARCH_JOBS.value, IntentType.FIND_CANDIDATES.value):
         return "node_rag_retrieve"
     elif intent == IntentType.MARKET_TRENDS.value:
         return "node_trend_retrieve"
+    elif intent in (
+        IntentType.COMPANY_INFO.value,
+        IntentType.CAREER_COACH.value,
+        IntentType.APPLICATION_TRACKER.value,
+        IntentType.PERSONAL_AGENT.value,
+        IntentType.RESUME_STUDIO.value,
+    ):
+        return "node_studio_agent"
     else:
-        # COMPANY_INFO / GENERAL / unknown — fall through to error node
-        # which returns a graceful "not yet supported" response
+        # GENERAL / unknown — fall through to error node
         return "node_error"
 
 
@@ -194,6 +257,7 @@ def build_agent_graph() -> Any:
     builder.add_node("node_classify", node_classify)
     builder.add_node("node_rag_retrieve", node_rag_retrieve)
     builder.add_node("node_trend_retrieve", node_trend_retrieve)
+    builder.add_node("node_studio_agent", node_studio_agent)
     builder.add_node("node_error", node_error)
 
     # Entry point
@@ -206,13 +270,15 @@ def build_agent_graph() -> Any:
         {
             "node_rag_retrieve": "node_rag_retrieve",
             "node_trend_retrieve": "node_trend_retrieve",
+            "node_studio_agent": "node_studio_agent",
             "node_error": "node_error",
         },
     )
 
-    # Terminal edges — both retrieval paths and error all go to END
+    # Terminal edges — all paths go to END
     builder.add_edge("node_rag_retrieve", END)
     builder.add_edge("node_trend_retrieve", END)
+    builder.add_edge("node_studio_agent", END)
     builder.add_edge("node_error", END)
 
     return builder.compile()

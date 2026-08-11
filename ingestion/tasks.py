@@ -1,7 +1,25 @@
+"""
+ingestion/tasks.py
+~~~~~~~~~~~~~~~~~~
+Celery tasks for the ingestion pipeline.
+
+Two entry points:
+
+    run_crawler        — (legacy, Tavily-only single-source path) retained
+                         for backward compatibility and existing tests.
+    run_all_sources    — multi-source discovery via the dispatcher
+                         (Greenhouse / Lever / Ashby / Cutshort / Tavily).
+
+Both delegate persistence to the shared logic in ``ingestion.pipeline``.
+"""
+
+from __future__ import annotations
+
 import asyncio
 import hashlib
 import json
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,11 +27,11 @@ from typing import Any
 
 from celery import shared_task
 
-from ingestion.celery_app import celery_app
+from ingestion.dispatcher import dispatch_ingestion
+from ingestion.embeddings.chroma_store import ChromaJobStore
 from ingestion.parsers.jd_parser import JDParser
 from ingestion.parsers.schemas import ParsedJobDescription, RawJobResult
 from ingestion.scrapers.tavily_client import TavilyJobScraper
-from ingestion.embeddings.chroma_store import ChromaJobStore
 from storage.database import AsyncSessionLocal
 from storage.models import IngestionStatus
 from storage.repository import UnitOfWork
@@ -21,6 +39,8 @@ from storage.repository import UnitOfWork
 logger = logging.getLogger(__name__)
 
 _SOURCE_NAME = "tavily_crawler"
+
+DEFAULT_ROLES = ["Software Engineer", "Data Scientist"]
 
 DEFAULT_INDIAN_LOCATIONS = [
     "Remote",
@@ -39,11 +59,12 @@ DEFAULT_INDIAN_DOMAINS = [
     "in.indeed.com",
 ]
 
+
 def _company_domain(company_name: str) -> str:
     """Create a deterministic pseudo-domain key from a company name."""
-    import re
     slug = re.sub(r"[^\w]", "-", company_name.lower()).strip("-")
     return f"{slug}.talentradar.internal"
+
 
 def _stable_id(text: str) -> str:
     """MD5 fingerprint of a URL or title+company string used as external_id."""
@@ -58,8 +79,7 @@ async def _run_pipeline(
     include_domains: list[str] | None = None,
     source_name: str | None = None,
 ) -> dict[str, Any]:
-    """Execute the full ingestion pipeline asynchronously."""
-    # 1. Fetch Raw
+    """Legacy single-source (Tavily) pipeline — kept for compatibility."""
     all_paths: list[str] = []
     total_fetched = 0
 
@@ -163,7 +183,6 @@ async def _run_pipeline(
                 else:
                     updated += 1
 
-                # Prepare ChromaDB embedding data
                 metadata = {
                     "title": pjd.title,
                     "company": pjd.company,
@@ -179,8 +198,6 @@ async def _run_pipeline(
 
                 chroma_items.append({
                     "job_id": external_id,
-                    # Prefer cleaned description for embedding quality;
-                    # fall back to raw_text only if description_clean is absent.
                     "text": (job_kwargs.get("description_clean") or pjd.raw_text)[:4096],
                     "metadata": metadata,
                     "internal_job_id": job.id,
@@ -193,8 +210,6 @@ async def _run_pipeline(
             embedded = 0
             if chroma_items:
                 embedded = store.add_batch(chroma_items)
-
-                # Link embeddings in PostgreSQL
                 for item in chroma_items:
                     await uow.jobs.set_embedding_id(item["internal_job_id"], item["job_id"])
                 await session.commit()
@@ -210,7 +225,6 @@ async def _run_pipeline(
             await session.commit()
 
         except Exception as exc:
-            # Always finalize the run record — never leave it stuck as RUNNING
             import traceback
             err_trace = {"traceback": traceback.format_exc()}
             logger.exception("Pipeline failed mid-run run_id=%s: %s", run_id, exc)
@@ -244,14 +258,10 @@ def run_crawler(
     source_name: str | None = None,
 ) -> dict[str, Any]:
     """
-    Celery task to scrape job postings from ATS pages, parse them with LLM,
-    and store them in PostgreSQL and ChromaDB.
-
-    Uses ``bind=True`` so that on failure we can access the task ID for
-    diagnostic logging. ``max_retries=0`` prevents silent retry loops that
-    would create duplicate ingestion_runs records.
+    Legacy Celery task — Tavily-only discovery. Kept for backward
+    compatibility; new deployments should use ``run_all_sources``.
     """
-    roles = roles or ["Software Engineer", "Data Scientist"]
+    roles = roles or DEFAULT_ROLES
     locations = locations or DEFAULT_INDIAN_LOCATIONS
     include_domains = include_domains or DEFAULT_INDIAN_DOMAINS
     run_id = str(uuid.uuid4())
@@ -277,8 +287,45 @@ def run_crawler(
             "run_crawler failed task_id=%s run_id=%s error=%s",
             self.request.id, run_id, exc,
         )
-        # Re-raise so Celery marks the task FAILURE in Redis.
-        # The ingestion_run DB record is finalized inside _run_pipeline's
-        # error handler; if the crash happened before that, it will remain
-        # RUNNING until the cleanup job resets it.
+        raise
+
+
+@shared_task(name="ingestion.tasks.run_all_sources", bind=True, max_retries=0)
+def run_all_sources(
+    self,
+    roles: list[str] | None = None,
+    locations: list[str] | None = None,
+    sources: list[str] | None = None,
+    max_results_per_query: int = 5,
+    per_source: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """
+    Celery task for multi-source job discovery + persistence.
+
+    ``sources`` selects which sources to run (defaults to the enabled set,
+    see ``ingestion.sources.default_sources``).
+    """
+    roles = roles or DEFAULT_ROLES
+    run_id = str(uuid.uuid4())
+
+    logger.info(
+        "Starting run_all_sources task_id=%s run_id=%s roles=%s sources=%s",
+        self.request.id, run_id, roles, sources,
+    )
+
+    try:
+        result = asyncio.run(dispatch_ingestion(
+            roles=roles,
+            locations=locations,
+            sources=sources,
+            max_results_per_query=max_results_per_query,
+            per_source=per_source,
+        ))
+        logger.info("run_all_sources completed successfully: %s", result)
+        return result
+    except Exception as exc:
+        logger.exception(
+            "run_all_sources failed task_id=%s run_id=%s error=%s",
+            self.request.id, run_id, exc,
+        )
         raise

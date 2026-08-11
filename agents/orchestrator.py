@@ -168,6 +168,38 @@ class Orchestrator:
                 keywords=query_lower.split(),
             )
 
+        # Career coach
+        if any(kw in query_lower for kw in ["career", "skill gap", "weakness", "learn", "learning", "upskill", "grow"]):
+            return QueryContext(
+                raw_query=query,
+                intent=IntentType.CAREER_COACH,
+                keywords=query_lower.split(),
+            )
+
+        # Application tracker
+        if any(kw in query_lower for kw in ["application", "applied", "tracker", "status", "funnel", "where do i stand"]):
+            return QueryContext(
+                raw_query=query,
+                intent=IntentType.APPLICATION_TRACKER,
+                keywords=query_lower.split(),
+            )
+
+        # Interview prep
+        if any(kw in query_lower for kw in ["interview", "mock", "prepare for interview", "practice question"]):
+            return QueryContext(
+                raw_query=query,
+                intent=IntentType.INTERVIEW_PREP,
+                keywords=query_lower.split(),
+            )
+
+        # Personal agent
+        if any(kw in query_lower for kw in ["next step", "what should i do", "next action", "recommend me", "remind", "agent"]):
+            return QueryContext(
+                raw_query=query,
+                intent=IntentType.PERSONAL_AGENT,
+                keywords=query_lower.split(),
+            )
+
         return None
 
     async def _llm_classify_intent(self, query: str) -> QueryContext | None:

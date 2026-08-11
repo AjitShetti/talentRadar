@@ -72,17 +72,21 @@ services:
       REDIS_URL: redis://redis:6379/0
       CHROMA_HOST: chromadb
       CHROMA_PORT: 8000
+      PYTHONPATH: /app
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       chromadb:
-        condition: service_started
+        service_started
       db-seeder:
         condition: service_completed_successfully
     volumes:
       - ./api:/app/api
+      - ./services:/app/services
+      - ./core:/app/core
+      - ./domain:/app/domain
       - ./storage:/app/storage
       - ./agents:/app/agents
       - ./config:/app/config
@@ -113,6 +117,9 @@ services:
       - chromadb
     volumes:
       - ./api:/app/api
+      - ./services:/app/services
+      - ./core:/app/core
+      - ./domain:/app/domain
       - ./storage:/app/storage
       - ./agents:/app/agents
       - ./config:/app/config

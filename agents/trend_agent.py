@@ -3,23 +3,18 @@ agents/trend_agent.py
 ~~~~~~~~~~~~~~~~~~~~~
 Market trend analysis agent.
 
-Queries PostgreSQL for aggregated job market data and uses
-Groq LLM to generate human-readable trend reports.
+Thin orchestrator: delegates all data aggregation to
+``services.market.get_market_trends`` and returns an ``AgentResponse``.
+No DB logic lives in the agent — the deterministic tool layer owns it.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from groq import AsyncGroq
-from sqlalchemy import text
-
-from agents.prompts.trend_prompt import TREND_ANALYSIS_PROMPT
 from agents.state import AgentResponse, IntentType
-from config.settings import get_settings
-from storage.database import AsyncSessionLocal
+from services.market import get_market_trends as market_trends
 
 logger = logging.getLogger(__name__)
 
@@ -33,16 +28,12 @@ class TrendAgent:
     - Salary insights by role/location
     - Geographic distribution of jobs
     - Seniority level distribution
-    - Overall market summary
+    - Overall market summary (LLM-generated via the service layer)
     """
-
-    def __init__(self):
-        settings = get_settings()
-        self._groq = AsyncGroq(api_key=settings.groq_api_key)
 
     async def get_market_trends(self, query: str, days: int = 30) -> AgentResponse:
         """
-        Generate market trend report.
+        Generate market trend report by delegating to the market service.
 
         Parameters
         ----------
@@ -54,43 +45,31 @@ class TrendAgent:
         Returns
         -------
         AgentResponse
-            Trend analysis with LLM-generated insights.
+            Trend analysis with LLM-generated insights in ``metadata``.
         """
         try:
-            async with AsyncSessionLocal() as session:
-                # 1. Total active jobs
-                total_jobs = await self._count_active_jobs(session, days)
-
-                # 2. Top skills
-                top_skills = await self._get_top_skills(session, days, limit=15)
-
-                # 3. Salary insights
-                salary_data = await self._get_salary_data(session, days)
-
-                # 4. Location distribution
-                location_data = await self._get_location_distribution(session, days)
-
-                # 5. Seniority distribution
-                seniority_data = await self._get_seniority_distribution(session, days)
-
-                # 6. Generate LLM summary
-                summary = await self._generate_trend_summary(
-                    query, total_jobs, top_skills, salary_data, location_data, seniority_data
-                )
-
+            result = await market_trends(query=query, days=days, with_summary=True)
+            if not result.get("success"):
                 return AgentResponse(
-                    success=True,
+                    success=False,
                     intent=IntentType.MARKET_TRENDS,
-                    summary=summary,
-                    metadata={
-                        "total_jobs": total_jobs,
-                        "top_skills": top_skills,
-                        "salary_data": salary_data,
-                        "location_data": location_data,
-                        "seniority_data": seniority_data,
-                        "period_days": days,
-                    },
+                    error=result.get("error") or "Market trend analysis failed",
                 )
+
+            data = result.get("data", {})
+            return AgentResponse(
+                success=True,
+                intent=IntentType.MARKET_TRENDS,
+                summary=result.get("summary"),
+                metadata={
+                    "total_jobs": data.get("total_jobs", 0),
+                    "top_skills": data.get("top_skills", []),
+                    "salary_data": data.get("salary", {"available": False}),
+                    "location_data": data.get("locations", []),
+                    "seniority_data": data.get("seniority", []),
+                    "period_days": days,
+                },
+            )
 
         except Exception as exc:
             logger.error("Trend analysis failed: %s", exc, exc_info=True)
@@ -99,161 +78,3 @@ class TrendAgent:
                 intent=IntentType.MARKET_TRENDS,
                 error=str(exc),
             )
-
-    @staticmethod
-    async def _count_active_jobs(session, days: int) -> int:
-        """Count active jobs in the last N days."""
-        cutoff = datetime.now(tz=timezone.utc) - timedelta(days=days)
-        # COALESCE: use created_at as fallback when posted_at is NULL
-        # (ATS pages rarely expose a publish date, so ingestion time is used).
-        stmt = text("""
-            SELECT COUNT(id) FROM jobs
-            WHERE status = 'active'
-              AND COALESCE(posted_at, created_at) >= :cutoff
-        """)
-        result = await session.execute(stmt, {"cutoff": cutoff})
-        return result.scalar() or 0
-
-    @staticmethod
-    async def _get_top_skills(session, days: int, limit: int = 10) -> list[dict[str, Any]]:
-        """Get most frequently mentioned skills."""
-        cutoff = datetime.now(tz=timezone.utc) - timedelta(days=days)
-
-        # Unnest the skills array and count; COALESCE posted_at with created_at
-        stmt = text("""
-            SELECT unnest(jobs.skills) AS skill, COUNT(*) AS count
-            FROM jobs
-            WHERE jobs.status = 'active'
-              AND COALESCE(jobs.posted_at, jobs.created_at) >= :cutoff
-              AND jobs.skills IS NOT NULL
-            GROUP BY skill
-            ORDER BY count DESC
-            LIMIT :limit
-        """)
-        result = await session.execute(stmt, {"cutoff": cutoff, "limit": limit})
-        rows = result.fetchall()
-        return [{"skill": row[0], "count": row[1]} for row in rows]
-
-    @staticmethod
-    async def _get_salary_data(session, days: int) -> dict[str, Any]:
-        """Get aggregate salary statistics."""
-        cutoff = datetime.now(tz=timezone.utc) - timedelta(days=days)
-
-        stmt = text("""
-            SELECT
-                AVG(salary_min) AS avg_min,
-                AVG(salary_max) AS avg_max,
-                MIN(salary_min) AS min,
-                MAX(salary_max) AS max,
-                COUNT(id) AS count_with_salary
-            FROM jobs
-            WHERE status = 'active'
-              AND COALESCE(posted_at, created_at) >= :cutoff
-              AND salary_min IS NOT NULL
-        """)
-        result = await session.execute(stmt, {"cutoff": cutoff})
-        row = result.first()
-
-        if not row or row.count_with_salary == 0:
-            return {"available": False}
-
-        return {
-            "available": True,
-            "avg_min": float(row.avg_min) if row.avg_min else None,
-            "avg_max": float(row.avg_max) if row.avg_max else None,
-            "min": float(row.min) if row.min else None,
-            "max": float(row.max) if row.max else None,
-            "count": row.count_with_salary,
-        }
-
-    @staticmethod
-    async def _get_location_distribution(session, days: int) -> list[dict[str, Any]]:
-        """Get job distribution by location."""
-        cutoff = datetime.now(tz=timezone.utc) - timedelta(days=days)
-
-        stmt = text("""
-            SELECT
-                CASE WHEN is_remote THEN 'Remote' ELSE COALESCE(city, country, 'Unknown') END AS location,
-                COUNT(*) AS count
-            FROM jobs
-            WHERE status = 'active'
-              AND COALESCE(posted_at, created_at) >= :cutoff
-            GROUP BY location
-            ORDER BY count DESC
-            LIMIT 10
-        """)
-        result = await session.execute(stmt, {"cutoff": cutoff})
-        rows = result.fetchall()
-        return [{"location": row[0], "count": row[1]} for row in rows]
-
-    @staticmethod
-    async def _get_seniority_distribution(session, days: int) -> list[dict[str, Any]]:
-        """Get job distribution by seniority level."""
-        cutoff = datetime.now(tz=timezone.utc) - timedelta(days=days)
-
-        stmt = text("""
-            SELECT seniority, COUNT(id) AS cnt
-            FROM jobs
-            WHERE status = 'active'
-              AND COALESCE(posted_at, created_at) >= :cutoff
-            GROUP BY seniority
-            ORDER BY cnt DESC
-        """)
-        result = await session.execute(stmt, {"cutoff": cutoff})
-        rows = result.fetchall()
-        return [{"seniority": row[0] or "unspecified", "count": row[1]} for row in rows]
-
-    async def _generate_trend_summary(
-        self,
-        query: str,
-        total_jobs: int,
-        top_skills: list[dict],
-        salary_data: dict,
-        location_data: list[dict],
-        seniority_data: list[dict],
-    ) -> str:
-        """Generate LLM-powered trend summary."""
-        top_skills_text = ", ".join(f"{s['skill']} ({s['count']})" for s in top_skills[:10])
-        avg_salary = "N/A"
-        if salary_data.get("available"):
-            avg_salary = f"{salary_data['avg_min']:.0f} - {salary_data['avg_max']:.0f}"
-
-        prompt = f"""\
-Query: {query}
-
-Market Data (last 30 days):
-- Total Active Jobs: {total_jobs}
-- Top Skills: {top_skills_text}
-- Average Salary Range: {avg_salary}
-- Top Cities: {', '.join(f"{l['location']} ({l['count']})" for l in location_data[:10])}
-- Seniority Distribution: {', '.join(f"{s['seniority']} ({s['count']})" for s in seniority_data[:5])}
-
-Provide a comprehensive market analysis.
-"""
-
-        try:
-            response = await self._groq.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[
-                    {"role": "system", "content": TREND_ANALYSIS_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.3,
-                max_tokens=800,
-            )
-            return response.choices[0].message.content
-        except Exception as exc:
-            logger.warning("Trend summary generation failed: %s", exc)
-            return self._fallback_summary(total_jobs, top_skills, salary_data)
-
-    @staticmethod
-    def _fallback_summary(total_jobs, top_skills, salary_data):
-        """Generate a basic summary if LLM fails."""
-        skills = ", ".join(s["skill"] for s in top_skills[:5])
-        summary = f"\U0001f4ca Market Overview\n\n"
-        summary += f"- **{total_jobs}** active jobs in the database\n"
-        summary += f"- **Most in-demand skills**: {skills}\n"
-        if salary_data.get("available"):
-            summary += f"- **Average salary range**: {salary_data['avg_min']:.0f} - {salary_data['avg_max']:.0f}\n"
-        summary += "\nFor more detailed insights, try asking about specific roles or locations."
-        return summary

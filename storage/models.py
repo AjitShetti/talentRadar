@@ -185,6 +185,9 @@ class Company(Base):
     ingestion_runs: Mapped[list["IngestionRun"]] = relationship(
         "IngestionRun", back_populates="company"
     )
+    profile: Mapped["CompanyProfile | None"] = relationship(
+        "CompanyProfile", back_populates="company", uselist=False
+    )
 
     __table_args__ = (
         UniqueConstraint("domain", name="uq_companies_domain"),
@@ -479,18 +482,39 @@ class User(Base):
         nullable=False,
     )
 
+    # Relationships
+    profile: Mapped["Profile | None"] = relationship(
+        "Profile", back_populates="user", uselist=False, cascade="all, delete-orphan"
+    )
+
     def __repr__(self) -> str:
         return f"<User id={self.id} email={self.email!r} role={self.role!r}>"
 
 
 class ApplicationStatus(str, PyEnum):
-    SAVED      = "saved"
-    APPLIED    = "applied"
-    SCREENING  = "screening"
-    INTERVIEW  = "interview"
-    OFFER      = "offer"
-    REJECTED   = "rejected"
-    WITHDRAWN  = "withdrawn"
+    """Full job-seeker funnel: saved → applied → online_assessment → interview → offer/rejected."""
+    SAVED             = "saved"
+    APPLIED           = "applied"
+    ONLINE_ASSESSMENT = "online_assessment"
+    SCREENING         = "screening"
+    INTERVIEW         = "interview"
+    OFFER             = "offer"
+    REJECTED          = "rejected"
+    WITHDRAWN         = "withdrawn"
+
+    @staticmethod
+    def funnel_order() -> dict[str, int]:
+        """Position of each stage in the application funnel (for analytics)."""
+        return {
+            ApplicationStatus.SAVED.value: 0,
+            ApplicationStatus.APPLIED.value: 1,
+            ApplicationStatus.ONLINE_ASSESSMENT.value: 2,
+            ApplicationStatus.SCREENING.value: 3,
+            ApplicationStatus.INTERVIEW.value: 4,
+            ApplicationStatus.OFFER.value: 5,
+            ApplicationStatus.WITHDRAWN.value: 5,
+            ApplicationStatus.REJECTED.value: 5,
+        }
 
 
 class JobApplication(Base):
@@ -523,6 +547,31 @@ class JobApplication(Base):
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Document tracking — which resume version / cover letter was used
+    resume_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("resumes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    cover_letter_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("cover_letters.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    # Dates for the funnel stages (for time-in-stage analytics)
+    applied_at_explicit: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    oa_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    interview_scheduled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    outcome_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -531,6 +580,20 @@ class JobApplication(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+
+    # Relationships
+    resume_version: Mapped["Resume | None"] = relationship(
+        "Resume", back_populates="applications"
+    )
+    cover_letter: Mapped["CoverLetter | None"] = relationship(
+        "CoverLetter", back_populates="applications"
+    )
+    events: Mapped[list["ApplicationEvent"]] = relationship(
+        "ApplicationEvent",
+        back_populates="application",
+        cascade="all, delete-orphan",
+        order_by="ApplicationEvent.created_at",
     )
 
     __table_args__ = (
@@ -546,11 +609,15 @@ class JobApplication(Base):
 # ---------------------------------------------------------------------------
 
 class InterviewTrack(str, PyEnum):
-    """Available mock interview catalog tracks."""
+    """Available mock interview catalog tracks (round types)."""
+    CODING         = "coding"
+    TECHNICAL      = "technical"
+    BEHAVIORAL     = "behavioral"
+    SYSTEM_DESIGN  = "system_design"
+    # Backward-compatible aliases for the old catalogue
     PYTHON_DSA     = "python_dsa"
     PYTHON_BACKEND = "python_backend"
     SQL            = "sql"
-    SYSTEM_DESIGN  = "system_design"
 
 
 class InterviewDifficulty(str, PyEnum):
@@ -607,6 +674,22 @@ class InterviewSession(Base):
         ),
         nullable=False,
     )
+    # Adaptive difficulty — when True the difficulty is derived from live scores
+    adaptive: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    # Optional link to the job/application this session prepares the user for
+    application_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("job_applications.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    prep_plan_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("interview_prep_plans.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     # Outcome
     duration_seconds: Mapped[int | None] = mapped_column(
@@ -644,6 +727,9 @@ class InterviewSession(Base):
         back_populates="session",
         cascade="all, delete-orphan",
         order_by="InterviewAnswerScore.question_index",
+    )
+    prep_plan: Mapped["InterviewPrepPlan | None"] = relationship(
+        "InterviewPrepPlan", back_populates="sessions"
     )
 
     __table_args__ = (
@@ -747,3 +833,558 @@ class InterviewAnswerScore(Base):
             f"<InterviewAnswerScore session={self.session_id} "
             f"q={self.question_index} followup={self.was_followup}>"
         )
+
+
+# ---------------------------------------------------------------------------
+# profiles — career onboarding profile (1:1 with users)
+# ---------------------------------------------------------------------------
+
+class Profile(Base):
+    """
+    Career profile created during onboarding. Drives job matching, salary
+    filtering, resume tailoring, and the personal agent.
+    """
+    __tablename__ = "profiles"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+
+    full_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    headline: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Target roles / career goals
+    target_roles: Mapped[list[str] | None] = mapped_column(
+        StringArray, nullable=True,
+        comment="e.g. ['Senior Python Engineer', 'Backend Engineer']",
+    )
+    target_locations: Mapped[list[str] | None] = mapped_column(
+        StringArray, nullable=True, comment="e.g. ['Bangalore', 'Remote']",
+    )
+    is_remote_preferred: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    target_salary_min: Mapped[float | None] = mapped_column(Float, nullable=True)
+    target_salary_max: Mapped[float | None] = mapped_column(Float, nullable=True)
+    salary_currency: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    years_experience: Mapped[float | None] = mapped_column(Float, nullable=True)
+    current_role: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    career_goals: Mapped[str | None] = mapped_column(Text, nullable=True)
+    onboarding_completed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+
+    # Active resume reference
+    active_resume_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("resumes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="profile")
+    resumes: Mapped[list["Resume"]] = relationship(
+        "Resume", back_populates="profile", foreign_keys="Resume.profile_id"
+    )
+
+    def __repr__(self) -> str:
+        return f"<Profile id={self.id} user={self.user_id} complete={self.onboarding_completed}>"
+
+
+# ---------------------------------------------------------------------------
+# resumes — resume versions with ATS analysis
+# ---------------------------------------------------------------------------
+
+class Resume(Base):
+    """
+    A resume version owned by a user's profile.
+
+    ``is_tailored`` + ``target_job_id`` distinguish original uploads from
+    job-specific tailored versions produced by Resume Studio.
+    """
+    __tablename__ = "resumes"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    profile_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("profiles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    version_name: Mapped[str] = mapped_column(
+        String(256), nullable=False, default="Original", server_default="Original"
+    )
+    file_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    file_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    extracted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # ATS analysis (from Resume Studio)
+    ats_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ats_analysis: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    is_tailored: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    target_job_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("jobs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    profile: Mapped["Profile"] = relationship(
+        "Profile", back_populates="resumes", foreign_keys=[profile_id]
+    )
+    target_job: Mapped["Job | None"] = relationship("Job")
+    applications: Mapped[list["JobApplication"]] = relationship(
+        "JobApplication", back_populates="resume_version"
+    )
+
+    def __repr__(self) -> str:
+        return f"<Resume id={self.id} v={self.version_name!r} ats={self.ats_score}>"
+
+
+# ---------------------------------------------------------------------------
+# cover_letters
+# ---------------------------------------------------------------------------
+
+class CoverLetter(Base):
+    """AI-generated cover letter for a user + target job."""
+    __tablename__ = "cover_letters"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    profile_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("profiles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    job_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("jobs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    title: Mapped[str] = mapped_column(
+        String(256), nullable=False, default="Cover Letter", server_default="Cover Letter"
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    tone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    applications: Mapped[list["JobApplication"]] = relationship(
+        "JobApplication", back_populates="cover_letter"
+    )
+
+    def __repr__(self) -> str:
+        return f"<CoverLetter id={self.id} title={self.title!r}>"
+
+
+# ---------------------------------------------------------------------------
+# skills registry + user_skills
+# ---------------------------------------------------------------------------
+
+class Skill(Base):
+    """Canonical skill registry (normalised names)."""
+    __tablename__ = "skills"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    name: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
+    category: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    aliases: Mapped[list[str] | None] = mapped_column(StringArray, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    def __repr__(self) -> str:
+        return f"<Skill id={self.id} name={self.name!r}>"
+
+
+class UserSkill(Base):
+    """A user's proficiency in a skill (used by career coach + matching)."""
+    __tablename__ = "user_skills"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    skill_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("skills.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    skill_name: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    # 1 = beginner … 5 = expert
+    proficiency: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="resume", server_default="resume"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "skill_name", name="uq_user_skills_user_skill"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<UserSkill user={self.user_id} skill={self.skill_name!r} p={self.proficiency}>"
+
+
+# ---------------------------------------------------------------------------
+# application_events — status-change timeline for the tracker
+# ---------------------------------------------------------------------------
+
+class ApplicationEvent(Base):
+    """A single status change / note on an application (audit + analytics)."""
+    __tablename__ = "application_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    application_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("job_applications.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    from_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    to_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    application: Mapped["JobApplication"] = relationship(
+        "JobApplication", back_populates="events"
+    )
+
+    def __repr__(self) -> str:
+        return f"<ApplicationEvent app={self.application_id} {self.from_status}→{self.to_status}>"
+
+
+# ---------------------------------------------------------------------------
+# interview_prep_plans — personalised prep for a scheduled interview
+# ---------------------------------------------------------------------------
+
+class InterviewPrepPlan(Base):
+    """Personalised interview preparation plan (job + company + resume)."""
+    __tablename__ = "interview_prep_plans"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    application_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("job_applications.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    job_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("jobs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    company_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    content: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # e.g. generated from a company_intel report + resume + job description
+    interview_rounds: Mapped[list[str] | None] = mapped_column(
+        StringArray, nullable=True, comment="e.g. ['coding', 'behavioral', 'system_design']"
+    )
+    focus_areas: Mapped[list[str] | None] = mapped_column(StringArray, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    sessions: Mapped[list["InterviewSession"]] = relationship(
+        "InterviewSession", back_populates="prep_plan"
+    )
+
+    def __repr__(self) -> str:
+        return f"<InterviewPrepPlan id={self.id} app={self.application_id}>"
+
+
+# ---------------------------------------------------------------------------
+# company_profiles — company intelligence
+# ---------------------------------------------------------------------------
+
+class CompanyProfile(Base):
+    """Company intelligence: tech stack, salaries, interview patterns, trends."""
+    __tablename__ = "company_profiles"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    tech_stack: Mapped[list[str] | None] = mapped_column(StringArray, nullable=True)
+    salary_ranges: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    interview_patterns: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    hiring_trends: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    culture_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="aggregated", server_default="aggregated"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    company: Mapped["Company"] = relationship("Company", back_populates="profile")
+
+    def __repr__(self) -> str:
+        return f"<CompanyProfile company={self.company_id}>"
+
+
+# ---------------------------------------------------------------------------
+# market_snapshots — historical trends for the trends dashboard
+# ---------------------------------------------------------------------------
+
+class MarketSnapshot(Base):
+    """Periodic aggregate of market trends (skills/salary/location demand)."""
+    __tablename__ = "market_snapshots"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    snapshot_date: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    scope: Mapped[str] = mapped_column(
+        String(128), nullable=False, default="all", server_default="all", index=True
+    )
+    data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("snapshot_date", "scope", name="uq_market_snapshots_date_scope"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<MarketSnapshot date={self.snapshot_date} scope={self.scope!r}>"
+
+
+# ---------------------------------------------------------------------------
+# learning_tasks — career coach recommendations
+# ---------------------------------------------------------------------------
+
+class LearningTask(Base):
+    """A concrete learning/practice task recommended by the career coach."""
+    __tablename__ = "learning_tasks"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    skill_name: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resources: Mapped[list[str] | None] = mapped_column(StringArray, nullable=True)
+    priority: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="pending", server_default="pending"
+    )
+    source: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="career_coach", server_default="career_coach"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        Index("ix_learning_tasks_user_status", "user_id", "status"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<LearningTask id={self.id} skill={self.skill_name!r} status={self.status!r}>"
+
+
+# ---------------------------------------------------------------------------
+# agent_memory — persistent memory for the personal AI agent
+# ---------------------------------------------------------------------------
+
+class AgentMemory(Base):
+    """
+    Persistent memory store for the personal agent: remembers the user's
+    profile, weaknesses, goals, and emits the next-best-action recommendation.
+    """
+    __tablename__ = "agent_memory"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    memory_type: Mapped[str] = mapped_column(
+        String(64), nullable=False, index=True,
+        comment="e.g. 'weakness', 'goal', 'achievement', 'preference'",
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    extra_metadata: Mapped[dict | None] = mapped_column(
+        "metadata", JSONB, nullable=True
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_agent_memory_user_type", "user_id", "memory_type"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<AgentMemory user={self.user_id} type={self.memory_type!r}>"
+
+
+# ---------------------------------------------------------------------------
+# analytics — per-user aggregated funnel metrics (periodic snapshots)
+# ---------------------------------------------------------------------------
+
+class AnalyticsSnapshot(Base):
+    """Periodic per-user dashboard analytics (funnel, conversion, skills)."""
+    __tablename__ = "analytics_snapshots"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    snapshot_date: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    def __repr__(self) -> str:
+        return f"<AnalyticsSnapshot user={self.user_id} date={self.snapshot_date}>"

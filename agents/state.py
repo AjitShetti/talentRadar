@@ -21,6 +21,11 @@ class IntentType(str, Enum):
     FIND_CANDIDATES = "find_candidates"
     MARKET_TRENDS = "market_trends"
     COMPANY_INFO = "company_info"
+    RESUME_STUDIO = "resume_studio"
+    CAREER_COACH = "career_coach"
+    APPLICATION_TRACKER = "application_tracker"
+    INTERVIEW_PREP = "interview_prep"
+    PERSONAL_AGENT = "personal_agent"
     GENERAL = "general"
 
 
