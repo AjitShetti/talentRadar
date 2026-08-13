@@ -28,6 +28,8 @@ export default function Header() {
     textDecoration: 'none',
     color: pathname === href ? 'var(--color-accent)' : 'var(--color-fg-muted)',
     transition: 'color var(--transition-speed) ease',
+    fontWeight: pathname === href ? 'var(--font-weight-semibold)' : 'inherit',
+    fontFamily: 'var(--font-display)',
   });
 
   return (

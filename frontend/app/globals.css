@@ -1,19 +1,27 @@
 :root {
-  --color-bg: #09090b; /* Obsidian Black */
-  --color-fg: #f4f4f5; /* Off-white for readability */
+  --color-bg: #0a0a0f; /* Off-black - more refined than pure black */
+  --color-fg: #e4e4e7; /* Off-white for better readability */
   --color-fg-muted: #a1a1aa;
   
-  --color-accent: #FF4500; /* Safety Orange */
-  --color-accent-hover: #e03d00;
+  --color-accent: #ff6b35; /* More muted orange - less oversaturated */
+  --color-accent-hover: #e55a2b;
   
   --color-border: #27272a;
   --color-card-bg: rgba(24, 24, 27, 0.7); /* Translucent for glassmorphism */
   
-  --font-display: var(--font-space-grotesk), sans-serif;
-  --font-body: var(--font-manrope), monospace;
+  --font-display: 'Geist', var(--font-space-grotesk), sans-serif;
+  --font-body: 'Geist', var(--font-manrope), monospace;
   
-  --border-radius: 0px; /* Industrial / Utilitarian = sharp corners */
-  --transition-speed: 150ms;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  
+  --border-radius: 8px; /* Softer corners for better aesthetics */
+  --transition-speed: 200ms;
+  
+  /* Data numbers */
+  --font-mono: 'Geist Mono', 'Courier New', monospace;
 }
 
 * {
@@ -33,13 +41,62 @@ body {
     linear-gradient(var(--color-bg), var(--color-bg)),
     url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.05'/%3E%3C/svg%3E");
   background-blend-mode: normal, screen;
+  margin: 0;
 }
 
 /* Typography */
+html {
+  font-size: 16px;
+  font-family: var(--font-body);
+  line-height: 1.6;
+  color: var(--color-fg);
+}
+
+body {
+  font-weight: var(--font-weight-regular);
+  letter-spacing: 0;
+}
+
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-display);
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+  margin-bottom: 1rem;
+}
+
+h1 {
+  font-size: clamp(2.5rem, 5vw, 4rem);
+  font-weight: var(--font-weight-semibold);
+}
+
+h2 {
+  font-size: clamp(1.8rem, 4vw, 2.5rem);
+  font-weight: var(--font-weight-medium);
+}
+
+h3 {
+  font-size: clamp(1.3rem, 3vw, 1.8rem);
+  font-weight: var(--font-weight-medium);
+}
+
+.headline {
+  font-family: var(--font-display);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: -0.03em;
+}
+
+.body-text {
+  font-family: var(--font-body);
+  font-weight: var(--font-weight-regular);
+  line-height: 1.7;
+  color: var(--color-fg);
+}
+
+/* Data numbers and metrics */
+[data-value], .metric, .stat {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 a {
@@ -49,15 +106,15 @@ a {
 
 /* Utilitarian Base Layout Elements */
 .container {
-  max-w: 1200px;
+  max-width: 1200px; /* Fixed typo: was max-w */
   margin: 0 auto;
   padding: 2rem;
 }
 
-/* Interactive Base */
+/* Button styles */
 button, .btn {
   font-family: var(--font-display);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   padding: 0.75rem 1.5rem;
@@ -69,14 +126,31 @@ button, .btn {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+  border-radius: var(--border-radius);
 }
 
 button:hover, .btn:hover {
   border-color: var(--color-accent);
   color: var(--color-accent);
-  background: rgba(255, 69, 0, 0.05);
+  background: rgba(255, 107, 53, 0.05);
 }
 
+button:active, .btn:active {
+  transform: scale(0.98);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+button:focus-visible, .btn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+button:disabled, .btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Primary button */
 .btn-primary {
   background: var(--color-accent);
   color: #fff;
@@ -86,6 +160,11 @@ button:hover, .btn:hover {
 .btn-primary:hover {
   background: var(--color-accent-hover);
   color: #fff;
+  box-shadow: 0 0 20px rgba(255, 107, 53, 0.3);
+}
+
+.btn-primary:active {
+  transform: scale(0.98);
 }
 
 /* Glassmorphism Panel */
@@ -96,6 +175,7 @@ button:hover, .btn:hover {
   border: 1px solid var(--color-border);
   padding: 2rem;
   position: relative;
+  border-radius: var(--border-radius);
 }
 
 /* Structural Data Lines */
@@ -136,11 +216,7 @@ button:hover, .btn:hover {
   color: #fff;
 }
 
-/* =========================================================
-   AUTH MODAL
-   ========================================================= */
-
-/* Overlay */
+/* Auth Modal */
 .auth-modal-overlay {
   position: fixed;
   inset: 0;
@@ -160,7 +236,6 @@ button:hover, .btn:hover {
   to   { opacity: 1; }
 }
 
-/* Container */
 .auth-modal-container {
   position: relative;
   width: 100%;
@@ -170,6 +245,7 @@ button:hover, .btn:hover {
   padding: 2.5rem 2.5rem 2rem;
   overflow: hidden;
   animation: auth-modal-in 250ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  border-radius: var(--border-radius);
 }
 
 @keyframes auth-modal-in {
@@ -177,24 +253,25 @@ button:hover, .btn:hover {
   to   { opacity: 1; transform: translateY(0)    scale(1);    }
 }
 
-/* Corner accent marks */
 .auth-corner {
   position: absolute;
   width: 16px;
   height: 16px;
+  border-radius: 0; /* Remove border-radius to match new design */
 }
+
 .auth-corner-tl {
   top: 0; left: 0;
   border-top: 2px solid var(--color-accent);
   border-left: 2px solid var(--color-accent);
 }
+
 .auth-corner-br {
   bottom: 0; right: 0;
   border-bottom: 2px solid var(--color-accent);
   border-right: 2px solid var(--color-accent);
 }
 
-/* Close button */
 .auth-close-btn {
   position: absolute;
   top: 1rem;
@@ -213,20 +290,22 @@ button:hover, .btn:hover {
               color var(--transition-speed) ease;
   text-transform: none;
   letter-spacing: 0;
+  border-radius: var(--border-radius);
 }
+
 .auth-close-btn:hover {
   border-color: var(--color-accent);
   color: var(--color-accent);
-  background: rgba(255, 69, 0, 0.08);
+  background: rgba(255, 107, 53, 0.08);
 }
 
-/* Logo row */
 .auth-modal-header {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   margin-bottom: 1.75rem;
 }
+
 .auth-logo {
   display: flex;
   align-items: center;
@@ -235,16 +314,17 @@ button:hover, .btn:hover {
   height: 36px;
   background: var(--color-accent);
   color: #fff;
+  border-radius: var(--border-radius);
 }
+
 .auth-logo-text {
   font-family: var(--font-display);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   font-size: 0.9rem;
   letter-spacing: 0.08em;
   color: var(--color-fg);
 }
 
-/* Tabs */
 .auth-tabs {
   position: relative;
   display: grid;
@@ -252,6 +332,7 @@ button:hover, .btn:hover {
   border-bottom: 1px solid var(--color-border);
   margin-bottom: 1.75rem;
 }
+
 .auth-tab {
   position: relative;
   z-index: 1;
@@ -260,21 +341,25 @@ button:hover, .btn:hover {
   color: var(--color-fg-muted);
   font-family: var(--font-display);
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   letter-spacing: 0.08em;
   padding: 0.75rem 0;
   cursor: pointer;
   transition: color var(--transition-speed) ease;
   text-transform: uppercase;
+  border-radius: var(--border-radius);
 }
+
 .auth-tab:hover {
   color: var(--color-fg);
   border-color: transparent;
   background: transparent;
 }
+
 .auth-tab--active {
   color: var(--color-accent);
 }
+
 .auth-tab-indicator {
   position: absolute;
   bottom: -1px;
@@ -285,22 +370,22 @@ button:hover, .btn:hover {
   transition: transform 250ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* Panel visibility */
 .auth-panel {
   transition: opacity 200ms ease;
 }
+
 .auth-panel--visible {
   display: block;
   opacity: 1;
   pointer-events: auto;
 }
+
 .auth-panel--hidden {
   display: none;
   opacity: 0;
   pointer-events: none;
 }
 
-/* Subtitle */
 .auth-subtitle {
   font-size: 0.875rem;
   color: var(--color-fg-muted);
@@ -308,7 +393,6 @@ button:hover, .btn:hover {
   line-height: 1.5;
 }
 
-/* Alerts */
 .auth-error {
   display: flex;
   align-items: flex-start;
@@ -320,7 +404,9 @@ button:hover, .btn:hover {
   font-size: 0.8125rem;
   margin-bottom: 1.25rem;
   line-height: 1.5;
+  border-radius: var(--border-radius);
 }
+
 .auth-success {
   display: flex;
   align-items: center;
@@ -331,6 +417,7 @@ button:hover, .btn:hover {
   color: #4ade80;
   font-size: 0.8125rem;
   margin-bottom: 1.25rem;
+  border-radius: var(--border-radius);
 }
 
 /* Form */
