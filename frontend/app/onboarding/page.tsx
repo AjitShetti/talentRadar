@@ -248,8 +248,13 @@ export default function OnboardingPage() {
           )}
 
           {error && (
-            <div style={{ padding: '1rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#fca5a5', marginBottom: '1.5rem', fontFamily: 'var(--font-display)', fontSize: '0.85rem' }}>
-              {error}
+            <div style={{ padding: '1rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#fca5a5', marginBottom: '1.5rem', fontFamily: 'var(--font-display)', fontSize: '0.85rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
+              <span>{error}</span>
+              {(error.toLowerCase().includes('expired') || error.toLowerCase().includes('unauthorized') || error.includes('401')) && (
+                <Link href="/login" className="btn btn-primary" style={{ padding: '0.35rem 0.85rem', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
+                  Sign In Again
+                </Link>
+              )}
             </div>
           )}
 

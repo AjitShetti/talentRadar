@@ -144,7 +144,7 @@ export default function DashboardPage() {
                           ) : <span style={{ fontSize: '0.6rem', color: 'var(--color-fg-muted)' }}>N/A</span>}
                         </div>
                         <div style={{ flex: 1 }}>
-                          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '0.85rem' }}>{s.track.replace(/_/g, ' ').toUpperCase()}</div>
+                          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '0.85rem' }}>{(s.track || 'interview').replace(/_/g, ' ').toUpperCase()}</div>
                           <div style={{ fontSize: '0.72rem', color: 'var(--color-fg-muted)' }}>{new Date(s.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
                         </div>
                         <ArrowRight size={14} color="var(--color-fg-muted)" />

@@ -247,7 +247,7 @@ class JDParser:
             raise ValueError(
                 "GROQ_API_KEY is not set. Add it to your .env file or pass it explicitly."
             )
-        self._client = Groq(api_key=_key)
+        self._client = Groq(api_key=_key, max_retries=0)
         self._model = model
         self._delay = inter_request_delay
 
@@ -304,37 +304,48 @@ class JDParser:
     def batch_parse(
         self,
         raw_results: list[RawJobResult],
+        fast_mode: bool = False,
     ) -> list[ParsedJobDescription]:
         """
         Parse a list of ``RawJobResult`` objects.
 
         Per-item errors are logged and skipped; the batch never aborts.
-
-        Parameters
-        ----------
-        raw_results:
-            Validated Tavily results from ``TavilyJobScraper.search_jobs()``.
-
-        Returns
-        -------
-        list[ParsedJobDescription]
-            Successfully parsed JDs (may be shorter than ``raw_results``).
         """
         parsed: list[ParsedJobDescription] = []
         total = len(raw_results)
 
         for i, result in enumerate(raw_results, start=1):
-            logger.info("Parsing JD %d/%d — url=%r", i, total, result.url)
+            if i % 50 == 0 or i == total:
+                logger.info("Parsing JD %d/%d (%.1f%%) — url=%r", i, total, (i / total) * 100, result.url)
+
+            from ingestion.scrapers.tavily_client import detect_source_from_url
+            source = detect_source_from_url(result.url)
+
+            if fast_mode or source in ("greenhouse", "lever", "ashby") or total > 20:
+                try:
+                    from ingestion.seed_db import extract_job_from_raw
+                    jd = extract_job_from_raw(result)
+                    parsed.append(jd)
+                    continue
+                except Exception as e:
+                    logger.debug("Fast parse failed for %s: %s", result.url, e)
+
             try:
                 jd = self.parse_jd(result.best_content, source_url=result.url)
                 parsed.append(jd)
             except Exception as exc:
-                logger.warning(
-                    "Skipping url=%r after parse failure: %s", result.url, exc
-                )
+                try:
+                    from ingestion.seed_db import extract_job_from_raw
+                    fallback_jd = extract_job_from_raw(result)
+                    parsed.append(fallback_jd)
+                except Exception as fallback_exc:
+                    logger.warning(
+                        "Skipping url=%r after both LLM and fallback failed: %s",
+                        result.url,
+                        fallback_exc,
+                    )
 
-            # Rate-limit safety between consecutive API calls
-            if i < total:
+            if not (fast_mode or source in ("greenhouse", "lever", "ashby") or total > 20) and i < total:
                 time.sleep(self._delay)
 
         logger.info(
@@ -367,8 +378,7 @@ class JDParser:
 
     @retry(
         retry=retry_if_exception_type(Exception),
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=20),
+        stop=stop_after_attempt(1),
         reraise=True,
     )
     def _call_llm(self, messages: list[dict[str, str]]) -> str:

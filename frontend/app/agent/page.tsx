@@ -101,7 +101,7 @@ export default function AgentPage() {
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
                   <span style={{ padding: '0.3rem 0.75rem', background: `${priorityColor(action.priority)}22`, border: `1px solid ${priorityColor(action.priority)}55`, color: priorityColor(action.priority), fontFamily: 'var(--font-display)', fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.06em' }}>
-                    {action.priority.toUpperCase()} PRIORITY
+                    {(action.priority || 'MEDIUM').toUpperCase()} PRIORITY
                   </span>
                 </div>
                 <p style={{ fontSize: '1.1rem', lineHeight: 1.6, marginBottom: '0.75rem' }}>{action.action}</p>
@@ -157,7 +157,7 @@ export default function AgentPage() {
                 {memories.map(m => (
                   <div key={m.id} style={{ padding: '0.875rem 1rem', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--color-border)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
-                      <span style={{ fontFamily: 'var(--font-display)', fontSize: '0.7rem', letterSpacing: '0.06em', color: 'var(--color-accent)' }}>{m.memory_type.toUpperCase()}</span>
+                      <span style={{ fontFamily: 'var(--font-display)', fontSize: '0.7rem', letterSpacing: '0.06em', color: 'var(--color-accent)' }}>{(m.memory_type || 'note').toUpperCase()}</span>
                       <span style={{ fontSize: '0.7rem', color: 'var(--color-fg-muted)' }}>{m.created_at?.slice(0, 10)}</span>
                     </div>
                     <p style={{ fontSize: '0.85rem', color: 'var(--color-fg-muted)', lineHeight: 1.5 }}>{m.content}</p>

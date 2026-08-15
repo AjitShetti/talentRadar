@@ -2,9 +2,8 @@
 ingestion/seed_db.py
 ~~~~~~~~~~~~~~~~~~~~
 Automated database seeder for TalentRadar.
-Scans data/raw/ for scraped job JSON files and populates PostgreSQL and ChromaDB.
-Designed to run automatically on container startup or stack rebuilds so job data
-is never lost when database volumes are reset.
+Scans test/fixture JSON files and populates PostgreSQL and ChromaDB.
+Protected with strict URL validation to ensure non-job content is never seeded.
 """
 
 from __future__ import annotations
@@ -18,12 +17,14 @@ import logging
 import os
 import re
 from typing import Any
+from urllib.parse import urlparse
 
 from config.settings import get_settings
 from ingestion.embeddings.chroma_store import ChromaJobStore
 from ingestion.parsers.schemas import ParsedJobDescription, RawJobResult
 from ingestion.scrapers.tavily_client import detect_source_from_url
 from ingestion.tasks import _company_domain, _stable_id
+from ingestion.validation import is_valid_job_url, validate_job_url
 from storage.database import AsyncSessionLocal, Base, engine
 from storage.models import IngestionStatus, Job
 from storage.repository import UnitOfWork
@@ -41,7 +42,13 @@ def extract_job_from_raw(raw: RawJobResult) -> ParsedJobDescription:
     Robust heuristic extractor that converts a RawJobResult into a valid
     ParsedJobDescription without relying on external LLM calls. Ensures fast,
     deterministic, and offline-safe seeding on startup.
+
+    Rejects non-job URLs (Wikipedia, Reddit, search listing pages, etc.).
     """
+    is_valid, reason = validate_job_url(raw.url)
+    if not is_valid:
+        raise ValueError(f"Cannot extract job from invalid URL ({reason}): {raw.url}")
+
     text = (raw.best_content + " " + raw.title).lower()
 
     # 1. Title
@@ -75,14 +82,16 @@ def extract_job_from_raw(raw: RawJobResult) -> ParsedJobDescription:
             title = orig_title[:idx].strip()
 
     company = re.sub(r"[\(\[\{].*?[\)\]\}]", "", company).strip()
-    if not company or len(company) > 60:
+    if not company or len(company) > 60 or company.lower() in ("unknown company", "en", "www", "reddit", "wikipedia"):
         try:
-            from urllib.parse import urlparse
             domain = urlparse(raw.url).netloc
             if domain:
-                domain = domain.replace("www.", "").split(".")[0]
-                if domain and domain not in ["linkedin", "indeed", "naukri", "glassdoor", "monster"]:
-                    company = domain.capitalize()
+                domain_clean = domain.replace("www.", "").split(".")[0].lower()
+                if domain_clean and domain_clean not in [
+                    "linkedin", "indeed", "naukri", "glassdoor", "monster",
+                    "wikipedia", "reddit", "youtube", "medium", "quora", "en", "www"
+                ] and len(domain_clean) >= 3:
+                    company = domain_clean.capitalize()
                 else:
                     company = "Tech Company"
         except Exception:
@@ -201,29 +210,32 @@ def extract_job_from_raw(raw: RawJobResult) -> ParsedJobDescription:
     )
 
 
-async def seed_database(force: bool = False) -> None:
+async def seed_database(force: bool = False, fixture_dir: str | None = None) -> None:
     """
-    Seed PostgreSQL and ChromaDB with raw job postings from data/raw/.
+    Seed PostgreSQL and ChromaDB with validated job postings from fixture directory.
+    Gated behind SEED_FROM_FIXTURES=true or force=True.
     """
+    seed_enabled = os.getenv("SEED_FROM_FIXTURES", "false").lower() in ("true", "1", "yes")
+    if not seed_enabled and not force:
+        logger.info("SEED_FROM_FIXTURES is disabled. Skipping fixture-based seeding.")
+        return
+
     logger.info("Initializing database schemas if needed...")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    async with AsyncSessionLocal() as session:
-        uow = UnitOfWork(session)
-        count_stmt = select(func.count()).select_from(Job)
-        current_count: int = (await session.execute(count_stmt)).scalar_one()
-        logger.info("Current jobs count in database: %d", current_count)
-        if current_count >= 50 and not force:
-            logger.info("Database already populated (>= 50 jobs). Seeding not required.")
-            return
+    # Look in explicit fixture directory or tests/fixtures
+    search_dirs = [fixture_dir] if fixture_dir else ["tests/fixtures", "data/fixtures"]
+    raw_files: list[str] = []
+    for d in search_dirs:
+        if os.path.exists(d):
+            raw_files.extend(glob.glob(f"{d}/**/*.json", recursive=True))
 
-    raw_files = glob.glob("data/raw/**/*.json", recursive=True)
     if not raw_files:
-        logger.warning("No raw JSON files found in data/raw/.")
+        logger.info("No fixture JSON files found in %s. Seeder finished.", search_dirs)
         return
 
-    logger.info("Scanning %d raw JSON files...", len(raw_files))
+    logger.info("Scanning %d fixture JSON files...", len(raw_files))
     seen_urls = set()
     raw_results: list[RawJobResult] = []
     for filepath in raw_files:
@@ -231,13 +243,22 @@ async def seed_database(force: bool = False) -> None:
             with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
                 data = json.load(f)
                 url = data.get("url", "").strip()
-                if url and url not in seen_urls:
+                if not url:
+                    continue
+                if not is_valid_job_url(url):
+                    logger.warning("Dropping invalid job URL in fixture %s: %s", filepath, url)
+                    continue
+                if url not in seen_urls:
                     seen_urls.add(url)
                     raw_results.append(RawJobResult(**data))
         except Exception as exc:
             logger.warning("Failed reading raw file %s: %s", filepath, exc)
 
-    logger.info("Extracted %d unique job postings from raw files. Starting ingestion...", len(raw_results))
+    if not raw_results:
+        logger.info("No valid job postings found in fixtures. Seeder complete.")
+        return
+
+    logger.info("Extracted %d valid job postings from fixtures. Starting ingestion...", len(raw_results))
 
     async with AsyncSessionLocal() as session:
         uow = UnitOfWork(session)
@@ -254,8 +275,13 @@ async def seed_database(force: bool = False) -> None:
         chroma_items: list[dict[str, Any]] = []
 
         for raw in raw_results:
-            pjd = extract_job_from_raw(raw)
-            job_source = detect_source_from_url(pjd.source_url or "") if pjd.source_url else "tavily_crawler"
+            try:
+                pjd = extract_job_from_raw(raw)
+            except ValueError as exc:
+                logger.warning("Skipping raw job due to extraction failure: %s", exc)
+                continue
+
+            job_source = detect_source_from_url(pjd.source_url or "") if pjd.source_url else "fixture_seeder"
             company_slug = _company_domain(pjd.company)
             company, _ = await uow.companies.upsert_by_domain(
                 domain=company_slug,
@@ -297,7 +323,7 @@ async def seed_database(force: bool = False) -> None:
 
         await session.commit()
 
-        logger.info("Upserted %d jobs (inserted: %d, updated: %d). Updating ChromaDB embeddings...", len(raw_results), inserted, updated)
+        logger.info("Upserted %d jobs (inserted: %d, updated: %d). Updating ChromaDB embeddings...", len(chroma_items), inserted, updated)
         try:
             store = ChromaJobStore()
             if chroma_items:
@@ -315,7 +341,7 @@ async def seed_database(force: bool = False) -> None:
             jobs_discovered=len(raw_results),
             jobs_inserted=inserted,
             jobs_updated=updated,
-            jobs_skipped=0,
+            jobs_skipped=len(raw_results) - (inserted + updated),
         )
         await session.commit()
 
@@ -324,7 +350,7 @@ async def seed_database(force: bool = False) -> None:
 
 async def main() -> None:
     try:
-        await seed_database(force=True)
+        await seed_database()
     finally:
         await engine.dispose()
 

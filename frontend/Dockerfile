@@ -1,5 +1,6 @@
 # ─── Stage 1: Install dependencies ───────────────────────────────────────────
 FROM node:20-alpine AS deps
+RUN apk add --no-cache libc6-compat
 
 WORKDIR /app
 
@@ -8,6 +9,7 @@ RUN npm install
 
 # ─── Stage 2: Build ───────────────────────────────────────────────────────────
 FROM node:20-alpine AS builder
+RUN apk add --no-cache libc6-compat
 
 WORKDIR /app
 

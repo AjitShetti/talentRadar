@@ -29,15 +29,20 @@ logger = logging.getLogger(__name__)
 _API_URL = "https://boards-api.greenhouse.io/v1/boards/{token}/jobs"
 
 _DEFAULT_TOKENS: list[str] = [
-    # Curated list of well-known Greenhouse-hosted Indian/remote-friendly
-    # employers. Override via GREENHOUSE_TOKENS env var (comma-separated).
     "stripe",
     "airbnb",
-    "notion",
-    "figma",
     "instacart",
     "databricks",
-    "zapier",
+    "gusto",
+    "cloudflare",
+    "datadog",
+    "affirm",
+    "pinterest",
+    "reddit",
+    "elastic",
+    "mongodb",
+    "gitlab",
+    "docker",
 ]
 
 
@@ -78,7 +83,9 @@ class GreenhouseSource(BaseJobSource):
         resp = self._client.get(url, params={"content": "true"})
         resp.raise_for_status()
         data = resp.json()
-        return data.get("jobs", [])
+        if isinstance(data, dict):
+            return data.get("jobs", [])
+        return []
 
     def _to_raw(self, job: dict[str, Any], token: str) -> RawJobResult | None:
         title = job.get("title")
@@ -86,15 +93,17 @@ class GreenhouseSource(BaseJobSource):
         if not title or not abs_url:
             return None
         location = job.get("location") or {}
-        loc_str = location.get("name") or "Remote"
+        loc_str = location.get("name") if isinstance(location, dict) else str(location or "Remote")
 
-        metadata = job.get("metadata", [])
+        metadata = job.get("metadata") or []
         metadata_str = "; ".join(
-            f"{m.get('name')}: {m.get('value')}" for m in metadata
+            f"{m.get('name')}: {m.get('value')}" for m in metadata if isinstance(m, dict)
         )
 
+        company_name = job.get("company_name") or token.replace("-", " ").title()
+
         content_parts = [
-            f"Company: {job.get('company_name') or ''}",
+            f"Company: {company_name}",
             f"Location: {loc_str}",
             f"Employment type: {job.get('employment_type') or 'full_time'}",
             "Department: " + str(job.get("department") or ""),

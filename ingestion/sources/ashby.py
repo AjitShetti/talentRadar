@@ -30,13 +30,15 @@ _BOARD_URL = "https://api.ashbyhq.com/posting-api/job-board/{org}"
 
 _DEFAULT_ORGS: list[str] = [
     "linear",
-    "notion",
-    "ramp",
+    "openai",
+    "cursor",
+    "postman",
+    "synthesia",
+    "sentry",
     "retool",
-    "brex",
-    "deel",
-    "stripe",
-    "raster",
+    "perplexity",
+    "quora",
+    "vanta",
 ]
 
 
@@ -77,9 +79,16 @@ class AshbySource(BaseJobSource):
             params={"includeCompensation": "true"},
         )
         resp.raise_for_status()
-        return resp.json().get("jobs", [])
+        data = resp.json()
+        if isinstance(data, dict):
+            return data.get("jobs", [])
+        elif isinstance(data, list):
+            return data
+        return []
 
-    def _to_raw(self, job: dict[str, Any]) -> RawJobResult | None:
+    def _to_raw(self, job: Any) -> RawJobResult | None:
+        if not isinstance(job, dict):
+            return None
         title = job.get("title")
         abs_url = job.get("jobUrl") or job.get("applyUrl")
         if not title or not abs_url:
@@ -98,6 +107,17 @@ class AshbySource(BaseJobSource):
                 published_date = published
 
         description_html = job.get("descriptionHtml") or ""
+        comp = job.get("compensation")
+        comp_summary = ""
+        if isinstance(comp, dict):
+            comp_summary = str(comp.get("compensationTierSummary", ""))
+        elif isinstance(comp, list):
+            comp_summary = "; ".join(
+                str(c.get("compensationTierSummary", ""))
+                for c in comp
+                if isinstance(c, dict) and c.get("compensationTierSummary")
+            )
+
         parts = [
             f"Company: {job.get('company') or ''}",
             f"Location: {location}",
@@ -105,12 +125,7 @@ class AshbySource(BaseJobSource):
             f"Employment type: {job.get('employmentType') or 'Full time'}",
             f"Department: {job.get('department') or ''}",
             f"Team: {job.get('team') or ''}",
-            "Compensation: "
-            + "; ".join(
-                c.get("compensationTierSummary", "")
-                for c in (job.get("compensation") or [])
-                if c.get("compensationTierSummary")
-            ),
+            f"Compensation: {comp_summary}" if comp_summary else "",
             _html_to_text(description_html),
         ]
         full_text = "\n\n".join(p for p in parts if p)
@@ -132,6 +147,8 @@ class AshbySource(BaseJobSource):
                 jobs = self._fetch_org(org)
                 logger.info("ashby board %s: %d jobs", org, len(jobs))
                 for job in jobs:
+                    if not isinstance(job, dict):
+                        continue
                     if role_filter and not any(
                         r.lower() in job.get("title", "").lower() for r in role_filter
                     ):

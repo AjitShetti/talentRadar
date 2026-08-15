@@ -5,7 +5,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 SHELL := /bin/bash
-.PHONY: help up down logs migrate seed test lint format typecheck deploy fly-logs clean
+.PHONY: help up down logs migrate seed test lint format typecheck clean
 
 # ── Docker Compose ──────────────────────────────────────────────────────────
 
@@ -81,28 +81,6 @@ test-cov:
 ## Run a single test file (usage: make test-one file=tests/test_api.py)
 test-one:
 	pytest $(file) -v
-
-# ── Deployment (Fly.io) ─────────────────────────────────────────────────────
-
-## Deploy to Fly.io
-deploy:
-	fly deploy
-
-## Tail Fly.io logs
-fly-logs:
-	fly logs
-
-## Open Fly.io dashboard
-fly-status:
-	fly status
-
-## SSH into Fly.io VM
-fly-ssh:
-	fly ssh console
-
-## Set a secret on Fly.io (usage: make fly-secret key=GROQ_API_KEY val=gsk_...)
-fly-secret:
-	fly secrets set $(key)=$(val)
 
 # ── Cleanup ─────────────────────────────────────────────────────────────────
 

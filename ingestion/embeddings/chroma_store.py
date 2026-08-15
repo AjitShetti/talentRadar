@@ -124,7 +124,13 @@ class ChromaJobStore:
         docs = [i["text"] for i in items]
         metas = [i.get("metadata", {}) for i in items]
 
-        self._collection.upsert(ids=ids, documents=docs, metadatas=metas)
+        chunk_size = 100
+        for idx in range(0, len(ids), chunk_size):
+            chunk_ids = ids[idx : idx + chunk_size]
+            chunk_docs = docs[idx : idx + chunk_size]
+            chunk_metas = metas[idx : idx + chunk_size]
+            self._collection.upsert(ids=chunk_ids, documents=chunk_docs, metadatas=chunk_metas)
+
         logger.info("ChromaDB batch upsert: %d documents", len(ids))
         return len(ids)
 

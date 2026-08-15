@@ -108,7 +108,7 @@ export default function SessionDetailPage({ params }: { params: Promise<{ sessio
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
           <div>
             <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(1.5rem, 3vw, 2rem)', fontWeight: 800, letterSpacing: '-0.02em', marginBottom: '0.5rem' }}>
-              {detail.track.replace(/_/g, ' ').toUpperCase()}<span style={{ color: 'var(--color-accent)' }}>.</span>
+              {(detail.track || 'interview').replace(/_/g, ' ').toUpperCase()}<span style={{ color: 'var(--color-accent)' }}>.</span>
             </h1>
             <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', color: 'var(--color-fg-muted)', fontSize: '0.85rem' }}>
               <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, textTransform: 'uppercase' }}>{detail.difficulty}</span>

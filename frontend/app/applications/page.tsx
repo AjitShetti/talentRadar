@@ -135,7 +135,7 @@ export default function ApplicationsPage() {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                   {col.map(app => {
-                    const statusInfo = STATUSES.find(s => s.key === app.status)!;
+                    const statusInfo = STATUSES.find(s => s.key === app.status?.toLowerCase()) || STATUSES[0];
                     return (
                       <div key={app.id} className="panel" style={{ padding: '1rem', position: 'relative' }}>
                         <div style={{ marginBottom: '0.4rem', fontWeight: 600, fontSize: '0.9rem', lineHeight: 1.3 }}>

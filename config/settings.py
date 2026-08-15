@@ -69,7 +69,7 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------ #
     jwt_secret_key: str = Field(min_length=32, description="JWT Secret key, at least 32 characters")
     jwt_algorithm: str = Field(default="HS256")
-    jwt_expiry_minutes: int = Field(default=60)
+    jwt_expiry_minutes: int = Field(default=10080)
 
     # ------------------------------------------------------------------ #
     # GCS (optional blob storage)                                          #

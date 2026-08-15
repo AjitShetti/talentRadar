@@ -50,6 +50,7 @@ async def persist_parsed(
     Returns per-step counts: {"inserted", "updated", "skipped", "embedded"}.
     """
     from ingestion.scrapers.tavily_client import detect_source_from_url
+    from ingestion.validation import is_valid_job_url
 
     inserted = updated = skipped = embedded = 0
     chroma_items: list[dict[str, Any]] = []
@@ -67,10 +68,12 @@ async def persist_parsed(
 
         try:
             for data in parsed:
-                job_source = (
-                    detect_source_from_url(data.source_url or "")
-                    if data.source_url else source
-                )
+                if not data.source_url or not is_valid_job_url(data.source_url):
+                    logger.warning("Dropping invalid or listing job URL in persist_parsed: %s", data.source_url)
+                    skipped += 1
+                    continue
+
+                job_source = detect_source_from_url(data.source_url)
 
                 company_slug = _company_domain(data.company)
                 company, _ = await uow.companies.upsert_by_domain(

@@ -226,4 +226,6 @@ __marimo__/
 
 
 /data
+data/raw/
+data/raw/**
 /.agents

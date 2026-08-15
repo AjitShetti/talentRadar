@@ -79,7 +79,7 @@ services:
       redis:
         condition: service_healthy
       chromadb:
-        service_started
+        condition: service_started
       db-seeder:
         condition: service_completed_successfully
     volumes:
@@ -94,6 +94,8 @@ services:
       - ./ml:/app/ml
       - ./tests:/app/tests
       - ./data:/app/data          # shared raw JD output dir
+      - ./scripts:/app/scripts
+      - ./alembic.ini:/app/alembic.ini
     restart: unless-stopped
     networks:
       - talentradar-net
@@ -172,6 +174,7 @@ services:
       POSTGRES_PORT: 5432
       CHROMA_HOST: chromadb
       CHROMA_PORT: 8000
+      SEED_FROM_FIXTURES: ${SEED_FROM_FIXTURES:-false}
     depends_on:
       postgres:
         condition: service_healthy

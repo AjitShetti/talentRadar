@@ -182,6 +182,15 @@ class ParsedJobDescription(BaseModel):
     # Validators
     # ─────────────────────────────────────────────────────────────
 
+    @field_validator("is_remote", mode="before")
+    @classmethod
+    def normalise_is_remote(cls, v: object) -> bool:
+        if v is None:
+            return False
+        if isinstance(v, str):
+            return v.strip().lower() in {"true", "1", "yes", "remote"}
+        return bool(v)
+
     @field_validator("title", "company", mode="before")
     @classmethod
     def normalise_strings(cls, v: object) -> str:

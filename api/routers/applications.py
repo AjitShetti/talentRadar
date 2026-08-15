@@ -47,17 +47,23 @@ CurrentUserId = Annotated[str, Depends(get_current_user_id)]
 DBSession = Annotated[AsyncSession, Depends(get_db_dep)]
 
 
+from sqlalchemy.orm import selectinload
+
 async def _get_job(db: AsyncSession, job_id: uuid.UUID) -> Job | None:
-    result = await db.execute(select(Job).where(Job.id == job_id))
+    result = await db.execute(select(Job).options(selectinload(Job.company)).where(Job.id == job_id))
     return result.scalar_one_or_none()
 
 
 def _job_to_schema(job: Job | None) -> ApplicationJobSchema | None:
     if job is None:
         return None
+    company_name = None
+    if getattr(job, 'company', None):
+        company_name = getattr(job.company, 'name', None)
     return ApplicationJobSchema(
         id=str(job.id),
         title=job.title,
+        company_name=company_name,
         location_raw=getattr(job, 'location_raw', None),
         is_remote=getattr(job, 'is_remote', False) or False,
         source_url=getattr(job, 'source_url', None),

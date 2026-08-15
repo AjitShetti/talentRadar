@@ -29,35 +29,12 @@ INDIAN_JOB_DOMAINS = [
 ]
 
 
-def _validate_url(url: str) -> bool:
-    """Return True only for well-formed http/https URLs."""
-    try:
-        parsed = urlparse(url)
-        return parsed.scheme in ("http", "https") and bool(parsed.netloc)
-    except Exception:
-        return False
-
-
-def _url_matches_domain(url: str, domain: str) -> bool:
-    """
-    Check whether *url* belongs to *domain* using proper URL parsing.
-
-    Matches both bare domains and subdomains:
-        _url_matches_domain("https://in.indeed.com/jobs", "indeed.com")  → True
-        _url_matches_domain("https://www.linkedin.com/jobs", "linkedin.com")  → True
-    """
-    try:
-        parsed = urlparse(url)
-        host = (parsed.hostname or "").lower()
-    except Exception:
-        return False
-    domain = domain.lower().strip(".")
-    return host == domain or host.endswith("." + domain)
-
-
-def _matches_any_domain(url: str, domains: List[str]) -> bool:
-    """Return True if *url* matches any entry in *domains*."""
-    return any(_url_matches_domain(url, d) for d in domains)
+from ingestion.validation import (
+    _matches_any_domain,
+    _url_matches_domain,
+    _validate_url_format as _validate_url,
+    is_valid_job_url,
+)
 
 
 def detect_source_from_url(url: str) -> str:
@@ -92,7 +69,7 @@ class TavilyJobScraper:
             if not api_key:
                 raise ValueError("TAVILY_API_KEY is required in configuration.")
         self._api_key = api_key
-        self._client = httpx.Client()
+        self._client = httpx.Client(timeout=15.0)
         self._raw_dir = Path(raw_data_dir) if raw_data_dir else Path("data") / "raw"
 
     def __enter__(self):

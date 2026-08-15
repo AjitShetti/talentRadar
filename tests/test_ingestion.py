@@ -396,7 +396,8 @@ class TestJDParserBatchParse:
             content = good_response if call_count % 2 == 1 else bad_response
             return MagicMock(choices=[MagicMock(message=MagicMock(content=content))])
 
-        with patch("ingestion.parsers.jd_parser.Groq") as MockGroq:
+        with patch("ingestion.parsers.jd_parser.Groq") as MockGroq, \
+             patch("ingestion.seed_db.extract_job_from_raw", side_effect=ValueError("fallback failed")):
             mock_client = MockGroq.return_value
             mock_client.chat.completions.create.side_effect = fake_create
             parser = JDParser(api_key="fake-key-for-testing")
