@@ -32,12 +32,10 @@ from services.jobs import (  # noqa: F401
     session_safe_search,
 )
 from services.companies import company_intel, get_company  # noqa: F401
-from services.market import get_market_trends, record_market_snapshot  # noqa: F401
 from services.llm import (  # noqa: F401
     generate_ats_analysis,
     generate_career_advice,
     generate_cover_letter,
-    generate_market_summary,
     get_llm,
 )
 from services.resumes import (  # noqa: F401

@@ -64,41 +64,6 @@ async def _chat(
     return response.choices[0].message.content or ""
 
 
-async def generate_market_summary(
-    *,
-    query: str,
-    total_jobs: int,
-    top_skills: list[dict],
-    salary_data: dict,
-    location_data: list[dict],
-    seniority_data: list[dict],
-) -> str | None:
-    """LLM-generated narrative summary of the market aggregate."""
-    system = (
-        "You are a job-market analyst. Write a concise, data-grounded market "
-        "summary in plain Markdown. Do not invent numbers beyond what is provided."
-    )
-    top_skills_text = ", ".join(f"{s['skill']} ({s['count']})" for s in top_skills[:10])
-    avg_salary = "N/A"
-    if salary_data.get("available"):
-        avg_salary = f"{salary_data['avg_min']:.0f} - {salary_data['avg_max']:.0f}"
-    prompt = f"""\
-Query: {query}
-
-Market Data (last 30 days):
-- Total Active Jobs: {total_jobs}
-- Top Skills: {top_skills_text}
-- Average Salary Range: {avg_salary}
-- Top Cities: {', '.join(f"{l['location']} ({l['count']})" for l in location_data[:10])}
-- Seniority: {', '.join(f"{s['seniority']} ({s['count']})" for s in seniority_data[:5])}
-"""
-    try:
-        return await _chat(system, prompt, max_tokens=600)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Market summary generation failed: %s", exc)
-        return None
-
-
 async def generate_ats_analysis(resume_text: str, jd_text: str) -> dict[str, Any]:
     """LLM ATS-gap analysis: match score, missing skills, reasoning (JSON)."""
     system = """\

@@ -23,7 +23,6 @@ from groq import AsyncGroq
 from agents.prompts.intent_prompt import INTENT_EXTRACTION_PROMPT
 from agents.rag_agent import RAGAgent
 from agents.state import AgentResponse, CandidateProfile, IntentType, QueryContext
-from agents.trend_agent import TrendAgent
 from config.settings import get_settings
 
 logger = logging.getLogger(__name__)
@@ -44,7 +43,6 @@ class Orchestrator:
         settings = get_settings()
         self._groq = AsyncGroq(api_key=settings.groq_api_key)
         self._rag_agent = RAGAgent()
-        self._trend_agent = TrendAgent()
 
     async def process_query(self, query: str, **kwargs: Any) -> AgentResponse:
         """
@@ -149,14 +147,6 @@ class Orchestrator:
     def _rule_based_classification(query: str) -> QueryContext | None:
         """Quick rule-based intent detection."""
         query_lower = query.lower().strip()
-
-        # Market trends
-        if any(kw in query_lower for kw in ["trend", "market", "salary", "demand", "statistics", "analytics"]):
-            return QueryContext(
-                raw_query=query,
-                intent=IntentType.MARKET_TRENDS,
-                keywords=query_lower.split(),
-            )
 
         # Company info
         if any(kw in query_lower for kw in ["about", "company", "organization", "employer"]) and any(

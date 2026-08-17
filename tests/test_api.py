@@ -57,13 +57,11 @@ def _make_mock_search_response(n_results: int = 2):
     )
 
 
-def _make_empty_uow():
-    """UoW mock that returns an empty job list (no DB required)."""
+async def _make_empty_uow():
+    """UoW mock that yields an empty job list (no DB required)."""
     mock_uow = AsyncMock()
-    mock_uow.__aenter__ = AsyncMock(return_value=mock_uow)
-    mock_uow.__aexit__ = AsyncMock(return_value=False)
     mock_uow.jobs.search = AsyncMock(return_value=([], 0))
-    return mock_uow
+    yield mock_uow
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -100,7 +98,7 @@ class TestHealthEndpoints:
 class TestStructuredSearchEndpoint:
     async def test_structured_search_returns_200_with_mocked_db(self, api_client):
         """Structured search must return 200 OK — never silently accept 500."""
-        with patch("api.routers.search.get_unit_of_work", return_value=_make_empty_uow()):
+        with patch("api.routers.search.get_unit_of_work", side_effect=_make_empty_uow):
             response = await api_client.post(
                 "/api/v1/search/structured",
                 json={"limit": 10, "offset": 0},
@@ -112,7 +110,7 @@ class TestStructuredSearchEndpoint:
         assert isinstance(data["jobs"], list)
 
     async def test_structured_search_respects_limit(self, api_client):
-        with patch("api.routers.search.get_unit_of_work", return_value=_make_empty_uow()):
+        with patch("api.routers.search.get_unit_of_work", side_effect=_make_empty_uow):
             response = await api_client.post(
                 "/api/v1/search/structured",
                 json={"limit": 5, "offset": 0},
@@ -137,7 +135,7 @@ class TestStructuredSearchEndpoint:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
     async def test_structured_search_with_skill_filter(self, api_client):
-        with patch("api.routers.search.get_unit_of_work", return_value=_make_empty_uow()):
+        with patch("api.routers.search.get_unit_of_work", side_effect=_make_empty_uow):
             response = await api_client.post(
                 "/api/v1/search/structured",
                 json={"skills": ["Python", "FastAPI"], "limit": 10, "offset": 0},
@@ -237,56 +235,6 @@ class TestQueryEndpoint:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Trends endpoint
-# ─────────────────────────────────────────────────────────────────────────────
-
-class TestTrendsEndpoints:
-    async def test_get_trends_returns_200_with_mocked_agent(self, api_client):
-        """Trends endpoint must return 200 when agent is mocked — never 500."""
-        from agents.state import AgentResponse, IntentType
-        mock_response = AgentResponse(
-            success=True,
-            intent=IntentType.MARKET_TRENDS,
-            summary="Python is trending.",
-            results=[],
-            metadata={"top_skills": ["Python", "Rust"]},
-        )
-        with patch(
-            "api.routers.trends.Orchestrator.process_query",
-            new_callable=AsyncMock,
-            return_value=mock_response,
-        ):
-            response = await api_client.post(
-                "/api/v1/trends",
-                json={"query": "Market trends in AI", "days": 30},
-            )
-        assert response.status_code == status.HTTP_200_OK
-
-    async def test_get_trends_rejects_empty_query(self, api_client):
-        response = await api_client.post(
-            "/api/v1/trends",
-            json={"query": "", "days": 30},
-        )
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
-
-    async def test_get_top_skills_returns_200_with_mocked_db(self, api_client):
-        """Top skills endpoint must return 200 with mocked storage — never 500."""
-        mock_skills = [{"skill": "Python", "count": 500}, {"skill": "SQL", "count": 420}]
-        with patch(
-            "api.routers.trends.get_job_repository",
-        ) as mock_repo_dep:
-            mock_repo = AsyncMock()
-            mock_repo.get_top_skills = AsyncMock(return_value=mock_skills)
-            mock_repo_dep.return_value = mock_repo
-            response = await api_client.get("/api/v1/trends/skills?days=30")
-        assert response.status_code == status.HTTP_200_OK
-
-    async def test_get_top_skills_rejects_negative_days(self, api_client):
-        response = await api_client.get("/api/v1/trends/skills?days=-5")
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Recommend / match endpoint
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -335,14 +283,18 @@ class TestRecommendEndpoints:
 class TestIngestEndpoints:
     async def test_trigger_ingestion_returns_200_with_mocked_pipeline(self, api_client):
         """
-        Trigger must return 200 OK when the pipeline is mocked.
-        It must NEVER return 500 — if Airflow is down the API should
-        return a clear error code (e.g. 503), not an uncaught server error.
+        Trigger must return 200 OK when real-time ingestion is triggered.
         """
-        mock_task = MagicMock()
-        mock_task.id = "mock-task-id-123"
-        with patch("ingestion.tasks.run_crawler") as mock_run_crawler:
-            mock_run_crawler.delay.return_value = mock_task
+        mock_result = {
+            "jobs": [{"id": "1", "title": "Python Engineer"}],
+            "total": 1,
+            "total_latency_ms": 450,
+        }
+        with patch(
+            "ingestion.engine.RealtimeScraperEngine.search_all",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ) as mock_search:
             response = await api_client.post(
                 "/api/v1/ingest/trigger",
                 json={
@@ -353,8 +305,8 @@ class TestIngestEndpoints:
             )
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert data["dag_run_id"] == "mock-task-id-123"
-        mock_run_crawler.delay.assert_called_once()
+        assert data["success"] is True
+        mock_search.assert_called_once()
 
     async def test_trigger_ingestion_rejects_empty_roles(self, api_client):
         """Empty roles list should be rejected at the schema level."""

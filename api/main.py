@@ -98,7 +98,7 @@ async def health_check():
 
 
 # Register routers
-from api.routers import search, query, recommend, trends, ingest, match, auth, applications  # noqa: E402
+from api.routers import search, query, recommend, ingest, match, auth, applications  # noqa: E402
 from api.routers import interview  # noqa: E402
 from api.routers import profile, resumes, company_intel, career, agent, dashboard  # noqa: E402
 
@@ -106,7 +106,6 @@ app.include_router(auth.router)
 app.include_router(search.router, prefix="/api/v1")
 app.include_router(query.router, prefix="/api/v1")
 app.include_router(recommend.router, prefix="/api/v1")
-app.include_router(trends.router, prefix="/api/v1")
 app.include_router(ingest.router, prefix="/api/v1")
 app.include_router(match.router, prefix="/api/v1")
 app.include_router(interview.router, prefix="/api/v1")
@@ -130,6 +129,8 @@ async def api_root():
                 "structured": "POST /api/v1/search/structured",
                 "semantic": "POST /api/v1/search/semantic",
                 "detail": "GET /api/v1/search/{job_id}",
+                "live": "GET /api/v1/search/live",
+                "stream": "GET /api/v1/search/stream",
             },
             "query": {
                 "process": "POST /api/v1/query",
@@ -137,12 +138,6 @@ async def api_root():
             "recommend": {
                 "match": "POST /api/v1/recommend/match",
                 "skills": "POST /api/v1/recommend/analyze-skills",
-            },
-            "trends": {
-                "trends": "POST /api/v1/trends",
-                "skills": "GET /api/v1/trends/skills",
-                "salaries": "GET /api/v1/trends/salaries",
-                "locations": "GET /api/v1/trends/locations",
             },
             "ingest": {
                 "trigger": "POST /api/v1/ingest/trigger",

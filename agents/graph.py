@@ -128,26 +128,6 @@ async def node_rag_retrieve(state: AgentState) -> AgentState:
     }
 
 
-async def node_trend_retrieve(state: AgentState) -> AgentState:
-    """Retrieve market trend data via TrendAgent."""
-    from agents.trend_agent import TrendAgent
-
-    trend = TrendAgent()
-    response = await trend.get_market_trends(state["query"])
-    return {
-        "retrieved_jobs": [],
-        "total_retrieved": 0,
-        "summary": response.summary,
-        "final_response": {
-            "success": response.success,
-            "intent": response.intent.value,
-            "summary": response.summary,
-            "error": response.error,
-            "metadata": response.metadata,
-        },
-    }
-
-
 async def node_studio_agent(state: AgentState) -> AgentState:
     """
     Route COMPANY_INFO / CAREER_COACH / APPLICATION_TRACKER /
@@ -225,13 +205,11 @@ async def node_error(state: AgentState) -> AgentState:
 
 def route_by_intent(
     state: AgentState,
-) -> Literal["node_rag_retrieve", "node_trend_retrieve", "node_studio_agent", "node_error"]:
+) -> Literal["node_rag_retrieve", "node_studio_agent", "node_error"]:
     """Determine which retrieval node to call based on classified intent."""
     intent = state.get("intent", IntentType.GENERAL.value)
     if intent in (IntentType.SEARCH_JOBS.value, IntentType.FIND_CANDIDATES.value):
         return "node_rag_retrieve"
-    elif intent == IntentType.MARKET_TRENDS.value:
-        return "node_trend_retrieve"
     elif intent in (
         IntentType.COMPANY_INFO.value,
         IntentType.CAREER_COACH.value,
@@ -256,7 +234,6 @@ def build_agent_graph() -> Any:
     # Register nodes
     builder.add_node("node_classify", node_classify)
     builder.add_node("node_rag_retrieve", node_rag_retrieve)
-    builder.add_node("node_trend_retrieve", node_trend_retrieve)
     builder.add_node("node_studio_agent", node_studio_agent)
     builder.add_node("node_error", node_error)
 
@@ -269,7 +246,6 @@ def build_agent_graph() -> Any:
         route_by_intent,
         {
             "node_rag_retrieve": "node_rag_retrieve",
-            "node_trend_retrieve": "node_trend_retrieve",
             "node_studio_agent": "node_studio_agent",
             "node_error": "node_error",
         },
@@ -277,7 +253,6 @@ def build_agent_graph() -> Any:
 
     # Terminal edges — all paths go to END
     builder.add_edge("node_rag_retrieve", END)
-    builder.add_edge("node_trend_retrieve", END)
     builder.add_edge("node_studio_agent", END)
     builder.add_edge("node_error", END)
 

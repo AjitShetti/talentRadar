@@ -19,7 +19,6 @@ class IntentType(str, Enum):
     """Classified user intent for routing."""
     SEARCH_JOBS = "search_jobs"
     FIND_CANDIDATES = "find_candidates"
-    MARKET_TRENDS = "market_trends"
     COMPANY_INFO = "company_info"
     RESUME_STUDIO = "resume_studio"
     CAREER_COACH = "career_coach"

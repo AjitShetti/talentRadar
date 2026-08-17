@@ -25,23 +25,6 @@ class QueryResponseSchema(BaseModel):
     error: str | None = None
 
 
-class TrendRequestSchema(BaseModel):
-    """Market trend query request."""
-    query: str = Field("General market trends", max_length=500)
-    days: int = Field(30, ge=7, le=365, description="Lookback window in days")
-
-
-class TrendResponseSchema(BaseModel):
-    """Market trend analysis response."""
-    summary: str | None = None
-    total_jobs: int = 0
-    top_skills: list[dict] = []
-    salary_data: dict | None = None
-    location_data: list[dict] = []
-    seniority_data: list[dict] = []
-    period_days: int = 30
-
-
 class CandidateProfileSchema(BaseModel):
     """Candidate profile for matching."""
     name: str | None = None

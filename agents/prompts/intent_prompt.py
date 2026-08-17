@@ -8,7 +8,7 @@ INTENT_EXTRACTION_PROMPT = """\
 Extract the user's search intent from their query.
 
 Return a JSON object with:
-- intent: "search_jobs" | "find_candidates" | "market_trends" | "company_info" | "general"
+- intent: "search_jobs" | "find_candidates" | "company_info" | "general"
 - keywords: list of important search terms
 - skills: list of technical/professional skills mentioned
 - location: location string or null
