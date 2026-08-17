@@ -1,292 +1,569 @@
 'use client';
 
 import Link from 'next/link';
-import { Search, FileText, Target, Zap, ArrowRight, Github, X } from 'lucide-react';
+import {
+  Search,
+  FileText,
+  Target,
+  ArrowRight,
+  Github,
+  Radio,
+  Sparkles,
+  Bot,
+  Zap,
+  Globe2,
+  CheckCircle2,
+  Lock,
+  Layers,
+} from 'lucide-react';
 import { useSession } from 'next-auth/react';
-import { useState, useEffect } from 'react';
 import { useAuthModal } from '@/components/AuthModalProvider';
 
-const features = [
-  {
-    icon: Search,
-    title: 'Real-Time Multi-Source Search',
-    description: 'Scrapes live job openings across Indian boards, Greenhouse, Ashby, Lever, and global remote portals.',
-    href: '/search',
-  },
-  {
-    icon: FileText,
-    title: 'Resume Studio',
-    description: 'Instant ATS gap analysis, LLM scoring, and tailored PDF resume generation for any job.',
-    href: '/resume-studio',
-  },
-  {
-    icon: Target,
-    title: 'Smart Matching',
-    description: 'Upload your profile and get personalized job recommendations with fit scores.',
-    href: '/resume-studio?tab=match',
-  },
+const PLATFORM_LOGOS = [
+  { name: 'Greenhouse', symbol: 'GH' },
+  { name: 'Lever', symbol: 'LV' },
+  { name: 'Ashby', symbol: 'AS' },
+  { name: 'LinkedIn', symbol: 'LI' },
+  { name: 'Naukri', symbol: 'NK' },
+  { name: 'Workday', symbol: 'WD' },
 ];
 
 export default function HomePage() {
-  const { data: session, status } = useSession();
-  const [showPopup, setShowPopup] = useState(false);
+  const { status } = useSession();
   const { openLogin, openSignup } = useAuthModal();
 
-  useEffect(() => {
-    // Show auth nudge popup after 5 s if not authenticated
-    if (status === 'unauthenticated') {
-      const timer = setTimeout(() => {
-        setShowPopup(true);
-      }, 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [status]);
-
   return (
-    <div style={{ position: 'relative', overflow: 'hidden' }}>
-      {/* Hero Section */}
-      <section style={{ textAlign: 'center', marginBottom: '8rem' }}>
-        <div
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-            padding: '0.5rem 1rem',
-            background: 'rgba(255,255,255,0.05)',
-            border: '1px solid var(--color-border)',
-            fontFamily: 'var(--font-display)',
-            fontSize: '0.875rem',
-            textTransform: 'uppercase',
-            marginBottom: '2rem',
-          }}
-        >
-          <Zap size={16} className="text-accent" />
-          AI-Powered Job Intelligence
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '5.5rem' }}>
+      {/* ─── 1. HERO SECTION (Asymmetric, Viewport Stable) ─── */}
+      <section
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+          gap: '3.5rem',
+          alignItems: 'center',
+          paddingTop: '1.5rem',
+          paddingBottom: '1rem',
+        }}
+      >
+        {/* Left: Copy Stack (Max 4 text elements) */}
+        <div>
+          {/* 1. Eyebrow */}
+          <div
+            className="badge badge-accent"
+            style={{
+              marginBottom: '1.25rem',
+              padding: '0.3rem 0.75rem',
+              fontSize: '0.75rem',
+              letterSpacing: '0.04em',
+            }}
+          >
+            <span className="status-dot status-dot-active" />
+            <span>REAL-TIME TALENT INTELLIGENCE</span>
+          </div>
+
+          {/* 2. Headline (Max 2 lines) */}
+          <h1
+            style={{
+              fontSize: 'clamp(2.4rem, 4vw, 3.75rem)',
+              lineHeight: 1.1,
+              marginBottom: '1.25rem',
+              letterSpacing: '-0.035em',
+            }}
+          >
+            PRECISION JOB SEARCH FOR MODERN ENGINEERS
+          </h1>
+
+          {/* 3. Subtext (Max 20 words) */}
+          <p
+            style={{
+              fontSize: '1.125rem',
+              color: 'var(--color-fg-muted)',
+              marginBottom: '2.25rem',
+              maxWidth: '52ch',
+              lineHeight: 1.6,
+            }}
+          >
+            Scrape live ATS portals on demand, tailor ATS resumes with AI, and practice adaptive interview simulations.
+          </p>
+
+          {/* 4. CTAs (1 primary, 1 secondary) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flexWrap: 'wrap' }}>
+            <Link href="/search" className="btn btn-primary btn-lg">
+              <span>Start Job Radar</span>
+              <ArrowRight size={17} />
+            </Link>
+            <Link href="/resume-studio" className="btn btn-secondary btn-lg">
+              <span>Resume Studio</span>
+            </Link>
+          </div>
         </div>
 
-        <h1 style={{ fontSize: '4rem', marginBottom: '1.5rem', lineHeight: 1.1 }}>
-          FIND YOUR PERFECT JOB WITH<br />
-          <span className="text-accent">AI PRECISION</span>
-        </h1>
-
-        <p
+        {/* Right: Live Interactive Telemetry Terminal */}
+        <div
+          className="glass-panel"
           style={{
-            fontSize: '1.25rem',
-            color: 'var(--color-fg-muted)',
-            maxWidth: '600px',
-            margin: '0 auto 3rem auto',
+            padding: '1.5rem',
+            boxShadow: 'var(--shadow-lg)',
+            border: '1px solid var(--color-border)',
+            background: 'linear-gradient(180deg, rgba(20, 23, 34, 0.9) 0%, rgba(13, 15, 23, 0.95) 100%)',
           }}
         >
-          Search smarter with live real-time scraping, practice AI interviews, and get personalized
-          job matches powered by machine learning.
-        </p>
+          {/* Terminal Window Header */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              paddingBottom: '1rem',
+              marginBottom: '1.25rem',
+              borderBottom: '1px solid var(--color-border-subtle)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#ef4444', opacity: 0.8 }} />
+              <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#f59e0b', opacity: 0.8 }} />
+              <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#10b981', opacity: 0.8 }} />
+              <span
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '0.75rem',
+                  color: 'var(--color-fg-subtle)',
+                  marginLeft: '0.5rem',
+                }}
+              >
+                radar-telemetry.stream
+              </span>
+            </div>
+            <div className="badge badge-emerald" style={{ fontSize: '0.6875rem' }}>
+              <span className="status-dot status-dot-active" />
+              <span>ACTIVE</span>
+            </div>
+          </div>
 
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-          <Link href="/resume-studio?tab=match" className="btn btn-primary">
-            Start Matching
-            <ArrowRight size={18} />
-          </Link>
-          <Link href="/search" className="btn">
-            Explore Jobs
-          </Link>
+          {/* Live Mock Stream Rows */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.75rem 1rem',
+                background: 'rgba(255, 255, 255, 0.03)',
+                borderRadius: 'var(--border-radius-sm)',
+                border: '1px solid var(--color-border-subtle)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--color-accent)' }} />
+                <div>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-fg)' }}>
+                    Staff Backend Engineer
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--color-fg-subtle)' }}>Stripe · Ashby Portal · Remote</div>
+                </div>
+              </div>
+              <div className="badge badge-accent" style={{ fontFamily: 'var(--font-mono)' }}>96% FIT</div>
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.75rem 1rem',
+                background: 'rgba(255, 255, 255, 0.03)',
+                borderRadius: 'var(--border-radius-sm)',
+                border: '1px solid var(--color-border-subtle)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#38bdf8' }} />
+                <div>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-fg)' }}>
+                    AI Infrastructure Architect
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--color-fg-subtle)' }}>Scale AI · Greenhouse · SF / Remote</div>
+                </div>
+              </div>
+              <div className="badge badge-emerald" style={{ fontFamily: 'var(--font-mono)' }}>92% FIT</div>
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.75rem 1rem',
+                background: 'rgba(255, 255, 255, 0.03)',
+                borderRadius: 'var(--border-radius-sm)',
+                border: '1px solid var(--color-border-subtle)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#a855f7' }} />
+                <div>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-fg)' }}>
+                    Full Stack Tech Lead
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--color-fg-subtle)' }}>Vercel · Lever ATS · Remote</div>
+                </div>
+              </div>
+              <div className="badge badge-info" style={{ fontFamily: 'var(--font-mono)' }}>89% FIT</div>
+            </div>
+          </div>
+
+          {/* Telemetry bottom bar */}
+          <div
+            style={{
+              marginTop: '1.25rem',
+              paddingTop: '0.85rem',
+              borderTop: '1px solid var(--color-border-subtle)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              fontSize: '0.75rem',
+              color: 'var(--color-fg-muted)',
+              fontFamily: 'var(--font-mono)',
+            }}
+          >
+            <span>INGESTION: 180ms</span>
+            <span style={{ color: '#10b981' }}>STREAM SECURE</span>
+          </div>
         </div>
       </section>
 
-      {/* Features Section */}
-      <section style={{ marginBottom: '8rem' }}>
-        <h2 style={{ fontSize: '2rem', marginBottom: '3rem', textAlign: 'center' }}>
-          CORE TELEMETRY
+      {/* ─── 2. SOURCE INTEGRATIONS LOGO STRIP (Under hero, Logos Only) ─── */}
+      <section
+        style={{
+          borderTop: '1px solid var(--color-border)',
+          borderBottom: '1px solid var(--color-border)',
+          padding: '1.75rem 0',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '1rem',
+        }}
+      >
+        <div style={{ fontSize: '0.75rem', color: 'var(--color-fg-subtle)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+          MONITORING REAL-TIME OPENINGS ACROSS GLOBAL SOURCES
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '2.5rem',
+            flexWrap: 'wrap',
+          }}
+        >
+          {PLATFORM_LOGOS.map((item) => (
+            <div
+              key={item.name}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                color: 'var(--color-fg-muted)',
+                fontWeight: 600,
+                fontSize: '0.9375rem',
+                fontFamily: 'var(--font-display)',
+                letterSpacing: '-0.01em',
+                opacity: 0.75,
+                transition: 'opacity var(--transition-fast)',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+              onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.75')}
+            >
+              <div
+                style={{
+                  width: '24px',
+                  height: '24px',
+                  borderRadius: '4px',
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid var(--color-border)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '0.6875rem',
+                  fontFamily: 'var(--font-mono)',
+                  color: 'var(--color-fg)',
+                }}
+              >
+                {item.symbol}
+              </div>
+              <span>{item.name}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ─── 3. CORE INTELLIGENCE PILLARS (Bento Grid with Visual Diversity) ─── */}
+      <section>
+        <h2 style={{ fontSize: '2rem', marginBottom: '2rem', textAlign: 'center' }}>
+          INTELLIGENT CAREER SUITE
         </h2>
 
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-            gap: '2rem',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+            gap: '1.5rem',
           }}
         >
-          {features.map((feature) => {
-            const Icon = feature.icon;
-            return (
-              <Link key={feature.title} href={feature.href} style={{ textDecoration: 'none' }}>
+          {/* Bento Cell 1: Live Multi-Source Search */}
+          <Link href="/search" style={{ textDecoration: 'none' }}>
+            <div
+              className="panel panel-interactive"
+              style={{
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                background: 'linear-gradient(135deg, rgba(20, 23, 34, 0.9) 0%, rgba(25, 30, 45, 0.4) 100%)',
+              }}
+            >
+              <div>
                 <div
-                  className="panel"
-                  style={{ height: '100%', transition: 'border-color var(--transition-speed) ease' }}
-                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--color-accent)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--color-border)')}
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: 'var(--border-radius-sm)',
+                    background: 'var(--color-accent-subtle)',
+                    border: '1px solid var(--color-border-accent)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--color-accent)',
+                    marginBottom: '1.25rem',
+                  }}
                 >
-                  <div style={{ marginBottom: '1.5rem' }}>
-                    <Icon size={32} className="text-accent" />
-                  </div>
-                  <h3 style={{ fontSize: '1.5rem', marginBottom: '1rem' }}>{feature.title}</h3>
-                  <p style={{ color: 'var(--color-fg-muted)', marginBottom: '2rem' }}>
-                    {feature.description}
-                  </p>
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.5rem',
-                      color: 'var(--color-accent)',
-                      fontWeight: 600,
-                      fontFamily: 'var(--font-display)',
-                    }}
-                  >
-                    INITIATE <ArrowRight size={16} />
-                  </div>
+                  <Search size={20} />
                 </div>
-              </Link>
-            );
-          })}
+                <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem', color: '#ffffff' }}>
+                  Live Multi-Source Search
+                </h3>
+                <p style={{ fontSize: '0.875rem', color: 'var(--color-fg-muted)', lineHeight: 1.6 }}>
+                  Aggregate on-demand job listings across Greenhouse, Ashby, Lever, LinkedIn, and specialized engineering portals with real-time SSE streaming.
+                </p>
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  color: 'var(--color-accent)',
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  marginTop: '1.5rem',
+                }}
+              >
+                <span>Launch Search</span>
+                <ArrowRight size={14} />
+              </div>
+            </div>
+          </Link>
+
+          {/* Bento Cell 2: ATS Resume Studio */}
+          <Link href="/resume-studio" style={{ textDecoration: 'none' }}>
+            <div
+              className="panel panel-interactive"
+              style={{
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                background: 'linear-gradient(135deg, rgba(20, 23, 34, 0.9) 0%, rgba(16, 185, 129, 0.05) 100%)',
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: 'var(--border-radius-sm)',
+                    background: 'var(--color-success-subtle)',
+                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#34d399',
+                    marginBottom: '1.25rem',
+                  }}
+                >
+                  <FileText size={20} />
+                </div>
+                <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem', color: '#ffffff' }}>
+                  Resume Studio & Gap Scoring
+                </h3>
+                <p style={{ fontSize: '0.875rem', color: 'var(--color-fg-muted)', lineHeight: 1.6 }}>
+                  Vector-based token match scoring, instant ATS gap detection, and personalized PDF resume tailoring for every job opportunity.
+                </p>
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  color: '#34d399',
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  marginTop: '1.5rem',
+                }}
+              >
+                <span>Open Studio</span>
+                <ArrowRight size={14} />
+              </div>
+            </div>
+          </Link>
+
+          {/* Bento Cell 3: AI Interview Simulator */}
+          <Link href="/interview" style={{ textDecoration: 'none' }}>
+            <div
+              className="panel panel-interactive"
+              style={{
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                background: 'linear-gradient(135deg, rgba(20, 23, 34, 0.9) 0%, rgba(6, 182, 212, 0.05) 100%)',
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: 'var(--border-radius-sm)',
+                    background: 'var(--color-info-subtle)',
+                    border: '1px solid rgba(6, 182, 212, 0.3)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#22d3ee',
+                    marginBottom: '1.25rem',
+                  }}
+                >
+                  <Radio size={20} />
+                </div>
+                <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem', color: '#ffffff' }}>
+                  AI Interview Simulator
+                </h3>
+                <p style={{ fontSize: '0.875rem', color: 'var(--color-fg-muted)', lineHeight: 1.6 }}>
+                  Conduct realistic mock technical and behavioral interviews with real-time speech synthesis, rubric grading, and actionable feedback.
+                </p>
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  color: '#22d3ee',
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  marginTop: '1.5rem',
+                }}
+              >
+                <span>Practice Interviews</span>
+                <ArrowRight size={14} />
+              </div>
+            </div>
+          </Link>
         </div>
       </section>
 
-      {/* Footer */}
+      {/* ─── 4. CTA BANNER ─── */}
+      <section
+        className="glass-panel"
+        style={{
+          padding: '3rem 2rem',
+          textAlign: 'center',
+          background: 'linear-gradient(180deg, rgba(20, 23, 34, 0.8) 0%, rgba(255, 87, 34, 0.05) 100%)',
+          border: '1px solid var(--color-border)',
+        }}
+      >
+        <h2 style={{ fontSize: '2rem', marginBottom: '0.75rem', color: '#ffffff' }}>
+          ACCELERATE YOUR CAREER TRAJECTORY
+        </h2>
+        <p style={{ maxWidth: '50ch', margin: '0 auto 2rem auto', color: 'var(--color-fg-muted)', fontSize: '1.05rem' }}>
+          Join thousands of developers using live telemetry to discover target roles and practice with AI coaches.
+        </p>
+
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+          {status === 'authenticated' ? (
+            <Link href="/search" className="btn btn-primary btn-lg">
+              <span>Go to Job Radar</span>
+              <ArrowRight size={16} />
+            </Link>
+          ) : (
+            <button
+              onClick={openSignup}
+              className="btn btn-primary btn-lg"
+            >
+              <span>Create Free Account</span>
+              <ArrowRight size={16} />
+            </button>
+          )}
+        </div>
+      </section>
+
+      {/* ─── 5. FOOTER ─── */}
       <footer
         style={{
           borderTop: '1px solid var(--color-border)',
-          padding: '3rem 0',
+          paddingTop: '2.5rem',
+          paddingBottom: '2.5rem',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           color: 'var(--color-fg-muted)',
+          fontSize: '0.875rem',
+          flexWrap: 'wrap',
+          gap: '1.5rem',
         }}
       >
-        <div>© 2026 TalentRadar Systems.</div>
-        <div style={{ display: 'flex', gap: '2rem' }}>
-          <a href="/api/docs" style={{ color: 'inherit' }}>
-            API DOCS
-          </a>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+          <div
+            style={{
+              width: '20px',
+              height: '20px',
+              borderRadius: '4px',
+              background: 'var(--color-accent-subtle)',
+              border: '1px solid var(--color-border-accent)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'var(--color-accent)',
+            }}
+          >
+            <Zap size={12} />
+          </div>
+          <span>© 2026 TalentRadar Intelligence. All rights reserved.</span>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+          <Link href="/search" style={{ color: 'var(--color-fg-muted)' }}>
+            Search
+          </Link>
+          <Link href="/resume-studio" style={{ color: 'var(--color-fg-muted)' }}>
+            Resume Studio
+          </Link>
+          <Link href="/interview" style={{ color: 'var(--color-fg-muted)' }}>
+            Interviews
+          </Link>
           <a
             href="https://github.com"
-            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'inherit' }}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: 'var(--color-fg-muted)' }}
           >
-            <Github size={16} />
-            GITHUB
+            <Github size={15} />
+            <span>GitHub</span>
           </a>
         </div>
       </footer>
-
-      {/* Auth Nudge Popup */}
-      {showPopup && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Sign in prompt"
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 8000,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '1rem',
-            background: 'rgba(0,0,0,0.6)',
-            backdropFilter: 'blur(4px)',
-          }}
-          onClick={(e) => { if (e.target === e.currentTarget) setShowPopup(false); }}
-        >
-          <div
-            style={{
-              position: 'relative',
-              background: '#0f0f11',
-              border: '1px solid var(--color-border)',
-              padding: '2.5rem 2rem',
-              maxWidth: '400px',
-              width: '100%',
-              textAlign: 'center',
-              animation: 'auth-modal-in 250ms cubic-bezier(0.22,1,0.36,1) both',
-            }}
-          >
-            {/* Orange corner accents */}
-            <span className="auth-corner auth-corner-tl" aria-hidden="true" />
-            <span className="auth-corner auth-corner-br" aria-hidden="true" />
-
-            <button
-              onClick={() => setShowPopup(false)}
-              className="auth-close-btn"
-              aria-label="Dismiss"
-            >
-              <X size={18} />
-            </button>
-
-            <div
-              style={{
-                width: 48,
-                height: 48,
-                background: 'var(--color-accent)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                margin: '0 auto 1.25rem',
-              }}
-            >
-              <Zap size={22} color="#fff" />
-            </div>
-
-            <h3
-              style={{
-                fontFamily: 'var(--font-display)',
-                fontSize: '1.4rem',
-                fontWeight: 700,
-                marginBottom: '0.75rem',
-                letterSpacing: '-0.02em',
-              }}
-            >
-              UNLOCK FULL POTENTIAL
-            </h3>
-            <p
-              style={{
-                color: 'var(--color-fg-muted)',
-                fontSize: '0.9rem',
-                marginBottom: '1.75rem',
-                lineHeight: 1.6,
-              }}
-            >
-              Save searches, tailor resumes on the fly, and get personalized smart matches.
-            </p>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <button
-                id="nudge-create-account-btn"
-                className="auth-submit-btn"
-                onClick={() => { setShowPopup(false); openSignup(); }}
-              >
-                CREATE FREE ACCOUNT
-                <ArrowRight size={16} className="auth-btn-arrow" />
-              </button>
-              <button
-                id="nudge-login-btn"
-                onClick={() => { setShowPopup(false); openLogin(); }}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  background: 'rgba(255,255,255,0.05)',
-                  border: '1px solid var(--color-border)',
-                  color: 'var(--color-fg-muted)',
-                  fontFamily: 'var(--font-display)',
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                  cursor: 'pointer',
-                  transition: 'border-color var(--transition-speed) ease, color var(--transition-speed) ease',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = 'var(--color-accent)';
-                  e.currentTarget.style.color = 'var(--color-accent)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = 'var(--color-border)';
-                  e.currentTarget.style.color = 'var(--color-fg-muted)';
-                }}
-              >
-                SIGN IN
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

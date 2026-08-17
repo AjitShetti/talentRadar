@@ -1,6 +1,6 @@
 // frontend/app/interview/[sessionId]/page.tsx
 // ─────────────────────────────────────────────────────────────────
-// Live interview session page — thin server shell with metadata.
+// Live interview session page: server shell with metadata.
 // ─────────────────────────────────────────────────────────────────
 
 import type { Metadata } from 'next';
@@ -13,7 +13,7 @@ interface Props {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { sessionId } = await params;
   return {
-    title: `Interview Session — TalentRadar`,
+    title: `Interview Session | TalentRadar`,
     description: `Active mock interview session ${sessionId}`,
   };
 }

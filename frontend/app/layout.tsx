@@ -1,23 +1,25 @@
 import type { Metadata } from 'next';
-import { Space_Grotesk, Manrope } from 'next/font/google';
+import { Plus_Jakarta_Sans, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 import Header from '@/components/Header';
 import AuthProvider from '@/components/AuthProvider';
 import { AuthModalProvider } from '@/components/AuthModalProvider';
 
-const spaceGrotesk = Space_Grotesk({
+const jakarta = Plus_Jakarta_Sans({
   subsets: ['latin'],
-  variable: '--font-space-grotesk',
+  variable: '--font-jakarta',
+  display: 'swap',
 });
 
-const manrope = Manrope({
+const jetbrainsMono = JetBrains_Mono({
   subsets: ['latin'],
-  variable: '--font-manrope',
+  variable: '--font-mono',
+  display: 'swap',
 });
 
 export const metadata: Metadata = {
-  title: 'TalentRadar - AI-Powered Job Intelligence',
-  description: 'Real-time multi-source job search, resume studio, and AI interview prep',
+  title: 'TalentRadar - Intelligent Job Telemetry & Career Studio',
+  description: 'Real-time multi-source job aggregation, ATS resume studio, and AI interview simulations.',
 };
 
 export default function RootLayout({
@@ -26,14 +28,18 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${spaceGrotesk.variable} ${manrope.variable}`}>
+    <html lang="en" className={`${jakarta.variable} ${jetbrainsMono.variable}`}>
       <body>
         <AuthProvider>
           <AuthModalProvider>
-            <div className="grid-lines" />
-            <div className="container" style={{ position: 'relative', zIndex: 1 }}>
+            <div className="grid-lines" aria-hidden="true" />
+            <div style={{ position: 'relative', zIndex: 1, minHeight: '100dvh', display: 'flex', flexDirection: 'column' }}>
               <Header />
-              {children}
+              <main style={{ flex: 1, paddingBottom: '4rem' }}>
+                <div className="container">
+                  {children}
+                </div>
+              </main>
             </div>
           </AuthModalProvider>
         </AuthProvider>

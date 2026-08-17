@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { Search as SearchIcon, Loader2 } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Search as SearchIcon, Loader2, X, ArrowRight } from 'lucide-react';
 
 interface SearchBarProps {
   onSearch: (query: string) => void;
@@ -9,35 +9,66 @@ interface SearchBarProps {
   loading?: boolean;
 }
 
-export default function SearchBar({ onSearch, placeholder = 'Search jobs...', loading = false }: SearchBarProps) {
+export default function SearchBar({
+  onSearch,
+  placeholder = 'Search by title, technology, or role...',
+  loading = false,
+}: SearchBarProps) {
   const [query, setQuery] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Allow empty submit to clear the filter
     onSearch(query.trim());
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setQuery(value);
-    // Immediately restore all jobs when the field is cleared
     if (!value) {
       onSearch('');
     }
   };
 
+  const handleClear = () => {
+    setQuery('');
+    onSearch('');
+    inputRef.current?.focus();
+  };
+
   return (
     <form onSubmit={handleSubmit} style={{ width: '100%', position: 'relative' }}>
-      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-        <div style={{ position: 'absolute', left: '1rem', pointerEvents: 'none', color: 'var(--color-fg-muted)' }}>
+      <div
+        style={{
+          position: 'relative',
+          display: 'flex',
+          alignItems: 'center',
+          background: 'var(--color-surface)',
+          border: '1px solid var(--color-border)',
+          borderRadius: 'var(--border-radius)',
+          boxShadow: 'var(--shadow-sm)',
+          transition: 'all var(--transition-fast)',
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            left: '1rem',
+            pointerEvents: 'none',
+            color: 'var(--color-fg-subtle)',
+            display: 'flex',
+            alignItems: 'center',
+          }}
+        >
           {loading ? (
-            <Loader2 className="animate-spin text-accent" size={20} />
+            <Loader2 size={18} className="text-accent status-dot-pulse" />
           ) : (
-            <SearchIcon size={20} />
+            <SearchIcon size={18} />
           )}
         </div>
+
         <input
+          ref={inputRef}
           type="text"
           value={query}
           onChange={handleChange}
@@ -45,22 +76,47 @@ export default function SearchBar({ onSearch, placeholder = 'Search jobs...', lo
           disabled={loading}
           style={{
             width: '100%',
-            padding: '1rem 8rem 1rem 3rem',
-            background: 'rgba(0,0,0,0.5)',
-            border: '1px solid var(--color-border)',
+            padding: '0.85rem 7.5rem 0.85rem 2.85rem',
+            background: 'transparent',
+            border: 'none',
             color: 'var(--color-fg)',
             fontFamily: 'var(--font-body)',
-            fontSize: '1rem'
+            fontSize: '0.9375rem',
+            outline: 'none',
           }}
         />
-        <button
-          type="submit"
-          disabled={loading}
-          className="btn btn-primary"
-          style={{ position: 'absolute', right: '0.5rem', padding: '0.5rem 1rem' }}
-        >
-          SEARCH
-        </button>
+
+        <div style={{ position: 'absolute', right: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          {query && !loading && (
+            <button
+              type="button"
+              onClick={handleClear}
+              aria-label="Clear search"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--color-fg-muted)',
+                cursor: 'pointer',
+                padding: '0.25rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: '50%',
+              }}
+            >
+              <X size={15} />
+            </button>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="btn btn-primary btn-sm"
+          >
+            <span>Search</span>
+            <ArrowRight size={13} />
+          </button>
+        </div>
       </div>
     </form>
   );

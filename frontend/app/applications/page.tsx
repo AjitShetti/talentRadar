@@ -3,21 +3,23 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
-import { Briefcase, Lock, Loader2, Trash2, ExternalLink, ChevronDown, Search } from 'lucide-react';
+import { Briefcase, Lock, Loader2, Trash2, ExternalLink, ChevronDown, Search, ArrowRight } from 'lucide-react';
 import { applicationsApi } from '@/lib/applications-api';
 import type { JobApplication, ApplicationStatus } from '@/lib/types';
+import { useAuthModal } from '@/components/AuthModalProvider';
 
-const STATUSES: { key: ApplicationStatus; label: string; color: string }[] = [
-  { key: 'saved',      label: 'Saved',      color: 'var(--color-fg-muted)' },
-  { key: 'applied',   label: 'Applied',    color: '#3b82f6' },
-  { key: 'screening', label: 'Screening',  color: '#a855f7' },
-  { key: 'interview', label: 'Interview',  color: 'var(--color-accent)' },
-  { key: 'offer',     label: 'Offer',      color: '#22c55e' },
-  { key: 'rejected',  label: 'Rejected',   color: '#ef4444' },
+const STATUSES: { key: ApplicationStatus; label: string; color: string; bg: string }[] = [
+  { key: 'saved', label: 'Saved', color: 'var(--color-fg-muted)', bg: 'rgba(255, 255, 255, 0.05)' },
+  { key: 'applied', label: 'Applied', color: '#38bdf8', bg: 'rgba(56, 189, 248, 0.1)' },
+  { key: 'screening', label: 'Screening', color: '#a855f7', bg: 'rgba(168, 85, 247, 0.1)' },
+  { key: 'interview', label: 'Interview', color: 'var(--color-accent)', bg: 'var(--color-accent-subtle)' },
+  { key: 'offer', label: 'Offer', color: '#10b981', bg: 'rgba(16, 185, 129, 0.1)' },
+  { key: 'rejected', label: 'Rejected', color: '#f87171', bg: 'rgba(239, 68, 68, 0.1)' },
 ];
 
 export default function ApplicationsPage() {
   const { data: session, status } = useSession();
+  const { openLogin } = useAuthModal();
   const [applications, setApplications] = useState<JobApplication[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -36,7 +38,10 @@ export default function ApplicationsPage() {
   }, []);
 
   useEffect(() => {
-    if (status !== 'authenticated' || !session?.accessToken) return;
+    if (status !== 'authenticated' || !session?.accessToken) {
+      setLoading(false);
+      return;
+    }
     (async () => {
       try {
         const res = await applicationsApi.list(session.accessToken as string);
@@ -53,8 +58,10 @@ export default function ApplicationsPage() {
     if (!session?.accessToken) return;
     try {
       const updated = await applicationsApi.update(session.accessToken as string, app.id, { status: newStatus });
-      setApplications(prev => prev.map(a => a.id === app.id ? updated : a));
-    } catch { /* silent */ }
+      setApplications((prev) => prev.map((a) => (a.id === app.id ? updated : a)));
+    } catch {
+      /* silent */
+    }
     setOpenDropdown(null);
   };
 
@@ -63,122 +70,279 @@ export default function ApplicationsPage() {
     if (!confirm(`Remove "${app.job?.title ?? 'this job'}" from your tracker?`)) return;
     try {
       await applicationsApi.remove(session.accessToken as string, app.id);
-      setApplications(prev => prev.filter(a => a.id !== app.id));
-    } catch { /* silent */ }
+      setApplications((prev) => prev.filter((a) => a.id !== app.id));
+    } catch {
+      /* silent */
+    }
   };
-
-  if (status === 'loading') {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', color: 'var(--color-fg-muted)', fontFamily: 'var(--font-display)', padding: '4rem 0' }}>
-        <Loader2 size={24} className="animate-spin text-accent" /> LOADING...
-      </div>
-    );
-  }
 
   if (status === 'unauthenticated') {
     return (
-      <div style={{ maxWidth: 480, margin: '6rem auto', textAlign: 'center' }}>
-        <Lock size={40} color="var(--color-fg-muted)" style={{ marginBottom: '1.5rem' }} />
-        <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', marginBottom: '1rem' }}>SIGN IN TO TRACK APPLICATIONS</h2>
-        <p style={{ color: 'var(--color-fg-muted)', marginBottom: '2rem' }}>Save jobs and track your application pipeline in one place.</p>
-        <Link href="/login" className="btn btn-primary">Sign In</Link>
+      <div className="panel" style={{ maxWidth: 460, margin: '5rem auto', textAlign: 'center', padding: '3rem 2rem' }}>
+        <div
+          style={{
+            width: '48px',
+            height: '48px',
+            borderRadius: '50%',
+            background: 'var(--color-surface-elevated)',
+            border: '1px solid var(--color-border)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 1.5rem auto',
+            color: 'var(--color-fg-muted)',
+          }}
+        >
+          <Lock size={22} />
+        </div>
+        <h2 style={{ fontSize: '1.4rem', marginBottom: '0.75rem' }}>Sign In to Track Applications</h2>
+        <p style={{ color: 'var(--color-fg-muted)', fontSize: '0.875rem', marginBottom: '1.75rem', lineHeight: 1.6 }}>
+          Save jobs across multiple boards and organize your hiring pipeline in one place.
+        </p>
+        <button onClick={openLogin} className="btn btn-primary" style={{ width: '100%' }}>
+          <span>Sign In / Create Account</span>
+          <ArrowRight size={15} />
+        </button>
       </div>
     );
   }
 
   const grouped = STATUSES.reduce<Record<string, JobApplication[]>>((acc, s) => {
-    acc[s.key] = applications.filter(a => a.status === s.key);
+    acc[s.key] = applications.filter((a) => a.status === s.key);
     return acc;
   }, {} as Record<string, JobApplication[]>);
 
   return (
-    <div>
-      <div style={{ marginBottom: '3rem' }}>
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(2rem, 5vw, 3rem)', fontWeight: 800, letterSpacing: '-0.03em', marginBottom: '0.75rem' }}>
-          APPLICATION<span style={{ color: 'var(--color-accent)' }}>_</span>TRACKER
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+      <div>
+        <div className="badge badge-accent" style={{ marginBottom: '0.75rem' }}>
+          <Briefcase size={13} />
+          <span>HIRING PIPELINE</span>
+        </div>
+        <h1 style={{ fontSize: '2.25rem', marginBottom: '0.4rem' }}>
+          Application Tracking
         </h1>
-        <p style={{ color: 'var(--color-fg-muted)', fontSize: '1.1rem' }}>
-          {applications.length} application{applications.length !== 1 ? 's' : ''} tracked.
+        <p style={{ color: 'var(--color-fg-muted)', fontSize: '1rem', maxWidth: '65ch' }}>
+          {applications.length} saved and tracked application{applications.length !== 1 ? 's' : ''} across all stages.
         </p>
       </div>
 
       {error && (
-        <div style={{ padding: '1rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#fca5a5', marginBottom: '2rem' }}>{error}</div>
+        <div className="auth-error">
+          <span>{error}</span>
+        </div>
       )}
 
       {loading && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', color: 'var(--color-fg-muted)', fontFamily: 'var(--font-display)' }}>
-          <Loader2 size={24} className="animate-spin text-accent" /> LOADING...
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', color: 'var(--color-fg-muted)', padding: '2rem 0' }}>
+          <Loader2 size={20} className="status-dot-pulse" />
+          <span>Loading Application Pipeline...</span>
         </div>
       )}
 
       {!loading && applications.length === 0 && !error && (
         <div className="panel" style={{ textAlign: 'center', padding: '4rem 2rem' }}>
-          <Briefcase size={48} color="var(--color-fg-muted)" style={{ margin: '0 auto 1.5rem' }} />
-          <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.25rem', marginBottom: '1rem' }}>NO APPLICATIONS YET</h3>
-          <p style={{ color: 'var(--color-fg-muted)', marginBottom: '2rem' }}>Browse jobs and save the ones you want to track.</p>
-          <Link href="/search" className="btn btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', textDecoration: 'none' }}>
-            <Search size={16} /> Search Jobs
+          <Briefcase size={48} style={{ margin: '0 auto 1rem auto', opacity: 0.3 }} />
+          <h3 style={{ marginBottom: '0.5rem' }}>No Tracked Applications Yet</h3>
+          <p style={{ color: 'var(--color-fg-muted)', fontSize: '0.875rem', marginBottom: '1.5rem' }}>
+            Browse open opportunities and click the bookmark icon to start tracking applications.
+          </p>
+          <Link href="/search" className="btn btn-primary">
+            <Search size={15} />
+            <span>Search Live Jobs</span>
           </Link>
         </div>
       )}
 
       {!loading && applications.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '1.5rem' }} ref={dropdownRef}>
-          {STATUSES.map(({ key, label, color }) => {
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+            gap: '1.25rem',
+            alignItems: 'start',
+          }}
+          ref={dropdownRef}
+        >
+          {STATUSES.map(({ key, label, color, bg }) => {
             const col = grouped[key] || [];
             return (
-              <div key={key}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: `2px solid ${color}` }}>
-                  <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '0.85rem', letterSpacing: '0.08em', color }}>{label.toUpperCase()}</span>
-                  <span style={{ fontFamily: 'var(--font-display)', fontSize: '0.75rem', color: 'var(--color-fg-muted)', marginLeft: 'auto' }}>{col.length}</span>
+              <div
+                key={key}
+                style={{
+                  background: 'var(--color-surface)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--border-radius)',
+                  padding: '1rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.85rem',
+                }}
+              >
+                {/* Column Header */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    paddingBottom: '0.65rem',
+                    borderBottom: '1px solid var(--color-border-subtle)',
+                  }}
+                >
+                  <span style={{ fontSize: '0.8125rem', fontWeight: 700, color, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                    {label}
+                  </span>
+                  <span
+                    className="badge"
+                    style={{ fontSize: '0.6875rem', padding: '0.1rem 0.45rem', fontFamily: 'var(--font-mono)' }}
+                  >
+                    {col.length}
+                  </span>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  {col.map(app => {
-                    const statusInfo = STATUSES.find(s => s.key === app.status?.toLowerCase()) || STATUSES[0];
+
+                {/* Cards in Column */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                  {col.map((app) => {
+                    const statusInfo = STATUSES.find((s) => s.key === app.status?.toLowerCase()) || STATUSES[0];
                     return (
-                      <div key={app.id} className="panel" style={{ padding: '1rem', position: 'relative' }}>
-                        <div style={{ marginBottom: '0.4rem', fontWeight: 600, fontSize: '0.9rem', lineHeight: 1.3 }}>
-                          {app.job?.title ?? 'Unknown Job'}
+                      <div
+                        key={app.id}
+                        style={{
+                          padding: '0.85rem',
+                          background: 'var(--color-surface-elevated)',
+                          border: '1px solid var(--color-border)',
+                          borderRadius: 'var(--border-radius-sm)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.4rem',
+                        }}
+                      >
+                        <div style={{ fontWeight: 600, fontSize: '0.875rem', color: '#ffffff', lineHeight: 1.3 }}>
+                          {app.job?.title ?? 'Job Title'}
                         </div>
                         {app.job?.company_name && (
-                          <div style={{ fontSize: '0.78rem', color: 'var(--color-fg-muted)', marginBottom: '0.25rem' }}>{app.job.company_name}</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--color-fg-muted)' }}>
+                            {app.job.company_name}
+                          </div>
                         )}
                         {app.job?.location_raw && (
-                          <div style={{ fontSize: '0.72rem', color: 'var(--color-fg-muted)', marginBottom: '0.6rem' }}>{app.job.location_raw}</div>
+                          <div style={{ fontSize: '0.6875rem', color: 'var(--color-fg-subtle)' }}>
+                            {app.job.location_raw}
+                          </div>
                         )}
-                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+
+                        <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', marginTop: '0.4rem' }}>
                           <div style={{ position: 'relative', flex: 1 }}>
                             <button
                               onClick={() => setOpenDropdown(openDropdown === app.id ? null : app.id)}
-                              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.25rem', padding: '0.35rem 0.6rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--color-border)', color: statusInfo.color, cursor: 'pointer', fontFamily: 'var(--font-display)', fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.06em' }}
+                              style={{
+                                width: '100%',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: '0.25rem',
+                                padding: '0.3rem 0.5rem',
+                                background: 'var(--color-surface)',
+                                border: '1px solid var(--color-border)',
+                                borderRadius: '4px',
+                                color: statusInfo.color,
+                                cursor: 'pointer',
+                                fontSize: '0.6875rem',
+                                fontWeight: 600,
+                              }}
                             >
-                              {statusInfo.label} <ChevronDown size={12} />
+                              <span>{statusInfo.label}</span>
+                              <ChevronDown size={11} />
                             </button>
                             {openDropdown === app.id && (
-                              <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 100, background: 'var(--color-bg)', border: '1px solid var(--color-border)', minWidth: '140px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
-                                {STATUSES.map(s => (
-                                  <button key={s.key} onClick={() => updateStatus(app, s.key)}
-                                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '0.6rem 0.75rem', background: 'transparent', border: 'none', color: s.color, cursor: 'pointer', fontFamily: 'var(--font-display)', fontSize: '0.75rem', fontWeight: 600 }}
-                                  >{s.label}</button>
+                              <div
+                                style={{
+                                  position: 'absolute',
+                                  top: 'calc(100% + 4px)',
+                                  left: 0,
+                                  zIndex: 100,
+                                  background: 'var(--color-surface-elevated)',
+                                  border: '1px solid var(--color-border)',
+                                  borderRadius: 'var(--border-radius-sm)',
+                                  padding: '4px',
+                                  minWidth: '130px',
+                                  boxShadow: 'var(--shadow-lg)',
+                                }}
+                              >
+                                {STATUSES.map((s) => (
+                                  <button
+                                    key={s.key}
+                                    onClick={() => updateStatus(app, s.key)}
+                                    style={{
+                                      display: 'block',
+                                      width: '100%',
+                                      textAlign: 'left',
+                                      padding: '0.45rem 0.65rem',
+                                      background: 'transparent',
+                                      border: 'none',
+                                      color: s.color,
+                                      cursor: 'pointer',
+                                      fontSize: '0.75rem',
+                                      fontWeight: 600,
+                                      borderRadius: '4px',
+                                    }}
+                                    onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
+                                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                                  >
+                                    {s.label}
+                                  </button>
                                 ))}
                               </div>
                             )}
                           </div>
+
                           {app.job?.source_url && (
-                            <a href={app.job.source_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-fg-muted)', display: 'flex', alignItems: 'center' }}>
-                              <ExternalLink size={14} />
+                            <a
+                              href={app.job.source_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                color: 'var(--color-fg-muted)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                padding: '0.3rem',
+                              }}
+                            >
+                              <ExternalLink size={13} />
                             </a>
                           )}
-                          <button onClick={() => removeApp(app)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-fg-muted)', display: 'flex', alignItems: 'center' }}>
-                            <Trash2 size={14} />
+                          <button
+                            onClick={() => removeApp(app)}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              color: 'var(--color-fg-subtle)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              padding: '0.3rem',
+                            }}
+                            title="Remove"
+                          >
+                            <Trash2 size={13} />
                           </button>
                         </div>
                       </div>
                     );
                   })}
                   {col.length === 0 && (
-                    <div style={{ padding: '1rem', border: '1px dashed var(--color-border)', color: 'var(--color-fg-muted)', fontSize: '0.78rem', textAlign: 'center', fontFamily: 'var(--font-display)' }}>EMPTY</div>
+                    <div
+                      style={{
+                        padding: '1.25rem 0.5rem',
+                        border: '1px dashed var(--color-border-subtle)',
+                        borderRadius: 'var(--border-radius-sm)',
+                        color: 'var(--color-fg-subtle)',
+                        fontSize: '0.75rem',
+                        textAlign: 'center',
+                      }}
+                    >
+                      No items
+                    </div>
                   )}
                 </div>
               </div>

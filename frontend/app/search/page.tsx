@@ -5,7 +5,7 @@ import { api } from '@/lib/api';
 import { Job } from '@/lib/types';
 import SearchBar from '@/components/SearchBar';
 import JobCard from '@/components/JobCard';
-import { AlertCircle, CheckCircle2, Clock, Globe2, Loader2, RefreshCw, Zap } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock, Globe2, Loader2, RefreshCw, Radio } from 'lucide-react';
 
 const PAGE_SIZE = 20;
 
@@ -28,7 +28,6 @@ export default function SearchPage() {
   const [isCached, setIsCached] = useState(false);
   const [sourcesStats, setSourcesStats] = useState<Record<string, SourceStat>>({});
   const [activeSources, setActiveSources] = useState<string[]>([]);
-  const [searchMode, setSearchMode] = useState<'realtime' | 'semantic'>('realtime');
 
   // Ref to track the active EventSource or AbortController
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -160,10 +159,8 @@ export default function SearchPage() {
         if (payload.jobs && payload.jobs.length > 0) {
           setJobs((prev) => {
             const existingIds = new Set(prev.map((j) => j.id));
-            const newUnique = payload.jobs.filter((j: Job) => !existingIds.has(j.id));
-            const updated = [...prev, ...newUnique];
-            setTotalFound(updated.length);
-            return updated;
+            const newUniqueJobs = payload.jobs.filter((j: Job) => !existingIds.has(j.id));
+            return [...prev, ...newUniqueJobs];
           });
         }
       } catch (err) {
@@ -171,13 +168,20 @@ export default function SearchPage() {
       }
     });
 
-    es.addEventListener('done', (e: MessageEvent) => {
+    es.addEventListener('complete', (e: MessageEvent) => {
+      try {
+        const payload = JSON.parse(e.data);
+        if (payload.sources_stats) {
+          setSourcesStats(payload.sources_stats);
+        }
+      } catch (err) {
+        console.error('Failed to parse complete event', err);
+      }
       setLoading(false);
       es.close();
     });
 
-    es.addEventListener('error', (e: Event) => {
-      console.warn('SSE stream closed or error occurred');
+    es.addEventListener('error', () => {
       setLoading(false);
       es.close();
     });
@@ -198,73 +202,56 @@ export default function SearchPage() {
   }, [currentQuery, handleRealtimeStreamSearch]);
 
   return (
-    <div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
       {/* Header Info */}
-      <div style={{ marginBottom: '2rem' }}>
-        <h1 style={{ fontSize: '2.5rem', display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem', fontFamily: 'var(--font-display)', fontWeight: 700 }}>
-          <Zap className="text-accent" size={36} />
-          REAL-TIME TALENT RADAR
+      <div>
+        <div className="badge badge-accent" style={{ marginBottom: '0.75rem' }}>
+          <span className="status-dot status-dot-active" />
+          <span>REAL-TIME AGGREGATION</span>
+        </div>
+        <h1 style={{ fontSize: '2.25rem', marginBottom: '0.4rem' }}>
+          Real-Time Job Telemetry
         </h1>
-        <p style={{ color: 'var(--color-fg-muted)', fontSize: '1.125rem' }}>
-          Live on-demand job aggregation across top ATS portals, Indian tech boards, and worldwide remote roles.
+        <p style={{ color: 'var(--color-fg-muted)', fontSize: '1rem', maxWidth: '65ch' }}>
+          On-demand job aggregation across Greenhouse, Lever, Ashby, LinkedIn, and specialized tech boards.
         </p>
       </div>
 
       {/* Search Bar */}
-      <div style={{ marginBottom: '1.5rem' }}>
+      <div>
         <SearchBar
           onSearch={handleSearch}
           loading={loading}
-          placeholder="e.g. Python Developer, Full Stack React, DevOps Engineer"
+          placeholder="e.g. Senior Frontend Engineer, Python AI Specialist, DevOps Lead..."
         />
       </div>
 
       {/* Real-time Sources Monitor Bar */}
       {isFiltered && (
-        <div style={{
-          marginBottom: '2rem',
-          padding: '1rem 1.25rem',
-          background: 'var(--color-bg-subtle, rgba(255, 255, 255, 0.03))',
-          border: '1px solid var(--color-border, rgba(255, 255, 255, 0.1))',
-          borderRadius: '8px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '0.75rem',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-fg-muted)' }}>
-              <Globe2 size={16} className="text-accent" />
+        <div
+          className="glass-panel"
+          style={{
+            padding: '1.15rem 1.25rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.85rem',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-fg-muted)' }}>
+              <Globe2 size={15} className="text-accent" />
               <span>DATA SOURCES MONITORED:</span>
               {isCached && (
-                <span style={{
-                  background: 'rgba(34, 197, 94, 0.15)',
-                  color: '#4ade80',
-                  padding: '2px 8px',
-                  borderRadius: '4px',
-                  fontSize: '0.75rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}>
-                  <Clock size={12} /> 8H CACHE HIT
+                <span className="badge badge-emerald" style={{ fontSize: '0.6875rem' }}>
+                  <Clock size={11} /> 8H CACHE HIT
                 </span>
               )}
             </div>
             {isFiltered && !loading && (
               <button
                 onClick={handleForceRefresh}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.35rem',
-                  fontSize: '0.75rem',
-                  background: 'transparent',
-                  border: '1px solid var(--color-border)',
-                  color: 'var(--color-fg)',
-                  padding: '4px 10px',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                }}
+                className="btn btn-secondary btn-sm"
+                style={{ fontSize: '0.75rem', padding: '0.3rem 0.65rem' }}
               >
                 <RefreshCw size={12} /> Live Re-scrape
               </button>
@@ -281,30 +268,31 @@ export default function SearchPage() {
               return (
                 <div
                   key={src}
+                  className="badge"
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.4rem',
-                    padding: '4px 10px',
-                    borderRadius: '4px',
+                    padding: '0.3rem 0.65rem',
                     fontSize: '0.75rem',
                     background: isDone
-                      ? (stat.status === 'success' ? 'rgba(59, 130, 246, 0.1)' : 'rgba(239, 68, 68, 0.1)')
-                      : 'rgba(255, 255, 255, 0.05)',
-                    border: `1px solid ${isDone ? (stat.status === 'success' ? 'rgba(59, 130, 246, 0.3)' : 'rgba(239, 68, 68, 0.3)') : 'transparent'}`,
-                    color: isDone ? (stat.status === 'success' ? '#93c5fd' : '#fca5a5') : 'var(--color-fg-muted)',
+                      ? (stat.status === 'success' ? 'var(--color-info-subtle)' : 'var(--color-error-subtle)')
+                      : 'var(--color-surface)',
+                    borderColor: isDone
+                      ? (stat.status === 'success' ? 'rgba(6, 182, 212, 0.3)' : 'rgba(239, 68, 68, 0.3)')
+                      : 'var(--color-border)',
+                    color: isDone
+                      ? (stat.status === 'success' ? '#22d3ee' : '#f87171')
+                      : 'var(--color-fg-muted)',
                   }}
                 >
                   {!isDone && loading ? (
-                    <Loader2 size={12} className="animate-spin text-accent" />
+                    <Loader2 size={11} className="status-dot-pulse" />
                   ) : isDone && stat.status === 'success' ? (
-                    <CheckCircle2 size={12} style={{ color: '#4ade80' }} />
+                    <CheckCircle2 size={12} style={{ color: '#10b981' }} />
                   ) : (
                     <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} />
                   )}
                   <span>{label}</span>
                   {stat && (
-                    <span style={{ opacity: 0.75, fontSize: '0.7rem' }}>
+                    <span style={{ opacity: 0.8, fontSize: '0.6875rem', fontFamily: 'var(--font-mono)' }}>
                       ({stat.count} jobs · {stat.latency_ms}ms)
                     </span>
                   )}
@@ -317,45 +305,90 @@ export default function SearchPage() {
 
       {/* Error */}
       {error && (
-        <div style={{ padding: '1rem', border: '1px solid #ef4444', background: 'rgba(239, 68, 68, 0.1)', color: '#fca5a5', display: 'flex', gap: '0.5rem', marginBottom: '2rem' }}>
-          <AlertCircle /> {error}
+        <div className="auth-error" style={{ marginBottom: 0 }}>
+          <AlertCircle size={16} />
+          <span>{error}</span>
         </div>
       )}
 
       {/* Results Count */}
-      {!loading && totalFound > 0 && (
-        <div style={{ marginBottom: '1.5rem', color: 'var(--color-fg-muted)', fontFamily: 'var(--font-display)', fontWeight: 600 }}>
-          {isFiltered
-            ? <>{jobs.length} REAL-TIME MATCH{jobs.length !== 1 ? 'ES' : ''} FOR &ldquo;<span style={{ color: 'var(--color-accent)' }}>{currentQuery}</span>&rdquo;</>
-            : <>SHOWING <span style={{ color: 'var(--color-fg)' }}>{jobs.length}</span> OF <span style={{ color: 'var(--color-fg)' }}>{totalFound}</span> JOBS</>}
+      {!loading && (
+        <div style={{ fontSize: '0.875rem', color: 'var(--color-fg-muted)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          {isFiltered ? (
+            <span>
+              Found <strong style={{ color: 'var(--color-fg)' }}>{jobs.length}</strong> live opening{jobs.length !== 1 ? 's' : ''} for <span className="text-accent">&ldquo;{currentQuery}&rdquo;</span>
+            </span>
+          ) : (
+            <span>
+              Showing <strong style={{ color: 'var(--color-fg)' }}>{jobs.length}</strong> of {totalFound} total indexed openings
+            </span>
+          )}
         </div>
       )}
 
       {/* Loading Indicator */}
       {loading && jobs.length === 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '4rem 0', color: 'var(--color-fg-muted)' }}>
-          <Loader2 size={48} className="animate-spin text-accent" style={{ marginBottom: '1rem' }} />
-          <div style={{ fontFamily: 'var(--font-display)', letterSpacing: '0.1em' }}>AGGREGATING LIVE JOB POSTINGS...</div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '5rem 0', color: 'var(--color-fg-muted)' }}>
+          <div
+            style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '50%',
+              border: '3px solid var(--color-border)',
+              borderTopColor: 'var(--color-accent)',
+              animation: 'spin 1s linear infinite',
+              marginBottom: '1rem',
+            }}
+          />
+          <div style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--color-fg)' }}>
+            Streaming live job postings...
+          </div>
         </div>
       )}
 
       {/* Job List */}
       {jobs.length > 0 && (
-        <div style={{ display: 'grid', gap: '1.5rem' }}>
+        <div style={{ display: 'grid', gap: '1.25rem' }}>
           {jobs.map((job) => (
             <JobCard key={job.id} job={job} showScore={false} />
           ))}
         </div>
       )}
 
-      {/* Empty State */}
-      {!loading && jobs.length === 0 && !error && isFiltered && (
-        <div style={{ textAlign: 'center', padding: '4rem 0', color: 'var(--color-border)' }}>
-          <Zap size={64} style={{ margin: '0 auto 1rem auto', opacity: 0.5 }} />
-          <p style={{ fontFamily: 'var(--font-display)', letterSpacing: '0.1em' }}>NO ACTIVE OPENINGS FOUND ACROSS TARGET BOARDS</p>
+      {/* Load More for structured search */}
+      {!isFiltered && hasMore && !loading && (
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1rem' }}>
+          <button
+            onClick={() => loadAllJobs(true)}
+            disabled={loadingMore}
+            className="btn btn-secondary btn-lg"
+          >
+            {loadingMore ? (
+              <>
+                <Loader2 size={16} className="status-dot-pulse" />
+                <span>Loading More Openings...</span>
+              </>
+            ) : (
+              <span>Load More Jobs</span>
+            )}
+          </button>
         </div>
       )}
+
+      {/* Empty State */}
+      {!loading && jobs.length === 0 && !error && isFiltered && (
+        <div className="panel" style={{ textAlign: 'center', padding: '4rem 1rem', color: 'var(--color-fg-subtle)' }}>
+          <Radio size={48} style={{ margin: '0 auto 1rem auto', opacity: 0.3 }} />
+          <h3 style={{ color: 'var(--color-fg)', marginBottom: '0.5rem' }}>No openings found</h3>
+          <p style={{ fontSize: '0.875rem' }}>Try searching with a broader title, different keyword, or re-scrape.</p>
+        </div>
+      )}
+
+      <style jsx>{`
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 }
-

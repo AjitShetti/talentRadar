@@ -1,19 +1,13 @@
 'use client';
 
-// frontend/app/interview/InterviewCatalog.tsx
-// ─────────────────────────────────────────────────────────────────
-// Interactive track + difficulty selection page.
-// Uses the existing design system: dark bg, Safety Orange accent,
-// glassmorphism panels, Space Grotesk headers, sharp corners.
-// ─────────────────────────────────────────────────────────────────
-
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { Code2, Server, Database, Network, Mic, ArrowRight, Lock, ChevronRight, type LucideIcon } from 'lucide-react';
+import { Code2, Server, Database, Network, Mic, ArrowRight, Lock, ChevronRight, type LucideIcon, Sparkles } from 'lucide-react';
 import { TRACKS, DIFFICULTIES } from '@/lib/interview-catalog';
 import type { InterviewTrack, InterviewDifficulty } from '@/lib/interview-types';
 import { interviewApi } from '@/lib/interview-api';
+import { useAuthModal } from '@/components/AuthModalProvider';
 
 const ICON_MAP: Record<string, LucideIcon> = {
   Code2, Server, Database, Network,
@@ -22,6 +16,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
 export default function InterviewCatalog() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const { openLogin } = useAuthModal();
   const [isPending, startTransition] = useTransition();
 
   const [selectedTrack, setSelectedTrack] = useState<InterviewTrack | null>(null);
@@ -41,55 +36,36 @@ export default function InterviewCatalog() {
           { track: selectedTrack!, difficulty: selectedDifficulty! },
           session.accessToken as string
         );
-        // Store the initial agent state in sessionStorage for the session page
         sessionStorage.setItem(`interview:${res.session_id}`, JSON.stringify(res.agent_state));
         router.push(`/interview/${res.session_id}`);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to start session.');
+        setError(err instanceof Error ? err.message : 'Failed to start interview session.');
       }
     });
   }
 
   return (
-    <div style={{ maxWidth: '900px', margin: '0 auto', padding: '2rem 0' }}>
+    <div style={{ maxWidth: '860px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
       {/* Header */}
-      <div style={{ marginBottom: '3rem' }}>
-        <div style={{
-          display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
-          padding: '0.4rem 1rem',
-          background: 'rgba(255,69,0,0.08)',
-          border: '1px solid rgba(255,69,0,0.25)',
-          fontFamily: 'var(--font-display)',
-          fontSize: '0.75rem', letterSpacing: '0.1em', textTransform: 'uppercase',
-          color: 'var(--color-accent)', marginBottom: '1.5rem'
-        }}>
-          <Mic size={12} />
-          AI Voice Interviewer
+      <div>
+        <div className="badge badge-accent" style={{ marginBottom: '0.75rem' }}>
+          <Mic size={13} />
+          <span>AI VOICE INTERVIEWER</span>
         </div>
-        <h1 style={{
-          fontFamily: 'var(--font-display)', fontSize: 'clamp(2rem, 5vw, 3rem)',
-          fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.1,
-          marginBottom: '1rem'
-        }}>
-          MOCK_INTERVIEWS<span style={{ color: 'var(--color-accent)' }}>.</span>
+        <h1 style={{ fontSize: '2.25rem', marginBottom: '0.4rem' }}>
+          Technical & Behavioral Mock Interviews
         </h1>
-        <p style={{ color: 'var(--color-fg-muted)', fontSize: '1.05rem', maxWidth: '520px' }}>
-          Practice with a real-time AI voice interviewer. Get scored on correctness, clarity, and depth after every answer.
+        <p style={{ color: 'var(--color-fg-muted)', fontSize: '1rem', maxWidth: '65ch' }}>
+          Practice with an adaptive AI voice coach. Receive instant rubric grading on correctness, system architecture, and communication clarity.
         </p>
       </div>
 
       {/* Step 1: Track Selection */}
-      <section style={{ marginBottom: '2.5rem' }}>
-        <h2 style={{
-          fontFamily: 'var(--font-display)', fontSize: '0.8rem',
-          letterSpacing: '0.12em', textTransform: 'uppercase',
-          color: 'var(--color-fg-muted)', marginBottom: '1rem'
-        }}>
-          01 / Choose a track
-        </h2>
-        <div style={{
-          display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem'
-        }}>
+      <section>
+        <div style={{ fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-fg-subtle)', marginBottom: '0.85rem' }}>
+          01 / Choose Track
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem' }}>
           {TRACKS.map((track) => {
             const Icon = ICON_MAP[track.icon] ?? Code2;
             const isSelected = selectedTrack === track.id;
@@ -97,32 +73,40 @@ export default function InterviewCatalog() {
               <button
                 key={track.id}
                 onClick={() => setSelectedTrack(track.id)}
+                className="panel panel-interactive"
                 style={{
-                  textAlign: 'left', padding: '1.5rem',
-                  background: isSelected ? 'rgba(255,69,0,0.08)' : 'var(--color-card-bg)',
-                  border: `1px solid ${isSelected ? 'var(--color-accent)' : 'var(--color-border)'}`,
-                  cursor: 'pointer', transition: 'all 150ms ease',
-                  position: 'relative', display: 'block', width: '100%',
-                  color: 'var(--color-fg)',
+                  textAlign: 'left',
+                  padding: '1.25rem',
+                  background: isSelected ? 'var(--color-accent-subtle)' : 'var(--color-surface)',
+                  borderColor: isSelected ? 'var(--color-accent)' : 'var(--color-border)',
+                  boxShadow: isSelected ? '0 0 16px var(--color-accent-glow)' : 'none',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.4rem',
+                  alignItems: 'flex-start',
                 }}
               >
-                <Icon size={22} color={isSelected ? '#FF4500' : 'var(--color-fg-muted)'} />
-                <div style={{
-                  fontFamily: 'var(--font-display)', fontWeight: 700, marginTop: '0.75rem',
-                  marginBottom: '0.4rem', fontSize: '0.95rem'
-                }}>
+                <div
+                  style={{
+                    width: '36px',
+                    height: '36px',
+                    borderRadius: 'var(--border-radius-sm)',
+                    background: isSelected ? 'var(--color-accent)' : 'var(--color-surface-elevated)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: isSelected ? '#ffffff' : 'var(--color-fg)',
+                    marginBottom: '0.4rem',
+                  }}
+                >
+                  <Icon size={18} />
+                </div>
+                <div style={{ fontWeight: 700, fontSize: '0.9375rem', color: '#ffffff' }}>
                   {track.label}
                 </div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--color-fg-muted)', lineHeight: 1.5 }}>
+                <div style={{ fontSize: '0.8125rem', color: 'var(--color-fg-muted)', lineHeight: 1.5 }}>
                   {track.description}
                 </div>
-                {isSelected && (
-                  <div style={{
-                    position: 'absolute', top: '0.75rem', right: '0.75rem',
-                    width: '8px', height: '8px', borderRadius: '50%',
-                    background: 'var(--color-accent)'
-                  }} />
-                )}
               </button>
             );
           })}
@@ -130,20 +114,26 @@ export default function InterviewCatalog() {
 
         {/* Topics preview */}
         {selectedTrack && (
-          <div style={{
-            marginTop: '1rem', padding: '1rem 1.25rem',
-            background: 'rgba(255,255,255,0.03)', border: '1px solid var(--color-border)',
-            display: 'flex', gap: '0.5rem', flexWrap: 'wrap' as const, alignItems: 'center'
-          }}>
-            <span style={{ fontSize: '0.75rem', color: 'var(--color-fg-muted)', marginRight: '0.25rem', fontFamily: 'var(--font-display)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Topics:
+          <div
+            className="glass-panel"
+            style={{
+              marginTop: '1rem',
+              padding: '0.85rem 1.15rem',
+              display: 'flex',
+              gap: '0.5rem',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+            }}
+          >
+            <span style={{ fontSize: '0.75rem', color: 'var(--color-fg-subtle)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+              Included Topics:
             </span>
-            {TRACKS.find(t => t.id === selectedTrack)?.topics.map(topic => (
-              <span key={topic} style={{
-                fontSize: '0.75rem', padding: '0.2rem 0.6rem',
-                background: 'rgba(255,69,0,0.1)', border: '1px solid rgba(255,69,0,0.2)',
-                color: 'var(--color-accent)', fontFamily: 'var(--font-display)'
-              }}>
+            {TRACKS.find((t) => t.id === selectedTrack)?.topics.map((topic) => (
+              <span
+                key={topic}
+                className="badge badge-accent"
+                style={{ fontSize: '0.75rem', fontFamily: 'var(--font-mono)' }}
+              >
                 {topic}
               </span>
             ))}
@@ -152,38 +142,23 @@ export default function InterviewCatalog() {
       </section>
 
       {/* Step 2: Difficulty */}
-      <section style={{ marginBottom: '2.5rem' }}>
-        <h2 style={{
-          fontFamily: 'var(--font-display)', fontSize: '0.8rem',
-          letterSpacing: '0.12em', textTransform: 'uppercase',
-          color: 'var(--color-fg-muted)', marginBottom: '1rem'
-        }}>
-          02 / Select difficulty
-        </h2>
-        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' as const }}>
+      <section>
+        <div style={{ fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-fg-subtle)', marginBottom: '0.85rem' }}>
+          02 / Select Difficulty
+        </div>
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
           {DIFFICULTIES.map((diff) => {
             const isSelected = selectedDifficulty === diff.id;
             return (
               <button
                 key={diff.id}
                 onClick={() => setSelectedDifficulty(diff.id)}
-                style={{
-                  padding: '0.875rem 2rem',
-                  background: isSelected ? 'var(--color-accent)' : 'transparent',
-                  border: `1px solid ${isSelected ? 'var(--color-accent)' : 'var(--color-border)'}`,
-                  color: isSelected ? '#fff' : 'var(--color-fg-muted)',
-                  cursor: 'pointer', transition: 'all 150ms ease',
-                  fontFamily: 'var(--font-display)', fontWeight: 600,
-                  fontSize: '0.9rem', letterSpacing: '0.05em', textTransform: 'uppercase' as const,
-                  display: 'flex', alignItems: 'center', gap: '0.5rem'
-                }}
+                className={`btn ${isSelected ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ padding: '0.75rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.65rem' }}
               >
-                {diff.label}
-                <span style={{
-                  fontSize: '0.7rem', opacity: 0.7,
-                  fontWeight: 400, textTransform: 'none' as const, letterSpacing: 0
-                }}>
-                  {diff.questions} qs
+                <span>{diff.label}</span>
+                <span style={{ fontSize: '0.75rem', opacity: 0.8, fontFamily: 'var(--font-mono)' }}>
+                  ({diff.questions} qs)
                 </span>
               </button>
             );
@@ -191,66 +166,56 @@ export default function InterviewCatalog() {
         </div>
       </section>
 
-      {/* Divider */}
-      <div style={{ height: '1px', background: 'var(--color-border)', marginBottom: '2rem' }} />
-
-      {/* Auth gate + Start button */}
+      {/* Auth gate or Launch button */}
       {!isAuthenticated ? (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: '1rem',
-          padding: '1.25rem 1.5rem',
-          background: 'rgba(255,255,255,0.03)', border: '1px solid var(--color-border)',
-        }}>
-          <Lock size={18} color="var(--color-fg-muted)" />
-          <span style={{ color: 'var(--color-fg-muted)', fontSize: '0.9rem' }}>
-            Sign in to start a mock interview session.
-          </span>
-          <a href="/login" style={{
-            marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
-            color: 'var(--color-accent)', fontFamily: 'var(--font-display)',
-            fontWeight: 600, fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em'
-          }}>
-            Sign In <ChevronRight size={14} />
-          </a>
+        <div
+          className="panel"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem',
+            padding: '1.25rem 1.5rem',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <Lock size={18} style={{ color: 'var(--color-fg-muted)' }} />
+            <span style={{ color: 'var(--color-fg-muted)', fontSize: '0.875rem' }}>
+              Sign in to initiate interactive mock interview sessions.
+            </span>
+          </div>
+          <button onClick={openLogin} className="btn btn-primary btn-sm">
+            <span>Sign In</span>
+            <ChevronRight size={14} />
+          </button>
         </div>
       ) : (
         <div>
           {error && (
-            <div style={{
-              marginBottom: '1rem', padding: '0.875rem 1.25rem',
-              background: 'rgba(255,69,0,0.08)', border: '1px solid rgba(255,69,0,0.3)',
-              color: 'var(--color-accent)', fontSize: '0.9rem'
-            }}>
-              {error}
+            <div className="auth-error" style={{ marginBottom: '1rem' }}>
+              <span>{error}</span>
             </div>
           )}
           <button
             onClick={handleStart}
             disabled={!canStart}
-            className="btn-primary"
-            style={{
-              opacity: canStart ? 1 : 0.4,
-              cursor: canStart ? 'pointer' : 'not-allowed',
-              fontSize: '0.95rem', padding: '1rem 2.5rem',
-              display: 'inline-flex', alignItems: 'center', gap: '0.75rem'
-            }}
+            className="btn btn-primary btn-lg"
+            style={{ width: '100%', maxWidth: '340px' }}
           >
             {isPending ? (
-              <>Preparing interview...</>
+              <>Preparing Session...</>
             ) : (
               <>
                 <Mic size={18} />
-                Start Interview
+                <span>Launch Interview Simulation</span>
                 <ArrowRight size={16} />
               </>
             )}
           </button>
-          <p style={{
-            marginTop: '0.75rem', fontSize: '0.8rem', color: 'var(--color-fg-muted)'
-          }}>
+          <p style={{ marginTop: '0.65rem', fontSize: '0.8125rem', color: 'var(--color-fg-subtle)' }}>
             {selectedTrack && selectedDifficulty
-              ? `${DIFFICULTIES.find(d => d.id === selectedDifficulty)?.questions} questions · voice + text replies`
-              : 'Select a track and difficulty to continue.'}
+              ? `${DIFFICULTIES.find((d) => d.id === selectedDifficulty)?.questions} questions with live voice transcription`
+              : 'Choose your desired track and difficulty level to begin.'}
           </p>
         </div>
       )}
