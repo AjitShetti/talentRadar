@@ -30,25 +30,25 @@ async def trigger_ingestion(
     uow: Any = Depends(get_unit_of_work),
 ):
     """
-    Trigger the ingestion pipeline via Celery background tasks.
-
-    This starts the fetch -> parse -> save -> embed pipeline
-    with the specified roles and locations.
+    Trigger real-time multi-source job ingestion across ATS platforms and job boards.
     """
     try:
-        from ingestion.tasks import run_all_sources
+        from ingestion.engine import RealtimeScraperEngine
 
-        task = run_all_sources.delay(
-            roles=request.roles,
-            locations=request.locations,
-            max_results_per_query=request.max_results_per_query,
+        # Run real-time scraper fan-out across requested roles & locations
+        roles_str = " ".join(request.roles)
+        loc_str = request.locations[0] if request.locations else "India"
+        results = await RealtimeScraperEngine.search_all(
+            query=roles_str,
+            location=loc_str,
+            force_refresh=True,
         )
 
         return IngestResponseSchema(
             success=True,
-            message="Ingestion pipeline triggered successfully",
-            dag_run_id=task.id,
-            estimated_time="Background task running",
+            message=f"Live ingestion completed: discovered {results.get('total', 0)} jobs across active boards.",
+            dag_run_id="realtime-scrape-run",
+            estimated_time=f"Completed in {results.get('total_latency_ms', 0)}ms",
         )
 
     except Exception as exc:

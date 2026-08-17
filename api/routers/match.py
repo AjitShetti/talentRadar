@@ -37,19 +37,23 @@ from api.schemas.ai_core_schemas import (
     EvaluateCandidateResponse,
     TailorResumeRequest,
 )
-from celery.result import AsyncResult
 from sse_starlette.sse import EventSourceResponse
 from fastapi.responses import StreamingResponse
 from fastapi.concurrency import run_in_threadpool
 from fastapi import Depends
 from functools import lru_cache
-from agents.tasks import evaluate_candidate_task
 from agents.resume_tailor import ResumeTailor
 from api.utils.latex_compiler import compile_latex_to_pdf
 from api.utils.file_parser import extract_text_from_bytes
 import base64
+import uuid
+import asyncio
 from ml.config import PipelineConfig, ScoringWeights
 from ml.resume_matcher import ResumeMatcher
+from services.resumes import analyze_resume
+
+# In-memory storage for active evaluation async tasks
+_EVALUATION_TASKS: dict[str, dict[str, Any]] = {}
 
 logger = logging.getLogger(__name__)
 
@@ -266,43 +270,49 @@ async def get_weights(matcher: ResumeMatcher = Depends(get_matcher)):
 @router.post("/evaluate", response_model=EvaluateCandidateResponse)
 async def evaluate_candidate(request: EvaluateCandidateRequest):
     """
-    Dispatch an async Celery task to evaluate a candidate's resume using the LLM-as-a-judge.
-    Returns a task ID that can be tracked via the SSE endpoint.
+    Dispatch an async evaluation task for a candidate's resume using LLM-as-a-judge.
+    Returns a task ID that can be tracked via the SSE stream endpoint.
     """
-    try:
-        task = evaluate_candidate_task.delay(request.resume_text, request.job_description)
-        return EvaluateCandidateResponse(task_id=task.id)
-    except Exception as e:
-        logger.error("Evaluate request failed", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Evaluation dispatch failed: {e}") from e
+    task_id = str(uuid.uuid4())
+    _EVALUATION_TASKS[task_id] = {"status": "processing", "result": None, "error": None}
+
+    async def _run_eval():
+        try:
+            res = await analyze_resume(request.resume_text, request.job_description)
+            _EVALUATION_TASKS[task_id] = {"status": "success", "result": res, "error": None}
+        except Exception as err:
+            logger.error("Evaluation failed: %s", err, exc_info=True)
+            _EVALUATION_TASKS[task_id] = {"status": "error", "result": None, "error": str(err)}
+
+    asyncio.create_task(_run_eval())
+    return EvaluateCandidateResponse(task_id=task_id)
+
 
 @router.get("/evaluate/stream/{task_id}")
 async def evaluate_stream(task_id: str):
     """
-    Stream Celery task status updates via Server-Sent Events (SSE).
+    Stream evaluation task status updates via Server-Sent Events (SSE).
     """
-    import asyncio
     async def event_generator():
-        while True:
-            task = AsyncResult(task_id)
-            if task.ready():
-                if task.successful():
-                    yield {
-                        "event": "success",
-                        "data": json.dumps(task.result)
-                    }
-                else:
-                    yield {
-                        "event": "error",
-                        "data": str(task.result)
-                    }
+        for _ in range(60):  # 60s max wait
+            task_info = _EVALUATION_TASKS.get(task_id)
+            if not task_info:
+                yield {"event": "error", "data": "Task not found"}
+                break
+
+            status = task_info.get("status")
+            if status == "success":
+                yield {"event": "success", "data": json.dumps(task_info["result"])}
+                _EVALUATION_TASKS.pop(task_id, None)
+                break
+            elif status == "error":
+                yield {"event": "error", "data": str(task_info.get("error", "Unknown error"))}
+                _EVALUATION_TASKS.pop(task_id, None)
                 break
             else:
-                yield {
-                    "event": "processing",
-                    "data": task.status
-                }
-            await asyncio.sleep(1)
+                yield {"event": "processing", "data": "processing"}
+
+            await asyncio.sleep(0.5)
 
     return EventSourceResponse(event_generator())
 

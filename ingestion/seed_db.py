@@ -23,12 +23,25 @@ from config.settings import get_settings
 from ingestion.embeddings.chroma_store import ChromaJobStore
 from ingestion.parsers.schemas import ParsedJobDescription, RawJobResult
 from ingestion.scrapers.tavily_client import detect_source_from_url
-from ingestion.tasks import _company_domain, _stable_id
 from ingestion.validation import is_valid_job_url, validate_job_url
 from storage.database import AsyncSessionLocal, Base, engine
 from storage.models import IngestionStatus, Job
 from storage.repository import UnitOfWork
 from sqlalchemy import func, select
+
+
+def _company_domain(company_name: str, url: str | None) -> str:
+    if url:
+        parsed = urlparse(url)
+        host = parsed.netloc.lower().removeprefix("www.")
+        if host:
+            return host
+    clean_name = re.sub(r"[^a-zA-Z0-9]+", "", company_name).lower()
+    return f"{clean_name}.com"
+
+
+def _stable_id(source_url: str) -> str:
+    return hashlib.sha256(source_url.strip().encode("utf-8")).hexdigest()[:32]
 
 logging.basicConfig(
     level=logging.INFO,

@@ -11,10 +11,12 @@ Provides:
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
+from sse_starlette.sse import EventSourceResponse
 
 from agents.orchestrator import Orchestrator
 from api.dependencies import get_unit_of_work, get_job_repository
@@ -26,11 +28,71 @@ from api.schemas.job_schemas import (
     SearchRequestSchema,
     SearchResponseSchema,
 )
+from ingestion.engine import RealtimeScraperEngine
 from storage.repository import JobRepository
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/search", tags=["Search"])
+
+
+@router.get("/stream")
+async def stream_job_search(
+    request: Request,
+    query: str = Query(..., min_length=1, description="Role or skill keywords, e.g. 'Python Developer'"),
+    location: str | None = Query("India", description="Target city or country, e.g. 'Bengaluru', 'India'"),
+    is_remote: bool | None = Query(None, description="Filter for remote-only positions"),
+    force_refresh: bool = Query(False, description="Bypass cache and force live scraping"),
+):
+    """
+    Real-time multi-source job search streaming endpoint (Server-Sent Events).
+
+    Fans out concurrent scrapers across ATS systems (Greenhouse, Ashby, Lever),
+    Indian job portals (Foundit, Freshersworld, LinkedIn Guest), and stealth boards (Naukri, Indeed).
+    Progressively emits discovered jobs with per-source latency statistics.
+    """
+    async def event_generator():
+        try:
+            async for event_item in RealtimeScraperEngine.stream_search(
+                query=query,
+                location=location,
+                is_remote=is_remote,
+                force_refresh=force_refresh,
+            ):
+                if await request.is_disconnected():
+                    logger.info("Client disconnected from search SSE stream.")
+                    break
+                yield {
+                    "event": event_item.get("event", "message"),
+                    "data": json.dumps(event_item.get("data", {}), default=str),
+                }
+        except Exception as exc:
+            logger.error(f"Error during search SSE stream: {exc}")
+            yield {
+                "event": "error",
+                "data": json.dumps({"error": str(exc)}),
+            }
+
+    return EventSourceResponse(event_generator())
+
+
+@router.get("/live", response_model=dict[str, Any])
+async def search_jobs_live(
+    query: str = Query(..., min_length=1, description="Role or skill keywords"),
+    location: str | None = Query("India", description="Target city or country"),
+    is_remote: bool | None = Query(None, description="Filter for remote-only positions"),
+    force_refresh: bool = Query(False, description="Bypass cache and force live scraping"),
+):
+    """
+    Non-streaming aggregated live search endpoint across all scrapers with 8h query caching.
+    """
+    results = await RealtimeScraperEngine.search_all(
+        query=query,
+        location=location,
+        is_remote=is_remote,
+        force_refresh=force_refresh,
+    )
+    return results
 
 
 @router.post("/structured", response_model=JobListResponseSchema)
