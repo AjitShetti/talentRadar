@@ -284,7 +284,7 @@ class IndianBoardsScraper:
                 title=title,
                 status=JobStatus.ACTIVE,
                 employment_type=EmploymentType.FULL_TIME,
-                seniority=SeniorityLevel.ENTRY,
+                seniority=SeniorityLevel.JUNIOR,
                 location_raw=loc_text,
                 country=country,
                 city=city,

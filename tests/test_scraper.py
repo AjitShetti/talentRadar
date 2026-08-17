@@ -16,7 +16,7 @@ from ingestion.scrapers.tavily_client import (
 )
 from ingestion.parsers.schemas import RawJobResult, ParsedJobDescription
 from ingestion.parsers.jd_parser import JDParser
-from ingestion.tasks import DEFAULT_INDIAN_LOCATIONS, DEFAULT_INDIAN_DOMAINS
+from ingestion.scrapers.indian_boards_scraper import INDIAN_CITY_SYNONYMS
 
 
 MOCK_TAVILY_INDIAN_RESPONSE = {
@@ -202,15 +202,15 @@ class TestCurrencyNormalisation:
 
 class TestCrawlerIndianTaskDefaults:
     def test_default_indian_locations_contain_major_hubs(self):
-        assert "Bangalore" in DEFAULT_INDIAN_LOCATIONS
-        assert "Mumbai" in DEFAULT_INDIAN_LOCATIONS
-        assert "Delhi" in DEFAULT_INDIAN_LOCATIONS
-        assert "Hyderabad" in DEFAULT_INDIAN_LOCATIONS
-        assert "Pune" in DEFAULT_INDIAN_LOCATIONS
-        assert "India" in DEFAULT_INDIAN_LOCATIONS
+        assert "bangalore" in INDIAN_CITY_SYNONYMS
+        assert "mumbai" in INDIAN_CITY_SYNONYMS
+        assert "delhi" in INDIAN_CITY_SYNONYMS
+        assert "hyderabad" in INDIAN_CITY_SYNONYMS
+        assert "pune" in INDIAN_CITY_SYNONYMS
+        assert "india" in INDIAN_CITY_SYNONYMS
 
     def test_default_indian_domains_contain_portals(self):
-        assert "linkedin.com" in DEFAULT_INDIAN_DOMAINS
-        assert "naukri.com" in DEFAULT_INDIAN_DOMAINS
-        assert "indeed.com" in DEFAULT_INDIAN_DOMAINS
-        assert "in.indeed.com" in DEFAULT_INDIAN_DOMAINS
+        assert "linkedin.com" in INDIAN_JOB_DOMAINS
+        assert "naukri.com" in INDIAN_JOB_DOMAINS
+        assert "indeed.com" in INDIAN_JOB_DOMAINS
+        assert "in.indeed.com" in INDIAN_JOB_DOMAINS

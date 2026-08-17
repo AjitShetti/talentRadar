@@ -142,6 +142,75 @@ async def test_linkedin_guest_scraper_mock():
         assert jobs[0].extra_metadata["company_name"] == "TechCorp India"
 
 
+# ── Stealth Boards Scraper Mock Tests ─────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_indeed_india_scraper_mock():
+    mock_html = """
+    <div class="job_seen_beacon">
+        <h2 class="jobTitle"><a class="jcs-JobTitle" href="/rc/clk?jk=123">Senior Fullstack Engineer</a></h2>
+        <span data-testid="company-name">Infosys</span>
+        <div data-testid="text-location">Bengaluru, Karnataka</div>
+        <div class="job-snippet">Hands-on Python and React developer</div>
+    </div>
+    """
+    with patch.object(ScraplingManager, "fetch_html_or_json", new_callable=AsyncMock) as mock_fetch:
+        mock_fetch.return_value = (200, mock_html)
+        jobs = await StealthBoardsScraper.search_indeed_india("Fullstack", "Bengaluru", None)
+
+        assert len(jobs) == 1
+        assert jobs[0].title == "Senior Fullstack Engineer"
+        assert jobs[0].city == "Bengaluru"
+        assert jobs[0].source == "indeed_india"
+        assert jobs[0].extra_metadata["company_name"] == "Infosys"
+
+
+@pytest.mark.asyncio
+async def test_naukri_scraper_mock():
+    mock_html = """
+    <div class="srp-jobtuple-wrapper">
+        <a class="title" href="https://www.naukri.com/job-listings-python-dev-123">Lead Python Architect</a>
+        <a class="comp-name">Tata Consultancy Services</a>
+        <span class="locWdth">Hyderabad</span>
+        <span class="expwdth">5-10 Yrs</span>
+        <ul class="tags-gt"><li>Python</li><li>FastAPI</li></ul>
+    </div>
+    """
+    with patch.object(ScraplingManager, "fetch_stealth", new_callable=AsyncMock) as mock_stealth:
+        mock_stealth.return_value = (200, mock_html)
+        jobs = await StealthBoardsScraper.search_naukri("Python", "Hyderabad", None)
+
+        assert len(jobs) == 1
+        assert jobs[0].title == "Lead Python Architect"
+        assert jobs[0].city == "Hyderabad"
+        assert jobs[0].source == "naukri"
+        assert jobs[0].extra_metadata["company_name"] == "Tata Consultancy Services"
+
+
+@pytest.mark.asyncio
+async def test_instahyre_scraper_mock():
+    mock_json = {
+        "objects": [
+            {
+                "id": 999,
+                "title": "Staff Backend Engineer",
+                "employer": {"company_name": "Razorpay"},
+                "locations": ["Bangalore"],
+                "description": "Scale high-throughput payment systems",
+            }
+        ]
+    }
+    with patch.object(ScraplingManager, "fetch_html_or_json", new_callable=AsyncMock) as mock_fetch:
+        mock_fetch.return_value = (200, mock_json)
+        jobs = await StealthBoardsScraper.search_instahyre("Backend", "Bengaluru", None)
+
+        assert len(jobs) == 1
+        assert jobs[0].title == "Staff Backend Engineer"
+        assert jobs[0].city == "Bengaluru"
+        assert jobs[0].source == "instahyre"
+        assert jobs[0].extra_metadata["company_name"] == "Razorpay"
+
+
 # ── Deduplication & Engine Streaming Tests ───────────────────────────────────
 
 def test_compute_job_dedup_hash():
@@ -177,6 +246,7 @@ async def test_realtime_scraper_engine_stream():
          patch.object(IndianBoardsScraper, "search_linkedin_guest", new_callable=AsyncMock) as mock_li, \
          patch.object(IndianBoardsScraper, "search_foundit_india", new_callable=AsyncMock) as mock_foundit, \
          patch.object(IndianBoardsScraper, "search_freshersworld", new_callable=AsyncMock) as mock_fw, \
+         patch.object(StealthBoardsScraper, "search_instahyre", new_callable=AsyncMock) as mock_instahyre, \
          patch.object(StealthBoardsScraper, "search_naukri", new_callable=AsyncMock) as mock_naukri, \
          patch.object(StealthBoardsScraper, "search_indeed_india", new_callable=AsyncMock) as mock_indeed:
 
@@ -184,6 +254,7 @@ async def test_realtime_scraper_engine_stream():
         mock_li.return_value = []
         mock_foundit.return_value = []
         mock_fw.return_value = []
+        mock_instahyre.return_value = []
         mock_naukri.return_value = []
         mock_indeed.return_value = []
 

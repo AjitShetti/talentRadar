@@ -133,12 +133,13 @@ class RealtimeScraperEngine:
                 return
 
         sources = [
-            ("ats_platforms", ATSScraper.search_all_ats(query, location, is_remote), 4.0),
+            ("ats_platforms", ATSScraper.search_all_ats(query, location, is_remote), 5.0),
             ("linkedin", IndianBoardsScraper.search_linkedin_guest(query, location, is_remote), 5.0),
             ("foundit", IndianBoardsScraper.search_foundit_india(query, location, is_remote), 5.0),
             ("freshersworld", IndianBoardsScraper.search_freshersworld(query, location, is_remote), 4.0),
-            ("naukri", StealthBoardsScraper.search_naukri(query, location, is_remote), 6.5),
-            ("indeed_india", StealthBoardsScraper.search_indeed_india(query, location, is_remote), 6.5),
+            ("instahyre", StealthBoardsScraper.search_instahyre(query, location, is_remote), 5.0),
+            ("indeed_india", StealthBoardsScraper.search_indeed_india(query, location, is_remote), 7.0),
+            ("naukri", StealthBoardsScraper.search_naukri(query, location, is_remote), 10.0),
         ]
 
         yield {

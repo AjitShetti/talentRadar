@@ -26,18 +26,18 @@ logger = logging.getLogger(__name__)
 
 # Curated list of companies on Greenhouse, Ashby, Lever with active remote/India hiring
 GREENHOUSE_COMPANIES = [
-    "stripe", "figma", "gitlab", "postman", "razorpay", "browserstack",
-    "inmobi", "canva", "datadog", "cloudflare", "hashicorp", "cockroachlabs",
-    "elastic", "mongodb", "sentry", "affirm", "airtable", "reddit"
+    "stripe", "figma", "gitlab", "postman", "inmobi",
+    "cloudflare", "cockroachlabs", "elastic",
+    "mongodb", "affirm", "airtable", "reddit"
 ]
 
 ASHBY_COMPANIES = [
-    "openai", "anthropic", "replit", "linear", "vercel", "supabase",
-    "cursor", "modal", "resend", "dust", "perplexity", "scaleai"
+    "openai", "replit", "linear", "vercel", "supabase",
+    "cursor", "modal", "resend", "dust", "perplexity"
 ]
 
 LEVER_COMPANIES = [
-    "spotify", "automattic", "sourcegraph", "circleci", "auth0"
+    "spotify"
 ]
 
 INDIAN_CITY_SYNONYMS = {
@@ -132,7 +132,7 @@ class ATSScraper:
     async def fetch_greenhouse_company(cls, company_slug: str, query: str, location: str | None, is_remote: bool | None) -> list[Job]:
         """Fetch and filter jobs from a Greenhouse public board."""
         url = f"https://boards-api.greenhouse.io/v1/boards/{company_slug}/jobs"
-        status, data = await ScraplingManager.fetch_html_or_json(url, timeout=3.0)
+        status, data = await ScraplingManager.fetch_html_or_json(url, timeout=2.0)
         if status != 200 or not isinstance(data, dict):
             return []
 
@@ -180,7 +180,7 @@ class ATSScraper:
     async def fetch_ashby_company(cls, company_slug: str, query: str, location: str | None, is_remote: bool | None) -> list[Job]:
         """Fetch and filter jobs from an Ashby public board."""
         url = f"https://api.ashbyhq.com/posting-api/job-board/{company_slug}"
-        status, data = await ScraplingManager.fetch_html_or_json(url, timeout=3.0)
+        status, data = await ScraplingManager.fetch_html_or_json(url, timeout=2.0)
         if status != 200 or not isinstance(data, dict):
             return []
 
@@ -230,7 +230,7 @@ class ATSScraper:
     async def fetch_lever_company(cls, company_slug: str, query: str, location: str | None, is_remote: bool | None) -> list[Job]:
         """Fetch and filter jobs from a Lever public board."""
         url = f"https://api.lever.co/v0/postings/{company_slug}?mode=json"
-        status, data = await ScraplingManager.fetch_html_or_json(url, timeout=3.0)
+        status, data = await ScraplingManager.fetch_html_or_json(url, timeout=2.0)
         if status != 200 or not isinstance(data, list):
             return []
 
@@ -279,15 +279,21 @@ class ATSScraper:
     @classmethod
     async def search_all_ats(cls, query: str, location: str | None = None, is_remote: bool | None = None) -> list[Job]:
         """
-        Queries all configured Greenhouse, Ashby, and Lever companies concurrently.
+        Queries all configured Greenhouse, Ashby, and Lever companies concurrently with individual timeouts.
         """
+        async def _safe_fetch(coro):
+            try:
+                return await asyncio.wait_for(coro, timeout=2.0)
+            except Exception:
+                return []
+
         tasks = []
         for c in GREENHOUSE_COMPANIES:
-            tasks.append(cls.fetch_greenhouse_company(c, query, location, is_remote))
+            tasks.append(_safe_fetch(cls.fetch_greenhouse_company(c, query, location, is_remote)))
         for c in ASHBY_COMPANIES:
-            tasks.append(cls.fetch_ashby_company(c, query, location, is_remote))
+            tasks.append(_safe_fetch(cls.fetch_ashby_company(c, query, location, is_remote)))
         for c in LEVER_COMPANIES:
-            tasks.append(cls.fetch_lever_company(c, query, location, is_remote))
+            tasks.append(_safe_fetch(cls.fetch_lever_company(c, query, location, is_remote)))
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
         all_jobs: list[Job] = []
