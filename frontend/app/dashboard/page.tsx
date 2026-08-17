@@ -160,10 +160,10 @@ export default function DashboardPage() {
           <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '0.85rem', fontWeight: 700, letterSpacing: '0.08em', marginBottom: '1rem' }}>QUICK ACTIONS</h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
             {[
-              { icon: Search,     label: 'Search Jobs',         href: '/search',      color: 'var(--color-fg-muted)' },
-              { icon: Target,     label: 'Match Resume',        href: '/match',       color: '#a855f7' },
-              { icon: Mic,        label: 'Practice Interview',   href: '/interview',   color: 'var(--color-accent)' },
-              { icon: TrendingUp, label: 'Market Trends',       href: '/trends',      color: '#22c55e' },
+              { icon: Search,     label: 'Search Jobs',         href: '/search',                  color: 'var(--color-fg-muted)' },
+              { icon: Target,     label: 'Match Resume',        href: '/resume-studio?tab=match', color: '#a855f7' },
+              { icon: Mic,        label: 'Practice Interview',   href: '/interview',               color: 'var(--color-accent)' },
+              { icon: Briefcase,  label: 'Resume Studio',       href: '/resume-studio',           color: '#22c55e' },
             ].map(({ icon: Icon, label, href, color }) => (
               <Link key={href} href={href} style={{ textDecoration: 'none' }}>
                 <div className="panel" style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.875rem' }}>

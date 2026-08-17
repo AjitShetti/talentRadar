@@ -4,10 +4,6 @@ import {
   type SearchSemanticRequest,
   type SearchSemanticResponse,
   type JobDetailResponse,
-  type TrendData,
-  type SkillsTrendResponse,
-  type LocationsTrendResponse,
-  type SalaryTrendResponse,
   type CandidateProfile,
   type MatchRequest,
   type MatchResponse,
@@ -92,6 +88,30 @@ export const api = {
         signal,
       }),
 
+    live: (
+      params: { query: string; location?: string; is_remote?: boolean; force_refresh?: boolean },
+      signal?: AbortSignal
+    ) => {
+      const searchParams = new URLSearchParams();
+      searchParams.append('query', params.query);
+      if (params.location) searchParams.append('location', params.location);
+      if (params.is_remote !== undefined) searchParams.append('is_remote', String(params.is_remote));
+      if (params.force_refresh) searchParams.append('force_refresh', 'true');
+      return fetchAPI<any>(`/api/v1/search/live?${searchParams.toString()}`, {
+        method: 'GET',
+        signal,
+      });
+    },
+
+    getStreamUrl: (params: { query: string; location?: string; is_remote?: boolean; force_refresh?: boolean }) => {
+      const searchParams = new URLSearchParams();
+      searchParams.append('query', params.query);
+      if (params.location) searchParams.append('location', params.location);
+      if (params.is_remote !== undefined) searchParams.append('is_remote', String(params.is_remote));
+      if (params.force_refresh) searchParams.append('force_refresh', 'true');
+      return `${API_URL}/api/v1/search/stream?${searchParams.toString()}`;
+    },
+
     detail: (jobId: string, signal?: AbortSignal) =>
       fetchAPI<JobDetailResponse>(`/api/v1/search/${jobId}`, {
         method: 'GET',
@@ -101,34 +121,6 @@ export const api = {
     trackView: (jobId: string) =>
       fetchAPI<{ success: boolean; views: number }>(`/api/v1/search/${jobId}/view`, {
         method: 'POST',
-      }),
-  },
-
-  // ── Trends ─────────────────────────────────
-  trends: {
-    get: (query = 'Market trends', days = 30, signal?: AbortSignal) =>
-      fetchAPI<TrendData>('/api/v1/trends', {
-        method: 'POST',
-        body: { query, days },
-        signal,
-      }),
-
-    skills: (days = 30, signal?: AbortSignal) =>
-      fetchAPI<SkillsTrendResponse>(`/api/v1/trends/skills?days=${days}`, {
-        method: 'GET',
-        signal,
-      }),
-
-    salaries: (days = 30, signal?: AbortSignal) =>
-      fetchAPI<SalaryTrendResponse>(`/api/v1/trends/salaries?days=${days}`, {
-        method: 'GET',
-        signal,
-      }),
-
-    locations: (days = 30, signal?: AbortSignal) =>
-      fetchAPI<LocationsTrendResponse>(`/api/v1/trends/locations?days=${days}`, {
-        method: 'GET',
-        signal,
       }),
   },
 

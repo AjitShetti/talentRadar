@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Search, TrendingUp, Target, Zap, ArrowRight, Github, X } from 'lucide-react';
+import { Search, FileText, Target, Zap, ArrowRight, Github, X } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { useState, useEffect } from 'react';
 import { useAuthModal } from '@/components/AuthModalProvider';
@@ -9,21 +9,21 @@ import { useAuthModal } from '@/components/AuthModalProvider';
 const features = [
   {
     icon: Search,
-    title: 'Semantic Search',
-    description: "Search jobs using natural language. Our AI understands what you're looking for.",
+    title: 'Real-Time Multi-Source Search',
+    description: 'Scrapes live job openings across Indian boards, Greenhouse, Ashby, Lever, and global remote portals.',
     href: '/search',
   },
   {
-    icon: TrendingUp,
-    title: 'Market Trends',
-    description: 'Get real-time insights into skill demand, salary trends, and market opportunities.',
-    href: '/trends',
+    icon: FileText,
+    title: 'Resume Studio',
+    description: 'Instant ATS gap analysis, LLM scoring, and tailored PDF resume generation for any job.',
+    href: '/resume-studio',
   },
   {
     icon: Target,
     title: 'Smart Matching',
-    description: 'Upload your profile and get personalized job recommendations with match scores.',
-    href: '/match',
+    description: 'Upload your profile and get personalized job recommendations with fit scores.',
+    href: '/resume-studio?tab=match',
   },
 ];
 
@@ -77,12 +77,12 @@ export default function HomePage() {
             margin: '0 auto 3rem auto',
           }}
         >
-          Search smarter with semantic understanding, discover market trends, and get personalized
+          Search smarter with live real-time scraping, practice AI interviews, and get personalized
           job matches powered by machine learning.
         </p>
 
         <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-          <Link href="/match" className="btn btn-primary">
+          <Link href="/resume-studio?tab=match" className="btn btn-primary">
             Start Matching
             <ArrowRight size={18} />
           </Link>
@@ -243,7 +243,7 @@ export default function HomePage() {
                 lineHeight: 1.6,
               }}
             >
-              Save searches, track market trends over time, and get personalized smart matches.
+              Save searches, tailor resumes on the fly, and get personalized smart matches.
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>

@@ -73,48 +73,6 @@ export interface JobDetailResponse {
 }
 
 // ─────────────────────────────────────────────
-// Trends
-// ─────────────────────────────────────────────
-
-export interface TrendsRequest {
-  query?: string;
-  days?: number;
-}
-
-export interface TrendData {
-  summary?: string;
-  total_jobs: number;
-  top_skills: Array<{ skill: string; count: number }>;
-  salary_data?: {
-    available: boolean;
-    avg_min?: number;
-    avg_max?: number;
-    min?: number;
-    max?: number;
-    count?: number;
-    currency?: string;
-  };
-  location_data: Array<{ location: string; count: number }>;
-  seniority_data: Array<{ seniority: string; count: number }>;
-  period_days?: number;
-}
-
-export interface SkillsTrendResponse {
-  skills: Array<{ skill: string; count: number }>;
-  period_days: number;
-}
-
-export interface LocationsTrendResponse {
-  locations: Array<{ location: string; count: number }>;
-  period_days: number;
-}
-
-export interface SalaryTrendResponse {
-  salary_data: TrendData['salary_data'];
-  period_days?: number;
-}
-
-// ─────────────────────────────────────────────
 // Recommend / Match
 // ─────────────────────────────────────────────
 

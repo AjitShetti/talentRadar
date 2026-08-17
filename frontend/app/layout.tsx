@@ -17,7 +17,7 @@ const manrope = Manrope({
 
 export const metadata: Metadata = {
   title: 'TalentRadar - AI-Powered Job Intelligence',
-  description: 'Search jobs, analyze market trends, and find perfect matches with AI',
+  description: 'Real-time multi-source job search, resume studio, and AI interview prep',
 };
 
 export default function RootLayout({

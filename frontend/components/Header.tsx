@@ -74,11 +74,11 @@ export default function Header() {
         <Link href="/search" style={navLinkStyle('/search')}>
           SEARCH
         </Link>
-        <Link href="/trends" style={navLinkStyle('/trends')}>
-          TRENDS
-        </Link>
-        <Link href="/match" style={navLinkStyle('/match')}>
-          MATCH ENGINE
+        <Link 
+          href="/resume-studio" 
+          style={navLinkStyle('/resume-studio')}
+        >
+          RESUME STUDIO
         </Link>
         <Link 
           href="/interview" 
@@ -91,12 +91,6 @@ export default function Header() {
           style={navLinkStyle('/applications')}
         >
           APPLICATIONS
-        </Link>
-        <Link 
-          href="/resume-studio" 
-          style={navLinkStyle('/resume-studio')}
-        >
-          RESUME STUDIO
         </Link>
         <Link 
           href="/company-intel" 

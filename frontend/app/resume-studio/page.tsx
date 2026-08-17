@@ -1,23 +1,32 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useState, useEffect, Suspense, type FormEvent } from 'react';
 import { useSession } from 'next-auth/react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Loader2, Lock, FileText, Target, BookOpen, Mail, Sparkles, ChevronRight, AlertCircle } from 'lucide-react';
 import { resumesApi } from '@/lib/resumes-api';
 import type { ResumeAnalyzeResponse, ResumeGapsResponse } from '@/lib/types';
+import MatchAnalyzer from '@/components/MatchAnalyzer';
 
-type Tab = 'analyze' | 'tailor' | 'cover-letter' | 'gaps';
+type Tab = 'match' | 'analyze' | 'tailor' | 'cover-letter' | 'gaps';
 const TABS: { key: Tab; label: string; icon: typeof FileText }[] = [
+  { key: 'match', label: 'MATCH ENGINE', icon: Target },
   { key: 'analyze', label: 'ATS ANALYZE', icon: FileText },
-  { key: 'tailor', label: 'TAILOR RESUME', icon: Target },
+  { key: 'tailor', label: 'TAILOR RESUME', icon: Sparkles },
   { key: 'cover-letter', label: 'COVER LETTER', icon: Mail },
   { key: 'gaps', label: 'SKILL GAPS', icon: BookOpen },
 ];
 
-export default function ResumeStudioPage() {
+function ResumeStudioContent() {
   const { data: session, status } = useSession();
-  const [tab, setTab] = useState<Tab>('analyze');
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  const initialTab = (searchParams.get('tab') as Tab) || 'match';
+  const [tab, setTab] = useState<Tab>(
+    ['match', 'analyze', 'tailor', 'cover-letter', 'gaps'].includes(initialTab) ? initialTab : 'match'
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,12 +41,25 @@ export default function ResumeStudioPage() {
   const [coverLetter, setCoverLetter] = useState('');
   const [gaps, setGaps] = useState<ResumeGapsResponse | null>(null);
 
+  useEffect(() => {
+    const urlTab = searchParams.get('tab') as Tab;
+    if (urlTab && ['match', 'analyze', 'tailor', 'cover-letter', 'gaps'].includes(urlTab)) {
+      setTab(urlTab);
+    }
+  }, [searchParams]);
+
+  const switchTab = (newTab: Tab) => {
+    setTab(newTab);
+    setError(null);
+    router.replace(`/resume-studio?tab=${newTab}`, { scroll: false });
+  };
+
   if (status === 'unauthenticated') {
     return (
       <div style={{ maxWidth: 480, margin: '6rem auto', textAlign: 'center' }}>
         <Lock size={40} color="var(--color-fg-muted)" style={{ marginBottom: '1.5rem' }} />
         <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', marginBottom: '1rem' }}>SIGN IN TO CONTINUE</h2>
-        <p style={{ color: 'var(--color-fg-muted)', marginBottom: '2rem' }}>Resume Studio helps you optimize your resume for any job.</p>
+        <p style={{ color: 'var(--color-fg-muted)', marginBottom: '2rem' }}>Resume Studio helps you analyze fit, tailor resumes, and optimize applications.</p>
         <Link href="/login" className="btn btn-primary">Sign In</Link>
       </div>
     );
@@ -179,20 +201,22 @@ export default function ResumeStudioPage() {
   };
 
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto' }}>
+    <div style={{ maxWidth: 1000, margin: '0 auto' }}>
       <div style={{ marginBottom: '2.5rem' }}>
         <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(2rem, 5vw, 3rem)', fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.1 }}>
           RESUME<span style={{ color: 'var(--color-accent)' }}>_</span>STUDIO
         </h1>
-        <p style={{ color: 'var(--color-fg-muted)', fontSize: '1.1rem', marginTop: '0.75rem' }}>Analyze, tailor, and optimize your resume for any job.</p>
+        <p style={{ color: 'var(--color-fg-muted)', fontSize: '1.1rem', marginTop: '0.75rem' }}>
+          Evaluate job fit, generate tailored resumes, analyze skill gaps, and craft customized cover letters.
+        </p>
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: '0', marginBottom: '2rem', borderBottom: '1px solid var(--color-border)' }}>
+      <div style={{ display: 'flex', gap: '0', marginBottom: '2.5rem', borderBottom: '1px solid var(--color-border)', overflowX: 'auto' }}>
         {TABS.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
-            onClick={() => { setTab(key); setError(null); }}
+            onClick={() => switchTab(key)}
             style={{
               padding: '0.875rem 1.25rem',
               fontFamily: 'var(--font-display)',
@@ -207,6 +231,7 @@ export default function ResumeStudioPage() {
               display: 'flex',
               alignItems: 'center',
               gap: '0.5rem',
+              whiteSpace: 'nowrap',
             }}
           >
             <Icon size={16} /> {label}
@@ -214,51 +239,69 @@ export default function ResumeStudioPage() {
         ))}
       </div>
 
-      <form onSubmit={tab === 'analyze' ? handleAnalyze : tab === 'tailor' ? handleTailor : tab === 'cover-letter' ? handleCoverLetter : handleGaps}>
-        <div className="panel" style={{ marginBottom: '1.5rem' }}>
-          <div style={{ display: 'grid', gap: '1.25rem' }}>
-            <label style={{ display: 'grid', gap: '0.4rem' }}>
-              <span style={{ fontFamily: 'var(--font-display)', fontSize: '0.75rem', letterSpacing: '0.06em', color: 'var(--color-fg-muted)' }}>YOUR RESUME TEXT</span>
-              <textarea value={resumeText} onChange={e => setResumeText(e.target.value)} rows={6} placeholder="Paste your resume content here..." style={{ ...inputStyle, resize: 'vertical' }} />
-            </label>
-            <label style={{ display: 'grid', gap: '0.4rem' }}>
-              <span style={{ fontFamily: 'var(--font-display)', fontSize: '0.75rem', letterSpacing: '0.06em', color: 'var(--color-fg-muted)' }}>TARGET JOB DESCRIPTION</span>
-              <textarea value={jobDescription} onChange={e => setJobDescription(e.target.value)} rows={6} placeholder="Paste the job description here..." style={{ ...inputStyle, resize: 'vertical' }} />
-            </label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
-              <label style={{ display: 'grid', gap: '0.4rem' }}>
-                <span style={{ fontFamily: 'var(--font-display)', fontSize: '0.75rem', letterSpacing: '0.06em', color: 'var(--color-fg-muted)' }}>JOB TITLE (optional)</span>
-                <input type="text" value={jobTitle} onChange={e => setJobTitle(e.target.value)} placeholder="Senior Python Engineer" style={inputStyle} />
-              </label>
-              {tab === 'cover-letter' && (
+      {tab === 'match' ? (
+        <MatchAnalyzer />
+      ) : (
+        <>
+          <form onSubmit={tab === 'analyze' ? handleAnalyze : tab === 'tailor' ? handleTailor : tab === 'cover-letter' ? handleCoverLetter : handleGaps}>
+            <div className="panel" style={{ marginBottom: '1.5rem' }}>
+              <div style={{ display: 'grid', gap: '1.25rem' }}>
                 <label style={{ display: 'grid', gap: '0.4rem' }}>
-                  <span style={{ fontFamily: 'var(--font-display)', fontSize: '0.75rem', letterSpacing: '0.06em', color: 'var(--color-fg-muted)' }}>COMPANY</span>
-                  <input type="text" value={company} onChange={e => setCompany(e.target.value)} placeholder="Acme Corp" style={inputStyle} />
+                  <span style={{ fontFamily: 'var(--font-display)', fontSize: '0.75rem', letterSpacing: '0.06em', color: 'var(--color-fg-muted)' }}>YOUR RESUME TEXT</span>
+                  <textarea value={resumeText} onChange={e => setResumeText(e.target.value)} rows={6} placeholder="Paste your resume content here..." style={{ ...inputStyle, resize: 'vertical' }} />
                 </label>
-              )}
-              {tab === 'cover-letter' && (
                 <label style={{ display: 'grid', gap: '0.4rem' }}>
-                  <span style={{ fontFamily: 'var(--font-display)', fontSize: '0.75rem', letterSpacing: '0.06em', color: 'var(--color-fg-muted)' }}>TONE</span>
-                  <select value={tone} onChange={e => setTone(e.target.value)} style={inputStyle}>
-                    <option value="professional">Professional</option>
-                    <option value="enthusiastic">Enthusiastic</option>
-                    <option value="formal">Formal</option>
-                    <option value="conversational">Conversational</option>
-                  </select>
+                  <span style={{ fontFamily: 'var(--font-display)', fontSize: '0.75rem', letterSpacing: '0.06em', color: 'var(--color-fg-muted)' }}>TARGET JOB DESCRIPTION</span>
+                  <textarea value={jobDescription} onChange={e => setJobDescription(e.target.value)} rows={6} placeholder="Paste the job description here..." style={{ ...inputStyle, resize: 'vertical' }} />
                 </label>
-              )}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
+                  <label style={{ display: 'grid', gap: '0.4rem' }}>
+                    <span style={{ fontFamily: 'var(--font-display)', fontSize: '0.75rem', letterSpacing: '0.06em', color: 'var(--color-fg-muted)' }}>JOB TITLE (optional)</span>
+                    <input type="text" value={jobTitle} onChange={e => setJobTitle(e.target.value)} placeholder="Senior Python Engineer" style={inputStyle} />
+                  </label>
+                  {tab === 'cover-letter' && (
+                    <label style={{ display: 'grid', gap: '0.4rem' }}>
+                      <span style={{ fontFamily: 'var(--font-display)', fontSize: '0.75rem', letterSpacing: '0.06em', color: 'var(--color-fg-muted)' }}>COMPANY</span>
+                      <input type="text" value={company} onChange={e => setCompany(e.target.value)} placeholder="Acme Corp" style={inputStyle} />
+                    </label>
+                  )}
+                  {tab === 'cover-letter' && (
+                    <label style={{ display: 'grid', gap: '0.4rem' }}>
+                      <span style={{ fontFamily: 'var(--font-display)', fontSize: '0.75rem', letterSpacing: '0.06em', color: 'var(--color-fg-muted)' }}>TONE</span>
+                      <select value={tone} onChange={e => setTone(e.target.value)} style={inputStyle}>
+                        <option value="professional">Professional</option>
+                        <option value="enthusiastic">Enthusiastic</option>
+                        <option value="formal">Formal</option>
+                        <option value="conversational">Conversational</option>
+                      </select>
+                    </label>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
 
-        <button type="submit" disabled={loading || !resumeText || !jobDescription} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          {loading ? <Loader2 size={16} className="animate-spin" /> : <ChevronRight size={16} />}
-          {loading ? 'PROCESSING...' : tab === 'analyze' ? 'ANALYZE' : tab === 'tailor' ? 'TAILOR' : tab === 'cover-letter' ? 'GENERATE' : 'ANALYZE GAPS'}
-        </button>
-      </form>
+            <button type="submit" disabled={loading || !resumeText || !jobDescription} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              {loading ? <Loader2 size={16} className="animate-spin" /> : <ChevronRight size={16} />}
+              {loading ? 'PROCESSING...' : tab === 'analyze' ? 'ANALYZE' : tab === 'tailor' ? 'TAILOR' : tab === 'cover-letter' ? 'GENERATE' : 'ANALYZE GAPS'}
+            </button>
+          </form>
 
-      {renderResult()}
+          {renderResult()}
+        </>
+      )}
     </div>
+  );
+}
+
+export default function ResumeStudioPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', color: 'var(--color-fg-muted)', fontFamily: 'var(--font-display)', padding: '4rem 0', justifyContent: 'center' }}>
+        <Loader2 size={24} className="animate-spin text-accent" /> LOADING RESUME STUDIO...
+      </div>
+    }>
+      <ResumeStudioContent />
+    </Suspense>
   );
 }
 
