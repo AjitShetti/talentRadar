@@ -37,7 +37,7 @@ export function formatSalary(
   const sym = getCurrencySymbol(currency);
 
   if (min && max && min > 0 && max > 0) {
-    return `${sym}${formatNumber(min)} – ${sym}${formatNumber(max)}`;
+    return `${sym}${formatNumber(min)} - ${sym}${formatNumber(max)}`;
   }
   if (min && min > 0) return `From ${sym}${formatNumber(min)}`;
   if (max && max > 0) return `Up to ${sym}${formatNumber(max)}`;
@@ -53,7 +53,7 @@ export function formatSalaryFull(
   const sym = getCurrencySymbol(currency);
 
   if (min && max && min > 0 && max > 0) {
-    return `${sym}${min.toLocaleString()} – ${sym}${max.toLocaleString()}`;
+    return `${sym}${min.toLocaleString()} - ${sym}${max.toLocaleString()}`;
   }
   if (min && min > 0) return `From ${sym}${min.toLocaleString()}`;
   if (max && max > 0) return `Up to ${sym}${max.toLocaleString()}`;

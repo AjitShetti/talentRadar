@@ -53,7 +53,7 @@ async function fetchInterview<T>(
       const err = (await res.json()) as { detail?: string };
       msg = err.detail || msg;
     } catch {
-      if (res.status === 401) msg = 'Unauthorised — please sign in again.';
+      if (res.status === 401) msg = 'Unauthorised - please sign in again.';
       if (res.status === 429) msg = 'Rate limited. Please wait a moment.';
       if (res.status >= 500) msg = 'Server error. Please try again later.';
     }

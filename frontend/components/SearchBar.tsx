@@ -1,123 +1,84 @@
 'use client';
 
-import { useState, useRef } from 'react';
-import { Search as SearchIcon, Loader2, X, ArrowRight } from 'lucide-react';
+import { MagnifyingGlass, X } from '@phosphor-icons/react';
 
 interface SearchBarProps {
-  onSearch: (query: string) => void;
-  placeholder?: string;
+  value: string;
+  onChange: (val: string) => void;
+  onSearch: () => void;
   loading?: boolean;
+  placeholder?: string;
 }
 
-export default function SearchBar({
-  onSearch,
-  placeholder = 'Search by title, technology, or role...',
-  loading = false,
-}: SearchBarProps) {
-  const [query, setQuery] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSearch(query.trim());
-  };
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setQuery(value);
-    if (!value) {
-      onSearch('');
-    }
-  };
-
-  const handleClear = () => {
-    setQuery('');
-    onSearch('');
-    inputRef.current?.focus();
-  };
-
+export default function SearchBar({ value, onChange, onSearch, loading, placeholder }: SearchBarProps) {
   return (
-    <form onSubmit={handleSubmit} style={{ width: '100%', position: 'relative' }}>
-      <div
+    <div
+      style={{
+        position: 'relative',
+        display: 'flex',
+        alignItems: 'center',
+      }}
+    >
+      <MagnifyingGlass
+        size={18}
         style={{
-          position: 'relative',
-          display: 'flex',
-          alignItems: 'center',
-          background: 'var(--color-surface)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 'var(--border-radius)',
-          boxShadow: 'var(--shadow-sm)',
-          transition: 'all var(--transition-fast)',
+          position: 'absolute',
+          left: '0.875rem',
+          color: 'var(--text-muted)',
+          flexShrink: 0,
+          pointerEvents: 'none',
         }}
-      >
-        <div
+      />
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && onSearch()}
+        placeholder={placeholder || 'Search roles, companies, skills...'}
+        style={{ paddingLeft: '2.75rem', paddingRight: value ? '6rem' : '7rem' }}
+        aria-label="Job search"
+      />
+      {value && (
+        <button
+          onClick={() => onChange('')}
           style={{
             position: 'absolute',
-            left: '1rem',
-            pointerEvents: 'none',
-            color: 'var(--color-fg-subtle)',
-            display: 'flex',
-            alignItems: 'center',
-          }}
-        >
-          {loading ? (
-            <Loader2 size={18} className="text-accent status-dot-pulse" />
-          ) : (
-            <SearchIcon size={18} />
-          )}
-        </div>
-
-        <input
-          ref={inputRef}
-          type="text"
-          value={query}
-          onChange={handleChange}
-          placeholder={placeholder}
-          disabled={loading}
-          style={{
-            width: '100%',
-            padding: '0.85rem 7.5rem 0.85rem 2.85rem',
+            right: '5.5rem',
             background: 'transparent',
             border: 'none',
-            color: 'var(--color-fg)',
-            fontFamily: 'var(--font-body)',
-            fontSize: '0.9375rem',
-            outline: 'none',
+            cursor: 'pointer',
+            color: 'var(--text-muted)',
+            padding: '0.25rem',
+            lineHeight: 0,
           }}
-        />
-
-        <div style={{ position: 'absolute', right: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-          {query && !loading && (
-            <button
-              type="button"
-              onClick={handleClear}
-              aria-label="Clear search"
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--color-fg-muted)',
-                cursor: 'pointer',
-                padding: '0.25rem',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderRadius: '50%',
-              }}
-            >
-              <X size={15} />
-            </button>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="btn btn-primary btn-sm"
-          >
-            <span>Search</span>
-            <ArrowRight size={13} />
-          </button>
-        </div>
-      </div>
-    </form>
+          aria-label="Clear search"
+        >
+          <X size={15} />
+        </button>
+      )}
+      <button
+        onClick={onSearch}
+        disabled={loading}
+        style={{
+          position: 'absolute',
+          right: '0.5rem',
+          padding: '0.375rem 0.875rem',
+          background: 'var(--accent)',
+          color: '#fff',
+          border: 'none',
+          borderRadius: 'var(--radius-sm)',
+          fontSize: '0.875rem',
+          fontWeight: 500,
+          cursor: loading ? 'not-allowed' : 'pointer',
+          opacity: loading ? 0.7 : 1,
+          transition: 'background 150ms ease',
+          whiteSpace: 'nowrap',
+        }}
+        onMouseEnter={(e) => !loading && (e.currentTarget.style.background = 'var(--accent-hover)')}
+        onMouseLeave={(e) => !loading && (e.currentTarget.style.background = 'var(--accent)')}
+      >
+        {loading ? 'Searching...' : 'Search'}
+      </button>
+    </div>
   );
 }

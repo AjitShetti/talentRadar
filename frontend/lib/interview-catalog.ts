@@ -1,7 +1,7 @@
 // frontend/lib/interview-catalog.ts
 // ─────────────────────────────────────────────────────────────────
 // Static catalog of tracks and difficulty levels.
-// This is purely client-side data — no API call needed.
+// This is purely client-side data - no API call needed.
 // ─────────────────────────────────────────────────────────────────
 
 import type { TrackMeta, DifficultyMeta } from './interview-types';

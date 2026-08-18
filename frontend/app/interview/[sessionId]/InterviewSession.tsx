@@ -1,23 +1,12 @@
 'use client';
 
-// frontend/app/interview/[sessionId]/InterviewSession.tsx
-// ─────────────────────────────────────────────────────────────────
-// The live interview session UI.
-//
-// Architecture:
-//  - Agent state is round-tripped via sessionStorage + API (stateless backend).
-//  - Voice recording uses MediaRecorder → sends blob to /voice/transcribe.
-//  - Falls back to browser SpeechSynthesis for TTS (Supertonic 3 in Phase 5).
-//  - Text answer is always available as a fallback to voice.
-// ─────────────────────────────────────────────────────────────────
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import {
-  Mic, MicOff, Send, StopCircle, Volume2,
-  ChevronRight, AlertTriangle, CheckCircle2, XCircle
-} from 'lucide-react';
+  Microphone, MicrophoneSlash, PaperPlaneRight, StopCircle, SpeakerHigh,
+  CaretRight, WarningCircle, CheckCircle, XCircle
+} from '@phosphor-icons/react';
 import { interviewApi } from '@/lib/interview-api';
 import { getTrack, getDifficulty, scoreColour, scoreLabel } from '@/lib/interview-catalog';
 import type {
@@ -65,7 +54,6 @@ export default function InterviewSession({ sessionId }: Props) {
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── Helpers ────────────────────────────────────────────────────
-
   const updatePhase = useCallback((phase: SessionPhase) => {
     setLiveState(prev => ({ ...prev, phase, error: null }));
   }, []);
@@ -126,7 +114,7 @@ export default function InterviewSession({ sessionId }: Props) {
         if (e.data.size > 0) audioChunksRef.current.push(e.data);
       };
 
-      recorder.start(250); // collect chunks every 250ms
+      recorder.start(250);
       mediaRecorderRef.current = recorder;
       setIsRecording(true);
       setRecordingSeconds(0);
@@ -156,7 +144,6 @@ export default function InterviewSession({ sessionId }: Props) {
         try {
           const res = await interviewApi.transcribe(blob, 'answer.webm', token);
           if (res.provider === 'browser_fallback' || !res.transcript) {
-            // Browser fallback: user types instead
             resolve('');
           } else {
             setTextAnswer(res.transcript);
@@ -186,7 +173,6 @@ export default function InterviewSession({ sessionId }: Props) {
         token
       );
 
-      // Update sessionStorage with new agent state
       sessionStorage.setItem(`interview:${sessionId}`, JSON.stringify(res.agent_state));
 
       const newTotalAsked = liveState.totalQuestionsAsked + 1;
@@ -226,7 +212,7 @@ export default function InterviewSession({ sessionId }: Props) {
     if (transcript) {
       await handleSubmit(transcript);
     } else {
-      updatePhase('questioning'); // fall back to text entry
+      updatePhase('questioning');
     }
   }
 
@@ -264,10 +250,8 @@ export default function InterviewSession({ sessionId }: Props) {
   // ── Render: Loading ────────────────────────────────────────────
   if (liveState.phase === 'loading') {
     return (
-      <div style={{ textAlign: 'center', padding: '4rem 0' }}>
-        <div style={{ color: 'var(--color-fg-muted)', fontFamily: 'var(--font-display)', letterSpacing: '0.1em' }}>
-          LOADING INTERVIEW...
-        </div>
+      <div style={{ textAlign: 'center', padding: '4rem 0', color: 'var(--text-subtle)' }}>
+        Loading interview...
       </div>
     );
   }
@@ -288,43 +272,43 @@ export default function InterviewSession({ sessionId }: Props) {
     const total = score?.total_score ?? 0;
 
     return (
-      <div style={{ maxWidth: '640px', margin: '0 auto', padding: '2rem 0' }}>
-        <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
+      <div style={{ maxWidth: '640px', margin: '0 auto', paddingTop: '2.5rem', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+        <div style={{ textAlign: 'center', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '2.5rem', background: 'var(--surface)' }}>
           <div style={{
-            fontSize: 'clamp(3rem, 10vw, 5rem)', fontFamily: 'var(--font-display)', fontWeight: 800,
+            fontSize: '4rem', fontWeight: 800,
             color: scoreColour(total), lineHeight: 1
           }}>
-            {total}<span style={{ fontSize: '40%', color: 'var(--color-fg-muted)' }}>/100</span>
+            {total}<span style={{ fontSize: '1.25rem', color: 'var(--text-subtle)', fontWeight: 500 }}>/100</span>
           </div>
           <div style={{
-            marginTop: '0.5rem', fontFamily: 'var(--font-display)', fontSize: '1.1rem',
-            color: scoreColour(total), letterSpacing: '0.05em', textTransform: 'uppercase'
+            marginTop: '0.5rem', fontSize: '1rem',
+            color: scoreColour(total), fontWeight: 600
           }}>
             {scoreLabel(total)}
           </div>
         </div>
 
         {/* Closing message */}
-        <div className="panel" style={{ marginBottom: '2rem', fontStyle: 'italic', color: 'var(--color-fg-muted)' }}>
+        <div style={{ padding: '1.25rem 1.5rem', border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--bg-subtle)', fontStyle: 'italic', color: 'var(--text-muted)' }}>
           &ldquo;{liveState.currentQuestion}&rdquo;
         </div>
 
         {/* Breakdown */}
         {score && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '2rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
             {([
               { label: 'Correctness', value: score.correctness },
               { label: 'Clarity', value: score.clarity },
               { label: 'Depth', value: score.depth },
             ] as Array<{ label: string; value: number }>).map(({ label, value }) => (
-              <div key={label} className="panel" style={{ textAlign: 'center' }}>
+              <div key={label} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '1.25rem', textAlign: 'center', background: 'var(--surface)' }}>
                 <div style={{
-                  fontFamily: 'var(--font-display)', fontSize: '1.75rem', fontWeight: 800,
-                  color: scoreColour(value)
+                  fontSize: '1.5rem', fontWeight: 700,
+                  color: scoreColour(value), marginBottom: '0.25rem'
                 }}>
                   {value}
                 </div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--color-fg-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                   {label}
                 </div>
               </div>
@@ -333,12 +317,26 @@ export default function InterviewSession({ sessionId }: Props) {
         )}
 
         <div style={{ display: 'flex', gap: '1rem' }}>
-          <button className="btn-primary" onClick={() => router.push('/interview')}
-            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            New Interview <ChevronRight size={16} />
+          <button
+            onClick={() => router.push('/interview')}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
+              padding: '0.625rem 1.25rem', background: 'var(--accent)', color: '#fff',
+              border: 'none', borderRadius: 'var(--radius-sm)', fontSize: '0.9375rem',
+              fontWeight: 500, cursor: 'pointer'
+            }}
+          >
+            New interview <CaretRight size={16} />
           </button>
-          <button className="btn" onClick={() => router.push('/interview/history')}>
-            View History
+          <button
+            onClick={() => router.push('/interview/history')}
+            style={{
+              padding: '0.625rem 1.25rem', background: 'var(--surface)', border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)', fontSize: '0.9375rem', color: 'var(--text)',
+              cursor: 'pointer'
+            }}
+          >
+            View history
           </button>
         </div>
       </div>
@@ -347,77 +345,73 @@ export default function InterviewSession({ sessionId }: Props) {
 
   // ── Render: Active session ─────────────────────────────────────
   return (
-    <div style={{ maxWidth: '760px', margin: '0 auto', padding: '2rem 0' }}>
+    <div style={{ maxWidth: '760px', margin: '0 auto', paddingTop: '2.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       {/* Session header */}
       <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        marginBottom: '2rem'
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between'
       }}>
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
           <span style={{
-            fontFamily: 'var(--font-display)', fontSize: '0.75rem', textTransform: 'uppercase',
-            letterSpacing: '0.1em', color: 'var(--color-accent)',
-            padding: '0.2rem 0.6rem', border: '1px solid rgba(255,69,0,0.3)'
+            fontSize: '0.8125rem', fontWeight: 600, color: 'var(--accent)',
+            padding: '0.2rem 0.6rem', background: 'var(--accent-subtle)', borderRadius: 'var(--radius-sm)'
           }}>
             {track?.label ?? 'Interview'}
           </span>
-          <span style={{ color: 'var(--color-fg-muted)', fontSize: '0.8rem' }}>
+          <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
             {difficulty?.label}
           </span>
           {liveState.isFollowup && (
             <span style={{
-              fontSize: '0.7rem', padding: '0.2rem 0.5rem',
-              background: 'rgba(255,255,255,0.06)', border: '1px solid var(--color-border)',
-              color: 'var(--color-fg-muted)', fontFamily: 'var(--font-display)', letterSpacing: '0.05em'
+              fontSize: '0.75rem', padding: '0.15rem 0.5rem',
+              background: 'var(--bg-subtle)', border: '1px solid var(--border)',
+              color: 'var(--text-muted)', borderRadius: 'var(--radius-sm)'
             }}>
-              FOLLOW-UP
+              Follow-up
             </span>
           )}
         </div>
-        <div style={{ fontSize: '0.8rem', color: 'var(--color-fg-muted)', fontFamily: 'var(--font-display)' }}>
-          Q {Math.min(liveState.totalQuestionsAsked, MAX_QUESTIONS)} / {MAX_QUESTIONS}
+        <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
+          Question {Math.min(liveState.totalQuestionsAsked, MAX_QUESTIONS)} of {MAX_QUESTIONS}
         </div>
       </div>
 
       {/* Progress bar */}
       <div style={{
-        height: '2px', background: 'var(--color-border)', marginBottom: '2rem', position: 'relative'
+        height: '3px', background: 'var(--border)', borderRadius: '99px', overflow: 'hidden'
       }}>
         <div style={{
-          position: 'absolute', left: 0, top: 0, height: '100%',
-          width: `${progress}%`, background: 'var(--color-accent)',
+          height: '100%',
+          width: `${progress}%`, background: 'var(--accent)',
           transition: 'width 0.4s ease'
         }} />
       </div>
 
       {/* Question panel */}
-      <div className="panel" style={{ marginBottom: '2rem', position: 'relative' }}>
+      <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '1.5rem', background: 'var(--surface)', position: 'relative' }}>
         <div style={{
           display: 'flex', alignItems: 'center', gap: '0.5rem',
-          marginBottom: '1rem',
-          fontFamily: 'var(--font-display)', fontSize: '0.7rem',
-          textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--color-fg-muted)'
+          marginBottom: '0.75rem', fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500
         }}>
-          <Volume2 size={13} color={isSpeaking ? '#FF4500' : undefined} />
-          {isSpeaking ? 'INTERVIEWER IS SPEAKING...' : 'QUESTION'}
+          <SpeakerHigh size={15} color={isSpeaking ? 'var(--accent)' : undefined} />
+          {isSpeaking ? 'Interviewer is speaking...' : 'Question'}
         </div>
         <p style={{
-          fontSize: 'clamp(1rem, 2.5vw, 1.2rem)', lineHeight: 1.7,
-          fontFamily: 'var(--font-display)', fontWeight: 500
+          fontSize: '1.125rem', lineHeight: 1.6,
+          fontWeight: 500, color: 'var(--text)'
         }}>
           {liveState.currentQuestion}
         </p>
-        {/* Replay button */}
         <button
           onClick={() => speakQuestion(liveState.currentQuestion)}
           style={{
             position: 'absolute', top: '1.25rem', right: '1.25rem',
-            background: 'transparent', border: '1px solid var(--color-border)',
-            padding: '0.35rem 0.6rem', cursor: 'pointer', opacity: 0.6
+            background: 'transparent', border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-sm)', padding: '0.35rem 0.5rem',
+            cursor: 'pointer', color: 'var(--text-muted)'
           }}
-          title="Replay question"
+          title="Replay audio"
         >
-          <Volume2 size={14} />
+          <SpeakerHigh size={15} />
         </button>
       </div>
 
@@ -425,7 +419,6 @@ export default function InterviewSession({ sessionId }: Props) {
       {scoreVisible && liveState.lastScore && (
         <div style={{
           display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem',
-          marginBottom: '1.5rem',
           animation: 'fadeIn 0.3s ease'
         }}>
           {([
@@ -434,13 +427,13 @@ export default function InterviewSession({ sessionId }: Props) {
             { label: 'Depth', value: liveState.lastScore.depth, max: 10 },
           ] as Array<{ label: string; value: number; max: number }>).map(({ label, value, max }) => (
             <div key={label} style={{
-              padding: '0.875rem', background: 'rgba(255,255,255,0.03)',
-              border: '1px solid var(--color-border)', textAlign: 'center'
+              padding: '0.875rem', background: 'var(--surface)',
+              border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', textAlign: 'center'
             }}>
-              <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.4rem', fontWeight: 800, color: scoreColour((value / max) * 100) }}>
+              <div style={{ fontSize: '1.25rem', fontWeight: 700, color: scoreColour((value / max) * 100) }}>
                 {value.toFixed(1)}
               </div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--color-fg-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                 {label}
               </div>
             </div>
@@ -452,58 +445,55 @@ export default function InterviewSession({ sessionId }: Props) {
       {liveState.error && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: '0.5rem',
-          padding: '0.875rem 1rem', marginBottom: '1rem',
-          background: 'rgba(255,69,0,0.08)', border: '1px solid rgba(255,69,0,0.3)',
-          color: 'var(--color-accent)', fontSize: '0.875rem'
+          padding: '0.75rem 1rem', background: 'var(--error-bg)',
+          border: '1px solid rgba(220,38,38,0.2)', borderRadius: 'var(--radius-sm)',
+          color: 'var(--error)', fontSize: '0.875rem'
         }}>
-          <AlertTriangle size={15} />
+          <WarningCircle size={16} />
           {liveState.error}
         </div>
       )}
 
       {/* Answer area */}
-      <div className="panel" style={{ marginBottom: '1.5rem' }}>
+      <div>
         <textarea
           value={textAnswer}
           onChange={e => setTextAnswer(e.target.value)}
           disabled={isSubmitting || isRecording}
-          placeholder={isRecording ? 'Recording... stop when done.' : 'Type your answer here, or use the microphone.'}
+          placeholder={isRecording ? 'Recording audio... click Stop & Submit when finished.' : 'Type your answer here, or click Record Answer to speak.'}
           rows={5}
-          style={{
-            width: '100%', background: 'transparent', border: 'none', outline: 'none',
-            color: 'var(--color-fg)', fontFamily: 'var(--font-body)', fontSize: '0.95rem',
-            lineHeight: 1.7, resize: 'vertical', minHeight: '120px',
-            opacity: isSubmitting ? 0.5 : 1
-          }}
+          style={{ resize: 'vertical' }}
         />
       </div>
 
       {/* Controls */}
-      <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' as const }}>
+      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
         {/* Mic button */}
         {!isRecording ? (
           <button
             onClick={startRecording}
             disabled={isSubmitting}
-            className="btn"
             style={{
-              display: 'flex', alignItems: 'center', gap: '0.5rem',
-              opacity: isSubmitting ? 0.4 : 1
+              display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
+              padding: '0.5rem 1rem', background: 'var(--surface)', border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', color: 'var(--text)',
+              cursor: isSubmitting ? 'not-allowed' : 'pointer', opacity: isSubmitting ? 0.5 : 1
             }}
           >
-            <Mic size={16} /> Record Answer
+            <Microphone size={16} /> Record answer
           </button>
         ) : (
           <button
             onClick={handleVoiceSubmit}
-            className="btn-primary"
             style={{
-              display: 'flex', alignItems: 'center', gap: '0.5rem',
-              animation: 'pulse 1s infinite'
+              display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
+              padding: '0.5rem 1rem', background: 'var(--error)', color: '#fff',
+              border: 'none', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem',
+              fontWeight: 500, cursor: 'pointer'
             }}
           >
             <StopCircle size={16} />
-            Stop &amp; Submit ({recordingSeconds}s)
+            Stop and submit ({recordingSeconds}s)
           </button>
         )}
 
@@ -511,44 +501,40 @@ export default function InterviewSession({ sessionId }: Props) {
         <button
           onClick={() => handleSubmit()}
           disabled={!textAnswer.trim() || isSubmitting || isRecording}
-          className="btn-primary"
           style={{
-            display: 'flex', alignItems: 'center', gap: '0.5rem',
-            opacity: (!textAnswer.trim() || isSubmitting) ? 0.4 : 1,
+            display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
+            padding: '0.5rem 1.25rem',
+            background: (!textAnswer.trim() || isSubmitting) ? 'var(--border-hover)' : 'var(--accent)',
+            color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)',
+            fontSize: '0.875rem', fontWeight: 500,
             cursor: (!textAnswer.trim() || isSubmitting) ? 'not-allowed' : 'pointer'
           }}
         >
           {isSubmitting ? (
-            <>Evaluating...</>
+            'Evaluating...'
           ) : (
-            <><Send size={16} /> Submit Answer</>
+            <><PaperPlaneRight size={16} /> Submit answer</>
           )}
         </button>
 
-        {/* Spacer + End session */}
+        {/* End session */}
         <button
           onClick={handleEndSession}
           disabled={isSubmitting}
           style={{
-            marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.4rem',
-            background: 'transparent', border: '1px solid var(--color-border)',
-            color: 'var(--color-fg-muted)', cursor: 'pointer', padding: '0.6rem 1rem',
-            fontFamily: 'var(--font-display)', fontSize: '0.75rem',
-            letterSpacing: '0.05em', textTransform: 'uppercase' as const,
-            opacity: isSubmitting ? 0.4 : 0.7
+            marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '0.35rem',
+            background: 'transparent', border: '1px solid var(--border)',
+            color: 'var(--text-muted)', cursor: 'pointer', padding: '0.5rem 0.85rem',
+            borderRadius: 'var(--radius-sm)', fontSize: '0.8125rem'
           }}
         >
-          <XCircle size={13} /> End Interview
+          <XCircle size={15} /> End interview
         </button>
       </div>
 
       <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.7; }
-        }
         @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(-8px); }
+          from { opacity: 0; transform: translateY(-4px); }
           to { opacity: 1; transform: translateY(0); }
         }
       `}</style>

@@ -1,19 +1,40 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, type FormEvent, useEffect } from 'react';
 import { signIn } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
-import {
-  X,
-  Mail,
-  Lock,
-  ArrowRight,
-  Loader2,
-  AlertCircle,
-  Eye,
-  EyeOff,
-  CheckCircle2,
-} from 'lucide-react';
+import { X, Eye, EyeSlash, WarningCircle } from '@phosphor-icons/react';
+
+function PasswordStrength({ password }: { password: string }) {
+  if (!password) return null;
+  const strength =
+    password.length < 6 ? 0
+    : password.length < 10 ? 1
+    : /[A-Z]/.test(password) && /[0-9]/.test(password) ? 3
+    : 2;
+
+  const labels = ['Weak', 'Fair', 'Good', 'Strong'];
+  const colors = ['#dc2626', '#d97706', '#16a34a', '#16a34a'];
+  const widths = ['25%', '50%', '75%', '100%'];
+
+  return (
+    <div style={{ marginTop: '0.375rem' }}>
+      <div style={{ height: '3px', background: 'var(--border)', borderRadius: '99px', overflow: 'hidden' }}>
+        <div
+          style={{
+            height: '100%',
+            width: widths[strength],
+            background: colors[strength],
+            borderRadius: '99px',
+            transition: 'width 300ms ease, background 300ms ease',
+          }}
+        />
+      </div>
+      <p style={{ fontSize: '0.75rem', color: colors[strength], marginTop: '0.25rem' }}>
+        {labels[strength]}
+      </p>
+    </div>
+  );
+}
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -23,411 +44,258 @@ interface AuthModalProps {
 
 export default function AuthModal({ isOpen, onClose, defaultTab = 'login' }: AuthModalProps) {
   const [tab, setTab] = useState<'login' | 'signup'>(defaultTab);
-  const router = useRouter();
-
-  // Login state
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [loginError, setLoginError] = useState('');
-  const [loginLoading, setLoginLoading] = useState(false);
-
-  // Signup state
-  const [signupEmail, setSignupEmail] = useState('');
-  const [signupPassword, setSignupPassword] = useState('');
-  const [signupConfirm, setSignupConfirm] = useState('');
-  const [signupError, setSignupError] = useState('');
-  const [signupLoading, setSignupLoading] = useState(false);
-  const [signupSuccess, setSignupSuccess] = useState(false);
-
-  // Show/hide password toggles
-  const [showLoginPass, setShowLoginPass] = useState(false);
-  const [showSignupPass, setShowSignupPass] = useState(false);
-  const [showConfirmPass, setShowConfirmPass] = useState(false);
-
-  // Reset state when tab changes
-  useEffect(() => {
-    setLoginError('');
-    setSignupError('');
-    setSignupSuccess(false);
-  }, [tab]);
-
-  // Sync defaultTab when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      setTab(defaultTab);
-    }
-  }, [isOpen, defaultTab]);
-
-  // Close on Escape key
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    },
-    [onClose]
-  );
+  const [showPass, setShowPass] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (isOpen) {
-      document.addEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
+    setTab(defaultTab);
+  }, [defaultTab]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setEmail(''); setPassword(''); setName(''); setError(null); setShowPass(false);
     }
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = '';
-    };
-  }, [isOpen, handleKeyDown]);
-
-  // Password strength helper
-  const getPasswordStrength = (pass: string): { label: string; color: string; width: string } => {
-    if (!pass) return { label: '', color: 'transparent', width: '0%' };
-    if (pass.length < 6) return { label: 'Weak', color: '#ef4444', width: '25%' };
-    if (pass.length < 8) return { label: 'Fair', color: '#f59e0b', width: '50%' };
-    if (pass.length < 12 || !/[A-Z]/.test(pass) || !/[0-9]/.test(pass))
-      return { label: 'Good', color: '#06b6d4', width: '75%' };
-    return { label: 'Strong', color: '#10b981', width: '100%' };
-  };
-
-  const pwStrength = getPasswordStrength(signupPassword);
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoginLoading(true);
-    setLoginError('');
-    try {
-      const res = await signIn('credentials', {
-        redirect: false,
-        email: loginEmail,
-        password: loginPassword,
-      });
-      if (res?.error) {
-        setLoginError('Invalid email or password. Please check your credentials.');
-      } else {
-        onClose();
-        router.refresh();
-      }
-    } catch {
-      setLoginError('An unexpected network error occurred.');
-    } finally {
-      setLoginLoading(false);
-    }
-  };
-
-  const handleSignup = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSignupError('');
-
-    if (signupPassword !== signupConfirm) {
-      setSignupError('Passwords do not match.');
-      return;
-    }
-    if (signupPassword.length < 8) {
-      setSignupError('Password must be at least 8 characters.');
-      return;
-    }
-
-    setSignupLoading(true);
-    try {
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      const res = await fetch(`${API_URL}/api/auth/signup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: signupEmail, password: signupPassword }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        setSignupError(data.detail || 'Registration failed. Please try again.');
-        setSignupLoading(false);
-        return;
-      }
-
-      const signInRes = await signIn('credentials', {
-        redirect: false,
-        email: signupEmail,
-        password: signupPassword,
-      });
-
-      if (signInRes?.error) {
-        setSignupSuccess(true);
-        setTimeout(() => {
-          setTab('login');
-        }, 1500);
-      } else {
-        onClose();
-        router.refresh();
-        router.push('/search');
-      }
-    } catch {
-      setSignupError('Could not connect to server. Please check your connection.');
-    } finally {
-      setSignupLoading(false);
-    }
-  };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
+  const isSignup = tab === 'signup';
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      if (isSignup) {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/auth/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password, full_name: name }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.detail || 'Registration failed');
+        }
+      }
+      const result = await signIn('credentials', { email, password, redirect: false });
+      if (result?.error) throw new Error('Invalid email or password');
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Account Authentication"
-      className="auth-modal-overlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 100,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '1rem',
+        background: 'rgba(24,24,27,0.4)',
+        backdropFilter: 'blur(4px)',
       }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="auth-modal-container">
-        {/* Close button */}
-        <button
-          onClick={onClose}
-          className="auth-close-btn"
-          aria-label="Close authentication modal"
-        >
-          <X size={16} />
-        </button>
-
-        {/* Header with bespoke radar brand mark */}
-        <div className="auth-modal-header">
-          <div className="auth-logo-badge">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="9" stroke="var(--color-accent)" strokeWidth="1.5" strokeOpacity="0.4" />
-              <circle cx="12" cy="12" r="5" stroke="var(--color-accent)" strokeWidth="1.5" strokeOpacity="0.7" />
-              <circle cx="12" cy="12" r="2" fill="var(--color-accent)" />
-              <path d="M12 12L19 5" stroke="var(--color-accent)" strokeWidth="1.75" strokeLinecap="round" />
-            </svg>
-          </div>
+      <div
+        style={{
+          background: 'var(--surface)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-lg)',
+          boxShadow: 'var(--shadow-lg)',
+          width: '100%',
+          maxWidth: '420px',
+          padding: '2rem',
+        }}
+        role="dialog"
+        aria-modal="true"
+        aria-label={isSignup ? 'Create account' : 'Sign in'}
+      >
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.75rem' }}>
           <div>
-            <div className="auth-logo-text">TALENT RADAR</div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--color-fg-muted)' }}>Career Intelligence Platform</div>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--text)', marginBottom: '0.25rem' }}>
+              {isSignup ? 'Create your account' : 'Welcome back'}
+            </h2>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+              {isSignup ? 'Start finding better jobs faster.' : 'Sign in to continue.'}
+            </p>
           </div>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              color: 'var(--text-muted)',
+              padding: '0.25rem',
+              borderRadius: 'var(--radius-sm)',
+              lineHeight: 0,
+            }}
+            aria-label="Close"
+          >
+            <X size={18} />
+          </button>
         </div>
 
         {/* Tab switcher */}
-        <div className="auth-tabs-segmented" role="tablist">
-          <button
-            role="tab"
-            aria-selected={tab === 'login'}
-            className={`auth-tab-btn ${tab === 'login' ? 'active' : ''}`}
-            onClick={() => setTab('login')}
-          >
-            Sign In
-          </button>
-          <button
-            role="tab"
-            aria-selected={tab === 'signup'}
-            className={`auth-tab-btn ${tab === 'signup' ? 'active' : ''}`}
-            onClick={() => setTab('signup')}
-          >
-            Create Account
-          </button>
+        <div
+          style={{
+            display: 'flex',
+            borderBottom: '1px solid var(--border)',
+            marginBottom: '1.5rem',
+            gap: '1.5rem',
+          }}
+        >
+          {[
+            { label: 'Sign in', mode: 'login' as const },
+            { label: 'Create account', mode: 'signup' as const },
+          ].map(({ label, mode: m }) => {
+            const active = tab === m;
+            return (
+              <button
+                key={label}
+                type="button"
+                onClick={() => { setTab(m); setError(null); }}
+                style={{
+                  paddingBottom: '0.75rem',
+                  background: 'transparent',
+                  border: 'none',
+                  borderBottom: `2px solid ${active ? 'var(--accent)' : 'transparent'}`,
+                  cursor: 'pointer',
+                  fontSize: '0.875rem',
+                  fontWeight: active ? 500 : 400,
+                  color: active ? 'var(--text)' : 'var(--text-muted)',
+                  marginBottom: '-1px',
+                  transition: 'color 150ms ease',
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
         </div>
 
-        {/* ─── LOGIN PANEL ─── */}
-        {tab === 'login' && (
-          <div role="tabpanel" aria-label="Sign In">
-            {loginError && (
-              <div className="auth-error" role="alert">
-                <AlertCircle size={15} style={{ flexShrink: 0 }} />
-                <span>{loginError}</span>
+        <form onSubmit={handleSubmit}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {isSignup && (
+              <div>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, color: 'var(--text)', marginBottom: '0.375rem' }}>
+                  Full name
+                </label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Priya Sharma"
+                  required={isSignup}
+                  autoComplete="name"
+                />
               </div>
             )}
 
-            <form onSubmit={handleLogin}>
-              <div className="auth-field">
-                <label htmlFor="login-email" className="auth-label">Email Address</label>
-                <div className="input-wrap">
-                  <Mail size={16} className="input-icon" aria-hidden="true" />
-                  <input
-                    id="login-email"
-                    type="email"
-                    required
-                    autoComplete="email"
-                    value={loginEmail}
-                    onChange={(e) => setLoginEmail(e.target.value)}
-                    placeholder="name@company.com"
-                    className="input-with-icon"
-                  />
-                </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, color: 'var(--text)', marginBottom: '0.375rem' }}>
+                Email
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@company.com"
+                required
+                autoComplete="email"
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, color: 'var(--text)', marginBottom: '0.375rem' }}>
+                Password
+              </label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showPass ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={isSignup ? 'At least 8 characters' : 'Your password'}
+                  required
+                  autoComplete={isSignup ? 'new-password' : 'current-password'}
+                  style={{ paddingRight: '2.75rem' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPass((v) => !v)}
+                  style={{
+                    position: 'absolute',
+                    right: '0.75rem',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: 'var(--text-muted)',
+                    lineHeight: 0,
+                  }}
+                  aria-label={showPass ? 'Hide password' : 'Show password'}
+                >
+                  {showPass ? <EyeSlash size={16} /> : <Eye size={16} />}
+                </button>
               </div>
-
-              <div className="auth-field">
-                <label htmlFor="login-password" className="auth-label">Password</label>
-                <div className="input-wrap">
-                  <Lock size={16} className="input-icon" aria-hidden="true" />
-                  <input
-                    id="login-password"
-                    type={showLoginPass ? 'text' : 'password'}
-                    required
-                    autoComplete="current-password"
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    placeholder="Enter your password"
-                    className="input-with-icon"
-                    style={{ paddingRight: '2.5rem' }}
-                  />
-                  <button
-                    type="button"
-                    className="auth-eye-btn"
-                    onClick={() => setShowLoginPass((v) => !v)}
-                    aria-label={showLoginPass ? 'Hide password' : 'Show password'}
-                  >
-                    {showLoginPass ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={loginLoading}
-                className="btn btn-primary auth-submit-btn"
-              >
-                {loginLoading ? (
-                  <Loader2 size={16} className="status-dot-pulse" />
-                ) : (
-                  <>
-                    <span>Sign In</span>
-                    <ArrowRight size={15} />
-                  </>
-                )}
-              </button>
-            </form>
-
-            <p className="auth-switch-text">
-              Don't have an account?{' '}
-              <button className="auth-switch-link" onClick={() => setTab('signup')}>
-                Create an account
-              </button>
-            </p>
+              {isSignup && <PasswordStrength password={password} />}
+            </div>
           </div>
-        )}
 
-        {/* ─── SIGNUP PANEL ─── */}
-        {tab === 'signup' && (
-          <div role="tabpanel" aria-label="Create Account">
-            {signupError && (
-              <div className="auth-error" role="alert">
-                <AlertCircle size={15} style={{ flexShrink: 0 }} />
-                <span>{signupError}</span>
-              </div>
-            )}
+          {error && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                marginTop: '1rem',
+                padding: '0.75rem 1rem',
+                background: 'var(--error-bg)',
+                border: '1px solid rgba(220,38,38,0.2)',
+                borderRadius: 'var(--radius-sm)',
+                color: 'var(--error)',
+                fontSize: '0.875rem',
+              }}
+            >
+              <WarningCircle size={16} style={{ flexShrink: 0 }} />
+              {error}
+            </div>
+          )}
 
-            {signupSuccess && (
-              <div className="auth-success" role="status">
-                <CheckCircle2 size={15} style={{ flexShrink: 0 }} />
-                <span>Account created successfully. Signing in...</span>
-              </div>
-            )}
-
-            <form onSubmit={handleSignup}>
-              <div className="auth-field">
-                <label htmlFor="signup-email" className="auth-label">Email Address</label>
-                <div className="input-wrap">
-                  <Mail size={16} className="input-icon" aria-hidden="true" />
-                  <input
-                    id="signup-email"
-                    type="email"
-                    required
-                    autoComplete="email"
-                    value={signupEmail}
-                    onChange={(e) => setSignupEmail(e.target.value)}
-                    placeholder="name@company.com"
-                    className="input-with-icon"
-                  />
-                </div>
-              </div>
-
-              <div className="auth-field">
-                <label htmlFor="signup-password" className="auth-label">Password</label>
-                <div className="input-wrap">
-                  <Lock size={16} className="input-icon" aria-hidden="true" />
-                  <input
-                    id="signup-password"
-                    type={showSignupPass ? 'text' : 'password'}
-                    required
-                    autoComplete="new-password"
-                    value={signupPassword}
-                    onChange={(e) => setSignupPassword(e.target.value)}
-                    placeholder="At least 8 characters"
-                    className="input-with-icon"
-                    style={{ paddingRight: '2.5rem' }}
-                  />
-                  <button
-                    type="button"
-                    className="auth-eye-btn"
-                    onClick={() => setShowSignupPass((v) => !v)}
-                    aria-label={showSignupPass ? 'Hide password' : 'Show password'}
-                  >
-                    {showSignupPass ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-                {/* Password strength meter */}
-                {signupPassword && (
-                  <div className="auth-pw-strength" aria-live="polite">
-                    <div className="auth-pw-bar">
-                      <div
-                        className="auth-pw-fill"
-                        style={{ width: pwStrength.width, backgroundColor: pwStrength.color }}
-                      />
-                    </div>
-                    <span className="auth-pw-label" style={{ color: pwStrength.color }}>
-                      {pwStrength.label}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              <div className="auth-field">
-                <label htmlFor="signup-confirm" className="auth-label">Confirm Password</label>
-                <div className="input-wrap">
-                  <Lock size={16} className="input-icon" aria-hidden="true" />
-                  <input
-                    id="signup-confirm"
-                    type={showConfirmPass ? 'text' : 'password'}
-                    required
-                    autoComplete="new-password"
-                    value={signupConfirm}
-                    onChange={(e) => setSignupConfirm(e.target.value)}
-                    placeholder="Confirm your password"
-                    className="input-with-icon"
-                    style={{ paddingRight: '2.5rem' }}
-                  />
-                  <button
-                    type="button"
-                    className="auth-eye-btn"
-                    onClick={() => setShowConfirmPass((v) => !v)}
-                    aria-label={showConfirmPass ? 'Hide confirm password' : 'Show confirm password'}
-                  >
-                    {showConfirmPass ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={signupLoading || signupSuccess}
-                className="btn btn-primary auth-submit-btn"
-              >
-                {signupLoading ? (
-                  <Loader2 size={16} className="status-dot-pulse" />
-                ) : (
-                  <>
-                    <span>Create Account</span>
-                    <ArrowRight size={15} />
-                  </>
-                )}
-              </button>
-            </form>
-
-            <p className="auth-switch-text">
-              Already have an account?{' '}
-              <button className="auth-switch-link" onClick={() => setTab('login')}>
-                Sign in
-              </button>
-            </p>
-          </div>
-        )}
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              marginTop: '1.25rem',
+              width: '100%',
+              padding: '0.625rem',
+              background: loading ? 'var(--border-hover)' : 'var(--accent)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: '0.9375rem',
+              fontWeight: 500,
+              cursor: loading ? 'not-allowed' : 'pointer',
+              transition: 'background 150ms ease',
+            }}
+            onMouseEnter={(e) => !loading && (e.currentTarget.style.background = 'var(--accent-hover)')}
+            onMouseLeave={(e) => !loading && (e.currentTarget.style.background = 'var(--accent)')}
+          >
+            {loading ? 'Please wait...' : isSignup ? 'Create account' : 'Sign in'}
+          </button>
+        </form>
       </div>
     </div>
   );

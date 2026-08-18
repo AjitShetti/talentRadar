@@ -3,18 +3,18 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
-import { Briefcase, Lock, Loader2, Trash2, ExternalLink, ChevronDown, Search, ArrowRight } from 'lucide-react';
+import { Briefcase, Lock, Trash, ArrowSquareOut, CaretDown, MagnifyingGlass, WarningCircle } from '@phosphor-icons/react';
 import { applicationsApi } from '@/lib/applications-api';
 import type { JobApplication, ApplicationStatus } from '@/lib/types';
 import { useAuthModal } from '@/components/AuthModalProvider';
 
 const STATUSES: { key: ApplicationStatus; label: string; color: string; bg: string }[] = [
-  { key: 'saved', label: 'Saved', color: 'var(--color-fg-muted)', bg: 'rgba(255, 255, 255, 0.05)' },
-  { key: 'applied', label: 'Applied', color: '#38bdf8', bg: 'rgba(56, 189, 248, 0.1)' },
-  { key: 'screening', label: 'Screening', color: '#a855f7', bg: 'rgba(168, 85, 247, 0.1)' },
-  { key: 'interview', label: 'Interview', color: 'var(--color-accent)', bg: 'var(--color-accent-subtle)' },
-  { key: 'offer', label: 'Offer', color: '#10b981', bg: 'rgba(16, 185, 129, 0.1)' },
-  { key: 'rejected', label: 'Rejected', color: '#f87171', bg: 'rgba(239, 68, 68, 0.1)' },
+  { key: 'saved', label: 'Saved', color: 'var(--text-muted)', bg: 'var(--bg-subtle)' },
+  { key: 'applied', label: 'Applied', color: '#0284c7', bg: '#f0f9ff' },
+  { key: 'screening', label: 'Screening', color: '#7c3aed', bg: '#f5f3ff' },
+  { key: 'interview', label: 'Interview', color: 'var(--accent)', bg: 'var(--accent-subtle)' },
+  { key: 'offer', label: 'Offer', color: 'var(--success)', bg: 'var(--success-bg)' },
+  { key: 'rejected', label: 'Rejected', color: 'var(--error)', bg: 'var(--error-bg)' },
 ];
 
 export default function ApplicationsPage() {
@@ -26,7 +26,6 @@ export default function ApplicationsPage() {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -78,30 +77,28 @@ export default function ApplicationsPage() {
 
   if (status === 'unauthenticated') {
     return (
-      <div className="panel" style={{ maxWidth: 460, margin: '5rem auto', textAlign: 'center', padding: '3rem 2rem' }}>
-        <div
+      <div style={{ maxWidth: '480px', margin: '6rem auto', textAlign: 'center' }}>
+        <Lock size={36} style={{ color: 'var(--text-subtle)', marginBottom: '1.25rem' }} />
+        <h2 style={{ fontSize: '1.375rem', fontWeight: 600, color: 'var(--text)', marginBottom: '0.75rem' }}>
+          Sign in to track applications
+        </h2>
+        <p style={{ color: 'var(--text-muted)', marginBottom: '1.75rem' }}>
+          Save jobs and organize your job search pipeline in one place.
+        </p>
+        <button
+          onClick={openLogin}
           style={{
-            width: '48px',
-            height: '48px',
-            borderRadius: '50%',
-            background: 'var(--color-surface-elevated)',
-            border: '1px solid var(--color-border)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            margin: '0 auto 1.5rem auto',
-            color: 'var(--color-fg-muted)',
+            padding: '0.625rem 1.25rem',
+            background: 'var(--accent)',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 'var(--radius-sm)',
+            fontSize: '0.9375rem',
+            fontWeight: 500,
+            cursor: 'pointer',
           }}
         >
-          <Lock size={22} />
-        </div>
-        <h2 style={{ fontSize: '1.4rem', marginBottom: '0.75rem' }}>Sign In to Track Applications</h2>
-        <p style={{ color: 'var(--color-fg-muted)', fontSize: '0.875rem', marginBottom: '1.75rem', lineHeight: 1.6 }}>
-          Save jobs across multiple boards and organize your hiring pipeline in one place.
-        </p>
-        <button onClick={openLogin} className="btn btn-primary" style={{ width: '100%' }}>
-          <span>Sign In / Create Account</span>
-          <ArrowRight size={15} />
+          Sign in
         </button>
       </div>
     );
@@ -113,43 +110,53 @@ export default function ApplicationsPage() {
   }, {} as Record<string, JobApplication[]>);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+    <div style={{ paddingTop: '2.5rem', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
       <div>
-        <div className="badge badge-accent" style={{ marginBottom: '0.75rem' }}>
-          <Briefcase size={13} />
-          <span>HIRING PIPELINE</span>
-        </div>
-        <h1 style={{ fontSize: '2.25rem', marginBottom: '0.4rem' }}>
-          Application Tracking
+        <h1 style={{ fontSize: '1.75rem', fontWeight: 700, letterSpacing: '-0.025em', color: 'var(--text)', marginBottom: '0.35rem' }}>
+          Application tracking
         </h1>
-        <p style={{ color: 'var(--color-fg-muted)', fontSize: '1rem', maxWidth: '65ch' }}>
-          {applications.length} saved and tracked application{applications.length !== 1 ? 's' : ''} across all stages.
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.9375rem' }}>
+          {applications.length} tracked application{applications.length !== 1 ? 's' : ''} across your search pipeline.
         </p>
       </div>
 
       {error && (
-        <div className="auth-error">
-          <span>{error}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1rem', background: 'var(--error-bg)', border: '1px solid rgba(220,38,38,0.2)', borderRadius: 'var(--radius-sm)', color: 'var(--error)', fontSize: '0.875rem' }}>
+          <WarningCircle size={16} style={{ flexShrink: 0 }} />
+          {error}
         </div>
       )}
 
       {loading && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', color: 'var(--color-fg-muted)', padding: '2rem 0' }}>
-          <Loader2 size={20} className="status-dot-pulse" />
-          <span>Loading Application Pipeline...</span>
-        </div>
+        <p style={{ color: 'var(--text-subtle)', fontSize: '0.9375rem', padding: '2rem 0' }}>
+          Loading applications...
+        </p>
       )}
 
       {!loading && applications.length === 0 && !error && (
-        <div className="panel" style={{ textAlign: 'center', padding: '4rem 2rem' }}>
-          <Briefcase size={48} style={{ margin: '0 auto 1rem auto', opacity: 0.3 }} />
-          <h3 style={{ marginBottom: '0.5rem' }}>No Tracked Applications Yet</h3>
-          <p style={{ color: 'var(--color-fg-muted)', fontSize: '0.875rem', marginBottom: '1.5rem' }}>
-            Browse open opportunities and click the bookmark icon to start tracking applications.
+        <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius)', textAlign: 'center', padding: '4rem 2rem', background: 'var(--surface)' }}>
+          <Briefcase size={40} style={{ margin: '0 auto 1rem auto', color: 'var(--text-subtle)' }} />
+          <h3 style={{ fontSize: '1.125rem', fontWeight: 600, color: 'var(--text)', marginBottom: '0.5rem' }}>No applications yet</h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '1.5rem', maxWidth: '40ch', margin: '0 auto 1.5rem auto' }}>
+            Search open roles and click the bookmark icon on any job card to start tracking.
           </p>
-          <Link href="/search" className="btn btn-primary">
-            <Search size={15} />
-            <span>Search Live Jobs</span>
+          <Link
+            href="/search"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              padding: '0.5rem 1rem',
+              background: 'var(--accent)',
+              color: '#fff',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: '0.875rem',
+              fontWeight: 500,
+              textDecoration: 'none',
+            }}
+          >
+            <MagnifyingGlass size={15} />
+            <span>Search jobs</span>
           </Link>
         </div>
       )}
@@ -170,13 +177,13 @@ export default function ApplicationsPage() {
               <div
                 key={key}
                 style={{
-                  background: 'var(--color-surface)',
-                  border: '1px solid var(--color-border)',
-                  borderRadius: 'var(--border-radius)',
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius)',
                   padding: '1rem',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '0.85rem',
+                  gap: '0.75rem',
                 }}
               >
                 {/* Column Header */}
@@ -185,53 +192,59 @@ export default function ApplicationsPage() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    paddingBottom: '0.65rem',
-                    borderBottom: '1px solid var(--color-border-subtle)',
+                    paddingBottom: '0.5rem',
+                    borderBottom: '1px solid var(--border)',
                   }}
                 >
-                  <span style={{ fontSize: '0.8125rem', fontWeight: 700, color, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color }}>
                     {label}
                   </span>
                   <span
-                    className="badge"
-                    style={{ fontSize: '0.6875rem', padding: '0.1rem 0.45rem', fontFamily: 'var(--font-mono)' }}
+                    style={{
+                      fontSize: '0.75rem',
+                      padding: '0.1rem 0.45rem',
+                      borderRadius: 'var(--radius-full)',
+                      background: 'var(--bg-subtle)',
+                      color: 'var(--text-muted)',
+                      border: '1px solid var(--border)',
+                    }}
                   >
                     {col.length}
                   </span>
                 </div>
 
                 {/* Cards in Column */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
                   {col.map((app) => {
                     const statusInfo = STATUSES.find((s) => s.key === app.status?.toLowerCase()) || STATUSES[0];
                     return (
                       <div
                         key={app.id}
                         style={{
-                          padding: '0.85rem',
-                          background: 'var(--color-surface-elevated)',
-                          border: '1px solid var(--color-border)',
-                          borderRadius: 'var(--border-radius-sm)',
+                          padding: '0.875rem',
+                          background: 'var(--bg)',
+                          border: '1px solid var(--border)',
+                          borderRadius: 'var(--radius-sm)',
                           display: 'flex',
                           flexDirection: 'column',
-                          gap: '0.4rem',
+                          gap: '0.35rem',
                         }}
                       >
-                        <div style={{ fontWeight: 600, fontSize: '0.875rem', color: '#ffffff', lineHeight: 1.3 }}>
+                        <div style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--text)', lineHeight: 1.3 }}>
                           {app.job?.title ?? 'Job Title'}
                         </div>
                         {app.job?.company_name && (
-                          <div style={{ fontSize: '0.75rem', color: 'var(--color-fg-muted)' }}>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                             {app.job.company_name}
                           </div>
                         )}
                         {app.job?.location_raw && (
-                          <div style={{ fontSize: '0.6875rem', color: 'var(--color-fg-subtle)' }}>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-subtle)' }}>
                             {app.job.location_raw}
                           </div>
                         )}
 
-                        <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', marginTop: '0.4rem' }}>
+                        <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', marginTop: '0.5rem' }}>
                           <div style={{ position: 'relative', flex: 1 }}>
                             <button
                               onClick={() => setOpenDropdown(openDropdown === app.id ? null : app.id)}
@@ -241,18 +254,18 @@ export default function ApplicationsPage() {
                                 alignItems: 'center',
                                 justifyContent: 'space-between',
                                 gap: '0.25rem',
-                                padding: '0.3rem 0.5rem',
-                                background: 'var(--color-surface)',
-                                border: '1px solid var(--color-border)',
-                                borderRadius: '4px',
+                                padding: '0.25rem 0.5rem',
+                                background: statusInfo.bg,
+                                border: '1px solid var(--border)',
+                                borderRadius: 'var(--radius-sm)',
                                 color: statusInfo.color,
                                 cursor: 'pointer',
-                                fontSize: '0.6875rem',
-                                fontWeight: 600,
+                                fontSize: '0.75rem',
+                                fontWeight: 500,
                               }}
                             >
                               <span>{statusInfo.label}</span>
-                              <ChevronDown size={11} />
+                              <CaretDown size={11} />
                             </button>
                             {openDropdown === app.id && (
                               <div
@@ -261,9 +274,9 @@ export default function ApplicationsPage() {
                                   top: 'calc(100% + 4px)',
                                   left: 0,
                                   zIndex: 100,
-                                  background: 'var(--color-surface-elevated)',
-                                  border: '1px solid var(--color-border)',
-                                  borderRadius: 'var(--border-radius-sm)',
+                                  background: 'var(--surface)',
+                                  border: '1px solid var(--border)',
+                                  borderRadius: 'var(--radius-sm)',
                                   padding: '4px',
                                   minWidth: '130px',
                                   boxShadow: 'var(--shadow-lg)',
@@ -277,16 +290,16 @@ export default function ApplicationsPage() {
                                       display: 'block',
                                       width: '100%',
                                       textAlign: 'left',
-                                      padding: '0.45rem 0.65rem',
+                                      padding: '0.35rem 0.5rem',
                                       background: 'transparent',
                                       border: 'none',
                                       color: s.color,
                                       cursor: 'pointer',
                                       fontSize: '0.75rem',
-                                      fontWeight: 600,
+                                      fontWeight: 500,
                                       borderRadius: '4px',
                                     }}
-                                    onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
+                                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-subtle)')}
                                     onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                                   >
                                     {s.label}
@@ -302,13 +315,14 @@ export default function ApplicationsPage() {
                               target="_blank"
                               rel="noopener noreferrer"
                               style={{
-                                color: 'var(--color-fg-muted)',
+                                color: 'var(--text-subtle)',
                                 display: 'flex',
                                 alignItems: 'center',
-                                padding: '0.3rem',
+                                padding: '0.25rem',
                               }}
+                              title="Open posting"
                             >
-                              <ExternalLink size={13} />
+                              <ArrowSquareOut size={14} />
                             </a>
                           )}
                           <button
@@ -317,14 +331,14 @@ export default function ApplicationsPage() {
                               background: 'none',
                               border: 'none',
                               cursor: 'pointer',
-                              color: 'var(--color-fg-subtle)',
+                              color: 'var(--text-subtle)',
                               display: 'flex',
                               alignItems: 'center',
-                              padding: '0.3rem',
+                              padding: '0.25rem',
                             }}
                             title="Remove"
                           >
-                            <Trash2 size={13} />
+                            <Trash size={14} />
                           </button>
                         </div>
                       </div>
@@ -333,10 +347,10 @@ export default function ApplicationsPage() {
                   {col.length === 0 && (
                     <div
                       style={{
-                        padding: '1.25rem 0.5rem',
-                        border: '1px dashed var(--color-border-subtle)',
-                        borderRadius: 'var(--border-radius-sm)',
-                        color: 'var(--color-fg-subtle)',
+                        padding: '1rem 0.5rem',
+                        border: '1px dashed var(--border)',
+                        borderRadius: 'var(--radius-sm)',
+                        color: 'var(--text-subtle)',
                         fontSize: '0.75rem',
                         textAlign: 'center',
                       }}

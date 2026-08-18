@@ -5,7 +5,7 @@ import { api } from '@/lib/api';
 import { Job } from '@/lib/types';
 import SearchBar from '@/components/SearchBar';
 import JobCard from '@/components/JobCard';
-import { AlertCircle, CheckCircle2, Clock, Globe2, Loader2, RefreshCw, Radio } from 'lucide-react';
+import { ArrowsClockwise, WarningCircle } from '@phosphor-icons/react';
 
 const PAGE_SIZE = 20;
 
@@ -16,6 +16,7 @@ interface SourceStat {
 }
 
 export default function SearchPage() {
+  const [query, setQuery] = useState('');
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -27,13 +28,10 @@ export default function SearchPage() {
   const [isFiltered, setIsFiltered] = useState(false);
   const [isCached, setIsCached] = useState(false);
   const [sourcesStats, setSourcesStats] = useState<Record<string, SourceStat>>({});
-  const [activeSources, setActiveSources] = useState<string[]>([]);
 
-  // Ref to track the active EventSource or AbortController
   const eventSourceRef = useRef<EventSource | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  // Clean up any streaming connections on unmount
   useEffect(() => {
     return () => {
       eventSourceRef.current?.close();
@@ -41,7 +39,6 @@ export default function SearchPage() {
     };
   }, []);
 
-  // ── Load default structured jobs on first render ──────────
   const loadAllJobs = useCallback(async (isLoadMore = false) => {
     eventSourceRef.current?.close();
     abortRef.current?.abort();
@@ -49,34 +46,22 @@ export default function SearchPage() {
     abortRef.current = controller;
 
     if (!isLoadMore) {
-      setLoading(true);
-      setError(null);
-      setCurrentQuery('');
-      setIsFiltered(false);
-      setIsCached(false);
-      setSourcesStats({});
-      setJobs([]);
-      setOffset(0);
+      setLoading(true); setError(null); setCurrentQuery('');
+      setIsFiltered(false); setIsCached(false); setSourcesStats({});
+      setJobs([]); setOffset(0);
     } else {
       setLoadingMore(true);
     }
 
     const currentOffset = isLoadMore ? offset : 0;
-
     try {
-      const response = await api.search.structured(
-        { limit: PAGE_SIZE, offset: currentOffset },
-        controller.signal
-      );
-
+      const response = await api.search.structured({ limit: PAGE_SIZE, offset: currentOffset }, controller.signal);
       if (isLoadMore) {
         setJobs((prev) => [...prev, ...response.jobs]);
         setOffset(currentOffset + PAGE_SIZE);
       } else {
-        setJobs(response.jobs);
-        setOffset(PAGE_SIZE);
+        setJobs(response.jobs); setOffset(PAGE_SIZE);
       }
-
       setTotalFound(response.total);
       setHasMore(response.has_more);
     } catch (err) {
@@ -84,309 +69,170 @@ export default function SearchPage() {
       setError(err instanceof Error ? err.message : 'Failed to load jobs.');
       if (!isLoadMore) setJobs([]);
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
+      setLoading(false); setLoadingMore(false);
     }
   }, [offset]);
 
-  useEffect(() => {
-    loadAllJobs(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useEffect(() => { loadAllJobs(false); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Real-time Multi-Source Streaming Search ──────────
-  const handleRealtimeStreamSearch = useCallback((query: string, forceRefresh = false) => {
+  const handleRealtimeStreamSearch = useCallback((q: string, forceRefresh = false) => {
     eventSourceRef.current?.close();
     abortRef.current?.abort();
+    setLoading(true); setError(null); setJobs([]);
+    setSourcesStats({}); setCurrentQuery(q); setIsFiltered(true); setIsCached(false);
 
-    setLoading(true);
-    setError(null);
-    setJobs([]);
-    setSourcesStats({});
-    setActiveSources([]);
-    setCurrentQuery(query);
-    setIsFiltered(true);
-    setIsCached(false);
-
-    const streamUrl = api.search.getStreamUrl({
-      query,
-      location: 'India',
-      force_refresh: forceRefresh,
-    });
-
-    const es = new EventSource(streamUrl);
+    const es = new EventSource(api.search.getStreamUrl({ query: q, location: 'India', force_refresh: forceRefresh }));
     eventSourceRef.current = es;
-
-    es.addEventListener('init', (e: MessageEvent) => {
-      try {
-        const payload = JSON.parse(e.data);
-        if (payload.sources) setActiveSources(payload.sources);
-      } catch (err) {
-        console.error('Failed to parse init event', err);
-      }
-    });
 
     es.addEventListener('cached', (e: MessageEvent) => {
       try {
-        const payload = JSON.parse(e.data);
+        const p = JSON.parse(e.data);
         setIsCached(true);
-        if (payload.jobs) {
-          setJobs(payload.jobs);
-          setTotalFound(payload.total || payload.jobs.length);
-        }
-        if (payload.sources_stats) {
-          setSourcesStats(payload.sources_stats);
-        }
-      } catch (err) {
-        console.error('Failed to parse cached event', err);
-      }
+        if (p.jobs) { setJobs(p.jobs); setTotalFound(p.total || p.jobs.length); }
+        if (p.sources_stats) setSourcesStats(p.sources_stats);
+      } catch { /* ignore parse errors */ }
     });
 
     es.addEventListener('chunk', (e: MessageEvent) => {
       try {
-        const payload = JSON.parse(e.data);
-        const sourceName = payload.source;
-
-        setSourcesStats((prev) => ({
-          ...prev,
-          [sourceName]: {
-            latency_ms: payload.latency_ms,
-            count: payload.count,
-            status: payload.status,
-          },
-        }));
-
-        if (payload.jobs && payload.jobs.length > 0) {
+        const p = JSON.parse(e.data);
+        setSourcesStats((prev) => ({ ...prev, [p.source]: { latency_ms: p.latency_ms, count: p.count, status: p.status } }));
+        if (p.jobs?.length > 0) {
           setJobs((prev) => {
-            const existingIds = new Set(prev.map((j) => j.id));
-            const newUniqueJobs = payload.jobs.filter((j: Job) => !existingIds.has(j.id));
-            return [...prev, ...newUniqueJobs];
+            const seen = new Set(prev.map((j) => j.id));
+            return [...prev, ...p.jobs.filter((j: Job) => !seen.has(j.id))];
           });
         }
-      } catch (err) {
-        console.error('Failed to parse chunk event', err);
-      }
+      } catch { /* ignore parse errors */ }
     });
 
     es.addEventListener('complete', (e: MessageEvent) => {
-      try {
-        const payload = JSON.parse(e.data);
-        if (payload.sources_stats) {
-          setSourcesStats(payload.sources_stats);
-        }
-      } catch (err) {
-        console.error('Failed to parse complete event', err);
-      }
-      setLoading(false);
-      es.close();
+      try { const p = JSON.parse(e.data); if (p.sources_stats) setSourcesStats(p.sources_stats); } catch { /* ignore */ }
+      setLoading(false); es.close();
     });
 
-    es.addEventListener('error', () => {
-      setLoading(false);
-      es.close();
-    });
+    es.addEventListener('error', () => { setLoading(false); es.close(); });
   }, []);
 
-  const handleSearch = useCallback((query: string) => {
-    if (!query.trim()) {
-      loadAllJobs(false);
-      return;
-    }
-    handleRealtimeStreamSearch(query, false);
+  const handleSearch = useCallback((q: string) => {
+    if (!q.trim()) { loadAllJobs(false); return; }
+    handleRealtimeStreamSearch(q, false);
   }, [loadAllJobs, handleRealtimeStreamSearch]);
 
-  const handleForceRefresh = useCallback(() => {
-    if (currentQuery) {
-      handleRealtimeStreamSearch(currentQuery, true);
-    }
-  }, [currentQuery, handleRealtimeStreamSearch]);
+  const sourceEntries = Object.entries(sourcesStats);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-      {/* Header Info */}
+    <div style={{ paddingTop: '2.5rem', display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
+      {/* Page header */}
       <div>
-        <div className="badge badge-accent" style={{ marginBottom: '0.75rem' }}>
-          <span className="status-dot status-dot-active" />
-          <span>REAL-TIME AGGREGATION</span>
-        </div>
-        <h1 style={{ fontSize: '2.25rem', marginBottom: '0.4rem' }}>
-          Real-Time Job Telemetry
+        <h1 style={{ fontSize: '1.75rem', fontWeight: 700, letterSpacing: '-0.025em', color: 'var(--text)', marginBottom: '0.35rem' }}>
+          Job search
         </h1>
-        <p style={{ color: 'var(--color-fg-muted)', fontSize: '1rem', maxWidth: '65ch' }}>
-          On-demand job aggregation across Greenhouse, Lever, Ashby, LinkedIn, and specialized tech boards.
+        <p style={{ fontSize: '0.9375rem', color: 'var(--text-muted)' }}>
+          Live results from Greenhouse, Lever, Ashby, LinkedIn, and Naukri.
         </p>
       </div>
 
-      {/* Search Bar */}
-      <div>
-        <SearchBar
-          onSearch={handleSearch}
-          loading={loading}
-          placeholder="e.g. Senior Frontend Engineer, Python AI Specialist, DevOps Lead..."
-        />
-      </div>
+      {/* Search bar + streaming progress */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <SearchBar value={query} onChange={setQuery} onSearch={() => handleSearch(query)} loading={loading} />
 
-      {/* Real-time Sources Monitor Bar */}
-      {isFiltered && (
-        <div
-          className="glass-panel"
-          style={{
-            padding: '1.15rem 1.25rem',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.85rem',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-fg-muted)' }}>
-              <Globe2 size={15} className="text-accent" />
-              <span>DATA SOURCES MONITORED:</span>
-              {isCached && (
-                <span className="badge badge-emerald" style={{ fontSize: '0.6875rem' }}>
-                  <Clock size={11} /> 8H CACHE HIT
-                </span>
-              )}
-            </div>
-            {isFiltered && !loading && (
+        {/* Slim progress bar while streaming */}
+        {loading && isFiltered && (
+          <div style={{ height: '2px', background: 'var(--border)', borderRadius: '99px', overflow: 'hidden' }}>
+            <div
+              style={{
+                height: '100%',
+                background: 'var(--accent)',
+                borderRadius: '99px',
+                animation: 'progress-indeterminate 1.5s ease-in-out infinite',
+                width: '40%',
+              }}
+            />
+          </div>
+        )}
+
+        {/* Source stats (only when streaming search active) */}
+        {isFiltered && sourceEntries.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+            {sourceEntries.map(([name, stat]) => (
+              <span key={name} style={{ fontSize: '0.75rem', color: stat.status === 'ok' ? 'var(--success)' : 'var(--text-subtle)' }}>
+                {name}: {stat.count} results
+              </span>
+            ))}
+            {isCached && (
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-subtle)' }}>Cached results</span>
+            )}
+            {!loading && currentQuery && (
               <button
-                onClick={handleForceRefresh}
-                className="btn btn-secondary btn-sm"
-                style={{ fontSize: '0.75rem', padding: '0.3rem 0.65rem' }}
+                onClick={() => handleRealtimeStreamSearch(currentQuery, true)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '0.25rem',
+                  background: 'transparent', border: 'none', cursor: 'pointer',
+                  fontSize: '0.75rem', color: 'var(--text-muted)',
+                  padding: 0,
+                }}
               >
-                <RefreshCw size={12} /> Live Re-scrape
+                <ArrowsClockwise size={13} /> Refresh
               </button>
             )}
           </div>
+        )}
+      </div>
 
-          {/* Source Badges */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-            {['ats_platforms', 'linkedin', 'foundit', 'freshersworld', 'naukri', 'indeed_india'].map((src) => {
-              const stat = sourcesStats[src];
-              const isDone = Boolean(stat);
-              const label = src.replace('_', ' ').toUpperCase();
-
-              return (
-                <div
-                  key={src}
-                  className="badge"
-                  style={{
-                    padding: '0.3rem 0.65rem',
-                    fontSize: '0.75rem',
-                    background: isDone
-                      ? (stat.status === 'success' ? 'var(--color-info-subtle)' : 'var(--color-error-subtle)')
-                      : 'var(--color-surface)',
-                    borderColor: isDone
-                      ? (stat.status === 'success' ? 'rgba(6, 182, 212, 0.3)' : 'rgba(239, 68, 68, 0.3)')
-                      : 'var(--color-border)',
-                    color: isDone
-                      ? (stat.status === 'success' ? '#22d3ee' : '#f87171')
-                      : 'var(--color-fg-muted)',
-                  }}
-                >
-                  {!isDone && loading ? (
-                    <Loader2 size={11} className="status-dot-pulse" />
-                  ) : isDone && stat.status === 'success' ? (
-                    <CheckCircle2 size={12} style={{ color: '#10b981' }} />
-                  ) : (
-                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} />
-                  )}
-                  <span>{label}</span>
-                  {stat && (
-                    <span style={{ opacity: 0.8, fontSize: '0.6875rem', fontFamily: 'var(--font-mono)' }}>
-                      ({stat.count} jobs · {stat.latency_ms}ms)
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Error */}
+      {/* Results */}
       {error && (
-        <div className="auth-error" style={{ marginBottom: 0 }}>
-          <AlertCircle size={16} />
-          <span>{error}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.875rem 1rem', background: 'var(--error-bg)', border: '1px solid rgba(220,38,38,0.2)', borderRadius: 'var(--radius-sm)', color: 'var(--error)', fontSize: '0.875rem' }}>
+          <WarningCircle size={16} />
+          {error}
         </div>
       )}
 
-      {/* Results Count */}
-      {!loading && (
-        <div style={{ fontSize: '0.875rem', color: 'var(--color-fg-muted)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          {isFiltered ? (
-            <span>
-              Found <strong style={{ color: 'var(--color-fg)' }}>{jobs.length}</strong> live opening{jobs.length !== 1 ? 's' : ''} for <span className="text-accent">&ldquo;{currentQuery}&rdquo;</span>
-            </span>
-          ) : (
-            <span>
-              Showing <strong style={{ color: 'var(--color-fg)' }}>{jobs.length}</strong> of {totalFound} total indexed openings
-            </span>
+      {loading && !jobs.length ? (
+        <div style={{ color: 'var(--text-subtle)', fontSize: '0.9375rem', padding: '3rem 0', textAlign: 'center' }}>
+          Searching...
+        </div>
+      ) : (
+        <>
+          {jobs.length > 0 && (
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-subtle)' }}>
+              {jobs.length}{totalFound > jobs.length ? ` of ${totalFound}` : ''} results
+              {currentQuery && <> for <strong style={{ color: 'var(--text)' }}>{currentQuery}</strong></>}
+            </p>
           )}
-        </div>
-      )}
 
-      {/* Loading Indicator */}
-      {loading && jobs.length === 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '5rem 0', color: 'var(--color-fg-muted)' }}>
-          <div
-            style={{
-              width: '48px',
-              height: '48px',
-              borderRadius: '50%',
-              border: '3px solid var(--color-border)',
-              borderTopColor: 'var(--color-accent)',
-              animation: 'spin 1s linear infinite',
-              marginBottom: '1rem',
-            }}
-          />
-          <div style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--color-fg)' }}>
-            Streaming live job postings...
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {jobs.map((job) => <JobCard key={job.id} job={job} />)}
           </div>
-        </div>
+
+          {jobs.length === 0 && !loading && !error && (
+            <div style={{ padding: '4rem 0', textAlign: 'center', color: 'var(--text-subtle)', fontSize: '0.9375rem' }}>
+              No results found. Try a different search.
+            </div>
+          )}
+
+          {hasMore && !isFiltered && (
+            <div style={{ textAlign: 'center', paddingTop: '0.5rem' }}>
+              <button
+                onClick={() => loadAllJobs(true)}
+                disabled={loadingMore}
+                style={{
+                  padding: '0.5rem 1.25rem', background: 'var(--surface)', border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', color: 'var(--text)', cursor: 'pointer',
+                }}
+              >
+                {loadingMore ? 'Loading...' : 'Load more'}
+              </button>
+            </div>
+          )}
+        </>
       )}
 
-      {/* Job List */}
-      {jobs.length > 0 && (
-        <div style={{ display: 'grid', gap: '1.25rem' }}>
-          {jobs.map((job) => (
-            <JobCard key={job.id} job={job} showScore={false} />
-          ))}
-        </div>
-      )}
-
-      {/* Load More for structured search */}
-      {!isFiltered && hasMore && !loading && (
-        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1rem' }}>
-          <button
-            onClick={() => loadAllJobs(true)}
-            disabled={loadingMore}
-            className="btn btn-secondary btn-lg"
-          >
-            {loadingMore ? (
-              <>
-                <Loader2 size={16} className="status-dot-pulse" />
-                <span>Loading More Openings...</span>
-              </>
-            ) : (
-              <span>Load More Jobs</span>
-            )}
-          </button>
-        </div>
-      )}
-
-      {/* Empty State */}
-      {!loading && jobs.length === 0 && !error && isFiltered && (
-        <div className="panel" style={{ textAlign: 'center', padding: '4rem 1rem', color: 'var(--color-fg-subtle)' }}>
-          <Radio size={48} style={{ margin: '0 auto 1rem auto', opacity: 0.3 }} />
-          <h3 style={{ color: 'var(--color-fg)', marginBottom: '0.5rem' }}>No openings found</h3>
-          <p style={{ fontSize: '0.875rem' }}>Try searching with a broader title, different keyword, or re-scrape.</p>
-        </div>
-      )}
-
-      <style jsx>{`
-        @keyframes spin {
-          to { transform: rotate(360deg); }
+      <style>{`
+        @keyframes progress-indeterminate {
+          0% { transform: translateX(-100%); }
+          50% { transform: translateX(150%); }
+          100% { transform: translateX(400%); }
         }
       `}</style>
     </div>

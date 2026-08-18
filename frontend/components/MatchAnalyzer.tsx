@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Target, Loader2, FileText, Sparkles, AlertTriangle, Download, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { ArrowRight, WarningCircle, Download, CheckCircle } from '@phosphor-icons/react';
 import ReactMarkdown from 'react-markdown';
 
 interface EvaluationResult {
@@ -10,97 +10,62 @@ interface EvaluationResult {
   reasoning: string;
 }
 
-export default function MatchAnalyzer() {
+interface MatchAnalyzerProps {
+  token?: string;
+}
+
+export default function MatchAnalyzer({ token }: MatchAnalyzerProps) {
   const [resume, setResume] = useState('');
   const [jd, setJd] = useState('');
   const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState<string>('');
+  const [statusText, setStatusText] = useState('');
   const [result, setResult] = useState<EvaluationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  // Resume Download
-  const [tailoringResume, setTailoringResume] = useState(false);
-  const [learningPath, setLearningPath] = useState<string | null>(null);
-  const [loadingPath, setLoadingPath] = useState(false);
+  const [tailoring, setTailoring] = useState(false);
 
   const eventSourceRef = useRef<EventSource | null>(null);
-
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
 
-  useEffect(() => {
-    return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-      }
-    };
-  }, []);
+  useEffect(() => () => { eventSourceRef.current?.close(); }, []);
 
   const startAnalysis = async () => {
     if (!resume.trim() || !jd.trim()) {
-      setError('Please provide both candidate resume and job description.');
+      setError('Please paste both your resume and the job description.');
       return;
     }
-
-    setLoading(true);
-    setError(null);
-    setResult(null);
-    setStatus('Initializing AI evaluation engine...');
+    setLoading(true); setError(null); setResult(null); setStatusText('Analyzing...');
 
     try {
-      // 1. Dispatch Task
       const res = await fetch(`${API_URL}/api/v1/match/evaluate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ resume_text: resume, job_description: jd }),
       });
+      if (!res.ok) throw new Error(`Analysis failed: ${res.statusText}`);
+      const { task_id: taskId } = await res.json();
 
-      if (!res.ok) {
-        throw new Error(`Evaluation failed: ${res.statusText}`);
-      }
-
-      const data = await res.json();
-      const taskId = data.task_id;
-
-      // 2. Connect to SSE Stream
       const sse = new EventSource(`${API_URL}/api/v1/match/evaluate/stream/${taskId}`);
       eventSourceRef.current = sse;
 
-      sse.addEventListener('processing', (event: any) => {
-        setStatus(event.data === 'PENDING' || !event.data ? 'Analyzing vector embeddings...' : event.data);
+      sse.addEventListener('processing', (e: MessageEvent) => {
+        setStatusText(e.data && e.data !== 'PENDING' ? e.data : 'Evaluating...');
       });
-
-      sse.addEventListener('success', (event: any) => {
-        try {
-          const resultData = JSON.parse(event.data);
-          setResult(resultData);
-          setStatus('Analysis complete.');
-        } catch {
-          setError('Failed to parse evaluation results.');
-        }
-        setLoading(false);
-        sse.close();
+      sse.addEventListener('success', (e: MessageEvent) => {
+        try { setResult(JSON.parse(e.data)); setStatusText(''); } catch { setError('Failed to parse result.'); }
+        setLoading(false); sse.close();
       });
-
-      sse.addEventListener('error', (event: any) => {
-        setError(event.data || 'An error occurred during evaluation.');
-        setLoading(false);
-        sse.close();
+      sse.addEventListener('error', (e: MessageEvent) => {
+        setError((e as MessageEvent).data || 'Analysis failed.'); setLoading(false); sse.close();
       });
-
-      sse.onerror = (err) => {
-        console.error('SSE Error:', err);
-        setError('Lost connection to evaluation engine.');
-        setLoading(false);
-        sse.close();
-      };
-    } catch (err: any) {
-      setError(err.message);
+      sse.onerror = () => { setError('Connection lost.'); setLoading(false); sse.close(); };
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong');
       setLoading(false);
     }
   };
 
-  const downloadTailoredResume = async () => {
-    setTailoringResume(true);
+  const downloadTailored = async () => {
+    setTailoring(true);
     try {
       const res = await fetch(`${API_URL}/api/v1/match/tailor-resume`, {
         method: 'POST',
@@ -108,348 +73,158 @@ export default function MatchAnalyzer() {
         body: JSON.stringify({ resume_text: resume, job_description: jd }),
       });
       if (!res.ok) throw new Error('Failed to tailor resume');
-
-      const contentDisposition = res.headers.get('Content-Disposition');
-      let filename = 'Tailored_Resume.pdf';
-      if (contentDisposition && contentDisposition.includes('filename=')) {
-        filename = contentDisposition.split('filename=')[1].replace(/["']/g, '');
-      }
-
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      const cd = res.headers.get('Content-Disposition');
+      const filename = cd?.includes('filename=') ? cd.split('filename=')[1].replace(/['"]/g, '') : 'Tailored_Resume.pdf';
+      const url = window.URL.createObjectURL(await res.blob());
+      const a = Object.assign(document.createElement('a'), { href: url, download: filename });
+      document.body.appendChild(a); a.click(); a.remove();
       window.URL.revokeObjectURL(url);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Download failed');
     } finally {
-      setTailoringResume(false);
+      setTailoring(false);
     }
   };
 
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '2rem' }}>
-      {/* Input Panel */}
-      <div className="panel" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-          <div
-            style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: 'var(--border-radius-sm)',
-              background: 'var(--color-accent-subtle)',
-              border: '1px solid var(--color-border-accent)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--color-accent)',
-            }}
-          >
-            <FileText size={16} />
-          </div>
-          <div>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>Input Context</h2>
-            <p style={{ fontSize: '0.8125rem', color: 'var(--color-fg-muted)', margin: 0 }}>
-              Provide the target job description and your resume text
-            </p>
-          </div>
-        </div>
+  const scoreColor = result ? (result.match_score >= 0.8 ? 'var(--success)' : result.match_score >= 0.6 ? 'var(--warning)' : 'var(--error)') : 'var(--text)';
 
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '1.5rem' }}>
+      {/* Input panel */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         <div>
-          <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-fg-muted)' }}>
-            Job Description
+          <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, color: 'var(--text)', marginBottom: '0.375rem' }}>
+            Job description
           </label>
           <textarea
             value={jd}
             onChange={(e) => setJd(e.target.value)}
-            placeholder="Paste target job requirements, qualifications, and role description..."
-            style={{
-              width: '100%',
-              minHeight: '140px',
-              background: 'var(--color-surface-elevated)',
-              border: '1px solid var(--color-border)',
-              borderRadius: 'var(--border-radius)',
-              color: 'var(--color-fg)',
-              padding: '0.85rem',
-              fontFamily: 'var(--font-body)',
-              fontSize: '0.875rem',
-              resize: 'vertical',
-            }}
+            placeholder="Paste the full job description here..."
+            rows={7}
+            style={{ resize: 'vertical' }}
           />
         </div>
-
         <div>
-          <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-fg-muted)' }}>
-            Candidate Resume
+          <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, color: 'var(--text)', marginBottom: '0.375rem' }}>
+            Your resume
           </label>
           <textarea
             value={resume}
             onChange={(e) => setResume(e.target.value)}
-            placeholder="Paste current resume plain text or profile summary..."
-            style={{
-              width: '100%',
-              minHeight: '140px',
-              background: 'var(--color-surface-elevated)',
-              border: '1px solid var(--color-border)',
-              borderRadius: 'var(--border-radius)',
-              color: 'var(--color-fg)',
-              padding: '0.85rem',
-              fontFamily: 'var(--font-body)',
-              fontSize: '0.875rem',
-              resize: 'vertical',
-            }}
+            placeholder="Paste your resume text here..."
+            rows={7}
+            style={{ resize: 'vertical' }}
           />
         </div>
 
+        {error && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1rem', background: 'var(--error-bg)', border: '1px solid rgba(220,38,38,0.2)', borderRadius: 'var(--radius-sm)', color: 'var(--error)', fontSize: '0.875rem' }}>
+            <WarningCircle size={16} style={{ flexShrink: 0 }} />
+            {error}
+          </div>
+        )}
+
         <button
-          className="btn btn-primary"
           onClick={startAnalysis}
           disabled={loading}
-          style={{ width: '100%', padding: '0.8rem' }}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+            padding: '0.625rem 1.25rem', background: loading ? 'var(--border-hover)' : 'var(--accent)',
+            color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)',
+            fontSize: '0.9375rem', fontWeight: 500, cursor: loading ? 'not-allowed' : 'pointer',
+            transition: 'background 150ms ease',
+          }}
+          onMouseEnter={(e) => !loading && (e.currentTarget.style.background = 'var(--accent-hover)')}
+          onMouseLeave={(e) => !loading && (e.currentTarget.style.background = 'var(--accent)')}
         >
-          {loading ? (
-            <>
-              <Loader2 size={16} className="status-dot-pulse" />
-              <span>Analyzing Match Telemetry...</span>
-            </>
-          ) : (
-            <>
-              <Sparkles size={16} />
-              <span>Evaluate Match & Gap Analysis</span>
-            </>
-          )}
+          {loading ? statusText || 'Analyzing...' : 'Analyze match'}
+          {!loading && <ArrowRight size={16} />}
         </button>
-
-        {error && (
-          <div className="auth-error">
-            <AlertTriangle size={16} style={{ flexShrink: 0 }} />
-            <span>{error}</span>
-          </div>
-        )}
       </div>
 
-      {/* Output Panel */}
-      <div className="panel panel-elevated" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-          <div
-            style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: 'var(--border-radius-sm)',
-              background: 'var(--color-info-subtle)',
-              border: '1px solid rgba(6, 182, 212, 0.3)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#22d3ee',
-            }}
-          >
-            <Target size={16} />
-          </div>
-          <div>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>Fit Telemetry</h2>
-            <p style={{ fontSize: '0.8125rem', color: 'var(--color-fg-muted)', margin: 0 }}>
-              AI breakdown of candidate alignment and skill readiness
-            </p>
-          </div>
-        </div>
-
-        {loading && (
-          <div style={{ textAlign: 'center', padding: '4rem 1rem', color: 'var(--color-fg-muted)' }}>
-            <div
-              style={{
-                width: '56px',
-                height: '56px',
-                borderRadius: '50%',
-                border: '3px solid var(--color-border)',
-                borderTopColor: 'var(--color-accent)',
-                animation: 'spin 1s linear infinite',
-                margin: '0 auto 1.25rem auto',
-              }}
-            />
-            <div style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--color-fg)' }}>{status}</div>
-          </div>
-        )}
-
-        {result && !loading && (
-          <div>
-            {/* Score Radial Card */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '1.5rem',
-                padding: '1.25rem',
-                background: 'var(--color-surface)',
-                border: '1px solid var(--color-border)',
-                borderRadius: 'var(--border-radius)',
-                marginBottom: '1.5rem',
-              }}
-            >
-              <div
-                style={{
-                  width: '90px',
-                  height: '90px',
-                  borderRadius: '50%',
-                  border: `3px solid ${result.match_score >= 70 ? 'var(--color-accent)' : '#64748b'}`,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                  boxShadow: result.match_score >= 70 ? '0 0 20px var(--color-accent-glow)' : 'none',
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: '1.875rem',
-                    fontWeight: 800,
-                    fontFamily: 'var(--font-mono)',
-                    lineHeight: 1,
-                    color: '#ffffff',
-                  }}
-                >
-                  {result.match_score}
-                </span>
-                <span style={{ fontSize: '0.6875rem', color: 'var(--color-fg-muted)', textTransform: 'uppercase', marginTop: '2px' }}>
-                  Percent Fit
-                </span>
-              </div>
-
-              <div>
-                <div style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--color-accent)', letterSpacing: '0.04em' }}>
-                  Model Assessment
-                </div>
-                <p style={{ fontSize: '0.875rem', color: 'var(--color-fg)', marginTop: '0.25rem', lineHeight: 1.5 }}>
-                  {result.reasoning}
-                </p>
-              </div>
+      {/* Result panel */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        {result ? (
+          <>
+            {/* Score */}
+            <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '1.5rem', textAlign: 'center' }}>
+              <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Match score</p>
+              <p style={{ fontSize: '3rem', fontWeight: 700, color: scoreColor, letterSpacing: '-0.03em', lineHeight: 1 }}>
+                {Math.round(result.match_score * 100)}%
+              </p>
             </div>
 
-            {/* Missing Skills */}
-            {result.missing_skills.length > 0 && (
-              <div style={{ marginBottom: '1.5rem' }}>
-                <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-fg)', marginBottom: '0.75rem' }}>
-                  Identified Skill Gaps
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '1.25rem' }}>
-                  {result.missing_skills.map((skill, idx) => (
+            {/* Missing skills */}
+            {result.missing_skills?.length > 0 && (
+              <div>
+                <p style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text)', marginBottom: '0.75rem' }}>Skill gaps</p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
+                  {result.missing_skills.map((skill) => (
                     <span
-                      key={idx}
+                      key={skill}
                       style={{
-                        padding: '0.25rem 0.65rem',
-                        background: 'rgba(255, 255, 255, 0.04)',
-                        border: '1px solid var(--color-border)',
-                        borderRadius: 'var(--border-radius-sm)',
+                        padding: '0.25rem 0.625rem',
+                        background: 'var(--warning-bg)',
+                        border: '1px solid rgba(217,119,6,0.25)',
+                        borderRadius: 'var(--radius-full)',
                         fontSize: '0.8125rem',
-                        color: 'var(--color-fg-muted)',
-                        fontFamily: 'var(--font-mono)',
+                        color: 'var(--warning)',
                       }}
                     >
                       {skill}
                     </span>
                   ))}
                 </div>
-
-                {!learningPath && (
-                  <button
-                    className="btn btn-secondary"
-                    onClick={async () => {
-                      setLoadingPath(true);
-                      try {
-                        const res = await fetch(`${API_URL}/api/v1/recommend/learning-path`, {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ missing_skills: result.missing_skills, target_role: 'Software Engineer' }),
-                        });
-                        if (!res.ok) throw new Error('Failed to generate learning path');
-                        const data = await res.json();
-                        setLearningPath(data.learning_path);
-                      } catch (err: any) {
-                        setError(err.message);
-                      } finally {
-                        setLoadingPath(false);
-                      }
-                    }}
-                    disabled={loadingPath}
-                    style={{ width: '100%' }}
-                  >
-                    {loadingPath ? (
-                      <>
-                        <Loader2 size={15} className="status-dot-pulse" />
-                        <span>Generating Roadmap...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles size={15} className="text-accent" />
-                        <span>Generate Skill Upgrade Roadmap</span>
-                      </>
-                    )}
-                  </button>
-                )}
-
-                {learningPath && (
-                  <div
-                    style={{
-                      marginTop: '1rem',
-                      padding: '1.25rem',
-                      background: 'var(--color-surface)',
-                      border: '1px solid var(--color-border)',
-                      borderRadius: 'var(--border-radius)',
-                    }}
-                  >
-                    <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-accent)', textTransform: 'uppercase', marginBottom: '0.5rem' }}>
-                      Recommended Action Roadmap
-                    </div>
-                    <div className="markdown-content" style={{ fontSize: '0.875rem' }}>
-                      <ReactMarkdown>{learningPath}</ReactMarkdown>
-                    </div>
-                  </div>
-                )}
               </div>
             )}
 
-            {/* Export Tailored Resume */}
-            <div style={{ paddingTop: '1.25rem', borderTop: '1px solid var(--color-border-subtle)' }}>
-              <button
-                className="btn btn-primary"
-                onClick={downloadTailoredResume}
-                disabled={tailoringResume}
-                style={{ width: '100%' }}
-              >
-                {tailoringResume ? (
-                  <>
-                    <Loader2 size={16} className="status-dot-pulse" />
-                    <span>Compiling PDF...</span>
-                  </>
-                ) : (
-                  <>
-                    <Download size={16} />
-                    <span>Export Tailored Resume (PDF)</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        )}
+            {/* Reasoning */}
+            {result.reasoning && (
+              <div>
+                <p style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text)', marginBottom: '0.75rem' }}>Analysis</p>
+                <div
+                  className="markdown-content"
+                  style={{
+                    fontSize: '0.9rem',
+                    color: 'var(--text-muted)',
+                    maxHeight: '280px',
+                    overflowY: 'auto',
+                    padding: '1rem',
+                    background: 'var(--bg-subtle)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-sm)',
+                  }}
+                >
+                  <ReactMarkdown>{result.reasoning}</ReactMarkdown>
+                </div>
+              </div>
+            )}
 
-        {!result && !loading && (
-          <div style={{ textAlign: 'center', padding: '4rem 1rem', color: 'var(--color-fg-subtle)' }}>
-            <Target size={48} style={{ margin: '0 auto 1rem auto', opacity: 0.3 }} />
-            <p style={{ fontSize: '0.875rem' }}>Ready for analysis. Input job & resume telemetry to begin.</p>
+            {/* Download */}
+            {resume && jd && (
+              <button
+                onClick={downloadTailored}
+                disabled={tailoring}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+                  padding: '0.5rem 1rem', background: 'var(--surface)', border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-sm)', fontSize: '0.875rem', color: 'var(--text)',
+                  cursor: tailoring ? 'not-allowed' : 'pointer', transition: 'border-color 150ms ease',
+                }}
+                onMouseEnter={(e) => !tailoring && (e.currentTarget.style.borderColor = 'var(--border-hover)')}
+                onMouseLeave={(e) => !tailoring && (e.currentTarget.style.borderColor = 'var(--border)')}
+              >
+                <Download size={15} />
+                {tailoring ? 'Generating PDF...' : 'Download tailored resume'}
+              </button>
+            )}
+          </>
+        ) : (
+          <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '3rem 1.5rem', textAlign: 'center', color: 'var(--text-subtle)', fontSize: '0.9375rem' }}>
+            {loading ? (statusText || 'Analyzing your match...') : 'Paste your resume and a job description, then click Analyze.'}
           </div>
         )}
       </div>
-
-      <style jsx>{`
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
     </div>
   );
 }
