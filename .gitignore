@@ -229,3 +229,4 @@ __marimo__/
 data/raw/
 data/raw/**
 /.agents
+/stitch

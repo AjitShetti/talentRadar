@@ -1,19 +1,15 @@
-// frontend/app/interview/page.tsx
-// ─────────────────────────────────────────────────────────────────
-// Interview Catalog: lets the user pick a track + difficulty
-// then starts a session.  Server Component shell wrapping a
-// Interview Catalog: pick a track and difficulty to start
-// ─────────────────────────────────────────────────────────────────
+'use client'
 
-import type { Metadata } from 'next';
-import InterviewCatalog from './InterviewCatalog';
+import { FormEvent, useEffect, useState } from 'react'
+import { ArrowRight, BarChart3, Clock3, Send, StopCircle } from 'lucide-react'
+import AppShell from '@/components/AppShell'
+import RequireAuth from '@/components/RequireAuth'
+import { api, InterviewState } from '@/lib/api'
 
-export const metadata: Metadata = {
-  title: 'Mock Interviews | TalentRadar',
-  description:
-    'Practice technical interviews with an AI voice interviewer. Choose your track and difficulty to start.',
-};
-
-export default function InterviewPage() {
-  return <InterviewCatalog />;
-}
+type Active = { id: string; question: string; index: number; state: InterviewState; score?: { correctness: number; clarity: number; depth: number; answer_summary?: string }; done?: boolean; closing?: string }
+export default function InterviewPage() { const [track, setTrack] = useState('python_backend'); const [difficulty, setDifficulty] = useState('mid'); const [active, setActive] = useState<Active | null>(null); const [answer, setAnswer] = useState(''); const [history, setHistory] = useState<Array<{ id: string; track: string; difficulty: string; total_score?: number; completed: boolean; created_at: string }>>([]); const [loading, setLoading] = useState(false); const [error, setError] = useState(''); const [ending, setEnding] = useState(false)
+  useEffect(() => { api.interview.history().then(result => setHistory(result.sessions)).catch(() => {}) }, [])
+  async function start() { setLoading(true); setError(''); try { const session = await api.interview.start(track, difficulty); setActive({ id: session.session_id, question: session.question, index: session.question_index, state: session.agent_state }) } catch (err) { setError(err instanceof Error ? err.message : 'Could not start the interview.') } finally { setLoading(false) } }
+  async function submit(e: FormEvent) { e.preventDefault(); if (!active || !answer.trim()) return; setLoading(true); setError(''); try { const result = await api.interview.answer(active.id, answer, active.state); setAnswer(''); setActive({ id: active.id, question: result.question, index: result.question_index, state: result.agent_state, score: result.score, done: result.session_complete }) } catch (err) { setError(err instanceof Error ? err.message : 'Could not submit your answer.') } finally { setLoading(false) } }
+  async function end() { if (!active) return; setEnding(true); try { const result = await api.interview.end(active.id, active.state); setActive({ ...active, done: true, closing: `${result.closing_message} Final score: ${Math.round(result.final_score.total_score)}/100.` }); const data = await api.interview.history(); setHistory(data.sessions) } catch (err) { setError(err instanceof Error ? err.message : 'Could not end session.') } finally { setEnding(false) } }
+  return <RequireAuth><AppShell><section className="page-heading"><p className="eyebrow">LANGGRAPH INTERVIEW LAB</p><h1>Practice the conversation before it counts.</h1><p>Each response is sent to your interview agent for evaluation, follow-ups, and the next question.</p></section>{error && <p className="form-error">{error}</p>}{!active ? <div className="interview-start"><div className="interview-orb"><BarChart3 size={30}/></div><h2>Build a focused mock interview</h2><div className="select-grid"><label>Track<select value={track} onChange={e => setTrack(e.target.value)}><option value="python_dsa">Python & DSA</option><option value="python_backend">Python backend</option><option value="sql">SQL</option><option value="system_design">System design</option></select></label><label>Difficulty<select value={difficulty} onChange={e => setDifficulty(e.target.value)}><option value="beginner">Beginner</option><option value="mid">Mid level</option><option value="senior">Senior</option></select></label></div><button className="primary-button" onClick={start} disabled={loading}>{loading ? 'Preparing your first question…' : <>Start interview <ArrowRight size={16}/></>}</button></div> : <section className="interview-session"><div className="interview-session-head"><div><p className="eyebrow">QUESTION {active.index + 1} · {track.replace('_', ' ')}</p><h2>{active.done ? 'Session complete' : 'Your interviewer asks'}</h2></div>{!active.done && <button className="outline-button danger-outline" onClick={end} disabled={ending}><StopCircle size={15}/>{ending ? 'Ending…' : 'End session'}</button>}</div>{active.score && <div className="score-feedback"><strong>Your last answer: {((active.score.correctness + active.score.clarity + active.score.depth) / 3).toFixed(1)}/10</strong><span>{active.score.answer_summary || `Correctness ${active.score.correctness} · Clarity ${active.score.clarity} · Depth ${active.score.depth}`}</span></div>}<div className="question-card">{active.done ? <p>{active.closing || active.question}</p> : <p>{active.question}</p>}</div>{!active.done && <form onSubmit={submit} className="answer-form"><textarea value={answer} onChange={e => setAnswer(e.target.value)} placeholder="Think out loud. Explain your approach, decisions, and trade-offs…" /><button className="primary-button" disabled={loading}>{loading ? 'Evaluating…' : <>Submit answer <Send size={15}/></>}</button></form>}{active.done && <button className="primary-button" onClick={() => { setActive(null); setAnswer('') }}>Start another session</button>}</section>}<section className="history-section"><div className="panel-heading"><div><p className="eyebrow">RECENT PRACTICE</p><h2>Interview history</h2></div><Clock3 size={17}/></div>{history.length ? <div className="history-list">{history.map(session => <div key={session.id}><span>{session.track.replace('_', ' ')}</span><strong>{session.total_score != null ? `${Math.round(session.total_score)}/100` : 'In progress'}</strong><small>{session.difficulty} · {new Date(session.created_at).toLocaleDateString()}</small></div>)}</div> : <p className="muted-copy">Your completed sessions will appear here.</p>}</section></AppShell></RequireAuth> }
