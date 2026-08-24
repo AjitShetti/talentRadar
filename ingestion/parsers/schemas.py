@@ -240,6 +240,21 @@ class ParsedJobDescription(BaseModel):
         return upper if upper in _KNOWN_CURRENCIES else None
 
     @model_validator(mode="after")
+    def backfill_seniority_from_experience(self) -> "ParsedJobDescription":
+        """
+        Derive seniority from the stated experience when the LLM omitted it.
+
+        The experience filter in job search resolves to seniority levels, so a
+        posting with ``experience="4-7 years"`` and no seniority would
+        otherwise be invisible to every filter.
+        """
+        if self.seniority is None and self.experience:
+            from domain.experience import infer_seniority
+
+            self.seniority = infer_seniority(self.experience)
+        return self
+
+    @model_validator(mode="after")
     def salary_range_consistency(self) -> "ParsedJobDescription":
         """Swap min/max if they are accidentally inverted."""
         if (
@@ -261,7 +276,7 @@ class ParsedJobDescription(BaseModel):
 
         Column name mapping (parsed field → ORM column):
           salary       → salary_raw
-          location     → location_raw
+          location     → location_raw, plus resolved country / city
         """
         from datetime import datetime, timezone
         import re
@@ -280,11 +295,17 @@ class ParsedJobDescription(BaseModel):
             ]
             return '\n'.join(lines).strip()
 
+        from domain.geo import resolve_location
+
+        country, city = resolve_location(self.location, is_remote=self.is_remote)
+
         return {
             "title": self.title,
             "description_raw": self.raw_text,
             "description_clean": _clean(self.raw_text),
             "location_raw": self.location,
+            "country": country,
+            "city": city,
             "is_remote": self.is_remote,
             "salary_raw": self.salary,
             "salary_min": self.salary_min,

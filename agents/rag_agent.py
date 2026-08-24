@@ -25,6 +25,7 @@ from agents.prompts.rag_prompt import (
     SYSTEM_RESULT_SUMMARY,
 )
 from config.settings import get_settings
+from domain.geo import is_india, mentions_foreign_country
 from ingestion.embeddings.chroma_store import ChromaJobStore
 from ingestion.embeddings.embedder import embed_texts
 from storage.repository import UnitOfWork
@@ -144,6 +145,7 @@ class RAGAgent:
                 jobs, _ = await uow.jobs.search(
                     query=context.raw_query,
                     is_remote=context.is_remote,
+                    india_only=True,
                     limit=context.limit,
                 )
                 return [
@@ -238,7 +240,13 @@ class RAGAgent:
         results: list[RetrievalResult], context: QueryContext
     ) -> list[RetrievalResult]:
         """Apply structured filters to retrieved results."""
-        filtered = results
+        # India-only board: drop anything that names a foreign country. Results
+        # with an unreadable or empty location are kept — at query time recall
+        # matters more, and the ingestion pipeline is already strict.
+        filtered = [
+            r for r in results
+            if not (r.location and mentions_foreign_country(r.location) and not is_india(r.location))
+        ]
 
         if context.is_remote is not None:
             filtered = [r for r in filtered if r.is_remote == context.is_remote]
@@ -297,7 +305,7 @@ Summarize the top results and highlight key insights.
 
         try:
             response = await self._groq.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="openai/gpt-oss-120b",
                 messages=[
                     {"role": "system", "content": SYSTEM_RESULT_SUMMARY},
                     {"role": "user", "content": prompt},

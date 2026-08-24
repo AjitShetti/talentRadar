@@ -22,8 +22,10 @@ from config.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_MODEL = "llama-3.3-70b-versatile"
-_FAST_MODEL = "llama-3.1-8b-instant"
+# Model ids live in settings so a decommissioned model can be swapped from .env.
+_settings = get_settings()
+_DEFAULT_MODEL = _settings.groq_model
+_FAST_MODEL = _settings.groq_fast_model
 
 
 def get_llm() -> AsyncGroq:

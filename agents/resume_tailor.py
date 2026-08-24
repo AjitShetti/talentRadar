@@ -12,7 +12,7 @@ from config.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_MODEL = "llama-3.1-8b-instant"
+_DEFAULT_MODEL = "openai/gpt-oss-120b"
 _MAX_TOKENS = 3000
 _TEMPERATURE = 0.3
 

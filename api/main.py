@@ -9,19 +9,19 @@ Wires up all routers, middleware, and lifecycle management.
 from __future__ import annotations
 
 import logging
+import uuid
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from config.settings import get_settings
 from storage.database import close_engine
 
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
-from slowapi.middleware import SlowAPIMiddleware
+from api.rate_limit import RateLimitMiddleware
 
 # Configure logging
 logging.basicConfig(
@@ -30,8 +30,37 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Initialize Rate Limiter (In-Memory for now, can be wired to Redis later)
-limiter = Limiter(key_func=get_remote_address, default_limits=["100/minute"])
+
+def _error_response(request: Request, exc: BaseException) -> JSONResponse:
+    """Log the failure with a correlation id and return an opaque 500.
+
+    The exception text is never echoed to the caller: SQLAlchemy embeds the
+    failing statement *and its bound parameters* in ``str(exc)``, so returning
+    it leaked table/column names and row data (including password hashes) to
+    anyone who could provoke an IntegrityError.
+    """
+    error_id = uuid.uuid4().hex[:12]
+    logger.exception(
+        "Unhandled error [%s] on %s %s",
+        error_id,
+        request.method,
+        request.url.path,
+        exc_info=exc,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error", "error_id": error_id},
+    )
+
+
+class ErrorEnvelopeMiddleware(BaseHTTPMiddleware):
+    """Catch anything escaping the routers so CORS headers still get applied."""
+
+    async def dispatch(self, request: Request, call_next):
+        try:
+            return await call_next(request)
+        except Exception as exc:
+            return _error_response(request, exc)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -59,13 +88,29 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Register rate limiter
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-app.add_middleware(SlowAPIMiddleware)
+# Rate limiting. Added before CORS so that CORSMiddleware stays the outermost
+# layer and 429 responses still carry CORS headers back to the browser.
+settings = get_settings()
+app.add_middleware(
+    RateLimitMiddleware,
+    default_requests=settings.rate_limit_default_requests,
+    default_window=settings.rate_limit_default_window_seconds,
+    auth_requests=settings.rate_limit_auth_requests,
+    auth_window=settings.rate_limit_auth_window_seconds,
+)
+
+# Convert unhandled exceptions into a JSON 500 *inside* the CORS layer.
+#
+# Starlette routes an ``@app.exception_handler(Exception)`` into
+# ServerErrorMiddleware, which is the outermost layer -- outside
+# CORSMiddleware. Responses it produces therefore carry no
+# Access-Control-Allow-Origin header, so the browser hides the real 500 behind
+# "blocked by CORS policy" and the frontend logs a misleading CORS error. This
+# middleware catches the exception one layer further in, so the 500 travels
+# back out through CORSMiddleware like any other response.
+app.add_middleware(ErrorEnvelopeMiddleware)
 
 # CORS middleware
-settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
@@ -74,6 +119,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Unhandled errors must still travel back through CORSMiddleware, otherwise the
+# browser reports a bare "Failed to fetch" and the real cause is invisible to
+# the frontend. This handler converts any escaped exception into a JSON 500.
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Return an opaque 500 and keep the diagnostics server-side.
+
+    The exception text is never echoed to the caller: SQLAlchemy embeds the
+    failing statement *and its bound parameters* in ``str(exc)``, so returning
+    it leaked table/column names and row data (including password hashes) to
+    anyone who could provoke an IntegrityError. Clients get a correlation id
+    they can quote instead; the full traceback goes to the log under that id.
+    """
+    return _error_response(request, exc)
 
 
 # Health check endpoints

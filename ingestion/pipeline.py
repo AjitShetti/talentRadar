@@ -1,7 +1,7 @@
 """
 ingestion/pipeline.py
 ~~~~~~~~~~~~~~~~~~~~~
-Shared ingestion pipeline: raw results → LLM parse → Postgres + ChromaDB.
+Shared ingestion pipeline: raw results → LLM parse → India filter → Postgres + ChromaDB.
 
 Refactored out of ``ingestion/tasks.py`` so that any source (Tavily, ATS
 crawler, Greenhouse/Lever/Ashby/Cutshort) can reuse the same persist logic.
@@ -49,6 +49,7 @@ async def persist_parsed(
 
     Returns per-step counts: {"inserted", "updated", "skipped", "embedded"}.
     """
+    from domain.geo import is_indian_job
     from ingestion.scrapers.tavily_client import detect_source_from_url
     from ingestion.validation import is_valid_job_url
 
@@ -70,6 +71,18 @@ async def persist_parsed(
             for data in parsed:
                 if not data.source_url or not is_valid_job_url(data.source_url):
                     logger.warning("Dropping invalid or listing job URL in persist_parsed: %s", data.source_url)
+                    skipped += 1
+                    continue
+
+                # TalentRadar is an India-only board: postings that resolve to
+                # another country never reach Postgres or the vector store.
+                if not is_indian_job(
+                    data.location, is_remote=data.is_remote, context=data.raw_text[:4000]
+                ):
+                    logger.info(
+                        "Skipping non-India posting: %r at %r (location=%r)",
+                        data.title, data.company, data.location,
+                    )
                     skipped += 1
                     continue
 
@@ -107,6 +120,8 @@ async def persist_parsed(
                         "title": data.title,
                         "company": data.company,
                         "location": data.location or "",
+                        "country": job_kwargs.get("country") or "",
+                        "city": job_kwargs.get("city") or "",
                         "is_remote": data.is_remote,
                         "seniority": data.seniority or "",
                         "employment_type": data.employment_type or "",

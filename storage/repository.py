@@ -29,6 +29,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy import String
 
+from domain.geo import (
+    INDIA_COUNTRY_VALUES,
+    INDIA_LOCATION_KEYWORDS,
+    MAJOR_INDIAN_CITIES,
+    city_search_terms,
+)
 from storage.models import (
     Company,
     EmploymentType,
@@ -474,6 +480,25 @@ def _build_term_group_clause(terms: list[str]):
     return or_(*group_or_clauses)
 
 
+def _india_location_clause():
+    """
+    SQL predicate matching postings located in India.
+
+    Rows ingested before the geo resolver existed have a NULL ``country``, so
+    the clause also sniffs ``location_raw`` for "India" and the major metros
+    rather than relying on the column alone. Rows carrying no location data at
+    all are kept: only postings that positively resolve elsewhere are excluded
+    here, because :func:`domain.geo.is_indian_job` already keeps non-Indian
+    postings out of the database at ingestion time.
+    """
+    return or_(
+        Job.country.in_(INDIA_COUNTRY_VALUES),
+        Job.city.in_(list(MAJOR_INDIAN_CITIES)),
+        *(Job.location_raw.ilike(f"%{keyword}%") for keyword in INDIA_LOCATION_KEYWORDS),
+        and_(Job.country.is_(None), Job.city.is_(None), Job.location_raw.is_(None)),
+    )
+
+
 # ===========================================================================
 # JobRepository
 # ===========================================================================
@@ -545,10 +570,12 @@ class JobRepository(BaseRepository[Job]):
         status: JobStatus | None = JobStatus.ACTIVE,
         employment_type: EmploymentType | None = None,
         seniority: SeniorityLevel | None = None,
+        seniority_levels: Sequence[SeniorityLevel] | None = None,
         # Location filters
         country: str | None = None,
         city: str | None = None,
         is_remote: bool | None = None,
+        india_only: bool = False,
         # Salary range
         salary_min_gte: float | None = None,
         salary_max_lte: float | None = None,
@@ -571,6 +598,10 @@ class JobRepository(BaseRepository[Job]):
         """
         Full-featured job search with multi-field token matching and smart fallback.
 
+        ``seniority_levels`` expands an experience band (e.g. "3-5 yrs") into the
+        seniority values it covers; ``india_only`` restricts results to postings
+        that resolve to India (see :mod:`domain.geo`).
+
         Returns
         -------
         (jobs, total_count)
@@ -584,10 +615,22 @@ class JobRepository(BaseRepository[Job]):
             base_filters.append(Job.employment_type == employment_type)
         if seniority:
             base_filters.append(Job.seniority == seniority)
+        if seniority_levels:
+            # Experience-band filter: one band spans several seniority levels.
+            base_filters.append(Job.seniority.in_(list(seniority_levels)))
         if country:
             base_filters.append(Job.country.ilike(f"%{country}%"))
         if city:
-            base_filters.append(Job.city.ilike(f"%{city}%"))
+            # Boards print the same city many ways, so match every known
+            # spelling against both the parsed column and the raw string.
+            city_clauses = [
+                clause
+                for term in (city_search_terms(city) or (city,))
+                for clause in (Job.city.ilike(f"%{term}%"), Job.location_raw.ilike(f"%{term}%"))
+            ]
+            base_filters.append(or_(*city_clauses))
+        if india_only:
+            base_filters.append(_india_location_clause())
         if is_remote is not None:
             base_filters.append(Job.is_remote == is_remote)
         if salary_min_gte is not None:

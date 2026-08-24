@@ -157,6 +157,7 @@ class TestRegressionContaminatedSeedCorp:
             ParsedJobDescription(
                 title="Senior Java Developer",
                 company="Stripe",
+                location="Bengaluru, India",
                 source_url="https://boards.greenhouse.io/stripe/jobs/987654",
                 raw_text="Stripe is looking for a Senior Java Developer.",
             ),

@@ -140,6 +140,16 @@ async def create_application(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Application already exists")
 
+    # Confirm the job is still on file before inserting. Search results are
+    # cached client-side, so a user can click "Save to tracker" on a listing
+    # that has since been removed; without this check the INSERT hit the
+    # job_applications_job_id_fkey constraint and surfaced as an opaque 500.
+    if await _get_job(db, job_uuid) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="This job is no longer available. Try searching again for current listings.",
+        )
+
     try:
         app_status = ApplicationStatus(body.status)
     except ValueError:
@@ -193,6 +203,12 @@ async def update_application(
 
     db.add(app)
     await db.flush()
+    # ``updated_at`` carries a SQL-level onupdate, so the UPDATE leaves it
+    # expired on the instance. Reading it during serialisation would then try
+    # to emit a lazy SELECT from sync attribute access, which asyncpg cannot
+    # do outside a greenlet context (MissingGreenlet → opaque 500). Refresh it
+    # here, where the IO is awaited.
+    await db.refresh(app)
 
     job = await _get_job(db, app.job_id) if app.job_id else None
     return _app_to_response(app, job)

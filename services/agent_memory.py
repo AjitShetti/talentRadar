@@ -139,7 +139,7 @@ async def recommend_next_action(
         action = "complete_onboarding"
         title = "Complete your profile"
         detail = "Add your resume and target roles so TalentRadar can rank jobs for you."
-        href = "/profile"
+        href = "/settings"
     elif total == 0:
         action = "discover_jobs"
         title = "Discover matching jobs"

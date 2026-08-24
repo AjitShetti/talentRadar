@@ -5,7 +5,7 @@ LLM-powered job description parser using Groq + few-shot JSON extraction.
 
 Design
 ------
-* Uses ``llama-3.1-8b-instant`` via Groq for fast, cost-effective extraction.
+* Uses ``openai/gpt-oss-20b`` via Groq for fast, cost-effective extraction.
 * A SYSTEM prompt defines the strict JSON output schema with clear field
   descriptions and constraints.
 * Two few-shot examples (user/assistant pairs) are embedded before the actual
@@ -51,8 +51,8 @@ logger = logging.getLogger(__name__)
 # Model configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
-_DEFAULT_MODEL = "llama-3.1-8b-instant"   # fast & cheap; swap to 70b for quality
-_MAX_TOKENS = 1024
+_DEFAULT_MODEL = "openai/gpt-oss-20b"   # fast & cheap; swap to gpt-oss-120b for quality
+_MAX_TOKENS = 2048
 _TEMPERATURE = 0.0   # zero temperature for deterministic, schema-faithful output
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -221,7 +221,7 @@ class JDParser:
     api_key:
         Groq API key. Defaults to ``settings.groq_api_key``.
     model:
-        Groq model ID. Defaults to ``llama-3.1-8b-instant``.
+        Groq model ID. Defaults to ``openai/gpt-oss-20b``.
     inter_request_delay:
         Seconds to sleep between consecutive API calls (rate-limit safety).
 
@@ -389,6 +389,7 @@ class JDParser:
             max_tokens=_MAX_TOKENS,
             temperature=_TEMPERATURE,
             response_format={"type": "json_object"},
+            reasoning_effort="low",
         )
         content = response.choices[0].message.content or ""
         return content.strip()

@@ -1,5 +1,7 @@
 'use client'
 
+import { clearPersistedState } from '@/lib/persistent-state'
+
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 const TOKEN_KEY = 'talentradar_token'
 const EMAIL_KEY = 'talentradar_email'
@@ -7,11 +9,15 @@ const EMAIL_KEY = 'talentradar_email'
 export type Job = { id: string; title: string; company?: string | null; company_name?: string | null; location_raw?: string | null; is_remote?: boolean; skills?: string[]; source_url?: string | null; salary_raw?: string | null; match_score?: number | null; description_clean?: string | null }
 export type Application = { id: string; job_id?: string | null; status: string; notes?: string | null; applied_at?: string | null; created_at: string; job?: Job | null }
 export type InterviewState = Record<string, unknown>
+export type AtsResult = { ats_score: number; missing_skills: string[]; matched_skills: string[]; suggestions: string[]; reasoning: string }
+export type TailorResult = { candidate_name: string; latex_content: string; pdf_base64: string | null; filename: string | null }
+export type SavedResume = { id: string; extracted_text: string; filename: string | null; updated_at: string | null }
+export type TargetJob = { id: string; title: string; company_name: string | null; description: string | null; location_raw: string | null }
 
 export function token() { return typeof window === 'undefined' ? null : localStorage.getItem(TOKEN_KEY) }
 export function signedIn() { return Boolean(token()) }
 export function currentEmail() { return typeof window === 'undefined' ? null : localStorage.getItem(EMAIL_KEY) }
-export function signOut() { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(EMAIL_KEY) }
+export function signOut() { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(EMAIL_KEY); clearPersistedState() }
 
 async function request<T>(path: string, options: RequestInit = {}, authenticated = false): Promise<T> {
   const headers = new Headers(options.headers)
@@ -43,7 +49,7 @@ export const api = {
   dashboard: () => request<Record<string, unknown>>('/api/v1/dashboard/overview', {}, true),
   search: {
     semantic: (query: string) => request<{ results: Job[]; total_found: number; summary?: string }>('/api/v1/search/semantic', { method: 'POST', body: JSON.stringify({ query, limit: 30 }) }),
-    structured: (query: string, location?: string, remote?: boolean) => request<{ jobs: Job[]; total: number }>('/api/v1/search/structured', { method: 'POST', body: JSON.stringify({ query, location: location || undefined, is_remote: remote || undefined, limit: 30 }) }),
+    structured: (query: string, filters: { location?: string; remote?: boolean; experience?: string } = {}) => request<{ jobs: Job[]; total: number }>('/api/v1/search/structured', { method: 'POST', body: JSON.stringify({ query, location: filters.location || undefined, is_remote: filters.remote || undefined, experience: filters.experience || undefined, india_only: true, limit: 30 }) }),
   },
   applications: {
     list: () => request<{ applications: Application[]; total: number }>('/api/v1/applications/', {}, true),
@@ -56,9 +62,12 @@ export const api = {
     save: (payload: Record<string, unknown>) => request<{ profile: Record<string, unknown> }>('/api/v1/profile/', { method: 'POST', body: JSON.stringify(payload) }, true),
   },
   resumes: {
-    analyze: (payload: Record<string, unknown>) => request<Record<string, unknown>>('/api/v1/resumes/analyze', { method: 'POST', body: JSON.stringify(payload) }, true),
-    tailor: (payload: Record<string, unknown>) => request<Record<string, unknown>>('/api/v1/resumes/tailor', { method: 'POST', body: JSON.stringify(payload) }, true),
-    coverLetter: (payload: Record<string, unknown>) => request<{ content: string }>('/api/v1/resumes/cover-letter', { method: 'POST', body: JSON.stringify(payload) }, true),
+    me: () => request<SavedResume | null>('/api/v1/resumes/me', {}, true),
+    targetJobs: () => request<TargetJob[]>('/api/v1/resumes/target-jobs', {}, true),
+    extractText: (file: File) => { const form = new FormData(); form.append('resume_file', file); return request<SavedResume>('/api/v1/resumes/extract-text', { method: 'POST', body: form }, true) },
+    analyze: (payload: { resume_text: string; job_description: string; job_title?: string }) => request<AtsResult>('/api/v1/resumes/analyze', { method: 'POST', body: JSON.stringify(payload) }, true),
+    tailor: (payload: { resume_text: string; job_description: string; job_title?: string }) => request<TailorResult>('/api/v1/resumes/tailor', { method: 'POST', body: JSON.stringify(payload) }, true),
+    coverLetter: (payload: { resume_text: string; job_description: string; job_title: string; company: string; tone?: string }) => request<{ content: string; tone: string }>('/api/v1/resumes/cover-letter', { method: 'POST', body: JSON.stringify(payload) }, true),
     gaps: (payload: Record<string, unknown>) => request<Record<string, unknown>>('/api/v1/resumes/gaps', { method: 'POST', body: JSON.stringify(payload) }, true),
   },
   interview: {

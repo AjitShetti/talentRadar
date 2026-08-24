@@ -26,6 +26,21 @@ class Settings(BaseSettings):
     groq_api_key: str = Field(description="Groq API key")
     tavily_api_key: str = Field(default="", description="Tavily search API key")
 
+    # Model ids are settings (not literals) so a decommissioned Groq model can
+    # be swapped from .env without a code change.
+    groq_model: str = Field(
+        default="openai/gpt-oss-120b",
+        description="Default Groq chat model for reasoning-heavy calls",
+    )
+    groq_fast_model: str = Field(
+        default="openai/gpt-oss-20b",
+        description="Smaller/cheaper Groq model for classification and short calls",
+    )
+    groq_interview_model: str = Field(
+        default="openai/gpt-oss-120b",
+        description="Groq model used by the mock-interview agent",
+    )
+
     # ------------------------------------------------------------------ #
     # PostgreSQL                                                           #
     # ------------------------------------------------------------------ #
@@ -70,6 +85,19 @@ class Settings(BaseSettings):
     jwt_secret_key: str = Field(min_length=32, description="JWT Secret key, at least 32 characters")
     jwt_algorithm: str = Field(default="HS256")
     jwt_expiry_minutes: int = Field(default=10080)
+
+    # ------------------------------------------------------------------ #
+    # Rate limiting                                                        #
+    # ------------------------------------------------------------------ #
+    # Requests allowed per client IP per window, for ordinary endpoints.
+    rate_limit_default_requests: int = Field(default=100)
+    rate_limit_default_window_seconds: int = Field(default=60)
+    # Much stricter budget for credential endpoints (login / signup) so an
+    # attacker cannot mount an online password-guessing attack.
+    rate_limit_auth_requests: int = Field(default=10)
+    rate_limit_auth_window_seconds: int = Field(default=300)
+    # Largest resume upload accepted, in bytes (default 5 MiB).
+    max_resume_upload_bytes: int = Field(default=5 * 1024 * 1024)
 
     # ------------------------------------------------------------------ #
     # GCS (optional blob storage)                                          #

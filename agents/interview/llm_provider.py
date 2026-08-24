@@ -7,7 +7,7 @@ Design
 ------
 * Abstracts over the underlying provider so swapping Groq → OpenAI
   → Anthropic requires only changing this file.
-* v1 uses Groq (already in the stack, Groq API key in settings).
+* Uses Groq; the model id comes from ``Settings.groq_interview_model``.
 * Returns structured dicts parsed from the model's JSON output.
 * Raises ``LLMProviderError`` on parse failures so nodes can catch
   it and emit a graceful fallback question rather than crashing.
@@ -40,11 +40,14 @@ class LLMProvider:
     to any provider-specific response object.
     """
 
-    #: Model to use for interview turns.  Fast, cheap, and capable.
-    MODEL = "llama-3.3-70b-versatile"
+    #: Fallback model id used when settings carry no override.
+    #: Kept in sync with ``Settings.groq_interview_model`` — older Llama
+    #: generations were decommissioned by Groq and returned 404s here.
+    MODEL = "openai/gpt-oss-120b"
 
-    def __init__(self) -> None:
+    def __init__(self, model: str | None = None) -> None:
         self._client = AsyncGroq(api_key=_settings.groq_api_key)
+        self._model = model or _settings.groq_interview_model or self.MODEL
 
     # ------------------------------------------------------------------
     # Core completion helper
@@ -73,7 +76,7 @@ class LLMProvider:
             LLMProviderError: On empty or missing response content.
         """
         kwargs: dict[str, Any] = {
-            "model": self.MODEL,
+            "model": self._model,
             "messages": [{"role": "system", "content": system_prompt}, *messages],
             "temperature": temperature,
             "max_tokens": max_tokens,
@@ -81,7 +84,17 @@ class LLMProvider:
         if expect_json:
             kwargs["response_format"] = {"type": "json_object"}
 
-        response = await self._client.chat.completions.create(**kwargs)
+        # Every provider-side failure (decommissioned model, rate limit,
+        # network blip) is normalised to LLMProviderError so the nodes can
+        # fall back to the static question bank instead of 500-ing the API.
+        try:
+            response = await self._client.chat.completions.create(**kwargs)
+        except LLMProviderError:
+            raise
+        except Exception as exc:
+            logger.warning("Groq call failed (model=%s): %s", self._model, exc)
+            raise LLMProviderError(f"Groq request failed for model {self._model!r}: {exc}") from exc
+
         content = response.choices[0].message.content
         if not content:
             raise LLMProviderError("LLM returned empty content")

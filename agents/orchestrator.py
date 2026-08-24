@@ -197,14 +197,15 @@ class Orchestrator:
         prompt = INTENT_EXTRACTION_PROMPT.format(query=query)
 
         response = await self._groq.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model="openai/gpt-oss-20b",
             messages=[
                 {"role": "system", "content": "You must output a valid JSON object. No markdown formatting or extra text."},
                 {"role": "user", "content": prompt},
             ],
             response_format={"type": "json_object"},
             temperature=0.0,
-            max_tokens=200,
+            max_tokens=600,
+            reasoning_effort="low",
         )
 
         content = response.choices[0].message.content

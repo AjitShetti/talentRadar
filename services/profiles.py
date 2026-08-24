@@ -22,6 +22,21 @@ from services.base import as_list, parse_uuid
 
 logger = logging.getLogger(__name__)
 
+#: ``user_skills.proficiency`` is an INTEGER column on a 1-5 scale.
+_DEFAULT_PROFICIENCY = 3
+_MIN_PROFICIENCY = 1
+_MAX_PROFICIENCY = 5
+
+
+def _clamp_proficiency(value: Any) -> int:
+    """Coerce any incoming proficiency to the 1-5 integer the column accepts."""
+    try:
+        as_int = round(float(value))
+    except (TypeError, ValueError):
+        return _DEFAULT_PROFICIENCY
+    return max(_MIN_PROFICIENCY, min(_MAX_PROFICIENCY, as_int))
+
+
 _SKILL_CATEGORY_HINTS: dict[str, str] = {
     "python": "language", "javascript": "language", "typescript": "language",
     "java": "language", "go": "language", "sql": "language",
@@ -93,10 +108,9 @@ async def get_or_create_profile(*, user_id: str) -> dict[str, Any]:
         if profile is None:
             profile = Profile(user_id=user_uuid)
             session.add(profile)
-            await session.flush()
             created = True
-        else:
-            await session.commit()
+        await session.commit()
+        await session.refresh(profile)
         return {"created": created, "profile": await _serialise_short(profile)}
     finally:
         await session.close()
@@ -143,10 +157,10 @@ async def upsert_profile(*, user_id: str, data: dict[str, Any]) -> dict[str, Any
         skills = as_list(data.get("skills"))
         for item in skills:
             if isinstance(item, str):
-                name, prof = item, 3.0
+                name, prof = item, _DEFAULT_PROFICIENCY
             elif isinstance(item, dict):
                 name = item.get("name") or item.get("skill_name")
-                prof = item.get("proficiency") or 3.0
+                prof = item.get("proficiency") or _DEFAULT_PROFICIENCY
             else:
                 continue
             if not name:
@@ -162,25 +176,29 @@ async def upsert_profile(*, user_id: str, data: dict[str, Any]) -> dict[str, Any
                     )
                 )
             ).scalar_one_or_none()
-            if existing:
-                existing.proficiency = float(prof)
-            else:
-                session.add(
-                    UserSkill(
-                        user_id=user_uuid,
-                        skill_name=name_l,
-                        proficiency=float(prof),
-                        category=_SKILL_CATEGORY_HINTS.get(name_l),
-                    )
-                )
-            # ensure canonical Skill row exists
+            # ensure the canonical Skill row exists so UserSkill can point at it
             canonical = (
                 await session.execute(
                     select(Skill).where(Skill.name == name_l)
                 )
             ).scalar_one_or_none()
             if canonical is None:
-                session.add(Skill(name=name_l, category=_SKILL_CATEGORY_HINTS.get(name_l)))
+                canonical = Skill(name=name_l, category=_SKILL_CATEGORY_HINTS.get(name_l))
+                session.add(canonical)
+                await session.flush()
+
+            if existing:
+                existing.proficiency = _clamp_proficiency(prof)
+                existing.skill_id = canonical.id
+            else:
+                session.add(
+                    UserSkill(
+                        user_id=user_uuid,
+                        skill_name=name_l,
+                        skill_id=canonical.id,
+                        proficiency=_clamp_proficiency(prof),
+                    )
+                )
 
         await session.commit()
         result = await get_profile(user_id=user_id)

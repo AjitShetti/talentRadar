@@ -93,6 +93,29 @@ CurrentUserId = Annotated[str, Depends(get_current_user_id)]
 DBSession = Annotated[AsyncSession, Depends(get_db_dep)]
 
 
+async def _load_owned_session(
+    db: AsyncSession,
+    session_id: str,
+    user_id: str,
+):
+    """Resolve ``session_id`` and assert the caller owns it.
+
+    Every endpoint that reads *or writes* a session must go through this.
+    Returns the session row so callers can reuse it.
+    """
+    try:
+        sid = uuid.UUID(session_id)
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid session_id")
+
+    session = await InterviewRepository().get_session(db, sid)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if str(session.user_id) != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    return session
+
+
 # ---------------------------------------------------------------------------
 # POST /interview/sessions/start
 # ---------------------------------------------------------------------------
@@ -193,6 +216,7 @@ async def submit_answer(
     }
 
     repo = InterviewRepository()
+    await _load_owned_session(db, body.session_id, user_id)
     session_id = uuid.UUID(body.session_id)
 
     # -- Evaluate the answer -------------------------------------------- #
@@ -301,6 +325,7 @@ async def end_session(
 ) -> EndSessionResponse:
     """Manually end a session and get the final score."""
 
+    await _load_owned_session(db, body.session_id, user_id)
     session_id = uuid.UUID(body.session_id)
     repo = InterviewRepository()
 

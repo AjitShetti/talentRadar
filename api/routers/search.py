@@ -28,6 +28,8 @@ from api.schemas.job_schemas import (
     SearchRequestSchema,
     SearchResponseSchema,
 )
+from domain.experience import seniority_levels_for
+from domain.geo import is_india, resolve_city
 from ingestion.engine import RealtimeScraperEngine
 from storage.repository import JobRepository
 
@@ -111,35 +113,55 @@ async def search_jobs_structured(
     - Date range
     """
     from storage.models import JobStatus, SeniorityLevel, EmploymentType
-    
+
+    # These enums are keyed by their lowercase values ("active", "full_time"),
+    # so incoming filter strings are normalised the same way.
     status_enum = JobStatus.ACTIVE
     if filters.status:
         try:
-            status_enum = JobStatus(filters.status.upper())
+            status_enum = JobStatus(filters.status.lower())
         except ValueError:
             pass
-            
+
     seniority_enum = None
     if filters.seniority:
         try:
-            seniority_enum = SeniorityLevel(filters.seniority.upper().replace("-", "_"))
+            seniority_enum = SeniorityLevel(filters.seniority.lower().replace("-", "_"))
         except ValueError:
             pass
 
     employment_type_enum = None
     if filters.employment_type:
         try:
-            employment_type_enum = EmploymentType(filters.employment_type.upper().replace("-", "_"))
+            employment_type_enum = EmploymentType(filters.employment_type.lower().replace("-", "_"))
         except ValueError:
             pass
+
+    # An experience band ("3-5 yrs") covers several seniority levels.
+    seniority_levels = [
+        SeniorityLevel(level.value) for level in seniority_levels_for(filters.experience)
+    ]
+
+    # ``location`` is what the UI sends: resolve it to a canonical Indian city
+    # so "bangalore", "Bengaluru" and "Blr" all hit the same postings. A
+    # country-level location ("India") names no city and only scopes the search.
+    city = filters.city
+    if not city and filters.location:
+        resolved = resolve_city(filters.location)
+        if resolved:
+            city = resolved
+        elif not is_india(filters.location):
+            city = filters.location
 
     jobs, total = await uow.jobs.search(
         title=filters.query,
         skills=filters.skills,
         country=filters.country,
-        city=filters.city,
+        city=city,
         is_remote=filters.is_remote,
+        india_only=filters.india_only,
         seniority=seniority_enum,
+        seniority_levels=seniority_levels,
         employment_type=employment_type_enum,
         salary_min_gte=filters.salary_min,
         salary_max_lte=filters.salary_max,
@@ -154,6 +176,8 @@ async def search_jobs_structured(
             id=str(job.id),
             title=job.title,
             company_id=str(job.company_id),
+            company_name=job.company.name if job.company else None,
+            company=job.company.name if job.company else None,
             source=job.source,
             source_url=job.source_url,
             location_raw=job.location_raw,

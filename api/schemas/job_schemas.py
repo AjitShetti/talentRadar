@@ -14,11 +14,18 @@ class JobFilterSchema(BaseModel):
     """Filters for job search."""
     query: str | None = Field(None, description="Free-text search query")
     skills: list[str] | None = Field(None, description="Required skills")
-    location: str | None = Field(None, description="Job location")
+    location: str | None = Field(None, description="Job location (city or 'India')")
     country: str | None = Field(None, description="Country filter")
     city: str | None = Field(None, description="City filter")
     is_remote: bool | None = Field(None, description="Remote-only filter")
     seniority: str | None = Field(None, description="Seniority level")
+    experience: str | None = Field(
+        None,
+        description="Experience band key: fresher | junior | mid | senior | lead",
+    )
+    india_only: bool = Field(
+        True, description="Restrict results to postings located in India"
+    )
     employment_type: str | None = Field(None, description="Employment type")
     company_id: str | None = Field(None, description="Company UUID filter")
     company_name: str | None = Field(None, description="Company name filter")
