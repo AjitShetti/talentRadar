@@ -5,7 +5,7 @@ Thin LLM helpers used by the deterministic service layer.
 
 Centralises Groq client creation, retry policy, and a small set of
 prompt-driven generators (market summary, cover letter, career advice,
-ATS analysis). Agents never call the LLM directly — they go through
+ATS analysis, role readiness). Agents never call the LLM directly — they go through
 these helpers or the higher-level services.
 """
 
@@ -149,3 +149,92 @@ Return ONLY a JSON array."""
     except Exception as exc:  # noqa: BLE001
         logger.warning("Career advice generation failed: %s", exc)
         return []
+
+
+async def generate_role_readiness(
+    *,
+    target_roles: list[str],
+    resume_text: str,
+    profile_skills: list[str],
+    candidate_skills: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """
+    Compare a resume against the user's target roles.
+
+    Returns ``{"missing_skills": [{skill, reason}], "resume_improvements":
+    [{title, reason}]}``. ``candidate_skills`` is the deterministic shortlist
+    of in-demand skills (with posting counts) that were not detected in the
+    resume — the model narrows and explains it rather than inventing demand.
+
+    When the resume already covers what the target roles ask for,
+    ``missing_skills`` comes back empty and ``resume_improvements`` carries
+    the "you're covered, here's how to present it better" advice instead.
+    """
+    system = """\
+You are a senior technical recruiter reviewing one candidate's resume against
+the roles they are targeting in India.
+
+Return a single JSON object with EXACTLY:
+{
+  "missing_skills": [{"skill": string, "reason": string}],
+  "resume_improvements": [{"title": string, "reason": string}]
+}
+
+Rules:
+- "missing_skills": AT MOST 3, and only skills that are (a) genuinely absent
+  from the resume and (b) materially expected for the target roles. Prefer the
+  ones named in CANDIDATE GAPS, which are ranked by real posting demand. Drop
+  any that the resume already demonstrates under a different name. Order most
+  consequential first. Each "reason" is ONE sentence (max 20 words) saying why
+  that role needs it — no filler, no praise.
+- If the resume already covers the essentials for these roles, return
+  "missing_skills": [] and instead give 2-3 "resume_improvements": concrete,
+  specific changes to how the resume is written or evidenced (quantified
+  impact, missing scale/ownership signals, keyword alignment, structure) that
+  would make this candidate read as ready for the target role. Ground every
+  one in something actually present in the resume.
+- When you do return missing skills, leave "resume_improvements" empty.
+- Never invent experience the resume does not show. Return ONLY JSON."""
+    prompt = (
+        f"### TARGET ROLES:\n{json.dumps(target_roles)}\n\n"
+        f"### SKILLS THEY LISTED ON THEIR PROFILE:\n{json.dumps(profile_skills)}\n\n"
+        "### CANDIDATE GAPS (in-demand for these roles, not detected in the resume):\n"
+        f"{json.dumps(candidate_skills)}\n\n"
+        f"### RESUME:\n{resume_text[:6000]}"
+    )
+    raw = await _chat(system, prompt, temperature=0.2, max_tokens=700, json_mode=True)
+    data = json.loads(raw)
+    if not isinstance(data, dict):
+        raise ValueError("Role readiness analysis returned a non-object payload")
+    return data
+
+
+async def generate_copilot_reply(*, question: str, context: dict[str, Any]) -> str:
+    """
+    Career Copilot: narrate a structured agent result as a short chat reply.
+
+    The context dict is the *only* permitted source of facts — the copilot sits
+    on top of the user's real tracker, so an invented number is worse than a
+    vague answer.
+    """
+    system = """\
+You are TalentRadar's career copilot, talking to one job seeker about their own
+job search in India. You are given their real data as JSON.
+
+Rules:
+- Use ONLY numbers, companies, roles and skills present in the JSON. Never invent one.
+- If the JSON does not answer the question, say what you do know and name the
+  page that would help (Search, Applications, Resume Studio, Interview Lab,
+  Company Intel).
+- 2-4 sentences. Plain text, no markdown, no bullet lists, no preamble.
+- Speak directly to the user as "you". Be specific and warm, never salesy."""
+    prompt = (
+        f"### THEIR QUESTION:\n{question}\n\n"
+        f"### THEIR DATA:\n{json.dumps(context, default=str)[:6000]}"
+    )
+    try:
+        reply = await _chat(system, prompt, model=_FAST_MODEL, temperature=0.4, max_tokens=350)
+        return reply.strip()
+    except Exception as exc:
+        logger.warning("Copilot reply generation failed: %s", exc)
+        raise

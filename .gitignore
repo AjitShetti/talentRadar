@@ -225,7 +225,10 @@ __marimo__/
 *.tsbuildinfo
 
 
-/data
+# Scraped/ingested payloads are throwaway; the curated company catalogue that
+# feeds Company Intel is source and must stay tracked.
+/data/*
+!/data/companies/
 data/raw/
 data/raw/**
 /.agents

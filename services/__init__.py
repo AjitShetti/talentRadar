@@ -14,7 +14,7 @@ no ORM / DB logic lives in agent code. Each module is a single domain toolset:
     resumes      — ATS analysis, tailoring, skill extraction
     interviews   — question generation, answer evaluation, adaptive difficulty
     applications — application tracker + funnel analytics
-    career       — weaknesses + learning recommendations
+    career       — weaknesses, role readiness + learning recommendations
     profiles     — onboarding / profile management
     agent_memory — personal-agent memory + next-best-action
 """
@@ -54,7 +54,11 @@ from services.applications import (  # noqa: F401
     tracker_analytics,
     update_application,
 )
-from services.career import identify_weaknesses, recommend_learning  # noqa: F401
+from services.career import (  # noqa: F401
+    identify_weaknesses,
+    recommend_learning,
+    target_role_readiness,
+)
 from services.agent_memory import (  # noqa: F401
     get_memories,
     recommend_next_action,
@@ -92,6 +96,7 @@ __all__ = [
     "session_safe_search",
     "skill_gap",
     "tailor_resume",
+    "target_role_readiness",
     "tracker_analytics",
     "update_application",
     "upsert_profile",

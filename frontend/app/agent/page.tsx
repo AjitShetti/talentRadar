@@ -1,10 +1,30 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Brain, Lightbulb, Sparkles } from 'lucide-react'
+import Link from 'next/link'
 import AppShell from '@/components/AppShell'
+import CopilotWorkspace from '@/components/CopilotWorkspace'
 import RequireAuth from '@/components/RequireAuth'
-import { api } from '@/lib/api'
-import { usePersistentState } from '@/lib/persistent-state'
 
-export default function AgentPage() { const [action, setAction] = useState<Record<string, unknown> | null>(null); const [memories, setMemories] = useState<Array<Record<string, unknown>>>([]); const [learning, setLearning] = usePersistentState<Record<string, unknown> | null>('agent.learning', null); const [error, setError] = useState(''); useEffect(() => { Promise.all([api.agent.nextAction(), api.agent.memories()]).then(([next, stored]) => { setAction(next); setMemories(stored.memories) }).catch(err => setError(err instanceof Error ? err.message : 'Could not reach your career copilot.')) }, []); async function recommend() { try { setLearning(await api.career.recommend()) } catch (err) { setError(err instanceof Error ? err.message : 'Could not create learning recommendations.') } } return <RequireAuth><AppShell><section className="page-heading"><p className="eyebrow">PERSONAL CAREER COPILOT</p><h1>Translate activity into the next right action.</h1><p>Your agent uses your profile, applications, and career signals stored by the backend.</p></section>{error && <p className="form-error">{error}</p>}<div className="agent-grid"><section className="panel agent-action"><Brain size={25}/><p className="eyebrow">RECOMMENDED NEXT STEP</p>{action ? <pre className="generated-copy">{JSON.stringify(action, null, 2)}</pre> : <div className="loading-state">Reading your career context…</div>}<button className="primary-button" onClick={recommend}><Lightbulb size={15}/> Generate learning plan</button></section><section className="panel"><div className="panel-heading"><div><p className="eyebrow">SAVED CONTEXT</p><h2>What your agent remembers</h2></div><Sparkles size={17}/></div>{memories.length ? <div className="memory-list">{memories.map((memory, index) => <div key={index}><strong>{String(memory.memory_type || 'Note')}</strong><p>{String(memory.content || '')}</p></div>)}</div> : <p className="muted-copy">Your saved preferences and application context will appear here.</p>}</section></div>{learning && <section className="panel learning-result"><p className="eyebrow">LEARNING RECOMMENDATIONS</p><pre className="generated-copy">{JSON.stringify(learning, null, 2)}</pre></section>}</AppShell></RequireAuth> }
+/**
+ * The Career Copilot's old home.
+ *
+ * The copilot now lives on the overview page, alongside the briefing and the
+ * feedback panels it answers about, and it is no longer in the sidebar. This
+ * route stays so bookmarks and older links keep working — it renders the same
+ * workspace, plus the pointer back to where it belongs.
+ */
+export default function AgentPage() {
+  return <RequireAuth><AppShell>
+    <section className="page-heading">
+      <p className="eyebrow">CAREER COPILOT</p>
+      <h1>Ask anything about your search.</h1>
+      <p>
+        It reads your profile, tracker and interview history — not guesswork.
+        This now lives on your <Link className="text-button" href="/dashboard">overview</Link>,
+        next to today&apos;s briefing.
+      </p>
+    </section>
+
+    <CopilotWorkspace acceptUrlQuestion/>
+  </AppShell></RequireAuth>
+}

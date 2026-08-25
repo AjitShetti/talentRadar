@@ -66,8 +66,9 @@ async def node_generate_question(state: InterviewAgentState) -> InterviewAgentSt
     difficulty = state["difficulty"]
     history    = list(state.get("conversation_history", []))
     q_index    = state.get("question_index", 0)
+    voice_mode = state.get("voice_mode", False)
 
-    system_prompt = build_question_prompt(track, difficulty)
+    system_prompt = build_question_prompt(track, difficulty, voice_mode)
     llm = LLMProvider()
     question: str | None = None
 
@@ -130,18 +131,19 @@ async def node_evaluate_answer(state: InterviewAgentState) -> InterviewAgentStat
     question_index = state.get("question_index", 0)
     is_followup   = state.get("is_followup", False)
     scores        = list(state.get("scores", []))
+    voice_mode    = state.get("voice_mode", False)
 
     # Append the user's answer to history
     updated_history = [*history, {"role": "user", "content": answer}]
 
     # Evaluate
-    system_prompt = build_evaluator_prompt(track, difficulty)
+    system_prompt = build_evaluator_prompt(track, difficulty, voice_mode)
     llm = LLMProvider()
     score_data: dict[str, Any]
 
     try:
         score_data = await llm.evaluate_answer(
-            system_prompt, question, answer, track, difficulty
+            system_prompt, question, answer, track, difficulty, voice_mode
         )
         logger.info(
             "Answer evaluated: q=%d followup=%s correct=%.1f clarity=%.1f depth=%.1f",
@@ -157,6 +159,7 @@ async def node_evaluate_answer(state: InterviewAgentState) -> InterviewAgentStat
             "needs_followup": False,
             "feedback_note": "Evaluation unavailable (LLM error).",
             "answer_summary": answer[:256],
+            "verbal_ack": "Got it, thank you." if voice_mode else "",
         }
 
     # Attach positional metadata for the repository layer
@@ -213,8 +216,9 @@ async def node_generate_followup(state: InterviewAgentState) -> InterviewAgentSt
     history       = list(state.get("conversation_history", []))
     followup_count = state.get("followup_count", 0)
     feedback_note  = state.get("last_score", {}).get("feedback_note", "")
+    voice_mode     = state.get("voice_mode", False)
 
-    system_prompt = build_followup_prompt(track, difficulty)
+    system_prompt = build_followup_prompt(track, difficulty, voice_mode)
     llm = LLMProvider()
     followup: str | None = None
 
@@ -257,6 +261,7 @@ async def node_end_session(state: InterviewAgentState) -> InterviewAgentState:
     history = list(state.get("conversation_history", []))
     scores  = state.get("scores", [])
     track   = state.get("track", "")
+    voice_mode = state.get("voice_mode", False)
 
     # Compute aggregate total (0–100) from accumulated scores
     if scores:
@@ -267,12 +272,23 @@ async def node_end_session(state: InterviewAgentState) -> InterviewAgentState:
     else:
         total_score = 0.0
 
-    closing = (
-        f"That wraps up our {track.replace('_', ' ').title()} interview session! "
-        f"You answered {len(scores)} question(s). "
-        f"Your overall score is {total_score:.0f}/100. "
-        "Great effort — check your detailed feedback on the results page."
-    )
+    track_label = track.replace("_", " ").title()
+    if voice_mode:
+        # Spoken aloud, so no "question(s)" and no "/100" — both read badly.
+        answered = "one question" if len(scores) == 1 else f"{len(scores)} questions"
+        closing = (
+            f"That's everything I had for the {track_label} round. "
+            f"You worked through {answered}, and you scored "
+            f"{total_score:.0f} out of 100 overall. "
+            "Thanks for your time — your detailed feedback is on screen now."
+        )
+    else:
+        closing = (
+            f"That wraps up our {track_label} interview session! "
+            f"You answered {len(scores)} question(s). "
+            f"Your overall score is {total_score:.0f}/100. "
+            "Great effort — check your detailed feedback on the results page."
+        )
     updated_history = [*history, {"role": "assistant", "content": closing}]
 
     logger.info(

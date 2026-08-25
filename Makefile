@@ -5,7 +5,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 SHELL := /bin/bash
-.PHONY: help up down logs migrate seed test lint format typecheck clean
+.PHONY: help up down logs migrate seed seed-companies test lint format typecheck clean
 
 # ── Docker Compose ──────────────────────────────────────────────────────────
 
@@ -42,6 +42,10 @@ downgrade:
 ## Seed database with sample data
 seed:
 	docker exec talentradar-api python -m ingestion.seed_db
+
+## Load the curated Company Intel catalogue (data/companies/*.json)
+seed-companies:
+	docker exec talentradar-api python scripts/seed_companies.py
 
 # ── Code Quality ────────────────────────────────────────────────────────────
 

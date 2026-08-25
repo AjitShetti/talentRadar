@@ -161,7 +161,9 @@ def _extract_skills(text: str) -> set[str]:
 
     cleaned = preprocess_text(text)
     features = extract_features(cleaned)
-    return {s.lower().strip() for s in (features.skills or [])}
+    # ``features.skills`` is a SkillFeatures dataclass, not a list -- iterating it
+    # raised TypeError and took every resume_text-based gap computation with it.
+    return {s.lower().strip() for s in features.skills.matched_skills if s and s.strip()}
 
 
 async def generate_cover_letter(

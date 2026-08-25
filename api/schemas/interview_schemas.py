@@ -45,6 +45,13 @@ class StartSessionRequest(BaseModel):
         ...,
         description="Difficulty level: beginner | mid | senior",
     )
+    voice_mode: bool = Field(
+        False,
+        description=(
+            "True for a hands-free spoken interview. Switches the interviewer "
+            "to a spoken register and returns a verbal_ack with each score."
+        ),
+    )
 
     @field_validator("track")
     @classmethod
@@ -106,6 +113,13 @@ class AnswerScoreSchema(BaseModel):
     clarity: float = Field(..., ge=0, le=10)
     depth: float = Field(..., ge=0, le=10)
     answer_summary: str | None = None
+    verbal_ack: str | None = Field(
+        None,
+        description=(
+            "Short spoken reaction the interviewer says before the next "
+            "question. Populated in voice_mode sessions only."
+        ),
+    )
 
 
 class SubmitAnswerResponse(BaseModel):

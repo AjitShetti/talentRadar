@@ -9,10 +9,35 @@ const EMAIL_KEY = 'talentradar_email'
 export type Job = { id: string; title: string; company?: string | null; company_name?: string | null; location_raw?: string | null; is_remote?: boolean; skills?: string[]; source_url?: string | null; salary_raw?: string | null; match_score?: number | null; description_clean?: string | null }
 export type Application = { id: string; job_id?: string | null; status: string; notes?: string | null; applied_at?: string | null; created_at: string; job?: Job | null }
 export type InterviewState = Record<string, unknown>
+export type InterviewScore = { correctness: number; clarity: number; depth: number; answer_summary?: string; verbal_ack?: string | null }
 export type AtsResult = { ats_score: number; missing_skills: string[]; matched_skills: string[]; suggestions: string[]; reasoning: string }
 export type TailorResult = { candidate_name: string; latex_content: string; pdf_base64: string | null; filename: string | null }
 export type SavedResume = { id: string; extracted_text: string; filename: string | null; updated_at: string | null }
 export type TargetJob = { id: string; title: string; company_name: string | null; description: string | null; location_raw: string | null }
+export type SkillFocusItem = { title: string; detail: string }
+// Resume vs target roles: `kind` decides what the dashboard panel is showing —
+// the skills the target roles ask for and the resume doesn't show, or, when it
+// already covers them, how the resume itself could read better.
+export type SkillsFocus = { status: 'ok' | 'no_target_roles' | 'no_resume'; kind: 'missing_skills' | 'resume_improvements' | null; headline: string; items: SkillFocusItem[]; target_roles: string[]; resume_filename: string | null; resume_updated_at: string | null; analysis: string | null }
+export type CompanyCard = { id: string; name: string; domain?: string | null; website_url?: string | null; logo_url?: string | null; tier?: string | null; tier_label?: string | null; industry?: string | null; description?: string | null; hq_city?: string | null; hq_country?: string | null; office_cities: string[]; employee_count_range?: string | null; founded_year?: number | null; github_org?: string | null; careers_url?: string | null; tech_stack: string[]; open_roles: number }
+export type CompanyDirectory = { companies: CompanyCard[]; total: number; offset: number; limit: number; city?: string | null }
+export type CompanyFacets = { city?: string | null; cities: string[]; tiers: Array<{ value: string; label: string; count: number }>; industries: Array<{ value: string; count: number }>; industries_total?: number; total: number }
+export type GithubRepo = { name: string; full_name: string; description: string | null; html_url: string; language: string | null; stars: number; forks: number; topics: string[]; pushed_at: string | null }
+export type GithubOrg = { org: string; name: string; html_url: string; avatar_url: string | null; description: string | null; blog: string | null; location: string | null; public_repos: number; followers: number; top_repos: GithubRepo[]; top_languages: string[] }
+export type CompanyContact = { id: string; kind: string; name?: string | null; title?: string | null; email?: string | null; linkedin_url?: string | null; notes?: string | null; source_url?: string | null; verified: boolean; is_curated: boolean; created_at?: string | null }
+export type ContactCandidate = { kind: string; name?: string | null; title?: string | null; email?: string | null; linkedin_url?: string | null; source_url?: string | null; source_title?: string | null; verified: boolean }
+export type ContactDiscovery = { company?: string | null; careers_url?: string | null; candidates: ContactCandidate[]; queries: string[]; available: boolean; message?: string | null }
+export type CompanyRole = { id: string; title: string; location?: string | null; is_remote?: boolean; seniority?: string | null; salary_raw?: string | null; skills: string[]; source_url?: string | null; posted_at?: string | null }
+export type CompanyDetail = CompanyCard & { linkedin_url?: string | null; github?: GithubOrg | null; tech_stack_curated: string[]; tech_stack_from_postings: string[]; culture_summary?: string | null; contacts: CompanyContact[]; jobs: CompanyRole[]; has_profile: boolean }
+export type NewContact = { kind?: string; name?: string | null; title?: string | null; email?: string | null; linkedin_url?: string | null; notes?: string | null; source_url?: string | null; verified?: boolean }
+export type BriefingAction = { label: string; href: string; style: string }
+export type BriefingCard = { id: string; kind: string; title: string; detail: string; tone: string; actions: BriefingAction[]; meta: Record<string, unknown>; dismissible: boolean }
+export type Briefing = { generated_at: string; headline: string; cards: BriefingCard[]; hidden_count: number; stats: { total_applications?: number; saved?: number; applied?: number; interviews?: number; onboarding_completed?: boolean } }
+export type ChatJob = { id: string; title: string; company?: string | null; location?: string | null; is_remote?: boolean; skills?: string[]; source_url?: string | null; score?: number | null }
+export type ChatReply = { intent: string; reply: string; jobs: ChatJob[]; data?: unknown; error?: string | null }
+export type AgentMemory = { id: string; memory_type: string; content: string; metadata?: Record<string, unknown> | null; created_at?: string | null }
+export type LearningTask = { skill_name: string; title: string; description?: string | null; resources?: string[] | null; priority?: number | null }
+export type LearningPlan = { tasks: LearningTask[]; total: number }
 
 export function token() { return typeof window === 'undefined' ? null : localStorage.getItem(TOKEN_KEY) }
 export function signedIn() { return Boolean(token()) }
@@ -71,12 +96,41 @@ export const api = {
     gaps: (payload: Record<string, unknown>) => request<Record<string, unknown>>('/api/v1/resumes/gaps', { method: 'POST', body: JSON.stringify(payload) }, true),
   },
   interview: {
-    start: (track: string, difficulty: string) => request<{ session_id: string; question: string; question_index: number; agent_state: InterviewState }>('/api/v1/interview/sessions/start', { method: 'POST', body: JSON.stringify({ track, difficulty }) }, true),
-    answer: (session_id: string, answer: string, agent_state: InterviewState) => request<{ question: string; question_index: number; is_followup: boolean; session_complete: boolean; agent_state: InterviewState; score: { correctness: number; clarity: number; depth: number; answer_summary?: string } }>('/api/v1/interview/sessions/answer', { method: 'POST', body: JSON.stringify({ session_id, answer, agent_state }) }, true),
+    start: (track: string, difficulty: string, voice_mode = false) => request<{ session_id: string; question: string; question_index: number; agent_state: InterviewState }>('/api/v1/interview/sessions/start', { method: 'POST', body: JSON.stringify({ track, difficulty, voice_mode }) }, true),
+    answer: (session_id: string, answer: string, agent_state: InterviewState) => request<{ question: string; question_index: number; is_followup: boolean; session_complete: boolean; agent_state: InterviewState; score: InterviewScore }>('/api/v1/interview/sessions/answer', { method: 'POST', body: JSON.stringify({ session_id, answer, agent_state }) }, true),
     end: (session_id: string, agent_state: InterviewState) => request<{ closing_message: string; final_score: { total_score: number; correctness: number; clarity: number; depth: number; questions_answered: number } }>('/api/v1/interview/sessions/end', { method: 'POST', body: JSON.stringify({ session_id, agent_state }) }, true),
     history: () => request<{ sessions: Array<{ id: string; track: string; difficulty: string; total_score?: number; completed: boolean; created_at: string }> }>('/api/v1/interview/sessions/history', {}, true),
+    // Sent as multipart so the browser's MediaRecorder blob reaches Groq Whisper
+    // untouched; provider='browser_fallback' means the caller should use its own
+    // Web Speech transcript instead.
+    transcribe: (blob: Blob, filename = 'answer.webm') => { const form = new FormData(); form.append('audio', new File([blob], filename, { type: blob.type || 'audio/webm' })); return request<{ transcript: string; confidence: number | null; provider: string }>('/api/v1/interview/voice/transcribe', { method: 'POST', body: form }, true) },
   },
-  career: { weaknesses: () => request<Record<string, unknown>>('/api/v1/career/weaknesses', {}, true), recommend: () => request<Record<string, unknown>>('/api/v1/career/recommend', { method: 'POST', body: JSON.stringify({ persist: true }) }, true) },
-  company: { search: (name: string) => request<Record<string, unknown>>(`/api/v1/company-intel/?name=${encodeURIComponent(name)}`, {}, true) },
-  agent: { nextAction: () => request<Record<string, unknown>>('/api/v1/agent/next-action', {}, true), memories: () => request<{ memories: Array<Record<string, unknown>> }>('/api/v1/agent/memories', {}, true) },
+  career: { weaknesses: () => request<Record<string, unknown>>('/api/v1/career/weaknesses', {}, true), recommend: () => request<LearningPlan>('/api/v1/career/recommend', { method: 'POST', body: JSON.stringify({ persist: true }) }, true) },
+  company: {
+    directory: (filters: { city?: string; tier?: string; industry?: string; q?: string; hasOpenRoles?: boolean } = {}) => {
+      const params = new URLSearchParams()
+      if (filters.city) params.set('city', filters.city)
+      if (filters.tier) params.set('tier', filters.tier)
+      if (filters.industry) params.set('industry', filters.industry)
+      if (filters.q) params.set('q', filters.q)
+      if (filters.hasOpenRoles) params.set('has_open_roles', 'true')
+      return request<CompanyDirectory>(`/api/v1/company-intel/?${params.toString()}`, {}, true)
+    },
+    facets: (city?: string) => request<CompanyFacets>(`/api/v1/company-intel/facets${city ? `?city=${encodeURIComponent(city)}` : ''}`, {}, true),
+    detail: (id: string) => request<CompanyDetail>(`/api/v1/company-intel/${encodeURIComponent(id)}`, {}, true),
+    search: (name: string) => request<Record<string, unknown>>(`/api/v1/company-intel/resolve?name=${encodeURIComponent(name)}`, {}, true),
+    discoverContacts: (id: string) => request<ContactDiscovery>(`/api/v1/company-intel/${encodeURIComponent(id)}/contacts/discover`, { method: 'POST' }, true),
+    addContact: (id: string, payload: NewContact) => request<CompanyContact>(`/api/v1/company-intel/${encodeURIComponent(id)}/contacts`, { method: 'POST', body: JSON.stringify(payload) }, true),
+    removeContact: (id: string, contactId: string) => request<void>(`/api/v1/company-intel/${encodeURIComponent(id)}/contacts/${encodeURIComponent(contactId)}`, { method: 'DELETE' }, true),
+  },
+  agent: {
+    nextAction: () => request<Record<string, unknown>>('/api/v1/agent/next-action', {}, true),
+    briefing: () => request<Briefing>('/api/v1/agent/briefing', {}, true),
+    starters: () => request<{ starters: string[] }>('/api/v1/agent/starters', {}, true),
+    chat: (message: string, history: Array<{ role: string; content: string }> = []) => request<ChatReply>('/api/v1/agent/chat', { method: 'POST', body: JSON.stringify({ message, history: history.slice(-8) }) }, true),
+    dismissCard: (card_id: string, snooze_days?: number) => request<void>('/api/v1/agent/cards/dismiss', { method: 'POST', body: JSON.stringify({ card_id, snooze_days }) }, true),
+    memories: () => request<{ memories: AgentMemory[]; count: number }>('/api/v1/agent/memories', {}, true),
+    remember: (content: string, memory_type = 'preference') => request<AgentMemory>('/api/v1/agent/memories', { method: 'POST', body: JSON.stringify({ content, memory_type }) }, true),
+    forget: (id: string) => request<void>(`/api/v1/agent/memories/${encodeURIComponent(id)}`, { method: 'DELETE' }, true),
+  },
 }
