@@ -160,6 +160,22 @@ class Company(Base):
     employee_count_range: Mapped[str | None] = mapped_column(String(64), nullable=True)
     founded_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # Company Intelligence directory fields (see services/companies.py)
+    description: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Plain-language summary of what the company does"
+    )
+    tier: Mapped[str | None] = mapped_column(
+        String(32), nullable=True,
+        comment="big_tech | gcc | unicorn | scaleup | startup | services",
+    )
+    github_org: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, comment="GitHub organisation slug, e.g. 'razorpay'"
+    )
+    careers_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    office_cities: Mapped[list[str] | None] = mapped_column(
+        StringArray, nullable=True, comment="Indian cities with an engineering office"
+    )
+
     # Enrichment payload (arbitrary extra fields from data providers)
     # NOTE: 'metadata' is reserved by SQLAlchemy Declarative API; the Python
     # attribute is 'extra_metadata' but maps to the 'metadata' Postgres column.
@@ -188,11 +204,15 @@ class Company(Base):
     profile: Mapped["CompanyProfile | None"] = relationship(
         "CompanyProfile", back_populates="company", uselist=False
     )
+    contacts: Mapped[list["CompanyContact"]] = relationship(
+        "CompanyContact", back_populates="company", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         UniqueConstraint("domain", name="uq_companies_domain"),
         Index("ix_companies_industry", "industry"),
         Index("ix_companies_hq_country", "hq_country"),
+        Index("ix_companies_tier", "tier"),
     )
 
     def __repr__(self) -> str:
@@ -1230,6 +1250,83 @@ class CompanyProfile(Base):
 
     def __repr__(self) -> str:
         return f"<CompanyProfile company={self.company_id}>"
+
+
+# ---------------------------------------------------------------------------
+# company_contacts — talent/recruiting contacts surfaced in Company Intel
+# ---------------------------------------------------------------------------
+
+class CompanyContact(Base):
+    """
+    A way to reach a company's talent team.
+
+    Two flavours live in the same table, separated by ``user_id``:
+
+    * ``user_id IS NULL``  — a *curated* contact seeded from a public source
+      (the careers inbox printed on a careers page, the company's jobs page).
+      Visible to everyone. ``source_url`` records where it came from.
+    * ``user_id`` set      — a contact the signed-in user saved themselves
+      (a recruiter who reached out, a referral). Private to that user.
+
+    Named individuals are only ever stored when a user adds them or a curated
+    entry cites a public source — nothing here is inferred or generated.
+    """
+    __tablename__ = "company_contacts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+        comment="NULL = curated public contact; set = private to that user",
+    )
+    kind: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="careers_inbox",
+        server_default="careers_inbox",
+        comment="careers_inbox | careers_page | recruiter | referral | other",
+    )
+    name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    title: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    linkedin_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_url: Mapped[str | None] = mapped_column(
+        String(512), nullable=True, comment="Public page this contact was read from"
+    )
+    verified: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false",
+        comment="True only when a human confirmed the contact still works",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    company: Mapped["Company"] = relationship("Company", back_populates="contacts")
+
+    __table_args__ = (
+        Index("ix_company_contacts_company_user", "company_id", "user_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<CompanyContact company={self.company_id} kind={self.kind!r}>"
 
 
 # ---------------------------------------------------------------------------

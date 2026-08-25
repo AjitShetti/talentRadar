@@ -5,6 +5,9 @@ Deterministic tools for the Personal AI Agent.
 
     remember()               — persist a memory entry for a user
     get_memories()           — list memories (optionally by type)
+    forget()                 — delete a memory the user no longer wants kept
+    dismiss_card()           — snooze/dismiss a briefing card
+    active_dismissals()      — card ids currently dismissed or snoozed
     recommend_next_action()  — compute the next-best-action from the user's
                                live state (profile, applications, interviews,
                                weaknesses) — LLM used only for phrasing.
@@ -13,16 +16,19 @@ Deterministic tools for the Personal AI Agent.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
+from services.base import parse_uuid
 from storage.database import AsyncSessionLocal
 from storage.models import AgentMemory
-from services.base import parse_uuid
 
 logger = logging.getLogger(__name__)
+
+#: Memory type used to record a dismissed/snoozed briefing card.
+DISMISSAL_TYPE = "card_dismissal"
 
 
 async def remember(
@@ -45,15 +51,16 @@ async def remember(
             content=content,
             extra_metadata=metadata,
             expires_at=(
-                datetime.now(tz=timezone.utc).replace(
+                datetime.now(tz=UTC).replace(
                     microsecond=0
-                ) + _td(days=ttl_days)
+                ) + timedelta(days=ttl_days)
                 if ttl_days
                 else None
             ),
         )
         session.add(memory)
-        await session.flush()
+        await session.commit()
+        await session.refresh(memory)
         return {
             "id": str(memory.id),
             "memory_type": memory.memory_type,
@@ -96,6 +103,69 @@ async def get_memories(
             }
             for m in result.scalars().all()
         ]
+    finally:
+        await session.close()
+
+
+async def forget(*, user_id: str, memory_id: str) -> bool:
+    """Delete one of the user's memories. Returns False when it isn't theirs."""
+    session = AsyncSessionLocal()
+    try:
+        user_uuid = parse_uuid(user_id)
+        memory_uuid = parse_uuid(memory_id)
+        if not user_uuid or not memory_uuid:
+            return False
+        result = await session.execute(
+            delete(AgentMemory)
+            .where(AgentMemory.user_id == user_uuid)
+            .where(AgentMemory.id == memory_uuid)
+        )
+        await session.commit()
+        return bool(result.rowcount)
+    finally:
+        await session.close()
+
+
+async def dismiss_card(
+    *,
+    user_id: str,
+    card_id: str,
+    snooze_days: int | None = None,
+) -> dict[str, Any] | None:
+    """
+    Hide a briefing card.
+
+    Stored as a normal memory so the copilot's "what it knows about you" view
+    stays the single source of truth. ``snooze_days`` sets an expiry, after
+    which the card comes back on its own; omitting it dismisses permanently.
+    """
+    return await remember(
+        user_id=user_id,
+        memory_type=DISMISSAL_TYPE,
+        content=card_id,
+        metadata={"card_id": card_id, "snoozed": bool(snooze_days)},
+        ttl_days=snooze_days,
+    )
+
+
+async def active_dismissals(*, user_id: str) -> set[str]:
+    """Card ids the user has dismissed and that have not expired yet."""
+    now = datetime.now(tz=UTC)
+    session = AsyncSessionLocal()
+    try:
+        user_uuid = parse_uuid(user_id)
+        if not user_uuid:
+            return set()
+        result = await session.execute(
+            select(AgentMemory)
+            .where(AgentMemory.user_id == user_uuid)
+            .where(AgentMemory.memory_type == DISMISSAL_TYPE)
+        )
+        return {
+            m.content
+            for m in result.scalars().all()
+            if m.expires_at is None or m.expires_at > now
+        }
     finally:
         await session.close()
 
@@ -159,19 +229,19 @@ async def recommend_next_action(
         action = "interview_prep"
         title = "Complete your interview prep plan"
         detail = "You have interviews scheduled. Review the personalised prep plan."
-        href = "/interview/prep"
+        href = "/interview"
     else:
         weaknesses = await identify_weaknesses(user_id=user_id, limit=5)
         if weaknesses.get("weaknesses"):
             action = "improve_skills"
             title = "Close your skill gaps"
             detail = "Follow your learning plan to address your weakest skills."
-            href = "/career"
+            href = "/agent"
         else:
             action = "track_trends"
             title = "Explore market trends"
             detail = "Stay ahead by watching hiring demand and salary trends."
-            href = "/trends"
+            href = "/company-intel"
 
     return {
         "recommendation": title,
@@ -186,8 +256,3 @@ async def recommend_next_action(
             "onboarding_completed": bool(profile and profile.get("onboarding_completed")),
         },
     }
-
-
-def _td(days: int):
-    from datetime import timedelta
-    return timedelta(days=days)

@@ -30,6 +30,24 @@ Do not provide answers, hints, or explanations — only ask the question.
 
 
 # ---------------------------------------------------------------------------
+# Voice-mode addendum — injected when the session is conducted hands-free
+# ---------------------------------------------------------------------------
+
+# Everything here exists because the question is going through text-to-speech
+# and the candidate hears it once, with no transcript to scan back over.
+_VOICE_ADDENDUM = """DELIVERY — THIS IS A SPOKEN INTERVIEW:
+The candidate HEARS your question read aloud; they cannot re-read it.
+* Write exactly what a human interviewer would say out loud — plain sentences.
+* Never use code blocks, bullet points, numbered lists, markdown, or symbols
+  like -> or {} — they are unintelligible when spoken.
+* Keep it to two sentences at most, and put the actual question last so it is
+  the part they remember.
+* Spell out anything that reads badly aloud: say "big O of n log n", not "O(n log n)".
+* Ask for a spoken explanation of an approach, never for code to be dictated.
+"""
+
+
+# ---------------------------------------------------------------------------
 # Track-specific question pools / personas
 # ---------------------------------------------------------------------------
 
@@ -79,18 +97,22 @@ _DIFFICULTY_GUIDANCE: dict[str, str] = {
 # Public prompt builders
 # ---------------------------------------------------------------------------
 
-def build_question_prompt(track: str, difficulty: str) -> str:
+def build_question_prompt(
+    track: str, difficulty: str, voice_mode: bool = False
+) -> str:
     """
     Build the system prompt for question generation.
 
     Called once per turn by ``node_generate_question`` and
-    ``node_generate_followup``.
+    ``node_generate_followup``.  When ``voice_mode`` is set the question is
+    additionally constrained to a spoken register (see ``_VOICE_ADDENDUM``).
     """
     track_ctx  = _TRACK_CONTEXT.get(track, "general technical topics")
     diff_ctx   = _DIFFICULTY_GUIDANCE.get(difficulty, "intermediate level")
+    voice_ctx  = f"\n\n{_VOICE_ADDENDUM}" if voice_mode else ""
 
     return (
-        f"{_INTERVIEWER_BASE}\n\n"
+        f"{_INTERVIEWER_BASE}{voice_ctx}\n\n"
         f"TOPIC AREA:\n{track_ctx}\n\n"
         f"DIFFICULTY LEVEL ({difficulty.upper()}):\n{diff_ctx}\n\n"
         "Based on the conversation history, ask the NEXT logical technical "
@@ -98,14 +120,32 @@ def build_question_prompt(track: str, difficulty: str) -> str:
     )
 
 
-def build_evaluator_prompt(track: str, difficulty: str) -> str:
+def build_evaluator_prompt(
+    track: str, difficulty: str, voice_mode: bool = False
+) -> str:
     """
     Build the system prompt for answer evaluation.
 
     Called once per turn by ``node_evaluate_answer``.
+
+    In ``voice_mode`` the evaluator is also asked for a ``verbal_ack`` — the
+    one-line reaction the interviewer speaks before moving on.  It rides along
+    on this existing call rather than costing a second LLM round-trip, which
+    matters because the candidate is sitting in silence waiting for it.
     """
     track_ctx = _TRACK_CONTEXT.get(track, "general technical topics")
     diff_ctx  = _DIFFICULTY_GUIDANCE.get(difficulty, "intermediate level")
+    ack_key   = (
+        ',\n  "verbal_ack":     "<one short spoken reaction, max 12 words>"'
+        if voice_mode else ""
+    )
+    ack_guide = (
+        "\n\nverbal_ack — what the interviewer SAYS OUT LOUD before the next "
+        "question, e.g. \"Right, that covers the indexing side.\" or \"Okay, "
+        "let's move on.\" Acknowledge neutrally; never state the score, never "
+        "reveal whether the answer was right, never teach the correct answer."
+        if voice_mode else ""
+    )
 
     return f"""\
 You are an expert technical evaluator for a mock interview.
@@ -125,7 +165,7 @@ Return ONLY a JSON object with EXACTLY these keys:
   "depth":          <float 0-10>,
   "needs_followup": <true | false>,
   "feedback_note":  "<internal reasoning, max 2 sentences, NOT shown to the user>",
-  "answer_summary": "<brief neutral summary of what the candidate said, max 3 sentences>"
+  "answer_summary": "<brief neutral summary of what the candidate said, max 3 sentences>"{ack_key}
 }}
 
 Scoring guide:
@@ -136,11 +176,13 @@ Scoring guide:
 Set needs_followup=true when the answer is partially correct, superficial,
 or misses an important aspect that a short follow-up could uncover.
 Set needs_followup=false when the answer is complete, clearly wrong
-(follow-up won't help), or already received a follow-up on this question.
+(follow-up won't help), or already received a follow-up on this question.{ack_guide}
 """
 
 
-def build_followup_prompt(track: str, difficulty: str) -> str:
+def build_followup_prompt(
+    track: str, difficulty: str, voice_mode: bool = False
+) -> str:
     """
     Build the system prompt for follow-up probe generation.
 
@@ -151,9 +193,10 @@ def build_followup_prompt(track: str, difficulty: str) -> str:
     """
     track_ctx = _TRACK_CONTEXT.get(track, "general technical topics")
     diff_ctx  = _DIFFICULTY_GUIDANCE.get(difficulty, "intermediate level")
+    voice_ctx = f"\n\n{_VOICE_ADDENDUM}" if voice_mode else ""
 
     return (
-        f"{_INTERVIEWER_BASE}\n\n"
+        f"{_INTERVIEWER_BASE}{voice_ctx}\n\n"
         f"TOPIC AREA:\n{track_ctx}\n\n"
         f"DIFFICULTY LEVEL ({difficulty.upper()}):\n{diff_ctx}\n\n"
         "The candidate's previous answer was incomplete or superficial in a "

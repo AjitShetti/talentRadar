@@ -52,6 +52,16 @@ class InterviewAgentState(TypedDict, total=False):
     user_id: str
     """UUID of the authenticated user (string form for JSON serialisation)."""
 
+    voice_mode: bool
+    """
+    True when the session is conducted hands-free over voice.
+
+    Voice mode changes *generation*, not routing: prompts switch to a spoken
+    register (short, self-contained, no code blocks or bullet lists — none of
+    which survive text-to-speech) and the evaluator additionally returns a
+    ``verbal_ack`` the interviewer says before the next question.
+    """
+
     # ------------------------------------------------------------------ #
     # Conversation history — grows each turn                              #
     # ------------------------------------------------------------------ #
@@ -95,6 +105,7 @@ class InterviewAgentState(TypedDict, total=False):
             "needs_followup": bool,
             "feedback_note": str,   # brief LLM reasoning (not shown to user)
             "answer_summary": str,  # short summary of what was said
+            "verbal_ack": str,      # spoken reaction, voice_mode only ("" otherwise)
         }
     """
 

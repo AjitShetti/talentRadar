@@ -223,8 +223,12 @@ async def api_root():
                 "gaps":    "POST /api/v1/resumes/gaps",
             },
             "company_intel": {
-                "by_id": "GET /api/v1/company-intel/{company_id}",
-                "search": "GET /api/v1/company-intel?name=...",
+                "directory": "GET /api/v1/company-intel/?city=Bengaluru&tier=...&q=...",
+                "facets":    "GET /api/v1/company-intel/facets?city=Bengaluru",
+                "resolve":   "GET /api/v1/company-intel/resolve?name=...",
+                "by_id":     "GET /api/v1/company-intel/{company_id}",
+                "contacts":  "GET/POST /api/v1/company-intel/{company_id}/contacts",
+                "discover_contacts": "POST /api/v1/company-intel/{company_id}/contacts/discover",
             },
             "career": {
                 "weaknesses": "GET  /api/v1/career/weaknesses",

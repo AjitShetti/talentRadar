@@ -287,6 +287,30 @@ class InterviewRepository:
             "depth":       _scale(row.avg_d),
         }
 
+    async def get_answer_scores_for_sessions(
+        self,
+        db: AsyncSession,
+        session_ids: Sequence[uuid.UUID],
+    ) -> Sequence[InterviewAnswerScore]:
+        """
+        Return every per-question score belonging to ``session_ids``.
+
+        Used by the dashboard insight aggregator, which needs the raw
+        sub-scores across several sessions at once rather than one
+        session at a time.  Returns an empty list for an empty input.
+        """
+        if not session_ids:
+            return []
+        result = await db.execute(
+            select(InterviewAnswerScore)
+            .where(InterviewAnswerScore.session_id.in_(list(session_ids)))
+            .order_by(
+                InterviewAnswerScore.session_id,
+                InterviewAnswerScore.question_index,
+            )
+        )
+        return result.scalars().all()
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------

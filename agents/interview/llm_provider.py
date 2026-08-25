@@ -158,6 +158,7 @@ class LLMProvider:
         answer: str,
         track: str,
         difficulty: str,
+        voice_mode: bool = False,
     ) -> dict[str, Any]:
         """
         Score the user's answer and decide whether a follow-up is needed.
@@ -169,6 +170,7 @@ class LLMProvider:
             needs_followup : bool
             feedback_note  : str   (LLM reasoning, NOT shown to user)
             answer_summary : str   (brief summary of what the user said)
+            verbal_ack     : str   (spoken reaction; "" outside voice_mode)
 
         Raises:
             LLMProviderError: If the JSON cannot be parsed or is missing keys.
@@ -182,7 +184,8 @@ class LLMProvider:
                     f"Track: {track} | Difficulty: {difficulty}\n\n"
                     "Evaluate the answer and return a JSON object with the "
                     "exact keys: correctness, clarity, depth, needs_followup, "
-                    "feedback_note, answer_summary."
+                    "feedback_note, answer_summary"
+                    + (", verbal_ack." if voice_mode else ".")
                 ),
             }
         ]
@@ -224,4 +227,7 @@ class LLMProvider:
         data["needs_followup"] = bool(data["needs_followup"])
         data["feedback_note"] = str(data.get("feedback_note", ""))[:512]
         data["answer_summary"] = str(data.get("answer_summary", ""))[:1024]
+        # Optional — only requested in voice mode, and the model may still omit
+        # it, so it is normalised rather than treated as a required key.
+        data["verbal_ack"] = str(data.get("verbal_ack") or "")[:256]
         return data

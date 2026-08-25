@@ -1,10 +1,20 @@
 'use client'
 
-import { FormEvent, useEffect, useState } from 'react'
+import { ChangeEvent, FormEvent, useEffect, useState } from 'react'
+import { Check, UploadCloud } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import RequireAuth from '@/components/RequireAuth'
 import { api } from '@/lib/api'
 import { INDIAN_CITIES } from '@/lib/filters'
+
+function formatDate(iso: string | null) {
+  if (!iso) return ''
+  try {
+    return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+  } catch {
+    return ''
+  }
+}
 
 export default function SettingsPage() {
   const [name, setName] = useState('')
@@ -17,7 +27,18 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState(''); const [error, setError] = useState('')
 
+  const [resumeName, setResumeName] = useState<string | null>(null)
+  const [resumeSavedAt, setResumeSavedAt] = useState<string | null>(null)
+  const [extracting, setExtracting] = useState(false)
+  const [resumeError, setResumeError] = useState('')
+
   useEffect(() => {
+    // The saved resume is what the dashboard compares against the target roles
+    // below, so it is loaded and replaced right here alongside them.
+    api.resumes.me().then(saved => {
+      if (saved) { setResumeName(saved.filename); setResumeSavedAt(saved.updated_at) }
+    }).catch(() => {})
+
     api.profile.get().then(result => {
       const profile = result.profile || {}
       setName(String(profile.full_name || ''))
@@ -31,6 +52,21 @@ export default function SettingsPage() {
   }, [])
 
   function list(value: string) { return value.split(',').map(v => v.trim()).filter(Boolean) }
+
+  async function handleResume(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setResumeError(''); setExtracting(true)
+    try {
+      const saved = await api.resumes.extractText(file)
+      setResumeName(saved.filename); setResumeSavedAt(saved.updated_at)
+    } catch (err) {
+      setResumeError(err instanceof Error ? err.message : 'Could not read that file.')
+    } finally {
+      setExtracting(false)
+    }
+  }
 
   async function save(e: FormEvent) {
     e.preventDefault()
@@ -59,9 +95,9 @@ export default function SettingsPage() {
 
   return <RequireAuth><AppShell>
     <section className="page-heading">
-      <p className="eyebrow">PROFILE &amp; SETTINGS</p>
+      <p className="eyebrow">PROFILE &amp; GOALS</p>
       <h1>Set the direction of your search.</h1>
-      <p>Your city, experience, and target roles pre-fill the job search filters and steer skill signals and AI coaching.</p>
+      <p>Your city, experience, and target roles pre-fill the job search filters. Add your resume too — we read it against those roles and show you what&apos;s missing on your dashboard.</p>
     </section>
     <form className="card-form settings-form" onSubmit={save}>
       <label>Full name<input value={name} onChange={e => setName(e.target.value)} /></label>
@@ -80,5 +116,21 @@ export default function SettingsPage() {
       {message && <p className="success-message">{message}</p>}
       <button className="primary-button" disabled={saving}>{saving ? 'Saving…' : 'Save profile'}</button>
     </form>
+
+    <section className="card-form resume-goals-card">
+      <p className="eyebrow">YOUR RESUME</p>
+      <h2>Upload the resume you actually send out.</h2>
+      <p className="muted-copy">We compare it against the target roles above and surface the two or three skills those roles ask for that your resume doesn&apos;t show yet — or, if it already covers them, how to make it read stronger.</p>
+      {resumeName && <p className="resume-status"><Check size={13} /> Using <strong>{resumeName}</strong>{resumeSavedAt ? ` · saved ${formatDate(resumeSavedAt)}` : ''}</p>}
+      <div className="resume-upload">
+        <label htmlFor="profile-resume" className="outline-button upload-trigger">
+          <UploadCloud size={14} />
+          {extracting ? 'Reading file…' : resumeName ? 'Replace resume' : 'Upload PDF or DOCX'}
+        </label>
+        <input id="profile-resume" type="file" accept=".pdf,.docx,.txt" hidden onChange={handleResume} />
+        {!resumeName && !extracting && <small className="upload-hint">PDF, DOCX or TXT · saved to your account</small>}
+      </div>
+      {resumeError && <p className="form-error">{resumeError}</p>}
+    </section>
   </AppShell></RequireAuth>
 }

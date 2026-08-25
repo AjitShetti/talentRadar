@@ -25,6 +25,14 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------ #
     groq_api_key: str = Field(description="Groq API key")
     tavily_api_key: str = Field(default="", description="Tavily search API key")
+    github_token: str = Field(
+        default="",
+        description=(
+            "Optional GitHub PAT for the Company Intel open-source panel. "
+            "Unauthenticated requests are capped at 60/hour per IP; a token "
+            "lifts that to 5000/hour. Read-only public scope is enough."
+        ),
+    )
 
     # Model ids are settings (not literals) so a decommissioned Groq model can
     # be swapped from .env without a code change.

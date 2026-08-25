@@ -97,13 +97,19 @@ class Orchestrator:
             for r in results_raw
         ]
 
+        # Surface what the classifier extracted alongside the agent's own
+        # metadata — callers (the copilot) use it to learn the user's
+        # preferences without re-parsing the raw query.
+        metadata = dict(response_dict.get("metadata") or {})
+        metadata.setdefault("context", final_state.get("context", {}))
+
         return AgentResponse(
             success=response_dict.get("success", False),
             intent=IntentType(response_dict.get("intent", IntentType.GENERAL.value)),
             results=results,
             summary=response_dict.get("summary"),
             error=response_dict.get("error"),
-            metadata=response_dict.get("metadata", {}),
+            metadata=metadata,
         )
 
     async def match_candidate_to_jobs(
