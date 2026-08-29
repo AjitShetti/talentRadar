@@ -18,6 +18,7 @@ from enum import Enum as PyEnum
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Date,
     DateTime,
     Enum,
     Float,
@@ -967,6 +968,10 @@ class Resume(Base):
     ats_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     ats_analysis: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
+    # Structured resume document (Resume Studio's LaTeX editor). NULL until
+    # the user opens the editor for the first time; see agents/latex_templates.py.
+    structured_content: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
     is_tailored: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
@@ -1485,3 +1490,55 @@ class AnalyticsSnapshot(Base):
 
     def __repr__(self) -> str:
         return f"<AnalyticsSnapshot user={self.user_id} date={self.snapshot_date}>"
+
+
+# ---------------------------------------------------------------------------
+# daily job matches — cached top-3 openings per user per day, matched
+# against Profile.target_roles by the daily APScheduler job
+# ---------------------------------------------------------------------------
+
+class DailyJobMatch(Base):
+    """One row of a user's daily top-3 job matches for their target roles."""
+    __tablename__ = "daily_job_matches"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("jobs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    matched_role: Mapped[str] = mapped_column(
+        String(256), nullable=False,
+        comment="Which Profile.target_roles[] entry produced this match",
+    )
+    match_date: Mapped[datetime] = mapped_column(
+        Date, nullable=False, index=True,
+        comment="Server date this batch was computed for",
+    )
+    rank: Mapped[int] = mapped_column(
+        Integer, nullable=False, comment="0..2, ordering within that day's top-3"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    job: Mapped["Job"] = relationship("Job")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "match_date", "rank", name="uq_daily_job_matches_user_date_rank"),
+        Index("ix_daily_job_matches_user_date", "user_id", "match_date"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<DailyJobMatch user={self.user_id} date={self.match_date} rank={self.rank}>"

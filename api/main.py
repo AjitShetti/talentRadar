@@ -13,6 +13,7 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -70,10 +71,30 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     settings = get_settings()
     logger.info("Database: %s@%s/%s", settings.postgres_user, settings.postgres_host, settings.postgres_db)
 
+    # Daily job-match scan. Runs in-process (no separate worker/beat service
+    # exists in this stack) and searches each user's target roles against
+    # already-ingested postings — see services/job_matching.py.
+    from services.job_matching import run_daily_matching_for_all_users
+
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(
+        run_daily_matching_for_all_users,
+        trigger="cron",
+        hour=settings.daily_match_hour,
+        minute=settings.daily_match_minute,
+        id="daily_job_matching",
+    )
+    scheduler.start()
+    logger.info(
+        "Daily job-match scan scheduled for %02d:%02d server time",
+        settings.daily_match_hour, settings.daily_match_minute,
+    )
+
     yield
 
     # Shutdown
     logger.info("TalentRadar API shutting down...")
+    scheduler.shutdown(wait=False)
     await close_engine()
     logger.info("Database connections closed")
 

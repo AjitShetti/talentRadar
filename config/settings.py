@@ -114,6 +114,15 @@ class Settings(BaseSettings):
     google_application_credentials: str = Field(default="")
 
     # ------------------------------------------------------------------ #
+    # Daily job matching                                                   #
+    # ------------------------------------------------------------------ #
+    # When the in-process APScheduler fires the daily target-role job search
+    # (server clock, matches the DB host's timezone — same convention as the
+    # rest of this file, which has no explicit timezone setting).
+    daily_match_hour: int = Field(default=8, description="Hour (0-23) the daily job-match scan runs")
+    daily_match_minute: int = Field(default=0, description="Minute (0-59) the daily job-match scan runs")
+
+    # ------------------------------------------------------------------ #
     # Frontend / CORS                                                      #
     # ------------------------------------------------------------------ #
     next_public_api_url: str = Field(default="http://localhost:8000")
