@@ -3,13 +3,16 @@ api/routers/resumes.py
 ~~~~~~~~~~~~~~~~~~~~~~~~
 Resume Studio endpoints (auth required).
 
-POST /resumes/extract-text  - extract text from an uploaded PDF/DOCX resume and save it
-GET  /resumes/me            - the user's saved resume, if any (auto-load on visit)
-GET  /resumes/target-jobs   - jobs the user is already tracking, for the job picker
-POST /resumes/analyze       - ATS score + skill-gap analysis
-POST /resumes/tailor        - tailor a resume for a target job (LaTeX + PDF)
-POST /resumes/cover-letter  - generate a tailored cover letter
-GET  /resumes/gaps          - pure skill-gap computation
+POST /resumes/extract-text     - extract text from an uploaded PDF/DOCX resume and save it
+GET  /resumes/me               - the user's saved resume, if any (auto-load on visit)
+GET  /resumes/target-jobs      - jobs the user is already tracking, for the job picker
+POST /resumes/analyze          - ATS score + skill-gap analysis
+POST /resumes/tailor           - tailor a resume for a target job (LaTeX + PDF)
+POST /resumes/cover-letter     - generate a tailored cover letter
+GET  /resumes/gaps             - pure skill-gap computation
+GET  /resumes/document         - the structured document behind the LaTeX editor
+PUT  /resumes/document         - save edits to that document (autosave)
+POST /resumes/document/compile - render the document to LaTeX + PDF
 """
 
 from __future__ import annotations
@@ -28,9 +31,12 @@ from config.settings import get_settings
 from services.llm import generate_cover_letter
 from services.resumes import (
     analyze_resume,
+    compile_resume_document,
     get_active_resume,
+    get_resume_document,
     list_target_jobs,
     save_resume,
+    save_resume_document,
     skill_gap,
     tailor_resume,
 )
@@ -68,6 +74,14 @@ class CoverLetterRequest(BaseModel):
     job_title: str
     company: str
     tone: str = "professional"
+
+
+class ResumeDocumentRequest(BaseModel):
+    document: dict
+
+
+class CompileDocumentRequest(BaseModel):
+    document: dict
 
 
 class SkillGapRequest(BaseModel):
@@ -240,6 +254,36 @@ async def cover_letter_endpoint(user_id: CurrentUserId, body: CoverLetterRequest
     except Exception as exc:
         logger.error("Cover letter generation failed: %s", exc)
         raise HTTPException(status_code=500, detail=f"Cover letter generation failed: {exc}") from exc
+
+
+@router.get("/document")
+async def get_resume_document_endpoint(user_id: CurrentUserId):
+    """The structured document behind the Resume Studio LaTeX editor."""
+    try:
+        return await get_resume_document(user_id=user_id)
+    except Exception as exc:
+        logger.error("Fetching resume document failed: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Could not load your resume document: {exc}") from exc
+
+
+@router.put("/document")
+async def save_resume_document_endpoint(user_id: CurrentUserId, body: ResumeDocumentRequest):
+    """Save edits to the structured resume document (autosave)."""
+    try:
+        return await save_resume_document(user_id=user_id, document=body.document)
+    except Exception as exc:
+        logger.error("Saving resume document failed: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Could not save your resume document: {exc}") from exc
+
+
+@router.post("/document/compile")
+async def compile_resume_document_endpoint(user_id: CurrentUserId, body: CompileDocumentRequest):
+    """Render the structured resume document to LaTeX and compile it to PDF."""
+    try:
+        return await compile_resume_document(body.document)
+    except Exception as exc:
+        logger.error("Compiling resume document failed: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Could not compile your resume: {exc}") from exc
 
 
 @router.post("/gaps")

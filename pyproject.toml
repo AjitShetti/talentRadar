@@ -82,6 +82,7 @@ dependencies = [
 
     # --- Task queue & caching ---
     "redis>=5.0.0,<6.0.0",
+    "apscheduler>=3.10.0,<4.0.0",  # in-process cron for the daily job-match scan
 
     # --- Google Cloud (optional blob storage) ---
     "google-cloud-storage>=2.17.0,<3.0.0",

@@ -25,6 +25,7 @@ from api.auth import get_current_user
 from services.applications import tracker_analytics
 from services.career import target_role_readiness
 from services.interviews import interview_insights
+from services.job_matching import compute_daily_matches_for_user, get_daily_matches_for_user
 from services.profiles import get_profile
 
 logger = logging.getLogger(__name__)
@@ -64,6 +65,18 @@ async def overview(user_id: CurrentUserId) -> dict[str, Any]:
         logger.warning("Interview insights unavailable for user %s", user_id, exc_info=True)
         interviews = None
 
+    # Today's target-role job matches. The daily scheduler (see
+    # services/job_matching.py) normally precomputes and caches these; a
+    # cache miss (e.g. a user who just set a target role today) is filled in
+    # here on demand so the card isn't empty until tomorrow's run.
+    try:
+        job_matches = await get_daily_matches_for_user(user_id=user_id)
+        if job_matches is None:
+            job_matches = await compute_daily_matches_for_user(user_id=user_id)
+    except Exception:
+        logger.warning("Daily job matches unavailable for user %s", user_id, exc_info=True)
+        job_matches = None
+
     return {
         "profile": {
             "exists": bool(profile),
@@ -78,4 +91,5 @@ async def overview(user_id: CurrentUserId) -> dict[str, Any]:
         "funnel": analytics.get("funnel", []),
         "skills_focus": skills_focus,
         "interviews": interviews,
+        "job_matches": job_matches,
     }

@@ -274,7 +274,7 @@ function GithubSection({ detail }: { detail: CompanyDetail }) {
               <strong>{gh.name}</strong>
               <span>@{gh.org} · {gh.public_repos} repos · {gh.followers.toLocaleString()} followers</span>
             </div>
-            <ExternalLink size={14} color="#9296a3" />
+            <ExternalLink size={14} color="var(--faint)" />
           </a>
           {gh.top_repos.map(repo =>
             <a key={repo.full_name} className="ci-repo" href={repo.html_url} target="_blank" rel="noreferrer noopener">

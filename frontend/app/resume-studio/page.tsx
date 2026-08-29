@@ -2,9 +2,10 @@
 
 import Link from 'next/link'
 import { ChangeEvent, useEffect, useRef, useState } from 'react'
-import { Check, Copy, Download, FileText, RefreshCw, Sparkles, UploadCloud, WandSparkles } from 'lucide-react'
+import { Check, Download, FileText, RefreshCw, Sparkles, UploadCloud, WandSparkles } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import RequireAuth from '@/components/RequireAuth'
+import CopyButton from '@/components/CopyButton'
 import { api, AtsResult, TailorResult, TargetJob } from '@/lib/api'
 import { usePersistentState } from '@/lib/persistent-state'
 
@@ -26,24 +27,6 @@ function formatDate(iso: string | null) {
 
 function errorMessage(err: unknown, fallback: string) {
   return err instanceof Error ? err.message : fallback
-}
-
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false)
-  return (
-    <button
-      type="button"
-      className="outline-button"
-      onClick={async () => {
-        await navigator.clipboard.writeText(text)
-        setCopied(true)
-        setTimeout(() => setCopied(false), 1500)
-      }}
-    >
-      {copied ? <Check size={13} /> : <Copy size={13} />}
-      {copied ? 'Copied' : 'Copy'}
-    </button>
-  )
 }
 
 export default function ResumeStudioPage() {
@@ -203,6 +186,9 @@ export default function ResumeStudioPage() {
           <p className="eyebrow">RESUME STUDIO</p>
           <h1>Turn your experience into a stronger yes.</h1>
           <p>Your resume is remembered — pick a job you're tracking and one click checks your ATS score, tailors your resume, and writes a cover letter.</p>
+          <Link href="/resume-studio/editor" className="outline-button" style={{ display: 'inline-flex', marginTop: 14 }}>
+            <FileText size={13} /> Open the section-by-section LaTeX editor
+          </Link>
         </section>
 
         <div className="studio-grid">

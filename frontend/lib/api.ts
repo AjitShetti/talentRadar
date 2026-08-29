@@ -7,12 +7,36 @@ const TOKEN_KEY = 'talentradar_token'
 const EMAIL_KEY = 'talentradar_email'
 
 export type Job = { id: string; title: string; company?: string | null; company_name?: string | null; location_raw?: string | null; is_remote?: boolean; skills?: string[]; source_url?: string | null; salary_raw?: string | null; match_score?: number | null; description_clean?: string | null }
+// One of the dashboard's daily top-3 picks for a Profile.target_roles entry —
+// computed by the APScheduler job in api/main.py (services/job_matching.py).
+export type JobMatch = { id: string; title: string; company: string; location: string; is_remote: boolean; skills: string[]; salary_raw?: string | null; source_url?: string | null; posted_at?: string | null; matched_role: string }
 export type Application = { id: string; job_id?: string | null; status: string; notes?: string | null; applied_at?: string | null; created_at: string; job?: Job | null }
 export type InterviewState = Record<string, unknown>
 export type InterviewScore = { correctness: number; clarity: number; depth: number; answer_summary?: string; verbal_ack?: string | null }
 export type AtsResult = { ats_score: number; missing_skills: string[]; matched_skills: string[]; suggestions: string[]; reasoning: string }
 export type TailorResult = { candidate_name: string; latex_content: string; pdf_base64: string | null; filename: string | null }
 export type SavedResume = { id: string; extracted_text: string; filename: string | null; updated_at: string | null }
+export type ResumeSectionType = 'summary' | 'education' | 'experience' | 'projects' | 'skills' | 'certifications' | 'custom'
+export type ResumeLink = { label: string; url: string }
+export type ResumePersonal = { full_name: string; headline: string; email: string; phone: string; location: string; links: ResumeLink[] }
+// Shape varies by the owning section's type — e.g. education uses school/degree,
+// experience uses title/company, skills uses category/items. Kept as one loose
+// type (rather than a discriminated union) since a section's items are only ever
+// read/written alongside their own section, where the relevant fields are known.
+export type ResumeItem = {
+  text?: string
+  school?: string; degree?: string
+  title?: string; company?: string
+  name?: string; tech?: string; link?: string
+  category?: string; items?: string[]
+  issuer?: string; date?: string
+  heading?: string
+  location?: string; dates?: string
+  bullets?: string[]
+}
+export type ResumeSection = { id: string; type: ResumeSectionType; title: string; visible: boolean; order: number; items: ResumeItem[] }
+export type ResumeDocument = { schema_version?: number; personal: ResumePersonal; sections: ResumeSection[] }
+export type CompiledResume = { latex_content: string; pdf_base64: string | null; filename: string | null; compile_error?: string | null }
 export type TargetJob = { id: string; title: string; company_name: string | null; description: string | null; location_raw: string | null }
 export type SkillFocusItem = { title: string; detail: string }
 // Resume vs target roles: `kind` decides what the dashboard panel is showing —
@@ -94,6 +118,11 @@ export const api = {
     tailor: (payload: { resume_text: string; job_description: string; job_title?: string }) => request<TailorResult>('/api/v1/resumes/tailor', { method: 'POST', body: JSON.stringify(payload) }, true),
     coverLetter: (payload: { resume_text: string; job_description: string; job_title: string; company: string; tone?: string }) => request<{ content: string; tone: string }>('/api/v1/resumes/cover-letter', { method: 'POST', body: JSON.stringify(payload) }, true),
     gaps: (payload: Record<string, unknown>) => request<Record<string, unknown>>('/api/v1/resumes/gaps', { method: 'POST', body: JSON.stringify(payload) }, true),
+    document: {
+      get: () => request<ResumeDocument>('/api/v1/resumes/document', {}, true),
+      save: (document: ResumeDocument) => request<ResumeDocument>('/api/v1/resumes/document', { method: 'PUT', body: JSON.stringify({ document }) }, true),
+      compile: (document: ResumeDocument) => request<CompiledResume>('/api/v1/resumes/document/compile', { method: 'POST', body: JSON.stringify({ document }) }, true),
+    },
   },
   interview: {
     start: (track: string, difficulty: string, voice_mode = false) => request<{ session_id: string; question: string; question_index: number; agent_state: InterviewState }>('/api/v1/interview/sessions/start', { method: 'POST', body: JSON.stringify({ track, difficulty, voice_mode }) }, true),

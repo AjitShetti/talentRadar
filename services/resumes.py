@@ -12,6 +12,9 @@ Deterministic tools for Resume Studio.
     get_active_resume()  — fetch the user's saved resume, if any
     list_target_jobs()   — jobs the user is already tracking, for the
                             Resume Studio job picker
+    get_resume_document()     — the structured document behind the LaTeX editor
+    save_resume_document()    — persist edits to that document
+    compile_resume_document() — render it to LaTeX/PDF
 """
 
 from __future__ import annotations
@@ -354,3 +357,149 @@ async def list_target_jobs(*, user_id: str, limit: int = 25) -> list[dict[str, A
         return results
     finally:
         await session.close()
+
+
+_DEFAULT_DOCUMENT: dict[str, Any] = {
+    "schema_version": 1,
+    "personal": {
+        "full_name": "", "headline": "", "email": "", "phone": "",
+        "location": "", "links": [],
+    },
+    "sections": [
+        {"id": "summary", "type": "summary", "title": "Professional Summary", "visible": True, "order": 0, "items": []},
+        {"id": "education", "type": "education", "title": "Education", "visible": True, "order": 1, "items": []},
+        {"id": "experience", "type": "experience", "title": "Experience", "visible": True, "order": 2, "items": []},
+        {"id": "projects", "type": "projects", "title": "Projects", "visible": True, "order": 3, "items": []},
+        {"id": "skills", "type": "skills", "title": "Technical Skills", "visible": True, "order": 4, "items": []},
+    ],
+}
+
+
+async def get_resume_document(*, user_id: str) -> dict[str, Any]:
+    """
+    The structured document behind the Resume Studio LaTeX editor.
+
+    Bootstraps from the user's plain-text resume via one-time LLM extraction
+    the first time this is called for a resume that doesn't have a
+    structured document yet. Returns a blank default document if the user
+    has no resume at all, so the editor always has something to render.
+    """
+    import copy
+
+    from sqlalchemy import select
+
+    from storage.database import AsyncSessionLocal
+    from storage.models import Profile, Resume
+
+    user_uuid = parse_uuid(user_id)
+    if not user_uuid:
+        return copy.deepcopy(_DEFAULT_DOCUMENT)
+
+    session = AsyncSessionLocal()
+    try:
+        profile = (
+            await session.execute(select(Profile).where(Profile.user_id == user_uuid))
+        ).scalar_one_or_none()
+        resume = None
+        if profile and profile.active_resume_id:
+            resume = (
+                await session.execute(select(Resume).where(Resume.id == profile.active_resume_id))
+            ).scalar_one_or_none()
+
+        if resume is None:
+            return copy.deepcopy(_DEFAULT_DOCUMENT)
+
+        if resume.structured_content:
+            return dict(resume.structured_content)
+
+        if not resume.extracted_text:
+            return copy.deepcopy(_DEFAULT_DOCUMENT)
+
+        from services.llm import extract_resume_structure
+
+        try:
+            document = await extract_resume_structure(resume.extracted_text)
+        except Exception as exc:
+            logger.warning("Resume structure extraction failed; returning blank document: %s", exc)
+            return copy.deepcopy(_DEFAULT_DOCUMENT)
+
+        resume.structured_content = document
+        await session.commit()
+        return document
+    finally:
+        await session.close()
+
+
+async def save_resume_document(*, user_id: str, document: dict[str, Any]) -> dict[str, Any]:
+    """Persist edits to the user's structured resume document (autosave)."""
+    from sqlalchemy import select
+
+    from storage.database import AsyncSessionLocal
+    from storage.models import Profile, Resume
+
+    user_uuid = parse_uuid(user_id)
+    if not user_uuid:
+        raise ValueError(f"Invalid user_id: {user_id!r}")
+
+    session = AsyncSessionLocal()
+    try:
+        profile = (
+            await session.execute(select(Profile).where(Profile.user_id == user_uuid))
+        ).scalar_one_or_none()
+        if profile is None:
+            profile = Profile(user_id=user_uuid)
+            session.add(profile)
+            await session.flush()
+
+        resume = None
+        if profile.active_resume_id:
+            resume = (
+                await session.execute(select(Resume).where(Resume.id == profile.active_resume_id))
+            ).scalar_one_or_none()
+        if resume is None:
+            resume = Resume(profile_id=profile.id, version_name="Original")
+            session.add(resume)
+            await session.flush()
+            profile.active_resume_id = resume.id
+
+        resume.structured_content = document
+        await session.commit()
+        return document
+    finally:
+        await session.close()
+
+
+async def compile_resume_document(document: dict[str, Any]) -> dict[str, Any]:
+    """
+    Render a structured resume document to LaTeX and compile it to PDF.
+
+    Purely deterministic (no LLM call) — safe to run on every debounced edit
+    in the editor. Degrades to LaTeX-only with a ``compile_error`` if
+    ``pdflatex`` fails, same pattern as ``tailor_resume()``.
+    """
+    import base64
+
+    from agents.latex_templates import render_resume_latex
+
+    latex = render_resume_latex(document)
+    pdf_base64: str | None = None
+    filename: str | None = None
+    compile_error: str | None = None
+
+    if latex:
+        try:
+            from api.utils.latex_compiler import compile_latex_to_pdf
+            pdf_bytes = compile_latex_to_pdf(latex)
+            pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+            candidate_name = str((document.get("personal") or {}).get("full_name") or "resume")
+            filename = (candidate_name.strip().replace(" ", "_") or "resume") + ".pdf"
+        except Exception as exc:
+            logger.warning("PDF compilation failed; returning LaTeX only: %s", exc)
+            compile_error = "PDF rendering was unavailable — the LaTeX source is still up to date."
+
+    return {
+        "latex_content": latex,
+        "pdf_base64": pdf_base64,
+        "filename": filename,
+        "compile_error": compile_error,
+    }

@@ -209,6 +209,56 @@ Rules:
     return data
 
 
+async def extract_resume_structure(resume_text: str) -> dict[str, Any]:
+    """
+    Parse free-text resume content into the Resume Studio editor's
+    structured document shape (personal block + ordered sections), so a
+    user with an already-uploaded resume gets a populated editor instead of
+    a blank one on first visit.
+
+    Never fabricates content — every field must trace back to the input
+    text; a heading with nothing to put in it should be omitted.
+    """
+    system = """\
+You turn free-text resume content into a structured JSON document. Extract
+ONLY what is actually present in the text — never invent names, dates,
+companies, schools, or numbers.
+
+Return a single JSON object with EXACTLY this shape:
+{
+  "schema_version": 1,
+  "personal": {
+    "full_name": string, "headline": string, "email": string, "phone": string,
+    "location": string, "links": [{"label": string, "url": string}]
+  },
+  "sections": [
+    {
+      "id": string (a short random slug), "type": one of
+        "summary"|"education"|"experience"|"projects"|"skills"|"certifications"|"custom",
+      "title": string, "visible": true, "order": integer starting at 0,
+      "items": [ ... shape depends on type ... ]
+    }
+  ]
+}
+
+Item shapes per type:
+- summary: [{"text": string}]
+- education: [{"school","location","degree","dates","bullets":[string]}]
+- experience: [{"title","company","location","dates","bullets":[string]}]
+- projects: [{"name","tech","dates","link","bullets":[string]}]
+- skills: [{"category","items":[string]}]  (one row per category, e.g. "Languages")
+- certifications: [{"name","issuer","date"}]
+- custom: [{"heading","bullets":[string]}]  (for anything that doesn't fit above)
+
+Only include sections that have at least one real item. Return ONLY JSON."""
+    prompt = f"### RESUME TEXT:\n{resume_text[:8000]}"
+    raw = await _chat(system, prompt, temperature=0.1, max_tokens=2000, json_mode=True)
+    data = json.loads(raw)
+    if not isinstance(data, dict):
+        raise ValueError("Resume structure extraction returned a non-object payload")
+    return data
+
+
 async def generate_copilot_reply(*, question: str, context: dict[str, Any]) -> str:
     """
     Career Copilot: narrate a structured agent result as a short chat reply.

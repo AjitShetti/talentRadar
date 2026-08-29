@@ -2,12 +2,12 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
-import { ArrowRight, BriefcaseBusiness, FileText, Lightbulb, MessageSquare, Search, Sparkles, Target, UploadCloud } from 'lucide-react'
+import { ArrowRight, BriefcaseBusiness, ExternalLink, FileText, Lightbulb, MapPin, MessageSquare, Search, Sparkles, Target, UploadCloud } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import BriefingFeed from '@/components/BriefingFeed'
 import CopilotWorkspace from '@/components/CopilotWorkspace'
 import RequireAuth from '@/components/RequireAuth'
-import { api, Briefing, SkillsFocus } from '@/lib/api'
+import { api, Briefing, JobMatch, SkillsFocus } from '@/lib/api'
 
 type Dimension = { key: string; label: string; score: number; weakest: boolean }
 type TrackStat = { track: string; label: string; score: number; sessions: number }
@@ -68,13 +68,15 @@ export default function Dashboard() {
     }
   }
 
-  const profile = data?.profile as { full_name?: string; onboarding_completed?: boolean } | undefined
+  const profile = data?.profile as { full_name?: string; onboarding_completed?: boolean; target_roles?: string[] | null } | undefined
   const analytics = data?.analytics as Record<string, number> | undefined
   const skillsFocus = data?.skills_focus as SkillsFocus | null | undefined
   const focusIsResume = skillsFocus?.kind === 'resume_improvements'
   const interviews = data?.interviews as InterviewInsights | null | undefined
   const hasInterviews = Boolean(interviews && interviews.sessions_analyzed > 0)
   const stats = briefing?.stats
+  const jobMatches = data?.job_matches as JobMatch[] | null | undefined
+  const targetRoles = profile?.target_roles || []
 
   return <RequireAuth><AppShell>
     <section className="welcome-row">
@@ -135,6 +137,28 @@ export default function Dashboard() {
     </div>
 
     {data && <>
+      {targetRoles.length > 0 && <section className="panel">
+        <div className="panel-heading">
+          <div><p className="eyebrow">TODAY'S MATCHES</p><h2>Open roles for {targetRoles.slice(0, 2).join(' / ')}</h2></div>
+          <Link className="text-button" href="/search">Search more <ArrowRight size={14}/></Link>
+        </div>
+        {jobMatches && jobMatches.length > 0
+          ? <div className="job-results">{jobMatches.map(job => <article className="job-card" key={job.id}>
+              <div className="job-card-top">
+                <div className="company-logo violet">{(job.company || '?').slice(0, 1)}</div>
+                <div><h2>{job.title}</h2><p>{job.company || 'Company not listed'}</p></div>
+              </div>
+              <div className="job-meta">
+                <span><MapPin size={14}/>{job.location || (job.is_remote ? 'Remote' : 'Location not listed')}</span>
+                {job.is_remote && <span>Remote-friendly</span>}
+                {job.salary_raw && <span>{job.salary_raw}</span>}
+              </div>
+              {job.skills.length > 0 && <div className="chips">{job.skills.slice(0, 5).map(skill => <span key={skill}>{skill}</span>)}</div>}
+              {job.source_url && <div className="job-actions"><a className="text-button" href={job.source_url} target="_blank">View original <ExternalLink size={14}/></a></div>}
+            </article>)}</div>
+          : <p className="muted-copy">No new openings for {targetRoles.slice(0, 2).join(' / ')} today — check back tomorrow.</p>}
+      </section>}
+
       <section className="panel insight-panel">
         <div className="panel-heading">
           <div><p className="eyebrow">INTERVIEW FEEDBACK</p><h2>{hasInterviews ? 'What to work on next' : 'Feedback from your mock interviews'}</h2></div>

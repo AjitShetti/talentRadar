@@ -233,3 +233,4 @@ data/raw/
 data/raw/**
 /.agents
 /stitch
+/.claude
