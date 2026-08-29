@@ -49,7 +49,9 @@ a{text-decoration:none;color:inherit}
 
 /* ── App shell: top nav + content + bottom status bar ────────────────────── */
 .app-shell{display:flex;flex-direction:column;min-height:100vh}
-.topnav{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:28px;height:64px;padding:0 32px;background:rgba(10,10,8,.82);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.topnav{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:28px;height:64px;padding:0 32px;background:rgba(10,10,8,.82);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--line);transform:translateY(0);transition:transform .25s cubic-bezier(.4,0,.2,1)}
+.topnav-hidden{transform:translateY(-100%)}
+@media (prefers-reduced-motion: reduce){.topnav{transition:none}}
 .brand{display:flex;align-items:center;gap:10px;font-family:'Fraunces';font-size:17px;font-weight:600;letter-spacing:-.4px;flex-shrink:0}
 .brand span span{color:var(--accent-light)}
 .brand-mark{display:grid;place-items:center;background:var(--accent);color:var(--paper);border-radius:8px;width:26px;height:26px;font-size:16px}
@@ -722,6 +724,8 @@ body::before{content:'';position:fixed;inset:0;z-index:2000;pointer-events:none;
 }
 
 /* ── Resume Studio: structured LaTeX editor ──────────────────────────────── */
+.ats-live-panel{margin-bottom:16px}
+.ats-live-panel .ats-score-row{margin:0}
 .editor-shell{display:grid;grid-template-columns:420px 1fr;gap:20px;align-items:start}
 .editor-back-link{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:10px}
 .editor-back-link:hover{color:var(--accent-dark)}

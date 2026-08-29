@@ -1,13 +1,14 @@
 'use client'
 
-import Link from 'next/link'
-import { ChangeEvent, useEffect, useRef, useState } from 'react'
-import { Check, Download, FileText, RefreshCw, Sparkles, UploadCloud, WandSparkles } from 'lucide-react'
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Check, ChevronDown, ChevronUp, Download, Eye, EyeOff, Plus, RefreshCw, Trash2, UploadCloud,
+} from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import RequireAuth from '@/components/RequireAuth'
 import CopyButton from '@/components/CopyButton'
-import { api, AtsResult, TailorResult, TargetJob } from '@/lib/api'
-import { usePersistentState } from '@/lib/persistent-state'
+import { api, ResumeDocument, ResumeItem, ResumeSection, ResumeSectionType } from '@/lib/api'
+import { computeAtsScore } from '@/lib/ats-score'
 
 function base64ToBlob(base64: string, type: string) {
   const binary = atob(base64)
@@ -16,352 +17,525 @@ function base64ToBlob(base64: string, type: string) {
   return new Blob([bytes], { type })
 }
 
-function formatDate(iso: string | null) {
-  if (!iso) return ''
-  try {
-    return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-  } catch {
-    return ''
-  }
-}
-
 function errorMessage(err: unknown, fallback: string) {
   return err instanceof Error ? err.message : fallback
 }
 
+function uid() {
+  return Math.random().toString(36).slice(2, 10)
+}
+
+function hasMeaningfulContent(doc: ResumeDocument): boolean {
+  if (doc.personal.full_name.trim()) return true
+  return doc.sections.some(section =>
+    section.items.some(item =>
+      Object.entries(item).some(([key, value]) => {
+        if (key === 'bullets' || key === 'items') return Array.isArray(value) && value.some(v => v && v.trim())
+        return typeof value === 'string' && value.trim().length > 0
+      })
+    )
+  )
+}
+
+const SECTION_LABELS: Record<ResumeSectionType, string> = {
+  summary: 'Professional Summary',
+  education: 'Education',
+  experience: 'Experience',
+  projects: 'Projects',
+  skills: 'Technical Skills',
+  certifications: 'Certifications',
+  custom: 'Custom Section',
+}
+
+type FieldConfig = { key: keyof ResumeItem; label: string }
+
+const ITEM_FIELDS: Record<ResumeSectionType, FieldConfig[]> = {
+  summary: [],
+  education: [
+    { key: 'school', label: 'School' }, { key: 'location', label: 'Location' },
+    { key: 'degree', label: 'Degree' }, { key: 'dates', label: 'Dates' },
+  ],
+  experience: [
+    { key: 'title', label: 'Title' }, { key: 'company', label: 'Company' },
+    { key: 'location', label: 'Location' }, { key: 'dates', label: 'Dates' },
+  ],
+  projects: [
+    { key: 'name', label: 'Name' }, { key: 'tech', label: 'Technologies' },
+    { key: 'dates', label: 'Dates' }, { key: 'link', label: 'Link' },
+  ],
+  skills: [{ key: 'category', label: 'Category' }],
+  certifications: [
+    { key: 'name', label: 'Name' }, { key: 'issuer', label: 'Issuer' }, { key: 'date', label: 'Date' },
+  ],
+  custom: [{ key: 'heading', label: 'Heading' }],
+}
+
+const LIST_FIELD: Record<ResumeSectionType, 'bullets' | 'items' | null> = {
+  summary: null, education: 'bullets', experience: 'bullets', projects: 'bullets',
+  skills: 'items', certifications: null, custom: 'bullets',
+}
+const LIST_LABEL: Record<ResumeSectionType, string> = {
+  summary: '', education: 'bullet', experience: 'bullet', projects: 'bullet',
+  skills: 'skill', certifications: '', custom: 'bullet',
+}
+
+function emptyItem(type: ResumeSectionType): ResumeItem {
+  switch (type) {
+    case 'summary': return { text: '' }
+    case 'education': return { school: '', location: '', degree: '', dates: '', bullets: [] }
+    case 'experience': return { title: '', company: '', location: '', dates: '', bullets: [] }
+    case 'projects': return { name: '', tech: '', dates: '', link: '', bullets: [] }
+    case 'skills': return { category: '', items: [] }
+    case 'certifications': return { name: '', issuer: '', date: '' }
+    case 'custom': return { heading: '', bullets: [] }
+  }
+}
+
+function itemCountLabel(section: ResumeSection) {
+  if (section.type === 'summary') return section.items[0]?.text ? 'Written' : 'Empty'
+  const n = section.items.length
+  return `${n} item${n === 1 ? '' : 's'}`
+}
+
 export default function ResumeStudioPage() {
-  const [resumeText, setResumeText] = useState('')
-  const [fileName, setFileName] = useState<string | null>(null)
-  const [savedAt, setSavedAt] = useState<string | null>(null)
-  const [resumeLoading, setResumeLoading] = useState(true)
-  const [extracting, setExtracting] = useState(false)
-  const [uploadError, setUploadError] = useState('')
+  const [doc, setDoc] = useState<ResumeDocument | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [showLatex, setShowLatex] = useState(false)
 
-  const [targetJobs, setTargetJobs] = useState<TargetJob[]>([])
-  const [selectedJobId, setSelectedJobId] = usePersistentState('resumeStudio.selectedJobId', '')
-  const [jobDescription, setJobDescription] = usePersistentState('resumeStudio.jobDescription', '')
-  const [jobTitle, setJobTitle] = usePersistentState('resumeStudio.jobTitle', '')
-  const [company, setCompany] = usePersistentState('resumeStudio.company', '')
+  const [importing, setImporting] = useState(false)
+  const [importError, setImportError] = useState('')
 
-  const [ats, setAts] = usePersistentState<AtsResult | null>('resumeStudio.ats', null)
-  const [atsLoading, setAtsLoading] = useState(false)
-  const [atsError, setAtsError] = useState('')
+  const [latex, setLatex] = useState('')
+  const [pdfBase64, setPdfBase64] = useState<string | null>(null)
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+  const [filename, setFilename] = useState<string | null>(null)
+  const [compileError, setCompileError] = useState<string | null>(null)
+  const [compiling, setCompiling] = useState(false)
 
-  const [tailor, setTailor] = usePersistentState<TailorResult | null>('resumeStudio.tailor', null)
-  const [tailorLoading, setTailorLoading] = useState(false)
-  const [tailorError, setTailorError] = useState('')
+  // Debounced autosave/compile reads from this ref rather than the `doc`
+  // state closure, so a burst of edits inside the 800ms window always
+  // saves/compiles the latest document instead of a stale snapshot.
+  const docRef = useRef<ResumeDocument | null>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const [cover, setCover] = usePersistentState('resumeStudio.cover', '')
-  const [coverLoading, setCoverLoading] = useState(false)
-  const [coverError, setCoverError] = useState('')
-
-  const [prepareError, setPrepareError] = useState('')
-
-  // Read inside the async loader below without making it depend on the value.
-  const selectedJobIdRef = useRef(selectedJobId)
-  selectedJobIdRef.current = selectedJobId
+  // Live, deterministic, zero-latency — no network round-trip, so it updates
+  // on every keystroke rather than waiting for the debounced compile.
+  const ats = useMemo(() => (doc ? computeAtsScore(doc) : null), [doc])
 
   useEffect(() => {
-    api.resumes.me()
-      .then(saved => {
-        if (saved) {
-          setResumeText(saved.extracted_text)
-          setFileName(saved.filename)
-          setSavedAt(saved.updated_at)
-        }
+    let cancelled = false
+    api.resumes.document.get()
+      .then(loaded => {
+        if (cancelled) return
+        setDoc(loaded)
+        docRef.current = loaded
+        compileNow(loaded)
       })
-      .catch(() => {})
-      .finally(() => setResumeLoading(false))
-
-    api.resumes.targetJobs()
-      .then(jobs => {
-        setTargetJobs(jobs)
-        const restored = selectedJobIdRef.current
-        if (restored && !jobs.some(job => job.id === restored)) setSelectedJobId('')
-        else if (jobs.length > 0 && !restored) applyJob(jobs[0])
-      })
-      .catch(() => {})
+      .catch(err => setLoadError(errorMessage(err, 'Could not load your resume.')))
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  function applyJob(job: TargetJob) {
-    setSelectedJobId(job.id)
-    setJobDescription(job.description || '')
-    setJobTitle(job.title)
-    setCompany(job.company_name || '')
+  useEffect(() => {
+    if (!pdfBase64) { setPdfUrl(null); return }
+    const url = URL.createObjectURL(base64ToBlob(pdfBase64, 'application/pdf'))
+    setPdfUrl(url)
+    return () => URL.revokeObjectURL(url)
+  }, [pdfBase64])
+
+  async function compileNow(document: ResumeDocument) {
+    setCompiling(true)
+    try {
+      const result = await api.resumes.document.compile(document)
+      setLatex(result.latex_content)
+      setPdfBase64(result.pdf_base64)
+      setFilename(result.filename)
+      setCompileError(result.compile_error || null)
+    } catch (err) {
+      setCompileError(errorMessage(err, 'Compilation failed.'))
+    } finally {
+      setCompiling(false)
+    }
   }
 
-  function handleJobSelect(e: ChangeEvent<HTMLSelectElement>) {
-    const id = e.target.value
-    setSelectedJobId(id)
-    const job = targetJobs.find(j => j.id === id)
-    if (job) applyJob(job)
+  function updateDoc(next: ResumeDocument) {
+    setDoc(next)
+    docRef.current = next
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      const current = docRef.current
+      if (!current) return
+      api.resumes.document.save(current).catch(() => {})
+      compileNow(current)
+    }, 800)
   }
 
-  async function handleFile(e: ChangeEvent<HTMLInputElement>) {
+  async function handleImport(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
-    setUploadError('')
-    setExtracting(true)
+    if (docRef.current && hasMeaningfulContent(docRef.current)) {
+      const proceed = window.confirm('Importing a new resume will replace your current sections. Continue?')
+      if (!proceed) return
+    }
+    setImportError('')
+    setImporting(true)
     try {
-      const saved = await api.resumes.extractText(file)
-      setResumeText(saved.extracted_text)
-      setFileName(saved.filename)
-      setSavedAt(saved.updated_at)
+      await api.resumes.extractText(file)
+      const fresh = await api.resumes.document.get()
+      setDoc(fresh)
+      docRef.current = fresh
+      compileNow(fresh)
     } catch (err) {
-      setUploadError(errorMessage(err, 'Could not read that file.'))
+      setImportError(errorMessage(err, 'Could not import that file.'))
     } finally {
-      setExtracting(false)
+      setImporting(false)
     }
   }
 
-  async function runAnalyze() {
-    setAtsLoading(true)
-    setAtsError('')
-    try {
-      setAts(await api.resumes.analyze({ resume_text: resumeText, job_description: jobDescription, job_title: jobTitle || undefined }))
-    } catch (err) {
-      setAtsError(errorMessage(err, 'ATS analysis failed.'))
-    } finally {
-      setAtsLoading(false)
-    }
+  function mapSection(sectionId: string, fn: (s: ResumeSection) => ResumeSection): ResumeDocument {
+    const current = docRef.current as ResumeDocument
+    return { ...current, sections: current.sections.map(s => (s.id === sectionId ? fn(s) : s)) }
   }
 
-  async function runTailor() {
-    setTailorLoading(true)
-    setTailorError('')
-    try {
-      setTailor(await api.resumes.tailor({ resume_text: resumeText, job_description: jobDescription, job_title: jobTitle || undefined }))
-    } catch (err) {
-      setTailorError(errorMessage(err, 'Resume tailoring failed.'))
-    } finally {
-      setTailorLoading(false)
-    }
+  function updatePersonal(key: keyof ResumeDocument['personal'], value: string) {
+    const current = docRef.current as ResumeDocument
+    updateDoc({ ...current, personal: { ...current.personal, [key]: value } })
   }
 
-  async function runCoverLetter() {
-    if (!jobTitle.trim() || !company.trim()) {
-      setCoverError('Add a job title and company above to generate a cover letter.')
-      return
-    }
-    setCoverLoading(true)
-    setCoverError('')
-    try {
-      const response = await api.resumes.coverLetter({ resume_text: resumeText, job_description: jobDescription, job_title: jobTitle, company, tone: 'professional' })
-      setCover(response.content)
-    } catch (err) {
-      setCoverError(errorMessage(err, 'Cover letter generation failed.'))
-    } finally {
-      setCoverLoading(false)
-    }
+  function updateLink(index: number, key: 'label' | 'url', value: string) {
+    const current = docRef.current as ResumeDocument
+    const links = [...current.personal.links]
+    links[index] = { ...links[index], [key]: value }
+    updateDoc({ ...current, personal: { ...current.personal, links } })
   }
 
-  async function runPrepare() {
-    if (!resumeText.trim() || !jobDescription.trim()) {
-      setPrepareError('Add your resume and pick a tracked job first.')
-      return
+  function addLink() {
+    const current = docRef.current as ResumeDocument
+    updateDoc({ ...current, personal: { ...current.personal, links: [...current.personal.links, { label: '', url: '' }] } })
+  }
+
+  function removeLink(index: number) {
+    const current = docRef.current as ResumeDocument
+    updateDoc({ ...current, personal: { ...current.personal, links: current.personal.links.filter((_, i) => i !== index) } })
+  }
+
+  function toggleVisible(sectionId: string) {
+    updateDoc(mapSection(sectionId, section => ({ ...section, visible: !section.visible })))
+  }
+
+  function updateSectionTitle(sectionId: string, title: string) {
+    updateDoc(mapSection(sectionId, section => ({ ...section, title })))
+  }
+
+  function removeSection(sectionId: string) {
+    const current = docRef.current as ResumeDocument
+    updateDoc({ ...current, sections: current.sections.filter(s => s.id !== sectionId) })
+  }
+
+  function moveSection(sectionId: string, dir: -1 | 1) {
+    const current = docRef.current as ResumeDocument
+    const ordered = [...current.sections].sort((a, b) => a.order - b.order)
+    const idx = ordered.findIndex(s => s.id === sectionId)
+    const swapWith = idx + dir
+    if (idx < 0 || swapWith < 0 || swapWith >= ordered.length) return
+    const a = ordered[idx]
+    const b = ordered[swapWith]
+    const sections = current.sections.map(s => {
+      if (s.id === a.id) return { ...s, order: b.order }
+      if (s.id === b.id) return { ...s, order: a.order }
+      return s
+    })
+    updateDoc({ ...current, sections })
+  }
+
+  function addSection(type: ResumeSectionType) {
+    const current = docRef.current as ResumeDocument
+    const maxOrder = current.sections.reduce((m, s) => Math.max(m, s.order), -1)
+    const section: ResumeSection = {
+      id: uid(), type, title: SECTION_LABELS[type], visible: true, order: maxOrder + 1,
+      items: type === 'summary' ? [{ text: '' }] : [],
     }
-    setPrepareError('')
-    await Promise.allSettled([runAnalyze(), runTailor(), runCoverLetter()])
+    updateDoc({ ...current, sections: [...current.sections, section] })
+  }
+
+  function addItem(sectionId: string) {
+    updateDoc(mapSection(sectionId, section => ({ ...section, items: [...section.items, emptyItem(section.type)] })))
+  }
+
+  function removeItem(sectionId: string, itemIndex: number) {
+    updateDoc(mapSection(sectionId, section => ({ ...section, items: section.items.filter((_, i) => i !== itemIndex) })))
+  }
+
+  function updateItemField(sectionId: string, itemIndex: number, key: keyof ResumeItem, value: string) {
+    updateDoc(mapSection(sectionId, section => {
+      const items = [...section.items]
+      while (items.length <= itemIndex) items.push(emptyItem(section.type))
+      items[itemIndex] = { ...items[itemIndex], [key]: value }
+      return { ...section, items }
+    }))
+  }
+
+  function updateListValue(sectionId: string, itemIndex: number, listKey: 'bullets' | 'items', valueIndex: number, value: string) {
+    updateDoc(mapSection(sectionId, section => {
+      const items = [...section.items]
+      const list = [...(items[itemIndex]?.[listKey] || [])]
+      list[valueIndex] = value
+      items[itemIndex] = { ...items[itemIndex], [listKey]: list }
+      return { ...section, items }
+    }))
+  }
+
+  function addListValue(sectionId: string, itemIndex: number, listKey: 'bullets' | 'items') {
+    updateDoc(mapSection(sectionId, section => {
+      const items = [...section.items]
+      items[itemIndex] = { ...items[itemIndex], [listKey]: [...(items[itemIndex]?.[listKey] || []), ''] }
+      return { ...section, items }
+    }))
+  }
+
+  function removeListValue(sectionId: string, itemIndex: number, listKey: 'bullets' | 'items', valueIndex: number) {
+    updateDoc(mapSection(sectionId, section => {
+      const items = [...section.items]
+      items[itemIndex] = { ...items[itemIndex], [listKey]: (items[itemIndex]?.[listKey] || []).filter((_, i) => i !== valueIndex) }
+      return { ...section, items }
+    }))
   }
 
   function downloadPdf() {
-    if (!tailor?.pdf_base64) return
-    const url = URL.createObjectURL(base64ToBlob(tailor.pdf_base64, 'application/pdf'))
+    if (!pdfUrl) return
     const a = document.createElement('a')
-    a.href = url
-    a.download = tailor.filename || 'tailored_resume.pdf'
+    a.href = pdfUrl
+    a.download = filename || 'resume.pdf'
     a.click()
-    URL.revokeObjectURL(url)
   }
 
-  const anyLoading = atsLoading || tailorLoading || coverLoading
-  const readyToPrepare = resumeText.trim().length > 0 && jobDescription.trim().length > 0
+  const sortedSections = doc ? [...doc.sections].sort((a, b) => a.order - b.order) : []
 
   return (
     <RequireAuth>
       <AppShell>
         <section className="page-heading">
           <p className="eyebrow">RESUME STUDIO</p>
-          <h1>Turn your experience into a stronger yes.</h1>
-          <p>Your resume is remembered — pick a job you're tracking and one click checks your ATS score, tailors your resume, and writes a cover letter.</p>
-          <Link href="/resume-studio/editor" className="outline-button" style={{ display: 'inline-flex', marginTop: 14 }}>
-            <FileText size={13} /> Open the section-by-section LaTeX editor
-          </Link>
+          <h1>Build your resume, section by section.</h1>
+          <p>Edit structured sections on the left — your LaTeX source, compiled PDF, and ATS score all update live as you type.</p>
         </section>
 
-        <div className="studio-grid">
-          <div className="resume-form">
-            <div className="setup-section">
-              <label>Your resume</label>
-              {fileName && !resumeLoading && (
-                <p className="resume-status">
-                  <Check size={13} /> Using <strong>{fileName}</strong>{savedAt ? ` · saved ${formatDate(savedAt)}` : ''}
-                </p>
-              )}
-              <div className="resume-upload">
-                <label htmlFor="resume-file" className="outline-button upload-trigger">
-                  <UploadCloud size={14} />
-                  {extracting ? 'Reading file…' : fileName ? 'Replace resume' : 'Upload PDF or DOCX'}
-                </label>
-                <input id="resume-file" type="file" accept=".pdf,.docx,.txt" hidden onChange={handleFile} />
-              </div>
-              {uploadError && <p className="form-error">{uploadError}</p>}
-              <textarea
-                className="resume-text-area"
-                value={resumeText}
-                onChange={e => setResumeText(e.target.value)}
-                placeholder="Upload a file above, or paste your resume text here…"
-              />
-            </div>
+        {loading && <div className="card-empty">Loading your resume…</div>}
+        {loadError && <p className="form-error">{loadError}</p>}
 
-            <div className="setup-section">
-              <label>Target job</label>
-              {targetJobs.length > 0 ? (
-                <select className="job-picker" value={selectedJobId} onChange={handleJobSelect}>
-                  <option value="">— Choose a job you're tracking —</option>
-                  {targetJobs.map(job => (
-                    <option key={job.id} value={job.id}>
-                      {job.title} · {job.company_name || 'Unknown company'}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <p className="muted-copy">
-                  No tracked jobs yet. <Link href="/search">Find a role</Link> and save it to your tracker — its description is what the studio tailors against.
-                </p>
-              )}
-              {selectedJobId && !jobDescription.trim() && (
-                <p className="form-error">This posting was saved without a description, so there is nothing to tailor against. Pick another job.</p>
-              )}
-              <div className="inline-fields">
-                <label>
-                  Job title
-                  <input value={jobTitle} onChange={e => setJobTitle(e.target.value)} placeholder="e.g. Product Designer" />
-                </label>
-                <label>
-                  Company
-                  <input value={company} onChange={e => setCompany(e.target.value)} placeholder="e.g. Miro" />
-                </label>
+        {doc && ats && (
+          <div className="editor-panel ats-live-panel">
+            <div className="editor-panel-head">
+              <h2>Live ATS score</h2>
+            </div>
+            <div className="ats-score-row">
+              <span className="ats-score-badge">{ats.score}<small>/100</small></span>
+              <div style={{ flex: 1 }}>
+                {ats.suggestions.length > 0 ? (
+                  <ul className="suggestion-list">
+                    {ats.suggestions.map(s => <li key={s}>{s}</li>)}
+                  </ul>
+                ) : (
+                  <p className="muted-copy">Nice — no major gaps detected. Keep an eye on this as you keep editing.</p>
+                )}
               </div>
             </div>
-
-            {prepareError && <p className="form-error">{prepareError}</p>}
-            <button type="button" className="primary-button full-width prepare-button" disabled={anyLoading || !readyToPrepare} onClick={runPrepare}>
-              <Sparkles size={15} />
-              {anyLoading ? 'Preparing your application…' : 'Prepare my application'}
-            </button>
-            <p className="muted-copy prepare-hint">Checks your ATS score, tailors your resume, and writes a cover letter in one go. Use the refresh icon on any card to redo just that piece.</p>
           </div>
+        )}
 
-          <div className="studio-results">
-            <div className="studio-card">
-              <div className="studio-card-head">
-                <h2>
-                  <FileText size={15} /> ATS score
-                </h2>
-                <button type="button" className="icon-refresh" title="Redo ATS check" disabled={atsLoading || !readyToPrepare} onClick={runAnalyze}>
-                  <RefreshCw size={13} className={atsLoading ? 'spin' : ''} />
-                </button>
+        {doc && (
+          <div className="editor-shell">
+            <div className="editor-panel">
+              <div className="editor-panel-head">
+                <h2>Resume sections</h2>
+                <label htmlFor="resume-import-file" className="outline-button upload-trigger">
+                  <UploadCloud size={13} /> {importing ? 'Importing…' : 'Import resume'}
+                </label>
+                <input id="resume-import-file" type="file" accept=".pdf,.docx,.txt" hidden onChange={handleImport} disabled={importing} />
               </div>
-              {atsError && <p className="form-error">{atsError}</p>}
-              {!ats && !atsError && !atsLoading && <div className="card-empty">Your ATS score will appear here once you click "Prepare my application".</div>}
-              {atsLoading && <div className="card-empty">Analyzing…</div>}
-              {ats && (
-                <>
-                  <div className="ats-score-row">
-                    <span className="ats-score-badge">
-                      {Math.round(ats.ats_score)}
-                      <small>/100</small>
-                    </span>
-                    {ats.reasoning && <p className="muted-copy">{ats.reasoning}</p>}
+              {importError && <p className="form-error" style={{ marginBottom: 10 }}>{importError}</p>}
+
+              <div className="editor-section-card">
+                <div className="editor-section-head" onClick={() => setExpanded(expanded === 'personal' ? null : 'personal')}>
+                  <div className="editor-section-title">
+                    <strong>Personal details</strong>
+                    <span>Contact information</span>
                   </div>
-                  {ats.matched_skills.length > 0 && (
-                    <div className="skill-section">
-                      <h3>Matched skills</h3>
-                      <div className="chips">
-                        {ats.matched_skills.map(skill => (
-                          <span key={skill} className="chip-good">{skill}</span>
-                        ))}
-                      </div>
+                  {expanded === 'personal' ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                </div>
+                {expanded === 'personal' && (
+                  <div className="editor-section-body">
+                    <div className="editor-personal-grid">
+                      <label>Full name<input value={doc.personal.full_name} onChange={e => updatePersonal('full_name', e.target.value)} /></label>
+                      <label>Headline<input value={doc.personal.headline} onChange={e => updatePersonal('headline', e.target.value)} /></label>
+                      <label>Email<input value={doc.personal.email} onChange={e => updatePersonal('email', e.target.value)} /></label>
+                      <label>Phone<input value={doc.personal.phone} onChange={e => updatePersonal('phone', e.target.value)} /></label>
+                      <label>Location<input value={doc.personal.location} onChange={e => updatePersonal('location', e.target.value)} /></label>
                     </div>
-                  )}
-                  {ats.missing_skills.length > 0 && (
-                    <div className="skill-section">
-                      <h3>Missing skills</h3>
-                      <div className="chips">
-                        {ats.missing_skills.map(skill => (
-                          <span key={skill} className="chip-bad">{skill}</span>
-                        ))}
-                      </div>
+                    <div className="editor-bullets">
+                      {doc.personal.links.map((link, i) => (
+                        <div key={i} className="editor-bullet-row">
+                          <input placeholder="Label (e.g. GitHub)" value={link.label} onChange={e => updateLink(i, 'label', e.target.value)} />
+                          <input placeholder="URL" value={link.url} onChange={e => updateLink(i, 'url', e.target.value)} />
+                          <button type="button" className="editor-icon-btn" onClick={() => removeLink(i)} title="Remove link"><Trash2 size={13} /></button>
+                        </div>
+                      ))}
+                      <button type="button" className="editor-add-link" onClick={addLink}><Plus size={12} /> Add link</button>
                     </div>
-                  )}
-                  {ats.suggestions.length > 0 && (
-                    <div className="skill-section">
-                      <h3>Suggestions</h3>
-                      <ul className="suggestion-list">
-                        {ats.suggestions.map(item => (
-                          <li key={item}>{item}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-
-            <div className="studio-card">
-              <div className="studio-card-head">
-                <h2>
-                  <WandSparkles size={15} /> Tailored resume
-                </h2>
-                <button type="button" className="icon-refresh" title="Redo tailoring" disabled={tailorLoading || !readyToPrepare} onClick={runTailor}>
-                  <RefreshCw size={13} className={tailorLoading ? 'spin' : ''} />
-                </button>
+                  </div>
+                )}
               </div>
-              {tailorError && <p className="form-error">{tailorError}</p>}
-              {!tailor && !tailorError && !tailorLoading && <div className="card-empty">Your rewritten resume will appear here once you click "Prepare my application".</div>}
-              {tailorLoading && <div className="card-empty">Tailoring your resume…</div>}
-              {tailor && (
-                <>
-                  <div className="card-actions">
-                    {tailor.pdf_base64 && (
-                      <button type="button" className="outline-button" onClick={downloadPdf}>
-                        <Download size={13} /> Download PDF
+
+              <div className="editor-section-list" style={{ marginTop: 10 }}>
+                {sortedSections.map((section, idx) => (
+                  <div key={section.id} className={`editor-section-card${section.visible ? '' : ' hidden'}`}>
+                    <div className="editor-section-head" onClick={() => setExpanded(expanded === section.id ? null : section.id)}>
+                      <div className="editor-reorder-btns">
+                        <button
+                          type="button" className="editor-icon-btn" disabled={idx === 0}
+                          onClick={e => { e.stopPropagation(); moveSection(section.id, -1) }} title="Move up"
+                        ><ChevronUp size={13} /></button>
+                        <button
+                          type="button" className="editor-icon-btn" disabled={idx === sortedSections.length - 1}
+                          onClick={e => { e.stopPropagation(); moveSection(section.id, 1) }} title="Move down"
+                        ><ChevronDown size={13} /></button>
+                      </div>
+                      <div className="editor-section-title">
+                        <input
+                          value={section.title}
+                          onChange={e => updateSectionTitle(section.id, e.target.value)}
+                          onClick={e => e.stopPropagation()}
+                          style={{ border: 'none', background: 'transparent', padding: 0, fontWeight: 600, fontSize: 13, width: '100%' }}
+                        />
+                        <span>{itemCountLabel(section)}</span>
+                      </div>
+                      <button
+                        type="button" className="editor-icon-btn"
+                        onClick={e => { e.stopPropagation(); toggleVisible(section.id) }}
+                        title={section.visible ? 'Hide section' : 'Show section'}
+                      >
+                        {section.visible ? <Eye size={14} /> : <EyeOff size={14} />}
                       </button>
+                      <button
+                        type="button" className="editor-icon-btn"
+                        onClick={e => { e.stopPropagation(); removeSection(section.id) }} title="Remove section"
+                      ><Trash2 size={14} /></button>
+                      {expanded === section.id ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                    </div>
+
+                    {expanded === section.id && (
+                      <div className="editor-section-body">
+                        {section.type === 'summary' ? (
+                          <textarea
+                            value={section.items[0]?.text || ''}
+                            onChange={e => updateItemField(section.id, 0, 'text', e.target.value)}
+                            placeholder="A 2-3 sentence career pitch…"
+                          />
+                        ) : (
+                          <>
+                            {section.items.map((item, itemIndex) => {
+                              const listKey = LIST_FIELD[section.type]
+                              return (
+                                <div key={itemIndex} className="editor-item-card">
+                                  <div className="editor-item-head">
+                                    <span>Item {itemIndex + 1}</span>
+                                    <button type="button" className="editor-remove-link" onClick={() => removeItem(section.id, itemIndex)}>Remove</button>
+                                  </div>
+                                  <div className="editor-field-row">
+                                    {ITEM_FIELDS[section.type].map(field => (
+                                      <label key={field.key} className="editor-field">
+                                        {field.label}
+                                        <input
+                                          value={(item[field.key] as string) || ''}
+                                          onChange={e => updateItemField(section.id, itemIndex, field.key, e.target.value)}
+                                        />
+                                      </label>
+                                    ))}
+                                  </div>
+                                  {listKey && (
+                                    <div className="editor-bullets">
+                                      {((item[listKey] as string[]) || []).map((value, valueIndex) => (
+                                        <div key={valueIndex} className="editor-bullet-row">
+                                          <input value={value} onChange={e => updateListValue(section.id, itemIndex, listKey, valueIndex, e.target.value)} />
+                                          <button
+                                            type="button" className="editor-icon-btn"
+                                            onClick={() => removeListValue(section.id, itemIndex, listKey, valueIndex)} title="Remove"
+                                          ><Trash2 size={13} /></button>
+                                        </div>
+                                      ))}
+                                      <button type="button" className="editor-add-link" onClick={() => addListValue(section.id, itemIndex, listKey)}>
+                                        <Plus size={12} /> Add {LIST_LABEL[section.type]}
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })}
+                            <button type="button" className="editor-add-link" onClick={() => addItem(section.id)} style={{ marginTop: 10 }}>
+                              <Plus size={12} /> Add {SECTION_LABELS[section.type].toLowerCase()} item
+                            </button>
+                          </>
+                        )}
+                      </div>
                     )}
-                    <CopyButton text={tailor.latex_content} />
                   </div>
-                  {!tailor.pdf_base64 && <p className="form-error">PDF rendering was unavailable — copy the LaTeX below to compile it yourself.</p>}
-                  <pre className="generated-copy">{tailor.latex_content}</pre>
-                </>
-              )}
+                ))}
+              </div>
+
+              <select
+                className="job-picker" style={{ marginTop: 12 }} defaultValue=""
+                onChange={e => { if (e.target.value) { addSection(e.target.value as ResumeSectionType); e.target.value = '' } }}
+              >
+                <option value="" disabled>+ Add a section…</option>
+                {(Object.keys(SECTION_LABELS) as ResumeSectionType[]).map(t => (
+                  <option key={t} value={t}>{SECTION_LABELS[t]}</option>
+                ))}
+              </select>
+
+              <div className="editor-section-card" style={{ marginTop: 12 }}>
+                <div className="editor-latex-toggle" onClick={() => setShowLatex(v => !v)}>
+                  <span>LaTeX source</span>
+                  {showLatex ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                </div>
+                {showLatex && (
+                  <div className="editor-latex-source">
+                    <div className="card-actions"><CopyButton text={latex} /></div>
+                    <pre>{latex}</pre>
+                  </div>
+                )}
+              </div>
             </div>
 
-            <div className="studio-card">
-              <div className="studio-card-head">
-                <h2>
-                  <Sparkles size={15} /> Cover letter
-                </h2>
-                <button type="button" className="icon-refresh" title="Redo cover letter" disabled={coverLoading || !readyToPrepare} onClick={runCoverLetter}>
-                  <RefreshCw size={13} className={coverLoading ? 'spin' : ''} />
-                </button>
+            <div className="editor-preview">
+              <div className="editor-preview-head">
+                <span className={`editor-status-pill${compiling ? ' compiling' : compileError ? ' error' : ''}`}>
+                  {compiling ? <RefreshCw size={12} className="spin" /> : <Check size={12} />}
+                  {compiling ? 'Compiling…' : compileError ? 'Compile error' : 'PDF up to date'}
+                </span>
+                <div className="editor-preview-actions">
+                  <button type="button" className="outline-button" onClick={() => doc && compileNow(doc)} disabled={compiling}>
+                    <RefreshCw size={13} className={compiling ? 'spin' : ''} /> Compile now
+                  </button>
+                  {pdfUrl && (
+                    <button type="button" className="primary-button" onClick={downloadPdf}>
+                      <Download size={13} /> Download PDF
+                    </button>
+                  )}
+                </div>
               </div>
-              {coverError && <p className="form-error">{coverError}</p>}
-              {!cover && !coverError && !coverLoading && <div className="card-empty">Your cover letter will appear here once you click "Prepare my application".</div>}
-              {coverLoading && <div className="card-empty">Writing your cover letter…</div>}
-              {cover && (
-                <>
-                  <div className="card-actions">
-                    <CopyButton text={cover} />
-                  </div>
-                  <pre className="generated-copy">{cover}</pre>
-                </>
+              {compileError && <p className="form-error" style={{ marginBottom: 10 }}>{compileError}</p>}
+              {pdfUrl ? (
+                <iframe className="editor-pdf-frame" src={pdfUrl} title="Resume preview" />
+              ) : (
+                <div className="editor-empty-pdf">{compiling ? 'Compiling your first preview…' : 'Your compiled resume will appear here.'}</div>
               )}
             </div>
           </div>
-        </div>
+        )}
       </AppShell>
     </RequireAuth>
   )

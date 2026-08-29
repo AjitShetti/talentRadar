@@ -209,6 +209,235 @@ Rules:
     return data
 
 
+_RESUME_STRUCTURE_SYSTEM_PROMPT = """\
+You turn free-text resume content into a structured JSON document. Extract
+ONLY what is actually present in the text — never invent names, dates,
+companies, schools, or numbers.
+
+Return a single JSON object with EXACTLY these top-level keys: "schema_version"
+(always 1), "personal" (object), "sections" (array). Do not wrap it in any
+other key such as "resume" or "document".
+
+"personal" has EXACTLY these keys: "full_name", "headline", "email", "phone",
+"location" (all strings), and "links" (array of {"label": string, "url": string}).
+
+Each entry in "sections" has EXACTLY these keys: "id" (short slug), "type"
+(one of "summary", "education", "experience", "projects", "skills",
+"certifications", "custom"), "title" (string), "visible" (always true),
+"order" (integer starting at 0), and "items" (array whose shape depends on
+"type" — use these EXACT key names, never substitute synonyms like
+"position", "date_range", or "details"):
+
+- type "summary": items is [{"text": string}]
+- type "education": items is [{"school": string, "location": string, "degree": string, "dates": string, "bullets": [string]}]
+- type "experience": items is [{"title": string, "company": string, "location": string, "dates": string, "bullets": [string]}]
+- type "projects": items is [{"name": string, "tech": string, "dates": string, "link": string, "bullets": [string]}]
+- type "skills": items is [{"category": string, "items": [string]}] — group related skills under one row per category (e.g. one row for "Languages", one for "Tools"), never one row per individual skill
+- type "certifications": items is [{"name": string, "issuer": string, "date": string}]
+- type "custom": items is [{"heading": string, "bullets": [string]}]
+
+Only include sections that have at least one real item, and only the fields
+shown above — no extra keys.
+
+### EXAMPLE
+Input resume text:
+Priya Nair
+priya@example.com | Bengaluru
+
+Summary
+Frontend engineer focused on performance.
+
+Experience
+Frontend Engineer, Acme Corp (2021-2024)
+- Cut bundle size by 30%
+
+Skills
+React, TypeScript
+
+Output:
+{"schema_version":1,"personal":{"full_name":"Priya Nair","headline":"","email":"priya@example.com","phone":"","location":"Bengaluru","links":[]},"sections":[{"id":"sum","type":"summary","title":"Summary","visible":true,"order":0,"items":[{"text":"Frontend engineer focused on performance."}]},{"id":"exp","type":"experience","title":"Experience","visible":true,"order":1,"items":[{"title":"Frontend Engineer","company":"Acme Corp","location":"","dates":"2021-2024","bullets":["Cut bundle size by 30%"]}]},{"id":"skl","type":"skills","title":"Skills","visible":true,"order":2,"items":[{"category":"Languages","items":["React","TypeScript"]}]}]}
+
+Return ONLY JSON, matching this exact structure."""
+
+_EXPERIENCE_ALIASES = {
+    "title": ["title", "position", "role", "job_title", "jobTitle"],
+    "company": ["company", "employer", "organization", "org"],
+    "location": ["location", "city"],
+    "dates": ["dates", "date_range", "duration", "period"],
+    "bullets": ["bullets", "details", "highlights", "achievements", "responsibilities"],
+}
+_EDUCATION_ALIASES = {
+    "school": ["school", "institution", "university", "college"],
+    "location": ["location", "city"],
+    "degree": ["degree", "degree_name", "qualification"],
+    "dates": ["dates", "date_range", "duration", "period"],
+    "bullets": ["bullets", "details", "highlights"],
+}
+_PROJECT_ALIASES = {
+    "name": ["name", "title", "project_name"],
+    "tech": ["tech", "technologies", "stack", "tools"],
+    "dates": ["dates", "date_range", "duration"],
+    "link": ["link", "url", "href"],
+    "bullets": ["bullets", "details", "highlights"],
+}
+_CERT_ALIASES = {
+    "name": ["name", "title"],
+    "issuer": ["issuer", "organization", "org", "authority"],
+    "date": ["date", "date_range", "year"],
+}
+_CUSTOM_ALIASES = {
+    "heading": ["heading", "title", "name"],
+    "bullets": ["bullets", "details", "highlights"],
+}
+_VALID_SECTION_TYPES = {"summary", "education", "experience", "projects", "skills", "certifications", "custom"}
+
+
+def _pick_str(item: dict[str, Any], aliases: list[str]) -> str:
+    for key in aliases:
+        val = item.get(key)
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    return ""
+
+
+def _pick_list(item: dict[str, Any], aliases: list[str]) -> list[str]:
+    for key in aliases:
+        val = item.get(key)
+        if isinstance(val, list):
+            return [str(v).strip() for v in val if v and str(v).strip()]
+    return []
+
+
+def _normalize_item(item: Any, section_type: str) -> dict[str, Any]:  # noqa: ANN401
+    """Coerce one LLM-produced item to the editor's exact per-type key names.
+
+    Models given a JSON-object contract still drift toward synonyms
+    ("position" for "title", "details" for "bullets") despite the prompt
+    spelling out exact keys — this maps the common ones back rather than
+    silently rendering blank fields in the editor.
+    """
+    if not isinstance(item, dict):
+        item = {}
+    if section_type == "summary":
+        return {"text": _pick_str(item, ["text", "summary", "content"])}
+    if section_type == "experience":
+        return {
+            "title": _pick_str(item, _EXPERIENCE_ALIASES["title"]),
+            "company": _pick_str(item, _EXPERIENCE_ALIASES["company"]),
+            "location": _pick_str(item, _EXPERIENCE_ALIASES["location"]),
+            "dates": _pick_str(item, _EXPERIENCE_ALIASES["dates"]),
+            "bullets": _pick_list(item, _EXPERIENCE_ALIASES["bullets"]),
+        }
+    if section_type == "education":
+        return {
+            "school": _pick_str(item, _EDUCATION_ALIASES["school"]),
+            "location": _pick_str(item, _EDUCATION_ALIASES["location"]),
+            "degree": _pick_str(item, _EDUCATION_ALIASES["degree"]),
+            "dates": _pick_str(item, _EDUCATION_ALIASES["dates"]),
+            "bullets": _pick_list(item, _EDUCATION_ALIASES["bullets"]),
+        }
+    if section_type == "projects":
+        return {
+            "name": _pick_str(item, _PROJECT_ALIASES["name"]),
+            "tech": _pick_str(item, _PROJECT_ALIASES["tech"]),
+            "dates": _pick_str(item, _PROJECT_ALIASES["dates"]),
+            "link": _pick_str(item, _PROJECT_ALIASES["link"]),
+            "bullets": _pick_list(item, _PROJECT_ALIASES["bullets"]),
+        }
+    if section_type == "certifications":
+        return {
+            "name": _pick_str(item, _CERT_ALIASES["name"]),
+            "issuer": _pick_str(item, _CERT_ALIASES["issuer"]),
+            "date": _pick_str(item, _CERT_ALIASES["date"]),
+        }
+    # custom
+    return {
+        "heading": _pick_str(item, _CUSTOM_ALIASES["heading"]),
+        "bullets": _pick_list(item, _CUSTOM_ALIASES["bullets"]),
+    }
+
+
+def _normalize_skills_items(items_raw: list[Any]) -> list[dict[str, Any]]:
+    """Group skills into {category, items} rows, tolerating a flat
+    [{"name": "SQL"}, ...] list some models produce instead of grouping."""
+    grouped: list[dict[str, Any]] = []
+    flat_names: list[str] = []
+    for raw in items_raw:
+        if not isinstance(raw, dict):
+            continue
+        values = _pick_list(raw, ["items", "skills", "values"])
+        if values:
+            category = _pick_str(raw, ["category", "group", "type"]) or "Skills"
+            grouped.append({"category": category, "items": values})
+            continue
+        name = _pick_str(raw, ["name", "skill", "title"])
+        if name:
+            flat_names.append(name)
+    if flat_names:
+        grouped.append({"category": "Skills", "items": flat_names})
+    return grouped
+
+
+def _unwrap_document(data: Any) -> dict[str, Any]:  # noqa: ANN401
+    if isinstance(data, list):
+        data = data[0] if data and isinstance(data[0], dict) else {}
+    if not isinstance(data, dict):
+        return {}
+    if "personal" not in data and "sections" not in data:
+        for key in ("resume", "document", "result", "data"):
+            inner = data.get(key)
+            if isinstance(inner, dict):
+                return inner
+    return data
+
+
+def _normalize_resume_document(raw_data: Any) -> dict[str, Any]:  # noqa: ANN401
+    data = _unwrap_document(raw_data)
+    personal_raw = data.get("personal") if isinstance(data.get("personal"), dict) else {}
+    personal = {
+        "full_name": _pick_str(personal_raw, ["full_name", "name"]),
+        "headline": _pick_str(personal_raw, ["headline", "title"]),
+        "email": _pick_str(personal_raw, ["email"]),
+        "phone": _pick_str(personal_raw, ["phone"]),
+        "location": _pick_str(personal_raw, ["location"]),
+        "links": [
+            {"label": _pick_str(link, ["label"]), "url": _pick_str(link, ["url"])}
+            for link in (personal_raw.get("links") or [])
+            if isinstance(link, dict) and _pick_str(link, ["url"])
+        ],
+    }
+
+    sections_out: list[dict[str, Any]] = []
+    for idx, section in enumerate(data.get("sections") or []):
+        if not isinstance(section, dict):
+            continue
+        section_type = str(section.get("type") or "").strip().lower()
+        if section_type not in _VALID_SECTION_TYPES:
+            section_type = "custom"
+        items_raw = section.get("items")
+        items_raw = items_raw if isinstance(items_raw, list) else []
+
+        if section_type == "skills":
+            items = _normalize_skills_items(items_raw)
+        else:
+            items = [_normalize_item(item, section_type) for item in items_raw]
+            items = [i for i in items if any(v for v in i.values())]
+
+        if not items:
+            continue
+
+        sections_out.append({
+            "id": str(section.get("id") or f"s{idx}"),
+            "type": section_type,
+            "title": str(section.get("title") or section_type.replace("_", " ").title()),
+            "visible": True,
+            "order": idx,
+            "items": items,
+        })
+
+    return {"schema_version": 1, "personal": personal, "sections": sections_out}
+
+
 async def extract_resume_structure(resume_text: str) -> dict[str, Any]:
     """
     Parse free-text resume content into the Resume Studio editor's
@@ -217,46 +446,19 @@ async def extract_resume_structure(resume_text: str) -> dict[str, Any]:
     a blank one on first visit.
 
     Never fabricates content — every field must trace back to the input
-    text; a heading with nothing to put in it should be omitted.
+    text; a heading with nothing to put in it should be omitted. The raw
+    LLM output is run through _normalize_resume_document() because models
+    reliably drift toward synonym keys ("position" for "title") even when
+    the prompt spells out exact ones — silently rendering blank fields in
+    the editor is worse than a defensive remap.
     """
-    system = """\
-You turn free-text resume content into a structured JSON document. Extract
-ONLY what is actually present in the text — never invent names, dates,
-companies, schools, or numbers.
-
-Return a single JSON object with EXACTLY this shape:
-{
-  "schema_version": 1,
-  "personal": {
-    "full_name": string, "headline": string, "email": string, "phone": string,
-    "location": string, "links": [{"label": string, "url": string}]
-  },
-  "sections": [
-    {
-      "id": string (a short random slug), "type": one of
-        "summary"|"education"|"experience"|"projects"|"skills"|"certifications"|"custom",
-      "title": string, "visible": true, "order": integer starting at 0,
-      "items": [ ... shape depends on type ... ]
-    }
-  ]
-}
-
-Item shapes per type:
-- summary: [{"text": string}]
-- education: [{"school","location","degree","dates","bullets":[string]}]
-- experience: [{"title","company","location","dates","bullets":[string]}]
-- projects: [{"name","tech","dates","link","bullets":[string]}]
-- skills: [{"category","items":[string]}]  (one row per category, e.g. "Languages")
-- certifications: [{"name","issuer","date"}]
-- custom: [{"heading","bullets":[string]}]  (for anything that doesn't fit above)
-
-Only include sections that have at least one real item. Return ONLY JSON."""
     prompt = f"### RESUME TEXT:\n{resume_text[:8000]}"
-    raw = await _chat(system, prompt, temperature=0.1, max_tokens=2000, json_mode=True)
+    raw = await _chat(_RESUME_STRUCTURE_SYSTEM_PROMPT, prompt, temperature=0.1, max_tokens=2000, json_mode=True)
     data = json.loads(raw)
-    if not isinstance(data, dict):
-        raise ValueError("Resume structure extraction returned a non-object payload")
-    return data
+    document = _normalize_resume_document(data)
+    if not document["personal"]["full_name"] and not document["sections"]:
+        raise ValueError("Resume structure extraction produced an empty document")
+    return document
 
 
 async def generate_copilot_reply(*, question: str, context: dict[str, Any]) -> str:

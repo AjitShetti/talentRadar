@@ -24,8 +24,33 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // after mount so both passes start from the same markup.
   const [email, setEmail] = useState<string | null>(null)
   useEffect(() => { setEmail(currentEmail()) }, [])
+
+  // Hide the top nav on scroll-down, bring it back on scroll-up (a few
+  // pixels of slack so it doesn't flicker on tiny/trackpad jitter), and
+  // always keep it visible near the top of the page.
+  const [navHidden, setNavHidden] = useState(false)
+  useEffect(() => {
+    let lastY = window.scrollY
+    let ticking = false
+    const onScroll = () => {
+      if (ticking) return
+      ticking = true
+      requestAnimationFrame(() => {
+        const y = window.scrollY
+        const delta = y - lastY
+        if (y < 80) setNavHidden(false)
+        else if (delta > 4) setNavHidden(true)
+        else if (delta < -4) setNavHidden(false)
+        lastY = y
+        ticking = false
+      })
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
   return <div className="app-shell">
-    <header className="topnav">
+    <header className={`topnav ${navHidden ? 'topnav-hidden' : ''}`}>
       <Link className="brand" href="/dashboard"><span className="brand-mark">✳</span><span>Talent<span>Radar</span></span></Link>
       <nav className="topnav-links">{nav.map(([label, href, Icon]) => <Link key={href} className={`nav-item ${path === href ? 'active' : ''}`} href={href}><Icon size={15} /><span>{label}</span></Link>)}</nav>
       <div className="top-actions">

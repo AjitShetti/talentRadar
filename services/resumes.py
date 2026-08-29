@@ -234,6 +234,11 @@ async def save_resume(
             resume.file_path = filename
         if file_type:
             resume.file_type = file_type
+        # A fresh upload supersedes whatever structured document was derived
+        # from the old text — clear it so the next get_resume_document() call
+        # regenerates sections from this new text instead of silently keeping
+        # the stale ones.
+        resume.structured_content = None
 
         await session.flush()
         profile.active_resume_id = resume.id
