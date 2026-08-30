@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-29T20:10:07Z",
+  "title": "Design System: TalentRadar",
+  "extensions": {
+    "colorMeta": {
+      "accent": { "role": "primary", "displayName": "Indicator Amber", "canonical": "#FFB020", "tonalRamp": ["#4A3200", "#6E4B00", "#946400", "#BD7F00", "#E69A0E", "#FFB020", "#FFCB66", "#FFE4AD"] },
+      "accent-dark": { "role": "primary", "displayName": "Amber Dark", "canonical": "#E69A0E" },
+      "accent-light": { "role": "primary", "displayName": "Amber Light", "canonical": "#FFCB66" },
+      "paper": { "role": "neutral", "displayName": "Board Paper", "canonical": "#131211", "tonalRamp": ["#0A0A09", "#131211", "#1B1917", "#211F1C", "#2B2825", "#3A3631", "#57514A", "#7A736A"] },
+      "surface": { "role": "neutral", "displayName": "Surface", "canonical": "#1B1917" },
+      "surface-2": { "role": "neutral", "displayName": "Surface 2", "canonical": "#211F1C" },
+      "surface-3": { "role": "neutral", "displayName": "Surface 3", "canonical": "#2B2825" },
+      "ink": { "role": "neutral", "displayName": "Board Ink", "canonical": "#ECEEF0", "tonalRamp": ["#14161A", "#1C1F24", "#2A2E35", "#454A52", "#6B7078", "#9AA0A6", "#C7CBD1", "#ECEEF0"] },
+      "muted": { "role": "neutral", "displayName": "Muted Ink", "canonical": "#9AA0A6" },
+      "faint": { "role": "neutral", "displayName": "Faint Ink", "canonical": "#868C94" },
+      "success": { "role": "semantic", "displayName": "Momentum Green", "canonical": "#3ECF8E" },
+      "danger": { "role": "semantic", "displayName": "Going-Cold Red", "canonical": "#F0575A" },
+      "warning": { "role": "semantic", "displayName": "Warning Amber", "canonical": "#FFB020" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Board Display", "purpose": "Board header h1 only — one per page." },
+      "headline": { "displayName": "Panel Headline", "purpose": "Panel/card/section titles." },
+      "mono-data": { "displayName": "Live Data", "purpose": "Big numbers wrapped in FlapText: metrics, scores, counts." },
+      "mono-meta": { "displayName": "Tabular Metadata", "purpose": "Timestamps, tier codes, row-kind labels, dates." },
+      "label": { "displayName": "Row Label", "purpose": "Uppercase small-caps labels: nav items, metric-top spans, section eyebrandless headers." },
+      "body": { "displayName": "Reading Copy", "purpose": "Prose: card descriptions, chat bubbles, briefing detail text." }
+    },
+    "shadows": [
+      { "name": "ambient-card-lift", "value": "inset 0 1px 0 rgba(255,255,255,.03), 0 10px 24px rgba(0,0,0,.35)", "purpose": "Boxed panels/cards that need to sit above the page ground (studio-card, application-table, resume-form, cp-chat)." },
+      { "name": "accent-glow", "value": "0 6px 16px rgba(255,176,32,.2)", "purpose": "Under .primary-button — the system's only colored shadow, reinforcing the one-lamp accent." },
+      { "name": "drawer-overlay", "value": "-16px 0 44px rgba(0,0,0,.5)", "purpose": "Company Intel detail drawer sliding over the page." },
+      { "name": "focus-ring", "value": "0 0 0 3px rgba(255,176,32,.14)", "purpose": "Input/interactive focus state, paired with border-color: var(--accent)." }
+    ],
+    "motion": [
+      { "name": "flap-in", "value": "cubic-bezier(.22,.61,.36,1) .5s, 45ms per-character delay", "purpose": "FlapText's character-cascade reveal — the board's one signature, authored motion for live numbers." },
+      { "name": "fade-up", "value": "cubic-bezier(.16,1,.3,1) .55s, translateY(14px)->0", "purpose": "Section entrance choreography on load (board-header, panels, forms) — not a per-item grid stagger." },
+      { "name": "topnav-hide", "value": "cubic-bezier(.4,0,.2,1) .25s, translateY(-100%)", "purpose": "Top nav hides on scroll-down, reappears on scroll-up." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "700px" },
+      { "name": "md", "value": "900px" },
+      { "name": "lg", "value": "1050px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The board's one filled action color — amber, reserved for what needs the user.",
+      "html": "<button class=\"ds-btn-primary\">Ask your copilot</button>",
+      "css": ".ds-btn-primary{background:#FFB020;color:#131211;padding:12px 17px;border-radius:7px;display:inline-flex;gap:8px;align-items:center;font-family:'Big Shoulders Text',sans-serif;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.5px;box-shadow:0 6px 16px rgba(255,176,32,.2);transition:background .15s,transform .1s;border:none;cursor:pointer}.ds-btn-primary:hover{background:#E69A0E}.ds-btn-primary:active{transform:translateY(1px)}.ds-btn-primary:focus-visible{outline:2px solid #FFB020;outline-offset:2px}"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Secondary action: hairline border, amber-dark text, fills soft-amber on hover.",
+      "html": "<button class=\"ds-btn-outline\">Find roles</button>",
+      "css": ".ds-btn-outline{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid rgba(255,255,255,.10);background:#1B1917;color:#E69A0E;font-family:'Big Shoulders Text',sans-serif;font-size:11px;font-weight:600;padding:11px;border-radius:7px;cursor:pointer;transition:border-color .15s,background .15s}.ds-btn-outline:hover{border-color:rgba(255,176,32,.34);background:rgba(255,176,32,.14)}"
+    },
+    {
+      "name": "Briefing Row",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "The daily-briefing board row: status lamp + kind + headline + action, hairline-divided, no card box.",
+      "html": "<article class=\"ds-cp-card\" data-tone=\"primary\"><span class=\"ds-cp-lamp\"></span><div class=\"ds-cp-body\"><h3>Follow up with Razorpay<span class=\"ds-cp-kind\">GOING COLD</span></h3><p>No movement in 9 days since you applied.</p><div class=\"ds-cp-actions\"><a href=\"#\" class=\"ds-btn-outline\">Open application</a></div></div></article>",
+      "css": ".ds-cp-card{display:flex;gap:14px;align-items:flex-start;padding:17px 2px;border-bottom:1px solid rgba(255,255,255,.055);font-family:'Public Sans',sans-serif}.ds-cp-lamp{width:7px;height:7px;border-radius:50%;margin-top:7px;flex-shrink:0;background:#FFB020;box-shadow:0 0 0 3px rgba(255,176,32,.14)}.ds-cp-body{flex:1;min-width:0}.ds-cp-body h3{font-family:'Big Shoulders Text',sans-serif;font-weight:600;font-size:15px;margin:0 0 5px;display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;color:#ECEEF0}.ds-cp-kind{font-family:'Fragment Mono',monospace;font-size:10px;letter-spacing:.7px;text-transform:uppercase;color:#868C94}.ds-cp-body p{font-size:12px;line-height:1.65;color:#9AA0A6;margin:0}.ds-cp-actions{display:flex;gap:9px;margin-top:13px}"
+    },
+    {
+      "name": "Metric Counter",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "A hairline-divided live counter — the ranked-board alternative to a bordered stat card.",
+      "html": "<a class=\"ds-metric-card\" href=\"#\"><div class=\"ds-metric-top\"><span>Applications</span></div><div class=\"ds-big-number\">24</div><p>roles currently in your tracker</p></a>",
+      "css": ".ds-metric-card{display:block;flex:1;min-width:0;padding:2px 32px;text-decoration:none;color:inherit}.ds-metric-top span{font-family:'Big Shoulders Text',sans-serif;font-weight:600;font-size:10px;letter-spacing:.9px;text-transform:uppercase;color:#868C94}.ds-big-number{font-family:'Fragment Mono',monospace;font-weight:700;font-size:33px;letter-spacing:-.5px;margin-top:20px;font-variant-numeric:tabular-nums;color:#ECEEF0}.ds-metric-card>p{font-size:11px;color:#868C94;margin:8px 0 0}"
+    },
+    {
+      "name": "Nav Item",
+      "kind": "nav",
+      "refersTo": "nav-item",
+      "description": "Top nav link: condensed uppercase label, amber underline reveal on hover/active.",
+      "html": "<a class=\"ds-nav-item ds-active\">Overview</a>",
+      "css": ".ds-nav-item{position:relative;display:inline-flex;align-items:center;gap:7px;color:#9AA0A6;padding:10px 12px;font-family:'Big Shoulders Text',sans-serif;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px;text-decoration:none;transition:color .15s}.ds-nav-item::after{content:'';position:absolute;left:12px;right:12px;bottom:0;height:2px;background:#FFB020;transform:scaleX(0);transition:transform .18s ease;transform-origin:left}.ds-nav-item:hover{color:#ECEEF0}.ds-nav-item.ds-active{color:#ECEEF0}.ds-nav-item.ds-active::after{transform:scaleX(1)}"
+    },
+    {
+      "name": "Job Card Row",
+      "kind": "card",
+      "refersTo": null,
+      "description": "Shared row treatment between Overview and Search: hairline top, slide-right + tint on hover instead of lift/shadow.",
+      "html": "<article class=\"ds-job-card\"><h2>Senior Backend Engineer</h2><p>Razorpay · Bengaluru</p></article>",
+      "css": ".ds-job-card{padding:22px 4px;border-top:1px solid rgba(255,255,255,.055);transition:transform .2s ease,background .2s ease}.ds-job-card:hover{transform:translateX(10px);background:rgba(255,255,255,.055)}.ds-job-card h2{font-family:'Big Shoulders Text',sans-serif;font-weight:600;font-size:16px;margin:0 0 4px;color:#ECEEF0}.ds-job-card p{font-size:12px;color:#9AA0A6;margin:0}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Departures Board",
+    "overview": "TalentRadar's Overview reads like a live station board, not a dashboard of stat cards: a graphite instrument face, ruled hairline rows instead of bordered boxes, and a single amber lamp color reserved for whatever needs the user's attention right now. The board's job is to make \"what's stale, what's moving, what to do next\" legible at a glance, the way a commuter reads a departures board instead of scanning a grid of tiles.\n\nThe palette is warm-neutral graphite and brushed steel — deliberately not the cool blue-slate that reads as generic \"AI dark mode\" — with a warm off-white ink for text and a single indicator-lamp amber spent sparingly. Big Shoulders Text (condensed, uppercase-leaning) sets row labels and headings; Fragment Mono sets tabular/live data (scores, counts, dates); Public Sans carries reading copy. Structure comes from hairline rules (--line, --line-soft, --line-strong), not borders-around-boxes.",
+    "keyCharacteristics": [
+      "Ranked hairline rows replace bordered-card grids on the board surfaces — status reads through position and a lamp dot, not through a boxed container.",
+      "One accent color, amber, is reserved for status/action; it is not used decoratively.",
+      "Big Shoulders Text (labels/headings) + Fragment Mono (data) + Public Sans (copy) — a three-role type system, no serif, no system-display face.",
+      "FlapText — a character-cascade reveal — is the board's one authored motion for live numbers.",
+      "Flat-ink surfaces are lifted with tinted shadow + inset highlight, not gloss or hard offset shadows."
+    ],
+    "rules": [
+      { "name": "The One Lamp Rule", "body": "Amber (--accent) is reserved for what needs the user: live data, primary actions, active/lit state, and status. It is never used as a decorative fill or a repeated brand flourish across a screen — its rarity is what makes the \"needs you\" signal legible.", "section": "colors" },
+      { "name": "The Hairline-Not-Border Rule", "body": "On the board surfaces (nav, Overview, BriefingFeed, CopilotWorkspace, job-card rows), structure comes from border-top/border-bottom hairlines between ranked rows, not from border boxes around containers. A bordered, radius-cornered box (.card-form, .editor-panel, .ci-card) is the old pattern, still correct on the routes that haven't been rebuilt — do not mix the two idioms on one surface.", "section": "colors" },
+      { "name": "The Mono-Means-Live Rule", "body": "Fragment Mono is reserved for values that are data — counts, scores, dates, codes — not for arbitrary emphasis. If a number can change between renders, it's a Fragment Mono / tabular-nums candidate; if it's prose, it's Public Sans.", "section": "typography" },
+      { "name": "The Matte-Metal Rule", "body": "Buttons and interactive rows get a firm tactile press (translateY(1px) on :active) and a tinted resting shadow, never a glossy sweep or hard offset shadow — this board is brushed steel, not glass or neobrutalist paper.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do reserve amber (--accent) for status and action on the board surfaces — live numbers, primary buttons, active nav/lamp states. Never use it as a repeated decorative fill.",
+      "Do build new ranked-list surfaces (statuses, feeds, rows of comparable items) as hairline-divided rows with a :first-child{border-top:0} reset, matching .role-row/.cp-card/.job-card.",
+      "Do wrap any number that can change on re-render in <FlapText> and set font-variant-numeric: tabular-nums on its container.",
+      "Do keep Fragment Mono reserved for data/metadata, Big Shoulders Text for labels/headings, and Public Sans for prose — don't blend the two display faces into body copy.",
+      "Do treat the untouched routes' existing box-grid pattern (.card-form, .editor-panel, .ci-card, .application-table) as still-valid on those routes; extending them further is a continuation of the old pattern, not a violation, unless a session is deliberately porting that route to the ranked-row system."
+    ],
+    "donts": [
+      "Don't assume the whole app was restructured. Only AppShell, Overview, BriefingFeed, CopilotWorkspace, and the shared .job-card row are structurally rebuilt; Search's own layout, Applications, Interview Lab, Resume Studio, Company Intel, Settings, Onboarding, and auth pages are still the old bordered-card/box-grid pattern underneath the new colors and fonts.",
+      "Don't wrap a new bordered, radius-cornered box in amber-and-Big-Shoulders-Text and call it \"on system\" for a board surface — the defining move is hairline rows, not the color/type refresh.",
+      "Don't add a hard-offset/neobrutalist shadow or a decorative glossy sweep to buttons or cards — this world's tactile language is a firm 1px press and a soft tinted lift, nothing louder.",
+      "Don't extend the \"flap tile\" seam motif (currently only on the nav brand mark) to metric numerals or general panel chrome — see the accepted gap below.",
+      "Don't treat .eyebrow (a small-caps label style still defined in globals.css and used on several untouched pages) as a pattern to reach for on new board surfaces; the rebuilt surfaces use the row-kind label (.cp-card-kind) or a plain section heading instead, not a kicker line above a heading."
+    ]
+  }
+}

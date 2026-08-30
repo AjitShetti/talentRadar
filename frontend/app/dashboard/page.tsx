@@ -6,6 +6,7 @@ import { ArrowRight, BriefcaseBusiness, ExternalLink, FileText, Lightbulb, MapPi
 import AppShell from '@/components/AppShell'
 import BriefingFeed from '@/components/BriefingFeed'
 import CopilotWorkspace from '@/components/CopilotWorkspace'
+import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
 import { api, Briefing, JobMatch, SkillsFocus } from '@/lib/api'
 
@@ -16,6 +17,11 @@ type TrendPoint = { label: string; score: number; date: string | null; completed
 type InterviewInsights = { sessions_analyzed: number; questions_analyzed: number; average_score: number; delta: number; abandoned: number; trend: TrendPoint[]; dimensions: Dimension[]; weakest_dimension: { key: string; label: string; score: number; hint: string } | null; tracks: TrackStat[]; weakest_track: TrackStat | null; weak_moments: WeakMoment[]; focus: string[] }
 
 const pct = (value: number) => `${Math.min(100, Math.max(3, value))}%`
+
+/** The board's own dateline — read like a departure board's live date, not a category label. */
+function boardDate() {
+  return new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
+}
 
 /**
  * The momentum line the briefing used to carry as its own card. It lives here
@@ -78,11 +84,13 @@ export default function Dashboard() {
   const jobMatches = data?.job_matches as JobMatch[] | null | undefined
   const targetRoles = profile?.target_roles || []
 
+  const profileTicks = profile?.onboarding_completed ? 5 : 2
+
   return <RequireAuth><AppShell>
-    <section className="welcome-row">
+    <section className="board-header">
       <div>
-        <p className="eyebrow">YOUR CAREER COMMAND CENTER</p>
-        <h1>Good to see you{profile?.full_name ? `, ${profile.full_name.split(' ')[0]}` : ''} <span>✦</span></h1>
+        <span className="board-date">{boardDate()}</span>
+        <h1>Good to see you{profile?.full_name ? `, ${profile.full_name.split(' ')[0]}` : ''}<span>.</span></h1>
         <p className="subhead">Live data from your profile, application tracker, and career agent.</p>
       </div>
       <a className="primary-button" href="#copilot"><Sparkles size={16}/> Ask your copilot</a>
@@ -91,17 +99,16 @@ export default function Dashboard() {
     {!data && !error
       ? <div className="loading-state">Loading your career workspace…</div>
       : <section className="metric-grid">
-        <Link href="/settings" className="metric-card accent">
-          <div className="metric-top"><span>PROFILE STATUS</span><Target size={17}/></div>
-          <div className="metric-body">
-            <div className="progress-ring" style={{ '--progress': profile?.onboarding_completed ? '360deg' : '180deg' } as React.CSSProperties}><span>{profile?.onboarding_completed ? 100 : 50}<small>%</small></span></div>
-            <div><strong>{profile?.onboarding_completed ? 'Profile ready' : 'Complete your profile'}</strong><p>Sharper recommendations start here</p></div>
-          </div>
+        <Link href="/settings" className="metric-card">
+          <div className="metric-top"><span>Profile status</span><Target size={16}/></div>
+          <div className="big-number"><FlapText value={profile?.onboarding_completed ? 100 : 50} />%</div>
+          <p>{profile?.onboarding_completed ? 'Profile ready' : 'Complete your profile'}</p>
+          <div className="metric-ticks">{Array.from({ length: 5 }).map((_, i) => <i key={i} data-lit={i < profileTicks ? 'true' : undefined} />)}</div>
           <div className="metric-link">Edit profile <ArrowRight size={14}/></div>
         </Link>
         <Link href="/applications" className="metric-card">
-          <div className="metric-top"><span>APPLICATIONS</span><BriefcaseBusiness size={17}/></div>
-          <div className="big-number">{analytics?.total_applications ?? 0}</div>
+          <div className="metric-top"><span>Applications</span><BriefcaseBusiness size={16}/></div>
+          <div className="big-number"><FlapText value={analytics?.total_applications ?? 0} /></div>
           <p>roles currently in your tracker</p>
           {stats && <div className="metric-breakdown">
             <span><b>{stats.saved ?? 0}</b> saved</span>
@@ -111,16 +118,16 @@ export default function Dashboard() {
           <div className="metric-link purple-link">Open tracker <ArrowRight size={14}/></div>
         </Link>
         <Link href="/interview" className="metric-card">
-          <div className="metric-top"><span>INTERVIEW LAB</span><MessageSquare size={17}/></div>
+          <div className="metric-top"><span>Interview lab</span><MessageSquare size={16}/></div>
           {hasInterviews && interviews ? <>
             <div className="big-number">
-              {Math.round(interviews.average_score)}<span className="out-of">/100</span>
+              <FlapText value={Math.round(interviews.average_score)} /><span className="out-of">/100</span>
               {interviews.delta !== 0 && <em className={`metric-delta ${interviews.delta > 0 ? 'up' : 'down'}`}>{interviews.delta > 0 ? '+' : ''}{interviews.delta}</em>}
             </div>
             <p>avg across {interviews.questions_analyzed} answers · weakest: {interviews.weakest_dimension?.label ?? '—'}</p>
-            {interviews.trend.length > 1 && <div className="trend-bars">{interviews.trend.slice(-8).map((point, i) => <i key={i} style={{ height: pct(point.score) }} title={`${point.label} · ${point.score}%`}/>)}</div>}
+            {interviews.trend.length > 1 && <div className="metric-trend">{interviews.trend.slice(-6).map((point, i, arr) => <span key={i} data-latest={i === arr.length - 1 ? 'true' : undefined} title={`${point.label} · ${point.score}%`}>{Math.round(point.score)}</span>)}</div>}
           </> : <>
-            <div className="big-number">Practice</div>
+            <div className="big-number">—</div>
             <p>Run a focused mock interview with your LangGraph agent.</p>
           </>}
           <div className="metric-link purple-link">{hasInterviews ? 'Practice again' : 'Start a session'} <ArrowRight size={14}/></div>
@@ -139,7 +146,7 @@ export default function Dashboard() {
     {data && <>
       {targetRoles.length > 0 && <section className="panel">
         <div className="panel-heading">
-          <div><p className="eyebrow">TODAY'S MATCHES</p><h2>Open roles for {targetRoles.slice(0, 2).join(' / ')}</h2></div>
+          <div><h2>Open roles for {targetRoles.slice(0, 2).join(' / ')}</h2></div>
           <Link className="text-button" href="/search">Search more <ArrowRight size={14}/></Link>
         </div>
         {jobMatches && jobMatches.length > 0
@@ -161,7 +168,7 @@ export default function Dashboard() {
 
       <section className="panel insight-panel">
         <div className="panel-heading">
-          <div><p className="eyebrow">INTERVIEW FEEDBACK</p><h2>{hasInterviews ? 'What to work on next' : 'Feedback from your mock interviews'}</h2></div>
+          <div><h2>{hasInterviews ? 'What to work on next' : 'Feedback from your mock interviews'}</h2></div>
           <Link className="text-button" href="/interview">Interview lab <ArrowRight size={14}/></Link>
         </div>
         {hasInterviews && interviews ? <>
@@ -193,7 +200,7 @@ export default function Dashboard() {
       <div className="dashboard-grid">
         <section className="panel">
           <div className="panel-heading">
-            <div><p className="eyebrow">JUMP BACK IN</p><h2>Move something forward</h2></div>
+            <div><h2>Move something forward</h2></div>
             <Sparkles size={17}/>
           </div>
           <div className="quick-actions">
@@ -204,7 +211,7 @@ export default function Dashboard() {
         </section>
         <section className="panel">
           <div className="panel-heading">
-            <div><p className="eyebrow">CAREER SIGNALS</p><h2>{focusIsResume ? 'Sharpen your resume' : 'Skills to strengthen'}</h2></div>
+            <div><h2>{focusIsResume ? 'Sharpen your resume' : 'Skills to strengthen'}</h2></div>
             <Link className="text-button" href="/settings">Profile <ArrowRight size={14}/></Link>
           </div>
           {skillsFocus ? <>

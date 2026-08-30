@@ -93,11 +93,13 @@ export default function SettingsPage() {
     }
   }
 
-  return <RequireAuth><AppShell>
+  return <RequireAuth><AppShell narrow>
     <section className="page-heading">
-      <p className="eyebrow">PROFILE &amp; GOALS</p>
-      <h1>Set the direction of your search.</h1>
-      <p>Your city, experience, and target roles pre-fill the job search filters. Add your resume too — we read it against those roles and show you what&apos;s missing on your dashboard.</p>
+      <div>
+        <span className="board-kicker">Profile &amp; goals</span>
+        <h1>Set the direction of your search<span>.</span></h1>
+        <p>Your city, experience, and target roles pre-fill the job search filters. Add your resume too — we read it against those roles and show you what&apos;s missing on your dashboard.</p>
+      </div>
     </section>
     <form className="card-form settings-form" onSubmit={save}>
       <label>Full name<input value={name} onChange={e => setName(e.target.value)} /></label>

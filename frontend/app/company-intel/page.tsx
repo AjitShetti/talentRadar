@@ -6,6 +6,7 @@ import {
   Plus, Search, Sparkles, Star, Trash2, Users, X,
 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
+import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
 import {
   api, CompanyCard, CompanyContact, CompanyDetail, CompanyFacets, ContactCandidate, NewContact,
@@ -72,9 +73,12 @@ export default function CompanyIntelPage() {
 
   return <RequireAuth><AppShell>
     <section className="page-heading">
-      <p className="eyebrow">COMPANY INTELLIGENCE</p>
-      <h1>Every tech employer hiring in {city}.</h1>
-      <p>Big Tech, global capability centres, unicorns and startups — what they build, the stack they build it on, their open source, and how to reach their talent team.</p>
+      <div>
+        <span className="board-kicker">Company intelligence</span>
+        <h1>Every tech employer hiring in {city}<span>.</span></h1>
+        <p>Big Tech, global capability centres, unicorns and startups — what they build, the stack they build it on, their open source, and how to reach their talent team.</p>
+      </div>
+      {!loading && companies.length > 0 && <div className="tracker-total"><strong><FlapText value={companies.length} /></strong><span>on the board</span></div>}
     </section>
 
     <div className="ci-toolbar">
@@ -88,7 +92,6 @@ export default function CompanyIntelPage() {
           <option value="">All industries</option>
           {(facets?.industries || []).map(i => <option key={i.value} value={i.value}>{i.value} ({i.count})</option>)}
         </select>
-        <span className="ci-count">{loading ? '…' : `${companies.length} ${companies.length === 1 ? 'company' : 'companies'}`}</span>
       </div>
 
       <div className="ci-chips">

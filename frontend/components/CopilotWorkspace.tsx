@@ -200,7 +200,7 @@ export default function CopilotWorkspace({ acceptUrlQuestion = false }: { accept
       <div className="cp-main">
         <section className="cp-chat">
           <div className="cp-section-head">
-            <p className="eyebrow">ASK YOUR COPILOT</p>
+            <h2>Ask your copilot</h2>
             {turns.length > 0 && <button className="text-button" onClick={() => setTurns([])}>Clear thread</button>}
           </div>
 
@@ -240,7 +240,6 @@ export default function CopilotWorkspace({ acceptUrlQuestion = false }: { accept
         <section className="panel">
           <div className="panel-heading">
             <div>
-              <p className="eyebrow">SAVED CONTEXT</p>
               <h2>What your copilot knows</h2>
             </div>
             <Brain size={17}/>
@@ -270,7 +269,6 @@ export default function CopilotWorkspace({ acceptUrlQuestion = false }: { accept
         <section className="panel">
           <div className="panel-heading">
             <div>
-              <p className="eyebrow">LEARNING PLAN</p>
               <h2>Close your gaps</h2>
             </div>
             <MapPin size={17}/>

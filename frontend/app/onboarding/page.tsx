@@ -59,10 +59,14 @@ export default function OnboardingPage() {
   }
 
   return <RequireAuth><AppShell>
+    <section className="page-heading">
+      <div>
+        <span className="board-kicker">Welcome to TalentRadar</span>
+        <h1>Tell us where you&apos;re headed<span>.</span></h1>
+        <p className="lead">We&apos;ll use this to tailor searches, match you with roles, and guide your preparation.</p>
+      </div>
+    </section>
     <section className="form-page">
-      <p className="eyebrow">WELCOME TO TALENTRADAR</p>
-      <h1>Tell us where you&apos;re headed.</h1>
-      <p className="lead">We&apos;ll use this to tailor searches, match you with roles, and guide your preparation.</p>
       <form className="card-form" onSubmit={submit}>
         <label>Full name<input value={name} onChange={e => setName(e.target.value)} placeholder="Your name" /></label>
         <label>Target role<input value={role} onChange={e => setRole(e.target.value)} placeholder="e.g. Product designer" /></label>

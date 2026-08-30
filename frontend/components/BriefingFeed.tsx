@@ -14,26 +14,28 @@ const KIND_LABELS: Record<string, string> = {
 
 function Card({ card, onDismiss }: { card: BriefingCard; onDismiss: (id: string, days?: number) => void }) {
   return <article className="cp-card" data-tone={card.tone}>
-    <div className="cp-card-head">
-      <p className="eyebrow">{KIND_LABELS[card.kind] || card.kind.replace(/_/g, ' ').toUpperCase()}</p>
-      {card.dismissible && <div className="cp-card-tools">
-        <button className="icon-refresh" title="Snooze for a week" onClick={() => onDismiss(card.id, 7)}>
-          <AlarmClock size={14}/>
-        </button>
-        <button className="icon-refresh" title="Dismiss" onClick={() => onDismiss(card.id)}>
-          <X size={14}/>
-        </button>
+    <span className="cp-lamp" />
+    <div className="cp-card-body">
+      <div className="cp-card-headrow">
+        <h3>{card.title}<span className="cp-card-kind">{KIND_LABELS[card.kind] || card.kind.replace(/_/g, ' ').toUpperCase()}</span></h3>
+        {card.dismissible && <div className="cp-card-tools">
+          <button className="icon-refresh" title="Snooze for a week" onClick={() => onDismiss(card.id, 7)}>
+            <AlarmClock size={14}/>
+          </button>
+          <button className="icon-refresh" title="Dismiss" onClick={() => onDismiss(card.id)}>
+            <X size={14}/>
+          </button>
+        </div>}
+      </div>
+      <p>{card.detail}</p>
+      {card.actions.length > 0 && <div className="cp-card-actions">
+        {card.actions.map(action => <Link
+          key={action.label}
+          href={action.href}
+          className={action.style === 'primary' ? 'primary-button' : 'outline-button'}
+        >{action.label} <ArrowRight size={13}/></Link>)}
       </div>}
     </div>
-    <h3>{card.title}</h3>
-    <p>{card.detail}</p>
-    {card.actions.length > 0 && <div className="cp-card-actions">
-      {card.actions.map(action => <Link
-        key={action.label}
-        href={action.href}
-        className={action.style === 'primary' ? 'primary-button' : 'outline-button'}
-      >{action.label} <ArrowRight size={13}/></Link>)}
-    </div>}
   </article>
 }
 
@@ -57,7 +59,6 @@ export default function BriefingFeed({
     <div className="cp-section-head">
       <div className="panel-heading">
         <div>
-          <p className="eyebrow">TODAY&apos;S BRIEFING</p>
           <h2>{briefing?.headline || 'What needs you today'}</h2>
         </div>
       </div>
