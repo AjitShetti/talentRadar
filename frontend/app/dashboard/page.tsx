@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
-import { ArrowRight, BriefcaseBusiness, CheckCircle2, ExternalLink, FileText, Lightbulb, MapPin, MessageSquare, Search, Sparkles, Target, UploadCloud } from 'lucide-react'
+import { ArrowRight, BriefcaseBusiness, CheckCircle2, ExternalLink, MapPin, MessageSquare, Sparkles, Target, UploadCloud } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import BriefingFeed from '@/components/BriefingFeed'
 import CopilotWorkspace from '@/components/CopilotWorkspace'
@@ -54,22 +54,6 @@ function boardTime(item: AgendaItem) {
 function activityAge(days: number | null) {
   if (days === null) return '—'
   return days <= 0 ? 'Today' : days === 1 ? 'Yesterday' : `${days}d ago`
-}
-
-/**
- * The momentum line the briefing used to carry as its own card. It lives here
- * now, on top of the panel that already holds the full score breakdown.
- */
-function momentumLine(interviews: InterviewInsights) {
-  const latest = interviews.trend.length > 0 ? interviews.trend[interviews.trend.length - 1].score : interviews.average_score
-  const average = Math.round(interviews.average_score)
-  const trend = interviews.delta < -2
-    ? `${Math.abs(interviews.delta)} points below your average of ${average}`
-    : interviews.delta > 2
-      ? `${interviews.delta} points above your average of ${average}`
-      : `holding steady around ${average}`
-  const weakest = interviews.weakest_track?.label
-  return `Last session scored ${Math.round(latest)}/100 — ${trend}.${weakest ? ` Your weakest track is ${weakest}.` : ''}`
 }
 
 /**
@@ -265,8 +249,10 @@ export default function Dashboard() {
           <div><h2>Apply to one of these today</h2></div>
           <Link className="text-button" href="/search">Search more <ArrowRight size={14}/></Link>
         </div>
+        {/* Three, not the whole list. This is a shortlist for today — the day
+            board already names the total, and Search carries the rest. */}
         {jobMatches && jobMatches.length > 0
-          ? <div className="job-results">{jobMatches.map(job => <article className="job-card" key={job.id}>
+          ? <div className="job-results">{jobMatches.slice(0, 3).map(job => <article className="job-card" key={job.id}>
               <div className="job-card-top">
                 <div className="company-logo violet">{(job.company || '?').slice(0, 1)}</div>
                 <div><h2>{job.title}</h2><p>{job.company || 'Company not listed'}</p></div>
@@ -343,15 +329,10 @@ export default function Dashboard() {
           </div>)}
         </div>
       </section>}
-    </>}
 
-    <div className="copilot-section" id="copilot">
-      <CopilotWorkspace/>
-    </div>
-
-    {data && <>
       {/* The counts. Still here, still the system's hairline-divided counter
-          row — just no longer the first thing the page says. */}
+          row — just no longer the first thing the page says, and now the last
+          thing it says before the copilot. */}
       <section className="panel">
         <div className="panel-heading">
           <div><h2>Where you stand</h2></div>
@@ -391,49 +372,12 @@ export default function Dashboard() {
         </div>
       </section>
 
-      {/* The full feedback report. It stays because it is where "practise this"
-          gets its answer from, but it reads as evidence under the decision. */}
-      <section className="panel insight-panel">
-        <div className="panel-heading">
-          <div><h2>{hasInterviews ? 'Your interview scorecard' : 'Feedback from your mock interviews'}</h2></div>
-          <Link className="text-button" href="/interview">Interview lab <ArrowRight size={14}/></Link>
-        </div>
-        {hasInterviews && interviews ? <>
-          <p className="momentum-line">{momentumLine(interviews)}</p>
-          {interviews.focus.length > 0 && <div className="insight-focus"><Lightbulb size={16}/><div>{interviews.focus.map((line, i) => <p key={i}>{line}</p>)}</div></div>}
-          <div className="insight-split">
-            <div className="insight-col">
-              <h3>Score breakdown · last {interviews.sessions_analyzed} session{interviews.sessions_analyzed === 1 ? '' : 's'}</h3>
-              {interviews.dimensions.map(dimension => <div key={dimension.key} className={`meter${dimension.weakest ? ' weak' : ''}`}>
-                <div className="meter-top"><strong>{dimension.label}{dimension.weakest && <span className="meter-tag">WEAKEST</span>}</strong><b>{Math.round(dimension.score)}</b></div>
-                <div className="meter-track"><i style={{ width: pct(dimension.score) }}/></div>
-              </div>)}
-            </div>
-            <div className="insight-col">
-              <h3>Where it went wrong</h3>
-              {interviews.weak_moments.length > 0 ? interviews.weak_moments.map((moment, i) => <div className="weak-moment" key={i}>
-                <b>{Math.round(moment.score)}</b>
-                <div>
-                  <p>{moment.question}</p>
-                  <small>{moment.track_label} · {moment.difficulty} · {moment.dimension} {moment.dimension_score}/10{moment.was_followup ? ' · follow-up' : ''}</small>
-                </div>
-              </div>) : <p className="muted-copy">No single answer dropped below 70% recently. Step the difficulty up to keep finding gaps.</p>}
-            </div>
-          </div>
-        </> : <p className="muted-copy">Run a mock interview and this panel becomes your feedback report — score breakdown by correctness, clarity and depth, your weakest round type, and the exact questions that cost you the most points.</p>}
-      </section>
-
-      <section className="panel">
-        <div className="panel-heading">
-          <div><h2>Move something forward</h2></div>
-          <Sparkles size={17}/>
-        </div>
-        <div className="quick-actions">
-          <Link href="/search"><Search size={18}/><span>Find roles</span></Link>
-          <Link href="/resume-studio"><FileText size={18}/><span>Improve resume</span></Link>
-          <Link href="/interview"><MessageSquare size={18}/><span>Practice interview</span></Link>
-        </div>
-      </section>
     </>}
+
+    {/* The copilot closes the page. The board above it is the day; this is
+        where you go when you want to ask about it. */}
+    <div className="copilot-section" id="copilot">
+      <CopilotWorkspace/>
+    </div>
   </AppShell></RequireAuth>
 }

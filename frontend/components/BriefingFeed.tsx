@@ -60,7 +60,10 @@ export default function BriefingFeed({
     <div className="cp-section-head">
       <div className="panel-heading">
         <div>
-          <h2>{briefing?.headline || 'What needs you today'}</h2>
+          {/* A stable section label, not the headline. The overview already
+              says the headline in its subhead, and printing the same sentence
+              twice a screen apart read as a bug rather than as emphasis. */}
+          <h2>Today&apos;s briefing</h2>
         </div>
       </div>
       {briefing && briefing.hidden_count > 0 && <span className="ci-count">{briefing.hidden_count} hidden</span>}
