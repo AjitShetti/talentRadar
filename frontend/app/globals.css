@@ -752,6 +752,79 @@ a{text-decoration:none;color:inherit}
 .momentum-line{font-size:12px;line-height:1.6;color:var(--ink);margin:14px 0 0;padding:11px 14px;background:var(--surface-2);border:1px solid var(--line);border-radius:8px}
 .copilot-section{margin-bottom:20px;scroll-margin-top:18px}
 
+/* ── Overview: the day board ───────────────────────────────────────────────
+   The one place the departures-board metaphor is literal. Everything the day
+   contains — dated interviews first, then the undated work — sits on one
+   ruled strip under mono column headers: a time (or a dash, when the thing
+   isn't dated), a tone lamp, what it is, and a status code. It is the index
+   of the day; the panels below it are the detail. */
+
+/* The day's shape, in the ledger strip: mono counts under the greeting, so
+   the header carries data instead of only a sentence. */
+.dayshape{display:flex;flex-wrap:wrap;margin:13px 0 0;font:10px 'Fragment Mono',monospace;letter-spacing:.9px;text-transform:uppercase;color:var(--faint);font-variant-numeric:tabular-nums}
+.dayshape span{padding-right:12px;margin-right:12px;border-right:1px solid var(--line)}
+.dayshape span:last-child{border-right:0;margin-right:0;padding-right:0}
+.dayshape b{font-weight:700;color:var(--ink-2)}
+.dayshape span[data-live] b{color:var(--accent)}
+
+.dayboard{border-top:1px solid var(--line-strong);padding-top:17px;margin-bottom:38px}
+/* The board's rows jump to the panel carrying their detail — clear the nav. */
+.panel[id]{scroll-margin-top:78px}
+.dayboard-cols{display:grid;grid-template-columns:62px 7px 1fr auto;align-items:center;gap:15px;padding:0 2px 11px;border-bottom:1px solid var(--line-soft);font:10px 'Fragment Mono',monospace;letter-spacing:1px;text-transform:uppercase;color:var(--faint)}
+.db-row{display:grid;grid-template-columns:62px 7px 1fr auto;align-items:center;gap:15px;padding:15px 2px;border-top:1px solid var(--line-soft);transition:transform .2s ease,background .2s ease}
+.db-row:first-of-type{border-top:0}
+.db-row:hover{transform:translateX(10px);background:var(--line-soft)}
+.db-time{font:12px 'Fragment Mono',monospace;font-variant-numeric:tabular-nums;letter-spacing:-.2px;color:var(--faint)}
+.db-lamp{width:7px;height:7px;border-radius:50%;background:var(--ink-5)}
+.db-row[data-tone=now] .db-time{color:var(--accent);font-weight:700}
+.db-row[data-tone=now] .db-lamp{background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.db-row[data-tone=next] .db-lamp{background:var(--accent-light)}
+.db-what strong{display:block;font:600 15px/1.3 'Big Shoulders Text';letter-spacing:0;color:var(--ink)}
+.db-what small{display:block;margin-top:3px;font-size:11px;line-height:1.5;color:var(--muted)}
+.db-code{display:flex;align-items:center;gap:7px;font:10px 'Fragment Mono',monospace;letter-spacing:.8px;text-transform:uppercase;color:var(--faint);white-space:nowrap}
+.db-row[data-tone=now] .db-code{color:var(--accent-dark)}
+.db-row:hover .db-code{color:var(--accent-dark)}
+.dayboard-clear{display:flex;align-items:center;gap:10px;padding:22px 2px;font:11px 'Fragment Mono',monospace;letter-spacing:1px;text-transform:uppercase;color:var(--faint)}
+.dayboard-clear svg{color:var(--success)}
+@media(max-width:700px){
+  .dayboard-cols{grid-template-columns:52px 7px 1fr;gap:11px}
+  .dayboard-cols b:last-child{display:none}
+  .db-row{grid-template-columns:52px 7px 1fr;gap:11px}
+  .db-code{grid-column:3;margin-top:7px}
+}
+
+/* Tracker history, as a ledger: a mono age column against the status move
+   itself, tinted by outcome. Quieter than the board — this already happened. */
+.ledger-row{display:grid;grid-template-columns:74px 1fr;gap:15px;padding:13px 2px;border-top:1px solid var(--line-soft)}
+.ledger-row:first-child{border-top:0;padding-top:2px}
+.ledger-when{font:10px 'Fragment Mono',monospace;letter-spacing:.7px;text-transform:uppercase;color:var(--faint);padding-top:3px}
+.ledger-what strong{font:600 14px 'Big Shoulders Text';letter-spacing:0;color:var(--ink)}
+.ledger-what em{font-style:normal;font-size:11px;color:var(--muted)}
+.ledger-move{display:flex;align-items:center;gap:7px;margin-top:5px;font:10px 'Fragment Mono',monospace;letter-spacing:.7px;text-transform:uppercase;color:var(--faint)}
+.ledger-move i{font-style:normal;color:var(--ink-5)}
+.ledger-move b{font-weight:700;color:var(--accent-dark)}
+.ledger-move b[data-outcome=offer]{color:var(--success-dark)}
+.ledger-move b[data-outcome=rejected],.ledger-move b[data-outcome=withdrawn]{color:var(--danger-dark)}
+.ledger-note{display:block;margin-top:5px;font-size:11px;line-height:1.5;color:var(--muted)}
+
+/* A two-column split inside one panel — the system's documented move, so
+   "practise" and "study" read as one decision with two halves. */
+.split-2{display:grid;grid-template-columns:1fr 1fr;gap:44px}
+.split-2>div+div{border-left:1px solid var(--line-soft);padding-left:44px}
+.split-head{font:600 10px 'Fragment Mono',monospace;letter-spacing:.9px;text-transform:uppercase;color:var(--faint);margin:0 0 14px}
+@media(max-width:900px){
+  .split-2{grid-template-columns:1fr;gap:30px}
+  .split-2>div+div{border-left:0;padding-left:0;border-top:1px solid var(--line-soft);padding-top:30px}
+}
+
+/* Ranked rows with a mono index — the skills to study, numbered like board
+   destinations rather than bulleted like a document. */
+.rank-row{display:grid;grid-template-columns:24px 1fr;gap:13px;padding:12px 0;border-top:1px solid var(--line-soft)}
+.rank-row:first-of-type{border-top:0;padding-top:0}
+.rank-n{font:10px 'Fragment Mono',monospace;font-variant-numeric:tabular-nums;color:var(--ink-5);padding-top:3px}
+.rank-row strong{display:block;font-size:12px;font-weight:600;color:var(--ink)}
+.rank-row small{display:block;margin-top:4px;font-size:11px;line-height:1.55;color:var(--muted)}
+
 /* ══════════════════════════════════════════════════════════════════════════
    REDESIGN LAYER — depth, motion, texture, tactile feedback.
    Purely additive: every rule below adds properties the sections above never

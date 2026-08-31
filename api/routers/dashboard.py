@@ -4,8 +4,14 @@ api/routers/dashboard.py
 Dashboard aggregator endpoints (auth required).
 
 GET /dashboard/overview - one-shot summary of the job-seeker journey:
-                          profile status, funnel metrics, interview feedback
-                          and resume-vs-target-role skill focus.
+                          today's agenda (scheduled interviews), what moved on
+                          the tracker lately, profile status, funnel metrics,
+                          interview feedback and resume-vs-target-role skill
+                          focus.
+
+The overview page is a plan for the day, not a report on the account, so the
+dated and actionable parts of this payload (``agenda``, ``recent_activity``,
+``job_matches``) lead the page and the counts sit underneath them.
 
 The overview page pairs this with GET /agent/briefing, which owns the
 next-best action and everything else that is a *decision* rather than a
@@ -22,7 +28,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from api.auth import get_current_user
-from services.applications import tracker_analytics
+from services.applications import day_agenda, recent_activity, tracker_analytics
 from services.career import target_role_readiness
 from services.interviews import interview_insights
 from services.job_matching import compute_daily_matches_for_user, get_daily_matches_for_user
@@ -48,6 +54,8 @@ async def overview(user_id: CurrentUserId) -> dict[str, Any]:
     """Aggregate the full job-seeker journey into one dashboard payload."""
     profile = await get_profile(user_id=user_id)
     analytics = await tracker_analytics(user_id=user_id)
+    agenda = await day_agenda(user_id=user_id)
+    activity = await recent_activity(user_id=user_id)
 
     # Resume vs target roles. Samples the market and calls the LLM, so it is
     # additive like interview insights -- a failure must not blank the page.
@@ -89,6 +97,8 @@ async def overview(user_id: CurrentUserId) -> dict[str, Any]:
             "total_applications": analytics.get("total_applications", 0),
         },
         "funnel": analytics.get("funnel", []),
+        "agenda": agenda,
+        "recent_activity": activity,
         "skills_focus": skills_focus,
         "interviews": interviews,
         "job_matches": job_matches,

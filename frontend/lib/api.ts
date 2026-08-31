@@ -54,6 +54,10 @@ export type ContactDiscovery = { company?: string | null; careers_url?: string |
 export type CompanyRole = { id: string; title: string; location?: string | null; is_remote?: boolean; seniority?: string | null; salary_raw?: string | null; skills: string[]; source_url?: string | null; posted_at?: string | null }
 export type CompanyDetail = CompanyCard & { linkedin_url?: string | null; github?: GithubOrg | null; tech_stack_curated: string[]; tech_stack_from_postings: string[]; culture_summary?: string | null; contacts: CompanyContact[]; jobs: CompanyRole[]; has_profile: boolean }
 export type NewContact = { kind?: string; name?: string | null; title?: string | null; email?: string | null; linkedin_url?: string | null; notes?: string | null; source_url?: string | null; verified?: boolean }
+// A dated commitment on the tracker — the only thing on the overview the user
+// cannot reschedule by ignoring it, so it leads the page.
+export type AgendaItem = { application_id: string; job_id: string | null; role: string; company: string; status: string; scheduled_at: string; days_away: number; when_label: string }
+export type ActivityItem = { application_id: string; role: string; company: string; from_status: string | null; to_status: string; note: string | null; created_at: string | null; days_ago: number | null }
 export type BriefingAction = { label: string; href: string; style: string }
 export type BriefingCard = { id: string; kind: string; title: string; detail: string; tone: string; actions: BriefingAction[]; meta: Record<string, unknown>; dismissible: boolean }
 export type Briefing = { generated_at: string; headline: string; cards: BriefingCard[]; hidden_count: number; stats: { total_applications?: number; saved?: number; applied?: number; interviews?: number; onboarding_completed?: boolean } }

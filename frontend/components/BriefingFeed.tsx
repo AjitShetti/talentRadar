@@ -7,6 +7,7 @@ import { Briefing, BriefingCard } from '@/lib/api'
 /** Human label for a card's origin, shown above its title. */
 const KIND_LABELS: Record<string, string> = {
   priority: 'DO THIS FIRST',
+  scheduled_interview: 'ON THE CALENDAR',
   stale_application: 'GOING COLD',
   saved_backlog: 'UNFINISHED',
   interview_momentum: 'MOMENTUM',

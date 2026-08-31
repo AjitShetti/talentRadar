@@ -5,24 +5,29 @@ Deterministic tools for the Application Tracker.
 
     update_application()  — advance status with event logging + timestamps
     tracker_analytics()   — funnel / conversion analytics for a user
+    day_agenda()          — interviews scheduled today / in the days ahead
+    recent_activity()     — what actually moved on the tracker lately
 """
 
 from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from storage.database import AsyncSessionLocal
-from storage.models import ApplicationEvent, ApplicationStatus, JobApplication
+from storage.models import ApplicationEvent, ApplicationStatus, Company, Job, JobApplication
 from storage.repository import UnitOfWork
 from services.base import parse_uuid
 
 logger = logging.getLogger(__name__)
+
+#: How far ahead the overview's agenda looks for scheduled interviews.
+AGENDA_HORIZON_DAYS = 7
 
 # Status → timestamp column to keep in sync
 _TIMESTAMP_COLUMNS: dict[str, str] = {
@@ -202,5 +207,120 @@ async def tracker_analytics(
                 "rejection_rate": _rate(rejected),
             },
         }
+    finally:
+        await session.close()
+
+
+def _day_offset(moment: datetime) -> int:
+    """Calendar days from today to ``moment``, in the server's UTC day."""
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    return (moment.astimezone(UTC).date() - datetime.now(UTC).date()).days
+
+
+def _when_label(days: int) -> str:
+    if days == 0:
+        return "Today"
+    if days == 1:
+        return "Tomorrow"
+    return f"In {days} days"
+
+
+async def day_agenda(
+    *,
+    user_id: str,
+    within_days: int = AGENDA_HORIZON_DAYS,
+) -> list[dict[str, Any]]:
+    """
+    Interviews the user has on the calendar, soonest first.
+
+    Only forward-looking rows in a live stage are returned: a scheduled date
+    that has passed, or one on an application that was since rejected, is
+    history rather than something to prepare for.
+    """
+    session = AsyncSessionLocal()
+    try:
+        user_uuid = parse_uuid(user_id)
+        if not user_uuid:
+            return []
+
+        result = await session.execute(
+            select(JobApplication, Job.title, Company.name)
+            .outerjoin(Job, Job.id == JobApplication.job_id)
+            .outerjoin(Company, Company.id == Job.company_id)
+            .where(JobApplication.user_id == user_uuid)
+            .where(JobApplication.interview_scheduled_at.is_not(None))
+            .where(JobApplication.status.notin_([
+                ApplicationStatus.REJECTED,
+                ApplicationStatus.WITHDRAWN,
+            ]))
+            .order_by(JobApplication.interview_scheduled_at.asc())
+        )
+
+        agenda: list[dict[str, Any]] = []
+        for app, job_title, company_name in result.all():
+            scheduled = app.interview_scheduled_at
+            if scheduled is None:
+                continue
+            days = _day_offset(scheduled)
+            if days < 0 or days > within_days:
+                continue
+            agenda.append({
+                "application_id": str(app.id),
+                "job_id": str(app.job_id) if app.job_id else None,
+                "role": job_title or "Untitled role",
+                "company": company_name or "Company not listed",
+                "status": app.status.value,
+                "scheduled_at": scheduled.isoformat(),
+                "days_away": days,
+                "when_label": _when_label(days),
+            })
+        return agenda
+    except Exception as exc:  # the agenda is additive — never blank the page
+        logger.warning("Day agenda unavailable for user %s: %s", user_id, exc)
+        return []
+    finally:
+        await session.close()
+
+
+async def recent_activity(*, user_id: str, limit: int = 6) -> list[dict[str, Any]]:
+    """
+    The last things that actually moved on the tracker.
+
+    Status changes only — this answers "what happened with the roles I already
+    applied to", so a note with no stage change is not an event worth surfacing.
+    """
+    session = AsyncSessionLocal()
+    try:
+        user_uuid = parse_uuid(user_id)
+        if not user_uuid:
+            return []
+
+        result = await session.execute(
+            select(ApplicationEvent, Job.title, Company.name)
+            .join(JobApplication, JobApplication.id == ApplicationEvent.application_id)
+            .outerjoin(Job, Job.id == JobApplication.job_id)
+            .outerjoin(Company, Company.id == Job.company_id)
+            .where(JobApplication.user_id == user_uuid)
+            .order_by(ApplicationEvent.created_at.desc())
+            .limit(limit)
+        )
+
+        return [
+            {
+                "application_id": str(event.application_id),
+                "role": job_title or "Untitled role",
+                "company": company_name or "Company not listed",
+                "from_status": event.from_status,
+                "to_status": event.to_status,
+                "note": event.note,
+                "created_at": event.created_at.isoformat() if event.created_at else None,
+                "days_ago": _day_offset(event.created_at) * -1 if event.created_at else None,
+            }
+            for event, job_title, company_name in result.all()
+        ]
+    except Exception as exc:
+        logger.warning("Recent activity unavailable for user %s: %s", user_id, exc)
+        return []
     finally:
         await session.close()
