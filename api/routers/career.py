@@ -44,7 +44,7 @@ async def weaknesses(user_id: CurrentUserId):
         return await identify_weaknesses(user_id=user_id)
     except Exception as exc:
         logger.error("Weakness identification failed: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Failed: {exc}") from exc
+        raise HTTPException(status_code=500, detail="Could not load your career analysis.") from exc
 
 
 @router.post("/recommend")
@@ -54,4 +54,4 @@ async def recommend(user_id: CurrentUserId, body: RecommendRequest):
         return await recommend_learning(user_id=user_id, persist=body.persist)
     except Exception as exc:
         logger.error("Learning recommendation failed: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Failed: {exc}") from exc
+        raise HTTPException(status_code=500, detail="Could not build your learning plan.") from exc

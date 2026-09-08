@@ -22,6 +22,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from fastapi.concurrency import run_in_threadpool
+
 from services.base import as_list, parse_uuid
 
 if TYPE_CHECKING:
@@ -87,7 +89,10 @@ async def tailor_resume(
 
     combined_jd = f"Job Title: {job_title}\n\n{job_description}" if job_title else job_description
     tailor = ResumeTailor()
-    tailored = tailor.tailor(resume_text, combined_jd)
+    # ResumeTailor.tailor() is a synchronous Groq call. Running it directly on
+    # the event loop froze every other request for the duration of the
+    # completion, so it goes to a worker thread instead.
+    tailored = await run_in_threadpool(tailor.tailor, resume_text, combined_jd)
 
     candidate_name = str(tailored.get("candidate_name") or "Applicant").strip().replace(" ", "_")
     latex = str(tailored.get("latex_content") or "")
@@ -98,8 +103,8 @@ async def tailor_resume(
         try:
             import base64
 
-            from api.utils.latex_compiler import compile_latex_to_pdf
-            pdf_bytes = compile_latex_to_pdf(latex)
+            from api.utils.latex_compiler import compile_latex_to_pdf_async
+            pdf_bytes = await compile_latex_to_pdf_async(latex)
             pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
             filename = f"{candidate_name}_resume.pdf"
         except Exception as exc:  # noqa: BLE001
@@ -493,8 +498,8 @@ async def compile_resume_document(document: dict[str, Any]) -> dict[str, Any]:
 
     if latex:
         try:
-            from api.utils.latex_compiler import compile_latex_to_pdf
-            pdf_bytes = compile_latex_to_pdf(latex)
+            from api.utils.latex_compiler import compile_latex_to_pdf_async
+            pdf_bytes = await compile_latex_to_pdf_async(latex)
             pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
             candidate_name = str((document.get("personal") or {}).get("full_name") or "resume")
             filename = (candidate_name.strip().replace(" ", "_") or "resume") + ".pdf"

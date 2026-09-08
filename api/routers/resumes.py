@@ -222,7 +222,7 @@ async def analyze_resume_endpoint(user_id: CurrentUserId, body: AnalyzeRequest):
         )
     except Exception as exc:
         logger.error("Resume analysis failed: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Resume analysis failed: {exc}") from exc
+        raise HTTPException(status_code=500, detail="Resume analysis failed.") from exc
 
 
 @router.post("/tailor")
@@ -236,7 +236,7 @@ async def tailor_resume_endpoint(user_id: CurrentUserId, body: TailorRequest):
         )
     except Exception as exc:
         logger.error("Resume tailoring failed: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Resume tailoring failed: {exc}") from exc
+        raise HTTPException(status_code=500, detail="Resume tailoring failed.") from exc
 
 
 @router.post("/cover-letter")
@@ -253,7 +253,7 @@ async def cover_letter_endpoint(user_id: CurrentUserId, body: CoverLetterRequest
         return {"content": content, "tone": body.tone}
     except Exception as exc:
         logger.error("Cover letter generation failed: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Cover letter generation failed: {exc}") from exc
+        raise HTTPException(status_code=500, detail="Cover letter generation failed.") from exc
 
 
 @router.get("/document")
@@ -263,7 +263,7 @@ async def get_resume_document_endpoint(user_id: CurrentUserId):
         return await get_resume_document(user_id=user_id)
     except Exception as exc:
         logger.error("Fetching resume document failed: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Could not load your resume document: {exc}") from exc
+        raise HTTPException(status_code=500, detail="Could not load your resume document.") from exc
 
 
 @router.put("/document")
@@ -273,7 +273,7 @@ async def save_resume_document_endpoint(user_id: CurrentUserId, body: ResumeDocu
         return await save_resume_document(user_id=user_id, document=body.document)
     except Exception as exc:
         logger.error("Saving resume document failed: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Could not save your resume document: {exc}") from exc
+        raise HTTPException(status_code=500, detail="Could not save your resume document.") from exc
 
 
 @router.post("/document/compile")
@@ -283,7 +283,7 @@ async def compile_resume_document_endpoint(user_id: CurrentUserId, body: Compile
         return await compile_resume_document(body.document)
     except Exception as exc:
         logger.error("Compiling resume document failed: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Could not compile your resume: {exc}") from exc
+        raise HTTPException(status_code=500, detail="Could not compile your resume.") from exc
 
 
 @router.post("/gaps")

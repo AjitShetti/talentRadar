@@ -56,25 +56,37 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         default_window: int,
         auth_requests: int,
         auth_window: int,
+        trusted_proxy_hops: int = 0,
     ) -> None:
         super().__init__(app)
         self._default = (default_requests, default_window)
         self._auth = (auth_requests, auth_window)
+        self._hops = max(0, trusted_proxy_hops)
         self._buckets: dict[tuple[str, str], _Bucket] = {}
         self._last_prune = time.monotonic()
 
     # -- helpers ------------------------------------------------------- #
 
-    @staticmethod
-    def _client_key(request: Request) -> str:
+    def _client_key(self, request: Request) -> str:
         """Identify the caller.
 
-        Deliberately uses the peer address and *not* ``X-Forwarded-For``:
-        that header is attacker-controlled unless a trusted proxy overwrites
-        it, and honouring it blindly would let anyone bypass the limit by
-        rotating a header value. Behind a real proxy, terminate XFF there or
-        run uvicorn with ``--proxy-headers`` and a trusted-host list.
+        ``X-Forwarded-For`` is attacker-controlled, so it is honoured only as
+        far as the operator says there are proxies in front of the app
+        (``TRUSTED_PROXY_HOPS``). With N trusted hops the Nth entry from the
+        *right* is the address the outermost trusted proxy actually observed;
+        everything further left was supplied by the client and is ignored.
+
+        The default of 0 keeps the safe behaviour of using the peer address.
+        That default is wrong on a PaaS, though: behind a platform router
+        every request appears to come from the router, so all users share one
+        bucket and the whole deployment starts returning 429 as soon as a
+        handful of people browse at once. Set TRUSTED_PROXY_HOPS=1 there.
         """
+        if self._hops:
+            forwarded = request.headers.get("x-forwarded-for", "")
+            parts = [p.strip() for p in forwarded.split(",") if p.strip()]
+            if len(parts) >= self._hops:
+                return parts[-self._hops]
         client = request.client
         return client.host if client else "unknown"
 
@@ -91,7 +103,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         path = request.url.path
-        if path in EXEMPT_PATHS:
+        # OPTIONS is the browser's CORS preflight, not a call the user made.
+        # Counting it halved the effective budget for every cross-origin page.
+        if path in EXEMPT_PATHS or request.method == "OPTIONS":
             return await call_next(request)
 
         limit, window = self._auth if path in AUTH_PATHS else self._default

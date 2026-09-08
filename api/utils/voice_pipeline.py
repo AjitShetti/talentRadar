@@ -32,7 +32,6 @@ from __future__ import annotations
 
 import logging
 
-import httpx
 from groq import AsyncGroq
 
 from config.settings import get_settings

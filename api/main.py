@@ -12,8 +12,12 @@ import logging
 import uuid
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
+from urllib.parse import urlsplit
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+try:
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+except ImportError:
+    AsyncIOScheduler = None  # type: ignore
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -63,61 +67,107 @@ class ErrorEnvelopeMiddleware(BaseHTTPMiddleware):
         except Exception as exc:
             return _error_response(request, exc)
 
+def _safe_dsn(dsn: str) -> str:
+    """A DSN with the password removed, for logging."""
+    parts = urlsplit(dsn)
+    if not parts.hostname:
+        return dsn
+    user = f"{parts.username}@" if parts.username else ""
+    port = f":{parts.port}" if parts.port else ""
+    return f"{parts.scheme}://{user}{parts.hostname}{port}{parts.path}"
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifecycle management."""
     # Startup
     logger.info("TalentRadar API starting up...")
     settings = get_settings()
-    logger.info("Database: %s@%s/%s", settings.postgres_user, settings.postgres_host, settings.postgres_db)
+    # Log the database the app will *actually* use. Printing the discrete
+    # POSTGRES_* fields was actively misleading once DATABASE_URL existed: a
+    # deployment pointed at Neon still logged "talentRadar@localhost". The
+    # password is stripped rather than masked — nothing should tempt anyone to
+    # paste this line somewhere.
+    logger.info("Database: %s", _safe_dsn(settings.database_url))
 
     # Daily job-match scan. Runs in-process (no separate worker/beat service
     # exists in this stack) and searches each user's target roles against
     # already-ingested postings — see services/job_matching.py.
-    from services.job_matching import run_daily_matching_for_all_users
+    #
+    # The scheduler is per *process*, so with more than one uvicorn worker the
+    # job fires once per worker: N concurrent runs racing on the same
+    # delete-then-insert of each user's daily rows. Guard on an explicit
+    # opt-out so a multi-worker deployment can designate a single scheduler
+    # process (or an external cron) instead.
+    scheduler: AsyncIOScheduler | None = None
+    if settings.enable_scheduler and AsyncIOScheduler is not None:
+        from services.job_matching import run_daily_matching_for_all_users
 
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(
-        run_daily_matching_for_all_users,
-        trigger="cron",
-        hour=settings.daily_match_hour,
-        minute=settings.daily_match_minute,
-        id="daily_job_matching",
-    )
-    scheduler.start()
-    logger.info(
-        "Daily job-match scan scheduled for %02d:%02d server time",
-        settings.daily_match_hour, settings.daily_match_minute,
-    )
+        scheduler = AsyncIOScheduler()
+        scheduler.add_job(
+            run_daily_matching_for_all_users,
+            trigger="cron",
+            hour=settings.daily_match_hour,
+            minute=settings.daily_match_minute,
+            id="daily_job_matching",
+            # If the process was asleep (free tiers idle containers out) run
+            # the missed job on wake rather than skipping the day entirely.
+            misfire_grace_time=3600,
+            coalesce=True,
+            max_instances=1,
+        )
+        scheduler.start()
+        logger.info(
+            "Daily job-match scan scheduled for %02d:%02d server time",
+            settings.daily_match_hour, settings.daily_match_minute,
+        )
+    elif settings.enable_scheduler:
+        logger.warning("In-process scheduler requested but apscheduler is not installed")
+    else:
+        logger.info("In-process scheduler disabled (ENABLE_SCHEDULER=false)")
 
     yield
 
     # Shutdown
     logger.info("TalentRadar API shutting down...")
-    scheduler.shutdown(wait=False)
+    if scheduler is not None:
+        scheduler.shutdown(wait=False)
+    # Release the shared scraper HTTP client alongside the DB pool; it was
+    # previously left open, leaking sockets on every reload.
+    try:
+        from ingestion.scrapling_manager import ScraplingManager
+
+        await ScraplingManager.close()
+    except Exception:  # never block shutdown on cleanup
+        logger.debug("Scraper client cleanup skipped", exc_info=True)
     await close_engine()
     logger.info("Database connections closed")
 
+
+settings = get_settings()
 
 # Create FastAPI app
 app = FastAPI(
     title="TalentRadar API",
     description="AI-powered job intelligence platform with semantic search, market trends, and candidate matching.",
     version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    # The interactive docs enumerate every endpoint and schema. Useful while
+    # developing, an invitation to probe once the app is public.
+    docs_url="/docs" if settings.debug else None,
+    redoc_url="/redoc" if settings.debug else None,
+    openapi_url="/openapi.json" if settings.debug else None,
     lifespan=lifespan,
 )
 
 # Rate limiting. Added before CORS so that CORSMiddleware stays the outermost
 # layer and 429 responses still carry CORS headers back to the browser.
-settings = get_settings()
 app.add_middleware(
     RateLimitMiddleware,
     default_requests=settings.rate_limit_default_requests,
     default_window=settings.rate_limit_default_window_seconds,
     auth_requests=settings.rate_limit_auth_requests,
     auth_window=settings.rate_limit_auth_window_seconds,
+    trusted_proxy_hops=settings.trusted_proxy_hops,
 )
 
 # Convert unhandled exceptions into a JSON 500 *inside* the CORS layer.
@@ -132,10 +182,15 @@ app.add_middleware(
 app.add_middleware(ErrorEnvelopeMiddleware)
 
 # CORS middleware
+# The blanket localhost regex is a *development* affordance. Left on in
+# production it lets a page served from any port on a viewer's own machine
+# make credentialed calls to the API, so it is gated behind DEBUG.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$",
+    allow_origin_regex=(
+        r"^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$" if settings.debug else None
+    ),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

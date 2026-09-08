@@ -16,6 +16,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from api.auth import get_current_user, require_role
 from api.dependencies import get_unit_of_work
 from api.schemas.query_schemas import IngestRequestSchema, IngestResponseSchema
 
@@ -24,13 +25,19 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ingest", tags=["Ingestion"])
 
 
-@router.post("/trigger", response_model=IngestResponseSchema)
-async def trigger_ingestion(
-    request: IngestRequestSchema,
-    uow: Any = Depends(get_unit_of_work),
-):
+@router.post(
+    "/trigger",
+    response_model=IngestResponseSchema,
+    dependencies=[Depends(require_role("admin"))],
+)
+async def trigger_ingestion(request: IngestRequestSchema):
     """
     Trigger real-time multi-source job ingestion across ATS platforms and job boards.
+
+    Admin-only. This fans out live scrapers across seven job boards and runs
+    LLM parsing over everything they return, so an open endpoint was a free
+    lever for anyone to drain the project's Groq quota, pin the container, and
+    get the deployment's IP blocked by the boards being scraped.
     """
     try:
         from ingestion.engine import RealtimeScraperEngine
@@ -55,11 +62,11 @@ async def trigger_ingestion(
         logger.error("Failed to trigger ingestion: %s", exc, exc_info=True)
         return IngestResponseSchema(
             success=False,
-            message=f"Failed to trigger ingestion: {str(exc)}",
+            message="Ingestion could not be started. The error has been logged.",
         )
 
 
-@router.get("/runs")
+@router.get("/runs", dependencies=[Depends(get_current_user)])
 async def get_ingestion_runs(
     limit: int = 20,
     offset: int = 0,
@@ -90,7 +97,7 @@ async def get_ingestion_runs(
     }
 
 
-@router.get("/runs/{run_id}")
+@router.get("/runs/{run_id}", dependencies=[Depends(get_current_user)])
 async def get_ingestion_run_detail(
     run_id: str,
     uow: Any = Depends(get_unit_of_work),

@@ -57,10 +57,16 @@ class CompanyAgent:
 
     async def profile(self, *, company_id: str | None = None, name: str | None = None) -> dict[str, Any]:
         if company_id:
-            return _ok(await company_intel(company_id=company_id))
-        if name:
-            return _ok(await get_company(name=name))
-        return _fail("Provide either company_id or company name.")
+            result = await company_intel(company_id=company_id)
+        elif name:
+            result = await get_company(name=name)
+        else:
+            return _fail("Provide either company_id or company name.")
+        # A miss is a miss. Wrapping ``None`` as {"success": True, "data": None}
+        # told the copilot the lookup worked and left it with nothing to say.
+        if result is None:
+            return _fail(f"I could not find a company matching {name or company_id!r}.")
+        return _ok(result)
 
     async def intel(self, *, company_id: str) -> dict[str, Any]:
         return _ok(await company_intel(company_id=company_id))
@@ -72,11 +78,25 @@ class ApplicationAgent:
     async def update(
         self,
         *,
+        user_id: str,
         application_id: str,
         status: str | None = None,
         notes: str | None = None,
     ) -> dict[str, Any]:
-        return _ok(await update_application(application_id=application_id, status=status, notes=notes))
+        """Advance one of ``user_id``'s applications.
+
+        ``user_id`` is mandatory — the service scopes the row lookup by it, so
+        an agent cannot be talked into moving somebody else's application.
+        """
+        result = await update_application(
+            application_id=application_id,
+            user_id=user_id,
+            status=status,
+            notes=notes,
+        )
+        if result is None:
+            return _fail("No such application, or it is not yours.")
+        return _ok(result)
 
     async def funnel(self, *, user_id: str) -> dict[str, Any]:
         return _ok(await tracker_analytics(user_id=user_id))

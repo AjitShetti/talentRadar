@@ -18,10 +18,10 @@ from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from storage.database import AsyncSessionLocal
 from storage.models import ApplicationEvent, ApplicationStatus, Company, Job, JobApplication
-from storage.repository import UnitOfWork
 from services.base import parse_uuid
 
 logger = logging.getLogger(__name__)
@@ -40,6 +40,7 @@ _TIMESTAMP_COLUMNS: dict[str, str] = {
 async def update_application(
     *,
     application_id: str,
+    user_id: str,
     status: str | None = None,
     notes: str | None = None,
     resume_version_id: str | None = None,
@@ -50,17 +51,24 @@ async def update_application(
     Update an application's status / notes and record a status-change
     event in ``application_events`` for the timeline and analytics.
 
-    Returns the serialised application or ``None`` if not found.
+    ``user_id`` is required and scopes the lookup: without it this function
+    would happily mutate any application in the database given only its id,
+    which is exactly the shape of an IDOR once anything calls it with a
+    caller-supplied id.
+
+    Returns the serialised application, or ``None`` if it does not exist or
+    does not belong to ``user_id``.
     """
     own = session is None
     session = session or AsyncSessionLocal()
 
     try:
         app_uuid = parse_uuid(application_id)
-        if not app_uuid:
+        user_uuid = parse_uuid(user_id)
+        if not app_uuid or not user_uuid:
             return None
 
-        app = await _get_application(session, app_uuid)
+        app = await _get_application(session, app_uuid, user_uuid)
         if app is None:
             return None
 
@@ -95,14 +103,29 @@ async def update_application(
             app.cover_letter_id = parse_uuid(cover_letter_id)
 
         await session.flush()
-        return await _serialise_application(session, app)
+        payload = await _serialise_application(session, app)
+        if own:
+            # This function owns the session, so nothing else will commit it.
+            # It previously only flushed and then closed, which rolls back —
+            # every standalone call silently discarded its own write.
+            await session.commit()
+        return payload
+    except Exception:
+        if own:
+            await session.rollback()
+        raise
     finally:
         if own:
             await session.close()
 
 
-async def _get_application(session: AsyncSession, app_uuid: uuid.UUID) -> JobApplication | None:
-    stmt = select(JobApplication).where(JobApplication.id == app_uuid)
+async def _get_application(
+    session: AsyncSession, app_uuid: uuid.UUID, user_uuid: uuid.UUID
+) -> JobApplication | None:
+    stmt = select(JobApplication).where(
+        JobApplication.id == app_uuid,
+        JobApplication.user_id == user_uuid,
+    )
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
@@ -111,7 +134,10 @@ async def _serialise_application(session: AsyncSession, app: JobApplication) -> 
 
     job = None
     if app.job_id:
-        stmt = select(Job).where(Job.id == app.job_id)
+        # selectinload is required, not cosmetic: reading ``job.company`` below
+        # on a lazily-loaded relationship emits IO from sync attribute access,
+        # which asyncpg cannot do outside a greenlet (MissingGreenlet → 500).
+        stmt = select(Job).options(selectinload(Job.company)).where(Job.id == app.job_id)
         job = (await session.execute(stmt)).scalar_one_or_none()
 
     events_result = await session.execute(

@@ -14,7 +14,6 @@ from config.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_MODEL = "openai/gpt-oss-120b"
 _MAX_TOKENS = 3000
 _TEMPERATURE = 0.3
 
@@ -79,14 +78,17 @@ class ResumeTailor:
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = _DEFAULT_MODEL,
+        model: str | None = None,
     ) -> None:
         settings = get_settings()
         _key = api_key or settings.groq_api_key
         if not _key:
             raise ValueError("GROQ_API_KEY is not set.")
         self._client = Groq(api_key=_key)
-        self._model = model
+        # Model ids come from settings, not literals, so a decommissioned Groq
+        # model can be swapped from .env without a code change — this was the
+        # last hardcoded one left.
+        self._model = model or settings.groq_model
 
     def tailor(self, resume_text: str, jd_text: str) -> dict:
         """

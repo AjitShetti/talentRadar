@@ -6,7 +6,6 @@ LLM-as-a-judge agent to evaluate a candidate's resume against a job description.
 
 import json
 import logging
-import time
 from typing import Any
 
 from groq import Groq

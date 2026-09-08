@@ -15,13 +15,11 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from typing import Any
 
 from groq import AsyncGroq
 
 from agents.prompts.intent_prompt import INTENT_EXTRACTION_PROMPT
-from agents.rag_agent import RAGAgent
 from agents.state import AgentResponse, CandidateProfile, IntentType, QueryContext
 from config.settings import get_settings
 
@@ -41,8 +39,14 @@ class Orchestrator:
 
     def __init__(self):
         settings = get_settings()
+        self._settings = settings
         self._groq = AsyncGroq(api_key=settings.groq_api_key)
-        self._rag_agent = RAGAgent()
+        # No RAGAgent here. An Orchestrator is built per request, and
+        # constructing a RAGAgent opens a ChromaDB client and loads an
+        # embedding function - so merely classifying "hello" paid for a
+        # Chroma connection, and a Chroma outage surfaced as a *intent
+        # classification* failure. node_rag_retrieve builds its own when
+        # retrieval is actually the answer.
 
     async def process_query(self, query: str, **kwargs: Any) -> AgentResponse:
         """
@@ -203,7 +207,7 @@ class Orchestrator:
         prompt = INTENT_EXTRACTION_PROMPT.format(query=query)
 
         response = await self._groq.chat.completions.create(
-            model="openai/gpt-oss-20b",
+            model=self._settings.groq_fast_model,
             messages=[
                 {"role": "system", "content": "You must output a valid JSON object. No markdown formatting or extra text."},
                 {"role": "user", "content": prompt},

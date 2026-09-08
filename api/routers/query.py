@@ -23,6 +23,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/query", tags=["Query"])
 
 
+# Registered on both "" and "/". api/main.py advertises this endpoint as
+# ``POST /api/v1/query``, and with only the "/" form FastAPI answered that
+# path with a 307 to the trailing-slash version — which costs a cross-origin
+# caller a second CORS preflight and is dropped outright by clients that do
+# not follow redirects on POST.
+@router.post("", response_model=QueryResponseSchema, include_in_schema=False)
 @router.post("/", response_model=QueryResponseSchema)
 async def process_query(request: QueryRequestSchema):
     """

@@ -24,8 +24,13 @@ from typing import Any, TypedDict
 # The graph uses this constant to guard against infinite loops.
 MAX_FOLLOWUPS_PER_QUESTION: int = 1
 
-# Maximum questions before the session is force-ended regardless of timer.
-MAX_QUESTIONS_PER_SESSION: int = 15
+# Maximum questions before the session is force-ended.
+#
+# Each question costs two Groq calls (generate + evaluate), so 15 meant a
+# 30-call session that reliably tripped free-tier rate limits partway through
+# and left the user staring at fallback questions. Eight is a realistic
+# practice round; the user can always start another.
+MAX_QUESTIONS_PER_SESSION: int = 8
 
 
 class InterviewAgentState(TypedDict, total=False):

@@ -16,7 +16,7 @@ import logging
 from typing import Any
 
 from groq import AsyncGroq
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from config.settings import get_settings
 
@@ -35,10 +35,30 @@ def get_llm() -> AsyncGroq:
     return AsyncGroq(api_key=settings.groq_api_key)
 
 
+def _is_retryable(exc: BaseException) -> bool:
+    """Only retry failures a retry can plausibly fix.
+
+    Retrying every exception meant a bad API key, a decommissioned model or a
+    malformed request each burned three attempts with exponential backoff -
+    over twenty seconds of the user waiting for an answer that was never
+    coming. Rate limits and transient server/network errors are worth another
+    go; a 4xx that is not a 429 is not.
+    """
+    status_code = getattr(exc, "status_code", None)
+    if status_code is None:
+        response = getattr(exc, "response", None)
+        status_code = getattr(response, "status_code", None)
+    if isinstance(status_code, int):
+        return status_code == 429 or status_code >= 500
+    # No status at all: a connection reset or timeout. Worth retrying.
+    return isinstance(exc, (ConnectionError, TimeoutError, OSError))
+
+
 @retry(
-    retry=retry_if_exception_type(Exception),
+    retry=retry_if_exception(_is_retryable),
     stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=2, max=20),
+    # Capped so a retrying call cannot hold a request open for half a minute.
+    wait=wait_exponential(multiplier=1, min=1, max=6),
     reraise=True,
 )
 async def _chat(

@@ -16,8 +16,6 @@ import logging
 from fastapi import APIRouter, HTTPException, status
 
 
-from agents.orchestrator import Orchestrator
-from agents.state import CandidateProfile
 from agents.learning_path import LearningPathGenerator
 from api.schemas.query_schemas import MatchRequestSchema, MatchResponseSchema
 from api.schemas.ai_core_schemas import GenerateLearningPathRequest, GenerateLearningPathResponse
@@ -75,4 +73,4 @@ async def generate_learning_path(request: GenerateLearningPathRequest):
         return GenerateLearningPathResponse(learning_path_markdown=markdown)
     except Exception as e:
         logger.error("Failed to generate learning path", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Could not generate a learning path.") from e

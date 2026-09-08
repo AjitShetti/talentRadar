@@ -16,7 +16,6 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -93,8 +92,12 @@ async def list_applications(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> ApplicationListResponseSchema:
+    # Eager-load the job and its company in the same round trip. Fetching
+    # them per row inside the loop below issued two queries per application,
+    # so a 50-row tracker cost ~100 sequential round trips to render.
     q = (
         select(JobApplication)
+        .options(selectinload(JobApplication.job).selectinload(Job.company))
         .where(JobApplication.user_id == uuid.UUID(user_id))
         .order_by(JobApplication.created_at.desc())
         .limit(limit)
@@ -109,10 +112,7 @@ async def list_applications(
     result = await db.execute(q)
     apps = result.scalars().all()
 
-    responses = []
-    for app in apps:
-        job = await _get_job(db, app.job_id) if app.job_id else None
-        responses.append(_app_to_response(app, job))
+    responses = [_app_to_response(app, app.job) for app in apps]
 
     count_q = select(func.count()).select_from(JobApplication).where(JobApplication.user_id == uuid.UUID(user_id))
     total = (await db.execute(count_q)).scalar() or 0

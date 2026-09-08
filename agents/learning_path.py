@@ -5,7 +5,6 @@ Generates a structured learning path based on missing skills using Groq.
 """
 
 import logging
-from typing import Any
 
 from groq import Groq
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential

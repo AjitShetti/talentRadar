@@ -17,7 +17,6 @@ import hashlib
 import json
 import logging
 import time
-import uuid
 from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
@@ -26,7 +25,7 @@ from sqlalchemy import select
 
 from services.base import as_list, parse_uuid
 from storage.database import AsyncSessionLocal
-from storage.models import LearningTask, Skill, UserSkill
+from storage.models import LearningTask, UserSkill
 
 logger = logging.getLogger(__name__)
 
