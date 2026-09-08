@@ -9,6 +9,7 @@ import { api, Job, signedIn } from '@/lib/api'
 import { usePersistentState } from '@/lib/persistent-state'
 import { SuggestionProfile, pickSuggestions } from '@/lib/search-suggestions'
 import { EXPERIENCE_BANDS, INDIAN_CITIES, bandForYears, matchCity } from '@/lib/filters'
+import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 
 type FilterProfile = SuggestionProfile & { years_experience?: unknown; is_remote_preferred?: unknown }
 
@@ -143,7 +144,7 @@ export default function SearchPage() {
           <div className="chips">{(job.skills || []).slice(0, 5).map(skill => <span key={skill}>{skill}</span>)}</div>
           <div className="job-actions">
             <button className="outline-button" onClick={() => save(job)} disabled={saved.includes(job.id)}><Bookmark size={14}/>{saved.includes(job.id) ? 'Saved' : 'Save to tracker'}</button>
-            {job.source_url && <a className="text-button" href={job.source_url} target="_blank">View original <ExternalLink size={14}/></a>}
+            {externalHref(job.source_url) && <a className="text-button" href={externalHref(job.source_url)!} {...EXTERNAL_LINK_PROPS}>View original <ExternalLink size={14}/></a>}
           </div>
         </article>)}
       </section>

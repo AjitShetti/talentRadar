@@ -57,23 +57,32 @@ dependencies = [
     # --- LLM API client ---
     "groq>=0.9.0,<1.0.0",
 
-    # --- Vector store & embeddings ---
+    # --- Document parsing & PDF rendering ---
     "python-docx>=1.1.0",
+    # PyMuPDF reads uploaded resumes *and*, since the vector store moved to
+    # pgvector, renders the resume PDF when there is no TeX Live install —
+    # see api/utils/pdf_renderer.py.
     "pymupdf>=1.23.0",
+
+    # --- Embeddings ---
+    # chromadb is here for its embedding function only: DefaultEmbeddingFunction
+    # is all-MiniLM-L6-v2 under ONNX Runtime, with no PyTorch behind it. The
+    # Chroma *server* is no longer part of the deployment — embeddings live in
+    # Postgres via pgvector (VECTOR_BACKEND=pgvector, the default), and the
+    # ChromaJobStore backend remains only for self-hosted installs that
+    # already run one.
     "chromadb>=0.5.0,<1.0.0",
-    "sentence-transformers>=3.0.0,<4.0.0",  # all-MiniLM-L6-v2 embeddings + cross-encoder reranker
-    "torch>=2.3.0,<3.0.0",
 
     # --- Search & scraping (ingestion) ---
-    "scrapling>=0.3.0",
-    "curl-cffi>=0.7.0",
-    "patchright>=1.60.0",
-    "camoufox>=0.5.0",
+    # Note: scrapling and its TLS-impersonation fetcher are in the [stealth]
+    # extra, not here — `scrapling.fetchers` imports playwright *and*
+    # patchright at module level, so it cannot be installed without the
+    # browser stack. ingestion/scrapling_manager.py already treats it as
+    # optional and falls back to httpx with browser-like headers.
     "tavily-python>=0.5.0,<1.0.0",
     "beautifulsoup4>=4.12.0,<5.0.0",
     "httpx>=0.27.0,<1.0.0",
     "lxml>=5.2.0,<7.0.0",
-    "duckduckgo-search>=5.0.0",
 
     # --- Authentication & security ---
     "python-jose[cryptography]>=3.3.0,<4.0.0",
@@ -84,12 +93,7 @@ dependencies = [
     "redis>=5.0.0,<6.0.0",
     "apscheduler>=3.10.0,<4.0.0",  # in-process cron for the daily job-match scan
 
-    # --- Google Cloud (optional blob storage) ---
-    "google-cloud-storage>=2.17.0,<3.0.0",
-
-    # --- Machine learning (optional XGBoost scorer) ---
-    "xgboost>=2.1.0,<3.0.0",
-    "scikit-learn>=1.5.0,<2.0.0",
+    # --- Numerics (used directly by ml/scorers.py) ---
     "numpy>=1.26.0,<2.0.0",
 
     # --- Logging & observability ---
@@ -114,6 +118,56 @@ dependencies = [
 # Development dependencies (testing, linting, tooling)
 # ===========================================================================
 [project.optional-dependencies]
+
+# ---------------------------------------------------------------------------
+# Deployment-weight extras
+# ---------------------------------------------------------------------------
+# These were core dependencies until the free-tier deploy work. Each one is
+# either large enough to price the image out of a free build tier, or unused
+# by any import path. Nothing in the default install depends on them, and the
+# code paths that can use them degrade cleanly when they are absent.
+
+# --- Semantic scoring via PyTorch (~1 GB installed) ---
+# ml/scorers.py's SemanticScorer prefers sentence-transformers and falls back
+# to the same all-MiniLM-L6-v2 weights under ONNX Runtime when it is missing:
+# same model, same scores, no torch. Install this only if you specifically
+# want the torch implementation.
+semantic = [
+    "sentence-transformers>=3.0.0,<4.0.0",
+    "torch>=2.3.0,<3.0.0",
+]
+
+# --- Browser-driven scraping (~300 MB, plus a Firefox download) ---
+# The whole impersonation stack, which is one unit whether you want the
+# browser or not: `scrapling.fetchers` imports both playwright and patchright
+# at module level, so its TLS/HTTP2 impersonation tier cannot be had without
+# them. Camoufox on top launches a real headless Firefox per call, which OOMs
+# a 512 MB instance, and the sources it reaches (Naukri, Indeed India,
+# Instahyre) forbid that in their terms.
+#
+# Without this extra, ingestion/scrapling_manager.py falls back to httpx with
+# browser-like headers — fine for the ATS JSON APIs and static boards, weaker
+# against Cloudflare-protected ones. The Camoufox tier is *additionally*
+# gated by ENABLE_STEALTH_SCRAPERS, which defaults to false: installing this
+# extra alone does not switch the headless browser on.
+stealth = [
+    "scrapling>=0.3.0",
+    "curl-cffi>=0.7.0",
+    "playwright>=1.40.0",
+    "patchright>=1.60.0",
+    "camoufox>=0.5.0",
+]
+
+# --- Declared but never imported ---
+# Kept installable so nothing that referenced them breaks, but out of the
+# default install: `grep -r` finds these only inside skill-taxonomy string
+# lists, never in an import.
+unused = [
+    "google-cloud-storage>=2.17.0,<3.0.0",
+    "xgboost>=2.1.0,<3.0.0",
+    "scikit-learn>=1.5.0,<2.0.0",
+    "duckduckgo-search>=5.0.0",
+]
 
 # --- Testing ---
 dev = [
@@ -172,7 +226,7 @@ docs = [
 
 # --- All development deps combined ---
 all = [
-    "talentRadar[dev,lint,docs]",
+    "talentRadar[dev,lint,docs,semantic,stealth]",
 ]
 
 # ===========================================================================
@@ -254,6 +308,9 @@ plugins = ["pydantic.mypy"]
 [[tool.mypy.overrides]]
 module = [
     "chromadb.*",
+    "fitz.*",          # PyMuPDF ships no py.typed marker
+    "camoufox.*",      # optional [stealth] extra — absent in a default install
+    "scrapling.*",
     "tavily.*",
     "ragas.*",
     "slowapi.*",

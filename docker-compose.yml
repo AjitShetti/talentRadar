@@ -3,7 +3,11 @@ services:
   # DATA LAYER
   # ─────────────────────────────────────────────────────────────────────────────
   postgres:
-    image: postgres:15-alpine
+    # pgvector's image, not stock postgres: job embeddings live in this
+    # database now (migration 010) rather than in a ChromaDB container, and
+    # `CREATE EXTENSION vector` needs the extension to be installed. Same
+    # PostgreSQL 15 data directory, so an existing volume keeps working.
+    image: pgvector/pgvector:pg15
     container_name: talentradar-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-talentRadar}
@@ -38,21 +42,12 @@ services:
     networks:
       - talentradar-net
 
-  chromadb:
-    image: chromadb/chroma:0.6.3
-    container_name: talentradar-chromadb
-    environment:
-      CHROMA_SERVER_HTTP_HOST: 0.0.0.0
-      CHROMA_SERVER_HTTP_PORT: 8000
-      ANONYMIZED_TELEMETRY: "False"
-      IS_PERSISTENT: "True"
-    ports:
-      - "8001:8000" # Mapped to 8001 per README table
-    volumes:
-      - chroma_data:/chroma/chroma
-    restart: unless-stopped
-    networks:
-      - talentradar-net
+  # There is no chromadb service any more. Embeddings are rows in the
+  # postgres service above (see storage/migrations/versions/010_*), which is
+  # what makes a free managed deploy possible: Neon and Supabase both ship
+  # pgvector, and neither Chroma Cloud nor a self-hosted Chroma with its
+  # persistent volume has a free equivalent. To run the old backend anyway,
+  # set VECTOR_BACKEND=chroma and add the service back.
 
   # ─────────────────────────────────────────────────────────────────────────────
   # APPLICATION LAYER
@@ -70,16 +65,13 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       REDIS_URL: redis://redis:6379/0
-      CHROMA_HOST: chromadb
-      CHROMA_PORT: 8000
+      VECTOR_BACKEND: pgvector
       PYTHONPATH: /app
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      chromadb:
-        condition: service_started
     volumes:
       - ./api:/app/api
       - ./services:/app/services
@@ -128,9 +120,6 @@ volumes:
   redis_data:
     external: true
     name: talentradar_redis_data
-  chroma_data:
-    external: true
-    name: talentradar_chroma_data
 
 networks:
   talentradar-net:

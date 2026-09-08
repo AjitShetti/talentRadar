@@ -9,6 +9,7 @@ import CopilotWorkspace from '@/components/CopilotWorkspace'
 import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
 import { ActivityItem, AgendaItem, api, Briefing, JobMatch, SkillsFocus } from '@/lib/api'
+import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 
 type Dimension = { key: string; label: string; score: number; weakest: boolean }
 type TrackStat = { track: string; label: string; score: number; sessions: number }
@@ -99,7 +100,9 @@ function buildBoard(
       time: '—',
       tone: rows.length === 0 ? 'next' : 'idle',
       title: `Apply to ${matches[0].title}`,
-      detail: `${matches[0].company || 'Company not listed'} — and ${matches.length - 1} other match${matches.length === 2 ? '' : 'es'} for your target roles.`,
+      detail: matches.length === 1
+        ? `${matches[0].company || 'Company not listed'} — your only new match for your target roles today.`
+        : `${matches[0].company || 'Company not listed'} — and ${matches.length - 1} other match${matches.length === 2 ? '' : 'es'} for your target roles.`,
       code: `${matches.length} match${matches.length === 1 ? '' : 'es'}`,
       href: '#apply',
     })
@@ -263,7 +266,7 @@ export default function Dashboard() {
                 {job.salary_raw && <span>{job.salary_raw}</span>}
               </div>
               {job.skills.length > 0 && <div className="chips">{job.skills.slice(0, 5).map(skill => <span key={skill}>{skill}</span>)}</div>}
-              {job.source_url && <div className="job-actions"><a className="text-button" href={job.source_url} target="_blank">View original <ExternalLink size={14}/></a></div>}
+              {externalHref(job.source_url) && <div className="job-actions"><a className="text-button" href={externalHref(job.source_url)!} {...EXTERNAL_LINK_PROPS}>View original <ExternalLink size={14}/></a></div>}
             </article>)}</div>
           : <p className="muted-copy">No new openings for {targetRoles.slice(0, 2).join(' / ')} today — check back tomorrow.</p>}
       </section>}

@@ -4,7 +4,7 @@ TalentRadar is an AI-powered job intelligence platform that ingests job postings
 
 ## Key Features
 
-- **Semantic Job Search**: Natural language queries powered by vector embeddings and ChromaDB.
+- **Semantic Job Search**: Natural language queries powered by vector embeddings stored in PostgreSQL via pgvector.
 - **AI-Powered Insights**: LLM-generated summaries and market analysis using Groq (Llama 3.1).
 - **Smart Candidate Matching**: ML scoring based on skills, seniority, and location.
 - **Real-Time Market Trends**: Skill demands, salary insights, geographic distribution.
@@ -14,7 +14,7 @@ TalentRadar is an AI-powered job intelligence platform that ingests job postings
 
 - **Language**: Python 3.11+
 - **Framework**: FastAPI (Backend), Next.js 14 (Frontend)
-- **Database**: PostgreSQL 15 (Relational), ChromaDB (Vector)
+- **Database**: PostgreSQL 15 — relational tables and vector embeddings (pgvector)
 - **Background Jobs**: Celery & Redis 7
 - **AI/ML**: LangGraph, LangChain, Groq, Sentence Transformers
 - **Styling**: Tailwind CSS, Lucide Icons
@@ -103,7 +103,7 @@ talentRadar/
 ### Data Flow
 
 ```
-User Query -> Next.js Frontend -> FastAPI Endpoint -> LangGraph Agent -> ChromaDB (Retrieval) / Groq LLM (Generation) -> Response -> Frontend
+User Query -> Next.js Frontend -> FastAPI Endpoint -> LangGraph Agent -> pgvector (Retrieval) / Groq LLM (Generation) -> Response -> Frontend
 ```
 
 ### Key Components
@@ -133,13 +133,25 @@ User Query -> Next.js Frontend -> FastAPI Endpoint -> LangGraph Agent -> ChromaD
 | `POSTGRES_DB` | PostgreSQL database name | `talentRadar` |
 | `JWT_SECRET_KEY` | JWT signing secret | - |
 
+Hosted Postgres hands out one DSN rather than five fields: set `DATABASE_URL`
+and it wins over the `POSTGRES_*` values above.
+
 ### Optional
 
 | Variable | Description | Default |
 | --- | --- | --- |
+| `DATABASE_URL` | Full Postgres DSN; overrides the discrete fields | - |
+| `POSTGRES_SSL` | Require TLS on the database connection | `false` |
+| `VECTOR_BACKEND` | `pgvector`, `chroma`, or `none` (no embeddings loaded) | `pgvector` |
+| `TRUSTED_PROXY_HOPS` | Proxies in front of the API; **must be 1 behind a PaaS** | `0` |
+| `ENABLE_STEALTH_SCRAPERS` | Headless-browser scrapers (needs `.[stealth]`) | `false` |
+| `PDF_ENGINE` | `auto`, `latex`, or `builtin` resume PDF rendering | `auto` |
+| `ENABLE_SCHEDULER` | In-process daily job-match scan | `true` |
 | `LOG_LEVEL` | Logging verbosity | `INFO` |
-| `DEBUG` | FastAPI debug mode | `false` |
+| `DEBUG` | Opens `/docs` and the localhost CORS wildcard — never in production | `false` |
 | `RATE_LIMIT_PER_MINUTE` | Max requests per minute per IP | `60` |
+
+See [.env.example](.env.example) for the full annotated list.
 
 ## Available Scripts
 
@@ -173,29 +185,27 @@ python tests/test_pipeline_e2e.py --quick
 
 ## Deployment
 
-### Docker
+**[DEPLOY.md](DEPLOY.md) is the runbook.** The target is a stack that costs
+nothing: Neon (Postgres + pgvector), Render (the API, from `render.yaml`),
+Vercel (the frontend), Groq (the LLM). Check readiness before you start:
 
-Build and run manually:
+```bash
+python -m scripts.verify_deploy    # settings, DB, pgvector, migrations, model
+```
+
+### Docker
 
 ```bash
 docker build -t talentradar-api -f infra/Dockerfile .
 docker run -p 8000:8000 --env-file .env talentradar-api
 ```
 
-### Google Cloud Run
-
-```bash
-# Build and push
-gcloud builds submit --tag gcr.io/YOUR_PROJECT/talentradar-api .
-
-# Deploy
-gcloud run deploy talentradar-api \
-  --image gcr.io/YOUR_PROJECT/talentradar-api \
-  --platform managed \
-  --region us-central1 \
-  --allow-unauthenticated \
-  --set-env-vars POSTGRES_HOST=your-db,POSTGRES_PASSWORD=your-pass,GROQ_API_KEY=your-key
-```
+The default image deliberately leaves out PyTorch, TeX Live and the Camoufox
+browser — together well over two gigabytes, and none of them required: the
+semantic scorer runs the same model under ONNX, resume PDFs render through
+PyMuPDF, and the browser-driven scrapers are off. Add any of them back with
+`--build-arg INSTALL_SEMANTIC=true`, `INSTALL_TEXLIVE=true`,
+`INSTALL_STEALTH=true`.
 
 ## Troubleshooting
 

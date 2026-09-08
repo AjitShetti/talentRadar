@@ -7,6 +7,7 @@ import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
 import { api, Application } from '@/lib/api'
 import { usePersistentState } from '@/lib/persistent-state'
+import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 
 // Must stay in sync with ApplicationStatus in storage/models.py — the PATCH
 // endpoint rejects anything outside the enum, and a filter tab that names a
@@ -99,8 +100,8 @@ export default function ApplicationsPage() {
                 {statuses.map(status => <option value={status} key={status}>{label(status)}</option>)}
               </select>
               <span className="application-date">Saved {new Date(app.created_at).toLocaleDateString()}</span>
-              {app.job?.source_url
-                ? <a href={app.job.source_url} target="_blank" className="row-arrow"><ExternalLink size={16}/></a>
+              {externalHref(app.job?.source_url)
+                ? <a href={externalHref(app.job?.source_url)!} {...EXTERNAL_LINK_PROPS} className="row-arrow"><ExternalLink size={16}/></a>
                 : <span />}
               <button className="row-arrow danger" onClick={() => remove(app.id)}><Trash2 size={16}/></button>
             </article>)}</div>}

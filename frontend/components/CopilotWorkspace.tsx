@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { AgentMemory, api, ChatJob, LearningPlan, LearningTask } from '@/lib/api'
 import { usePersistentState } from '@/lib/persistent-state'
+import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 
 type Turn = { role: 'user' | 'assistant'; content: string; jobs?: ChatJob[]; intent?: string }
 
@@ -26,7 +27,7 @@ function JobResult({ job }: { job: ChatJob }) {
     </div>}
     <div className="cp-job-actions">
       <Link href="/search" className="text-button">Open in search <ArrowRight size={12}/></Link>
-      {job.source_url && <a href={job.source_url} target="_blank" rel="noreferrer" className="text-button">
+      {externalHref(job.source_url) && <a href={externalHref(job.source_url)!} {...EXTERNAL_LINK_PROPS} className="text-button">
         Posting <ExternalLink size={12}/>
       </a>}
     </div>
@@ -68,7 +69,7 @@ function LearningPlanList({ plan, onClear }: { plan: LearningPlan; onClear: () =
       {task.description && <p>{task.description}</p>}
       {(task.resources?.length ?? 0) > 0 && <div className="cp-plan-links">
         {task.resources!.map(resource => resource.startsWith('http')
-          ? <a key={resource} href={resource} target="_blank" rel="noreferrer">
+          ? <a key={resource} href={externalHref(resource)!} {...EXTERNAL_LINK_PROPS}>
               {hostOf(resource)} <ExternalLink size={11}/>
             </a>
           : <span key={resource}>{resource}</span>)}
