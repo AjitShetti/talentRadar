@@ -124,10 +124,18 @@ services:
     dockerContext: ./frontend
     autoDeploy: true
     envVars:
-      # Inlined into the client bundle at build time by the frontend
-      # Dockerfile's ARG — Render exposes service env vars as build args.
+      # The public URL of the API service, e.g.
+      # https://talentradar-api.onrender.com — Render prints it as soon as
+      # that service is created.
+      #
+      # Prompted rather than wired with fromService, for two reasons. The
+      # schema has no `url` property (only host, port, hostport and
+      # connectionString), and `host` would be the wrong value anyway: it is
+      # the private network hostname, reachable only from inside Render.
+      # NEXT_PUBLIC_* is inlined into the client bundle and called from the
+      # visitor's browser, so it has to be the public https:// URL.
+      #
+      # Because it is baked in at build time, changing it later needs a
+      # rebuild of this service, not just a restart.
       - key: NEXT_PUBLIC_API_URL
-        fromService:
-          type: web
-          name: talentradar-api
-          property: url
+        sync: false

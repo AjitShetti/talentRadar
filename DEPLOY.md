@@ -147,8 +147,11 @@ fresh by Render instead of inheriting a development value.
    redeploy the API. Until you do, the browser blocks every response.
 
 **Or on Render**: the blueprint already defines `talentradar-web`, which
-builds `frontend/Dockerfile` and wires `NEXT_PUBLIC_API_URL` to the API
-service automatically. Nothing else to do.
+builds `frontend/Dockerfile`. It will prompt you for `NEXT_PUBLIC_API_URL` —
+paste the API service's public URL (`https://talentradar-api.onrender.com`).
+Render's `fromService` cannot supply this: it exposes only `host`, which is
+the *private* network hostname, and this value is inlined into the client
+bundle and fetched from the visitor's browser.
 
 ## 4. Seed some data
 
