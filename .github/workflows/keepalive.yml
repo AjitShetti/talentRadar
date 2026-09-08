@@ -1,0 +1,57 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Keep the free Render instance awake
+# ─────────────────────────────────────────────────────────────────────────────
+# Render's free plan spins a web service down after 15 minutes with no traffic,
+# and the next request then pays a ~40 second cold start. A periodic request
+# keeps it resident.
+#
+# Two things this deliberately does *not* do:
+#
+#   * It pings /health, which touches nothing. Any endpoint that queried
+#     Postgres would also wake Neon's compute on every tick, and Neon's free
+#     plan bills compute hours — you would trade a Render limit for a Neon one.
+#   * It does not run every 5 minutes. Render's free plan allows 750 instance
+#     hours a month across all free services; a month is ~730 hours, so one
+#     always-on service just fits and a second one does not. If the blueprint's
+#     `talentradar-web` service is still running, suspend it or this will run
+#     out partway through the month.
+#
+# GitHub's scheduled runs are best-effort and are often late under load, which
+# is why the interval is 10 minutes rather than 14 — a couple of skipped ticks
+# still land inside the window. If you want tighter timing, an external monitor
+# (cron-job.org, UptimeRobot) fires more reliably than cron here does.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: keepalive
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+# Never let a backlog of late runs pile up on top of each other.
+concurrency:
+  group: keepalive
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping the API
+        env:
+          # Override in repo Settings → Variables if the service is renamed.
+          URL: ${{ vars.KEEPALIVE_URL || 'https://talentradar-api.onrender.com/health' }}
+        run: |
+          # --max-time 90 because a cold start is slow but not a failure: if
+          # the ping happens to land on a sleeping instance, waking it is
+          # precisely the point.
+          code=$(curl -sS -o /tmp/body -w '%{http_code}' --max-time 90 \
+                   --retry 2 --retry-delay 10 --retry-connrefused "$URL")
+          echo "HTTP $code"
+          cat /tmp/body
+          echo
+          # A non-200 means the service is down rather than merely asleep, and
+          # that is worth a red run in the Actions tab.
+          test "$code" = "200"
