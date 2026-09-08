@@ -11,12 +11,10 @@ profiles, plus cosine similarity computation for matching.
 from __future__ import annotations
 
 import logging
-from typing import Sequence
+from functools import lru_cache
 
-import chromadb
 from chromadb.utils import embedding_functions
 
-from config.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +22,14 @@ logger = logging.getLogger(__name__)
 _DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
 
+@lru_cache(maxsize=1)
 def get_embedding_function() -> embedding_functions.DefaultEmbeddingFunction:
-    """Return a ChromaDB embedding function instance."""
+    """Return the process-wide ChromaDB embedding function.
+
+    Cached deliberately. ``DefaultEmbeddingFunction()`` loads the MiniLM ONNX
+    model on construction, so calling it per request (which ``embed_texts``
+    did, on the hot search path) re-initialised the model every single time.
+    """
     return embedding_functions.DefaultEmbeddingFunction()
 
 

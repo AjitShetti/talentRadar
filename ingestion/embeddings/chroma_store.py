@@ -13,17 +13,25 @@ by passing ``embedding_fn`` to ``ChromaJobStore.__init__``.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from typing import Any
 
 import chromadb
-from chromadb.utils import embedding_functions
 
 from config.settings import get_settings
+from ingestion.embeddings.embedder import get_embedding_function
 
 logger = logging.getLogger(__name__)
 
 _COLLECTION_NAME = "job_descriptions"
+
+#: Cached store, plus when a failed connection was last attempted.
+_store: "ChromaJobStore | None" = None
+_store_checked_at: float | None = None
+#: How long to wait before re-probing a Chroma server that was unreachable.
+_STORE_RETRY_SECONDS = 60.0
 
 
 class ChromaJobStore:
@@ -56,9 +64,12 @@ class ChromaJobStore:
 
         self._client = chromadb.HttpClient(host=_host, port=_port)
 
-        # Default: all-MiniLM-L6-v2 (chromadb downloads on first use)
-        _emb_fn = embedding_fn or embedding_functions.DefaultEmbeddingFunction()
+        # Default: all-MiniLM-L6-v2 (chromadb downloads on first use).
+        # Comes from the cached accessor: DefaultEmbeddingFunction() loads an
+        # ONNX model, so constructing one per store was a real per-request cost.
+        _emb_fn = embedding_fn or get_embedding_function()
 
+        self._embedding_fn = _emb_fn
         self._collection = self._client.get_or_create_collection(
             name=_COLLECTION_NAME,
             embedding_function=_emb_fn,
@@ -162,24 +173,60 @@ class ChromaJobStore:
         list[dict]
             Each dict has: ``id``, ``document``, ``metadata``, ``distance``.
         """
+        # ``n_results`` is a ceiling, not a demand: chroma returns fewer when
+        # the collection is smaller. The old ``min(n_results, self.count())``
+        # spent a whole extra HTTP round trip per search to learn that, and
+        # collapsed to n_results=1 on an empty collection.
         kwargs: dict[str, Any] = {
             "query_texts": [query],
-            "n_results": min(n_results, self.count() or 1),
+            "n_results": max(1, n_results),
         }
         if where:
             kwargs["where"] = where
 
-        results = self._collection.query(**kwargs)
+        try:
+            results = self._collection.query(**kwargs)
+        except Exception as exc:
+            # A missing/unreachable collection must degrade to "no matches",
+            # not take the whole search endpoint down with it.
+            logger.warning("ChromaDB query failed: %s", exc)
+            return []
+
+        ids = (results.get("ids") or [[]])[0]
+        documents = (results.get("documents") or [[]])[0]
+        metadatas = (results.get("metadatas") or [[]])[0]
+        distances = (results.get("distances") or [[]])[0]
 
         output: list[dict[str, Any]] = []
-        for i, doc_id in enumerate(results["ids"][0]):
+        for i, doc_id in enumerate(ids):
             output.append({
                 "id": doc_id,
-                "document": results["documents"][0][i],
-                "metadata": results["metadatas"][0][i],
-                "distance": results["distances"][0][i],
+                "document": documents[i] if i < len(documents) else "",
+                "metadata": metadatas[i] if i < len(metadatas) else {},
+                "distance": distances[i] if i < len(distances) else 1.0,
             })
         return output
+
+    async def asearch(
+        self,
+        query: str,
+        *,
+        n_results: int = 10,
+        where: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Async form of :meth:`search`.
+
+        chromadb's client is synchronous and talks HTTP, so calling it from a
+        request handler blocks the event loop for every other user. The
+        pgvector backend implements this natively; here it is a thread.
+        """
+        return await asyncio.to_thread(
+            lambda: self.search(query, n_results=n_results, where=where)
+        )
+
+    async def aadd_batch(self, items: list[dict[str, Any]]) -> int:
+        """Async form of :meth:`add_batch` — see :meth:`asearch`."""
+        return await asyncio.to_thread(self.add_batch, items)
 
     def get(self, job_id: str) -> dict[str, Any] | None:
         """Fetch a single stored document by its ID."""
@@ -207,8 +254,51 @@ class ChromaJobStore:
     def reset_collection(self) -> None:
         """⚠️ Drop and recreate the collection. Use only in tests."""
         self._client.delete_collection(_COLLECTION_NAME)
+        # Recreate with the *same* embedding function. Omitting it silently
+        # rebound the collection to chromadb's default, so a store constructed
+        # with a custom embedding_fn stopped using it after a reset.
         self._collection = self._client.get_or_create_collection(
             name=_COLLECTION_NAME,
+            embedding_function=self._embedding_fn,
             metadata={"hnsw:space": "cosine"},
         )
         logger.warning("ChromaDB collection '%s' was reset.", _COLLECTION_NAME)
+
+
+def get_chroma_store() -> ChromaJobStore | None:
+    """Process-wide :class:`ChromaJobStore`, or ``None`` if Chroma is down.
+
+    Two jobs:
+
+    * **Cache.** Constructing a store opens an HTTP client and binds an ONNX
+      embedding model. A ``RAGAgent`` is built per query, so doing that per
+      request was a large, invisible cost on the search path.
+    * **Degrade, do not crash.** ``chromadb.HttpClient`` pings the server in
+      its constructor and raises if it cannot reach one. That exception used
+      to escape ``RAGAgent.__init__`` — outside the ``try`` in
+      ``search_jobs`` — so a Chroma outage 500'd every semantic search
+      instead of falling through to the PostgreSQL fallback that
+      ``_search_db_fallback`` already implements. Returning ``None`` here
+      makes the vector store genuinely optional.
+
+    The failed lookup is *not* cached permanently: it is retried once the
+    retry window elapses, so a Chroma container that comes up later is picked
+    up without a redeploy.
+    """
+    global _store, _store_checked_at
+
+    now = time.monotonic()
+    if _store is not None:
+        return _store
+    if _store_checked_at is not None and now - _store_checked_at < _STORE_RETRY_SECONDS:
+        return None
+
+    _store_checked_at = now
+    try:
+        _store = ChromaJobStore()
+    except Exception as exc:
+        logger.warning(
+            "ChromaDB unavailable (%s) - semantic search will fall back to PostgreSQL", exc
+        )
+        return None
+    return _store

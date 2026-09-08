@@ -8,7 +8,6 @@ Deletes contaminated job records (Wikipedia, Reddit, search listing pages)
 and orphaned company records generated from the stale seed corpus.
 """
 from alembic import op
-import sqlalchemy as sa
 
 revision = "005_purge_bad_seeded_data"
 down_revision = "004_career_platform_models"

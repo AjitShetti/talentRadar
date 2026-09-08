@@ -23,12 +23,29 @@ settings = get_settings()
 # ---------------------------------------------------------------------------
 # Engine
 # ---------------------------------------------------------------------------
+def _connect_args() -> dict[str, object]:
+    """asyncpg connect kwargs.
+
+    asyncpg ignores libpq's ``sslmode=`` query parameter, so a Neon/Supabase
+    DSN that carries one still tries to connect in the clear and is refused.
+    TLS has to be requested through connect_args instead.
+    """
+    dsn = settings.database_url
+    wants_tls = settings.postgres_ssl or "sslmode=require" in dsn or "ssl=true" in dsn
+    return {"ssl": "require"} if wants_tls else {}
+
+
+# Pool sizing is per process, and the real ceiling is
+# (pool_size + max_overflow) x worker count. Free Postgres tiers allow far
+# fewer connections than the old 10+20 asked for across four workers.
 engine = create_async_engine(
     settings.database_url,
     echo=False,          # set True only for debugging SQL
     pool_pre_ping=True,  # gracefully reconnect after idle disconnects
-    pool_size=10,
-    max_overflow=20,
+    pool_size=settings.db_pool_size,
+    max_overflow=settings.db_max_overflow,
+    pool_recycle=1800,   # hosted Postgres drops idle connections inside an hour
+    connect_args=_connect_args(),
 )
 
 # ---------------------------------------------------------------------------
