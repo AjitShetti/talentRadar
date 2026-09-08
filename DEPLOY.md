@@ -79,11 +79,25 @@ fresh by Render instead of inheriting a development value.
    > Render's `preDeployCommand` is a paid feature, which is why this is a
    > manual step rather than part of the deploy.
 
+   **Use the pooled (`-pooler`) endpoint.** It is the right choice on a free
+   tier — Neon's pooler is what keeps a handful of app connections from
+   exhausting the project's budget — and the usual objection does not apply
+   here: asyncpg's prepared-statement cache is what normally breaks against a
+   transaction-mode pooler, and 32 concurrent vector searches through Neon's
+   pooler ran clean. No `statement_cache_size=0` workaround is needed.
+
 4. Check it:
 
    ```bash
    python -m scripts.verify_deploy
    ```
+
+   Verified against a live Neon project (PostgreSQL 18.6, pgvector 0.8.6):
+   all 11 migrations applied, the HNSW index built, and a write/search round
+   trip returned the semantically correct top hit for each query, with JSONB
+   metadata filters working. The production image was then run against that
+   same database — signup, login and the agent graph all answered, and the
+   `/health` endpoint came up clean.
 
    That script is the pre-flight for everything below: settings load, database
    reachable over TLS, pgvector present, migrations applied, embedding model
