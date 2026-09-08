@@ -13,12 +13,14 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sse_starlette.sse import EventSourceResponse
 
 from agents.orchestrator import Orchestrator
+from api.auth import get_current_user
 from api.dependencies import get_unit_of_work, get_job_repository
 from api.schemas.job_schemas import (
     JobDetailResponseSchema,
@@ -38,7 +40,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/search", tags=["Search"])
 
 
-@router.get("/stream")
+# /stream and /live each fan out seven concurrent scrapers (two of which
+# start a headless browser) against LinkedIn, Naukri and Indeed. Open to the
+# internet that is a free denial-of-service lever against our own container
+# and a fast route to having the deployment's IP blocked by those boards, so
+# both require a signed-in caller. The cached, indexed search paths
+# (/structured, /semantic) stay public.
+@router.get("/stream", dependencies=[Depends(get_current_user)])
 async def stream_job_search(
     request: Request,
     query: str = Query(..., min_length=1, description="Role or skill keywords, e.g. 'Python Developer'"),
@@ -72,13 +80,13 @@ async def stream_job_search(
             logger.error(f"Error during search SSE stream: {exc}")
             yield {
                 "event": "error",
-                "data": json.dumps({"error": str(exc)}),
+                "data": json.dumps({"error": "Live search failed. Try again shortly."}),
             }
 
     return EventSourceResponse(event_generator())
 
 
-@router.get("/live", response_model=dict[str, Any])
+@router.get("/live", response_model=dict[str, Any], dependencies=[Depends(get_current_user)])
 async def search_jobs_live(
     query: str = Query(..., min_length=1, description="Role or skill keywords"),
     location: str | None = Query("India", description="Target city or country"),
@@ -227,7 +235,7 @@ async def search_jobs_semantic(request: SearchRequestSchema):
     )
 
     # Convert agent results to response schema.
-    # RetrievalResult only carries the fields returned from ChromaDB metadata +
+    # RetrievalResult only carries the fields returned from vector metadata +
     # DB lookup — fields not available there (company_id, created_at) are left
     # as None via the now-optional schema defaults.
     job_results = [
@@ -253,6 +261,19 @@ async def search_jobs_semantic(request: SearchRequestSchema):
     )
 
 
+def _job_uuid_or_404(job_id: str) -> uuid.UUID:
+    """Parse a path job id, 404-ing on anything that is not a UUID.
+
+    Handing a non-UUID straight to ``session.get()`` made asyncpg raise a
+    DataError, which surfaced as an opaque 500 for what is plainly a
+    "no such job" request.
+    """
+    try:
+        return uuid.UUID(job_id)
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(status_code=404, detail="Job not found") from None
+
+
 @router.get("/{job_id}", response_model=JobDetailResponseSchema)
 async def get_job_detail(
     job_id: str,
@@ -266,9 +287,8 @@ async def get_job_detail(
     - Company information
     - Similar jobs (via embedding similarity)
     """
-    job = await job_repo.get(job_id)
+    job = await job_repo.get(_job_uuid_or_404(job_id))
     if not job:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Job not found")
 
     # Fetch company info
@@ -310,9 +330,8 @@ async def increment_job_view(
     job_repo: JobRepository = Depends(get_job_repository),
 ):
     """Increment the view counter for a job."""
-    job = await job_repo.get(job_id)
+    job = await job_repo.get(_job_uuid_or_404(job_id))
     if not job:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Job not found")
 
     await job_repo.increment_view(job.id)

@@ -4,10 +4,15 @@ agents/graph.py
 LangGraph state machine for the TalentRadar agent pipeline.
 
 Graph topology:
-    classify → route → retrieve → generate → END
-                   ↘ trend_retrieve → END
-                   ↘ studio_agents → END
-                   ↘ error → END
+    classify → route_by_intent → node_rag_retrieve  → END   (search_jobs, find_candidates)
+                              ↘ node_studio_agent → END   (company_info, career_coach,
+                                                             application_tracker,
+                                                             personal_agent, resume_studio)
+                              ↘ node_general      → END   (general, interview_prep)
+                              ↘ node_error        → END   (unrouted intent — a wiring bug)
+
+Every IntentType member is routed. ``node_error`` is unreachable for known
+intents by construction and exists only to make a missing route loud.
 
 Each node receives and returns the full AgentState dict.
 The compiled graph is exposed as ``agent_graph`` for use in the API layer.
@@ -20,7 +25,7 @@ from typing import Any, Literal
 
 from langgraph.graph import END, StateGraph
 
-from agents.state import AgentResponse, IntentType, QueryContext
+from agents.state import IntentType, QueryContext
 
 logger = logging.getLogger(__name__)
 
@@ -59,10 +64,24 @@ class AgentState(TypedDict, total=False):
 # ---------------------------------------------------------------------------
 
 async def node_classify(state: AgentState) -> AgentState:
-    """Classify user intent and extract query context via Groq LLM."""
+    """Classify user intent and extract query context via Groq LLM.
+
+    Classification is best-effort. A Groq outage or rate limit used to raise
+    straight out of ``ainvoke``, so every caller saw a 500 instead of the
+    graceful reply the general node can still produce from local state.
+    """
     from agents.orchestrator import Orchestrator  # local import avoids cycles
-    orchestrator = Orchestrator()
-    context: QueryContext = await orchestrator._classify_intent(state["query"])
+
+    try:
+        orchestrator = Orchestrator()
+        context: QueryContext = await orchestrator._classify_intent(state["query"])
+    except Exception as exc:
+        logger.warning("Intent classification failed, falling back to general: %s", exc)
+        return {
+            "intent": IntentType.GENERAL.value,
+            "context": {"raw_query": state.get("query", ""), "keywords": [], "skills": []},
+        }
+
     return {
         "intent": context.intent.value,
         "context": {
@@ -138,7 +157,6 @@ async def node_studio_agent(state: AgentState) -> AgentState:
         CareerCoachAgent,
         CompanyAgent,
         PersonalAgent,
-        ResumeStudioAgent,
     )
 
     intent = state.get("intent", IntentType.GENERAL.value)
@@ -169,16 +187,52 @@ async def node_studio_agent(state: AgentState) -> AgentState:
             "error": None,
         }
 
+    data = result.get("data")
+    # The recommendation, when a studio agent produced one, is the sentence the
+    # copilot reads out. It used to be computed here and then dropped on the
+    # floor because final_response hard-coded summary=None, so company_info and
+    # application_tracker answers came back with nothing to say.
+    summary = data.get("recommendation") if isinstance(data, dict) else None
+
     return {
         "retrieved_jobs": [],
         "total_retrieved": 0,
-        "summary": (result.get("data") or {}).get("recommendation") if isinstance(result.get("data"), dict) else None,
+        "summary": summary,
         "final_response": {
             "success": result.get("success", False),
             "intent": intent,
-            "summary": None,
+            "summary": summary,
             "error": result.get("error"),
-            "metadata": {"data": result.get("data")},
+            "metadata": {"data": data},
+        },
+    }
+
+
+async def node_general(state: AgentState) -> AgentState:
+    """Terminal node for conversational and interview-prep turns.
+
+    These intents have no retrieval or tool step of their own, but they are
+    perfectly ordinary questions - "what should I do today?", "how do I prep
+    for Thursday's round?". They used to fall through ``route_by_intent``
+    into ``node_error``, so the copilot answered a greeting with "An
+    unexpected error occurred." and ``POST /api/v1/query`` returned an error
+    payload for anything it could not classify as a search.
+
+    The node returns a *successful* empty result. ``services.copilot.chat``
+    recognises that shape and grounds a reply in the user's own briefing;
+    ``/query`` reports the intent honestly instead of inventing a failure.
+    """
+    intent = state.get("intent", IntentType.GENERAL.value)
+    return {
+        "retrieved_jobs": [],
+        "total_retrieved": 0,
+        "summary": None,
+        "final_response": {
+            "success": True,
+            "intent": intent,
+            "summary": None,
+            "error": None,
+            "metadata": {"handled_by": "general"},
         },
     }
 
@@ -203,24 +257,53 @@ async def node_error(state: AgentState) -> AgentState:
 # Routing logic (conditional edge after classify)
 # ---------------------------------------------------------------------------
 
+#: Intents answered by retrieving job rows.
+_RETRIEVAL_INTENTS = frozenset({
+    IntentType.SEARCH_JOBS.value,
+    IntentType.FIND_CANDIDATES.value,
+})
+
+#: Intents answered by a thin, deterministic service agent.
+_STUDIO_INTENTS = frozenset({
+    IntentType.COMPANY_INFO.value,
+    IntentType.CAREER_COACH.value,
+    IntentType.APPLICATION_TRACKER.value,
+    IntentType.PERSONAL_AGENT.value,
+    IntentType.RESUME_STUDIO.value,
+})
+
+#: Intents that are simply conversation. INTERVIEW_PREP lives here rather
+#: than in _STUDIO_INTENTS because the mock-interview flow is its own
+#: sub-graph (agents/interview/) reached from /api/v1/interview - asking
+#: about it in chat is a question to answer, not a session to start.
+_GENERAL_INTENTS = frozenset({
+    IntentType.GENERAL.value,
+    IntentType.INTERVIEW_PREP.value,
+})
+
+
 def route_by_intent(
     state: AgentState,
-) -> Literal["node_rag_retrieve", "node_studio_agent", "node_error"]:
-    """Determine which retrieval node to call based on classified intent."""
+) -> Literal["node_rag_retrieve", "node_studio_agent", "node_general", "node_error"]:
+    """Determine which node answers this turn, based on the classified intent.
+
+    Every member of :class:`IntentType` must land in exactly one of the three
+    sets above - ``tests/test_agents.py`` asserts that. An intent matching
+    none of them is a bug in this module (someone added an enum member
+    without wiring it), so it goes to ``node_error`` and is logged loudly.
+    """
     intent = state.get("intent", IntentType.GENERAL.value)
-    if intent in (IntentType.SEARCH_JOBS.value, IntentType.FIND_CANDIDATES.value):
+    if intent in _RETRIEVAL_INTENTS:
         return "node_rag_retrieve"
-    elif intent in (
-        IntentType.COMPANY_INFO.value,
-        IntentType.CAREER_COACH.value,
-        IntentType.APPLICATION_TRACKER.value,
-        IntentType.PERSONAL_AGENT.value,
-        IntentType.RESUME_STUDIO.value,
-    ):
+    if intent in _STUDIO_INTENTS:
         return "node_studio_agent"
-    else:
-        # GENERAL / unknown — fall through to error node
-        return "node_error"
+    if intent in _GENERAL_INTENTS:
+        return "node_general"
+    logger.error(
+        "Intent %r has no route - add it to an intent set in agents/graph.py",
+        intent,
+    )
+    return "node_error"
 
 
 # ---------------------------------------------------------------------------
@@ -235,6 +318,7 @@ def build_agent_graph() -> Any:
     builder.add_node("node_classify", node_classify)
     builder.add_node("node_rag_retrieve", node_rag_retrieve)
     builder.add_node("node_studio_agent", node_studio_agent)
+    builder.add_node("node_general", node_general)
     builder.add_node("node_error", node_error)
 
     # Entry point
@@ -247,6 +331,7 @@ def build_agent_graph() -> Any:
         {
             "node_rag_retrieve": "node_rag_retrieve",
             "node_studio_agent": "node_studio_agent",
+            "node_general": "node_general",
             "node_error": "node_error",
         },
     )
@@ -254,6 +339,7 @@ def build_agent_graph() -> Any:
     # Terminal edges — all paths go to END
     builder.add_edge("node_rag_retrieve", END)
     builder.add_edge("node_studio_agent", END)
+    builder.add_edge("node_general", END)
     builder.add_edge("node_error", END)
 
     return builder.compile()

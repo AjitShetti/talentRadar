@@ -760,72 +760,27 @@ class TestResumeMatcher:
 
 
 class TestMatchAPI:
-    """Tests for the match API endpoints."""
+    """Contract tests for the /api/v1/match endpoints.
 
-    @patch("ml.scorers.SemanticScorer._load_model")
-    def setup_method(self, method, mock_load):
-        """Set up API client with mocked semantic model."""
-        mock_model = MagicMock()
-        mock_model.encode.side_effect = lambda text, **kwargs: np.array([0.5, 0.5, 0.7])
-        mock_load.return_value = mock_model
+    These were previously written against an API that does not exist: they
+    called the *async* ``api_client`` fixture from sync test bodies (so every
+    request returned an un-awaited coroutine and nothing was asserted), posted
+    JSON to ``POST /match/`` which has always been a multipart upload, and
+    exercised a ``POST /match/weights`` endpoint that only ever logged a
+    warning and answered "updated" without changing anything.
+    """
 
-        # Reset the module-level matcher
-        import api.routers.match as match_module
-        match_module._matcher = None
-
-    def test_match_endpoint_success(self, api_client):
-        """Test the POST /api/v1/match/ endpoint."""
-        response = api_client.post(
-            "/api/v1/match/",
-            json={
-                "resume_text": SAMPLE_RESUME,
-                "job_description": SAMPLE_JD,
-            },
+    async def test_match_requires_authentication(self, api_client):
+        """Every /match endpoint spends LLM quota, so none of them is public."""
+        response = await api_client.post(
+            "/api/v1/match/batch",
+            json={"resume_texts": [SAMPLE_RESUME], "job_description": SAMPLE_JD},
         )
-        assert response.status_code == 200
-        data = response.json()
-        assert "match_percentage" in data
-        assert "breakdown" in data
-        assert "matched_skills" in data
-        assert "missing_skills" in data
-        assert 0 <= data["match_percentage"] <= 100
+        assert response.status_code in (401, 403)
 
-    def test_match_endpoint_empty_resume(self, api_client):
-        """Test validation error for empty resume."""
-        response = api_client.post(
-            "/api/v1/match/",
-            json={
-                "resume_text": "",
-                "job_description": SAMPLE_JD,
-            },
-        )
-        assert response.status_code == 422  # Validation error
-
-    def test_match_endpoint_empty_jd(self, api_client):
-        """Test validation error for empty JD."""
-        response = api_client.post(
-            "/api/v1/match/",
-            json={
-                "resume_text": SAMPLE_RESUME,
-                "job_description": "",
-            },
-        )
-        assert response.status_code == 422
-
-    def test_match_endpoint_short_resume(self, api_client):
-        """Test validation error for too-short resume (< 10 chars)."""
-        response = api_client.post(
-            "/api/v1/match/",
-            json={
-                "resume_text": "Hi",
-                "job_description": SAMPLE_JD,
-            },
-        )
-        assert response.status_code == 422
-
-    def test_batch_match_endpoint(self, api_client):
-        """Test the POST /api/v1/match/batch endpoint."""
-        response = api_client.post(
+    async def test_batch_match_endpoint(self, auth_client):
+        """POST /api/v1/match/batch scores several resumes at once."""
+        response = await auth_client.post(
             "/api/v1/match/batch",
             json={
                 "resume_texts": [SAMPLE_RESUME, SAMPLE_RESUME_NO_SKILLS],
@@ -834,45 +789,69 @@ class TestMatchAPI:
         )
         assert response.status_code == 200
         data = response.json()
-        assert "results" in data
-        assert "total_processed" in data
         assert data["total_processed"] == 2
+        assert len(data["results"]) == 2
 
-    def test_get_weights_endpoint(self, api_client):
-        """Test the GET /api/v1/match/weights endpoint."""
-        response = api_client.get("/api/v1/match/weights")
-        assert response.status_code == 200
-        data = response.json()
-        assert "skills" in data
-        assert "experience" in data
-        assert "education" in data
-        assert "semantic" in data
+    async def test_batch_match_reports_the_originating_resume(self, auth_client):
+        """Results are sorted by score but must stay traceable to their input.
 
-    def test_update_weights_endpoint(self, api_client):
-        """Test the POST /api/v1/match/weights endpoint."""
-        response = api_client.post(
-            "/api/v1/match/weights",
+        Every result used to report ``resume_index: 0``, so a caller could not
+        tell which resume any row belonged to once the list was sorted.
+        """
+        response = await auth_client.post(
+            "/api/v1/match/batch",
             json={
-                "skills": 0.50,
-                "experience": 0.20,
-                "education": 0.10,
-                "semantic": 0.20,
+                "resume_texts": [SAMPLE_RESUME_NO_SKILLS, SAMPLE_RESUME],
+                "job_description": SAMPLE_JD,
             },
         )
         assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "updated"
+        indices = sorted(r["resume_index"] for r in response.json()["results"])
+        assert indices == [0, 1]
 
-    def test_update_weights_invalid(self, api_client):
-        """Test weight validation."""
-        response = api_client.post(
-            "/api/v1/match/weights",
-            json={
-                "skills": 0.50,
-                "experience": 0.50,
-                "education": 0.50,
-                "semantic": 0.50,
-            },
+    async def test_batch_match_rejects_empty_list(self, auth_client):
+        response = await auth_client.post(
+            "/api/v1/match/batch",
+            json={"resume_texts": [], "job_description": SAMPLE_JD},
         )
-        # Should fail because weights don't sum to 1.0
-        assert response.status_code in (400, 422)
+        assert response.status_code == 422
+
+    async def test_batch_match_rejects_short_jd(self, auth_client):
+        response = await auth_client.post(
+            "/api/v1/match/batch",
+            json={"resume_texts": [SAMPLE_RESUME], "job_description": ""},
+        )
+        assert response.status_code == 422
+
+    async def test_get_weights_endpoint(self, auth_client):
+        """GET /api/v1/match/weights reports the live scoring weights."""
+        response = await auth_client.get("/api/v1/match/weights")
+        assert response.status_code == 200
+        data = response.json()
+        assert set(data) >= {"skills", "experience", "education", "semantic"}
+        assert abs(sum(data[k] for k in ("skills", "experience", "education", "semantic")) - 1.0) < 1e-6
+
+    async def test_weights_are_read_only(self, auth_client):
+        """There is no write endpoint for weights, and that is deliberate.
+
+        Weights live in the process, so a POST could only ever mutate one
+        worker's copy. The old handler acknowledged the write and changed
+        nothing, which is worse than not accepting it.
+        """
+        response = await auth_client.post(
+            "/api/v1/match/weights",
+            json={"skills": 0.5, "experience": 0.2, "education": 0.1, "semantic": 0.2},
+        )
+        assert response.status_code == 405
+
+    async def test_match_upload_rejects_oversized_file(self, auth_client):
+        """The upload is capped and streamed, not buffered whole."""
+        from config.settings import get_settings
+
+        oversized = b"x" * (get_settings().max_resume_upload_bytes + 1024)
+        response = await auth_client.post(
+            "/api/v1/match/",
+            files={"resume_file": ("huge.txt", oversized, "text/plain")},
+            data={"job_description": SAMPLE_JD, "job_title": "Python Developer"},
+        )
+        assert response.status_code == 413

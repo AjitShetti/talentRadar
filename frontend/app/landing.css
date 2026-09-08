@@ -1,0 +1,412 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   LANDING — the public face of the board.
+
+   THESIS: the marketing page is the same instrument the app is, seen from
+   outside — graphite face, hairline rules, one amber lamp. A visitor who
+   scrolls this page and then signs in should feel they walked into the same
+   room, not clicked through from a different product's brochure.
+
+   The craft layer (nested double-bezel enclosures, macro whitespace, spring
+   cubic-beziers, staggered scroll reveals, button-in-button CTAs) is layered
+   ON the existing design world rather than replacing it. Tokens come from
+   globals.css — this file adds no new colors, only new structure.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.lp{
+  --ease:cubic-bezier(.32,.72,0,1);      /* heavy spring settle — all motion */
+  --ease-soft:cubic-bezier(.16,1,.3,1);
+  --gutter:40px;
+  position:relative;
+  overflow-x:clip;
+}
+
+/* Amber lamp-glow behind the page ground. Fixed + pointer-events:none so it
+   never repaints with scroll (the grain overlay in globals.css does the same).
+   Amber only — the One Lamp Rule holds even in decoration. */
+.lp-orbs{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+.lp-orb{position:absolute;border-radius:50%;filter:blur(120px);opacity:.5}
+.lp-orb-a{top:-14vh;right:-8vw;width:52vw;height:52vw;max-width:760px;max-height:760px;background:radial-gradient(circle,rgba(255,176,32,.16),transparent 68%)}
+.lp-orb-b{top:46vh;left:-18vw;width:44vw;height:44vw;max-width:620px;max-height:620px;background:radial-gradient(circle,rgba(255,203,102,.07),transparent 70%)}
+
+.lp-wrap{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding:0 var(--gutter)}
+.lp-section{position:relative;z-index:1;padding:160px 0}
+.lp-section-tight{padding:112px 0}
+
+/* ── Scroll choreography ──────────────────────────────────────────────────
+   Nothing appears statically: elements settle up through a blur as they
+   enter. transform/opacity/filter only — never a layout-triggering property. */
+.lp-reveal{
+  opacity:0;transform:translateY(56px);filter:blur(8px);
+  transition:opacity .85s var(--ease),transform .85s var(--ease),filter .85s var(--ease);
+  transition-delay:var(--d,0ms);
+  will-change:transform,opacity;
+}
+.lp-reveal.is-in{opacity:1;transform:translateY(0);filter:blur(0);will-change:auto}
+
+/* ── Eyebrow: microscopic pill badge above every major heading ───────────── */
+.lp-eyebrow{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:6px 13px;border-radius:999px;
+  background:var(--accent-soft);border:1px solid var(--accent-border);
+  font:400 10px 'Fragment Mono',monospace;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--accent-light);
+}
+.lp-eyebrow-dot{width:5px;height:5px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.lp-eyebrow-plain{background:transparent;border-color:var(--line);color:var(--faint)}
+
+/* ── Typography: massive condensed display, heavy leading control ────────── */
+.lp-h1{
+  font-family:'Big Shoulders Text',sans-serif;font-weight:700;
+  font-size:clamp(52px,7.4vw,104px);line-height:.92;letter-spacing:-.028em;
+  margin:26px 0 0;color:var(--ink);text-wrap:balance;
+}
+.lp-h1 em{font-style:normal;color:var(--accent)}
+.lp-h2{
+  font-family:'Big Shoulders Text',sans-serif;font-weight:700;
+  font-size:clamp(38px,4.6vw,64px);line-height:1;letter-spacing:-.024em;
+  margin:22px 0 0;color:var(--ink);text-wrap:balance;
+}
+.lp-h3{
+  font-family:'Big Shoulders Text',sans-serif;font-weight:600;
+  font-size:26px;line-height:1.08;letter-spacing:-.02em;margin:0;color:var(--ink);
+}
+.lp-lead{
+  font-family:'Public Sans',sans-serif;font-size:17px;line-height:1.68;
+  color:var(--ink-2);margin:26px 0 0;max-width:56ch;
+}
+.lp-body{font-size:14px;line-height:1.72;color:var(--muted);margin:14px 0 0;max-width:60ch}
+.lp-mono-meta{font:400 10px 'Fragment Mono',monospace;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
+
+/* ── The Double-Bezel: nothing sits flat on the ground ────────────────────
+   Outer shell (tray) holds an inner core (plate) with concentric radii, its
+   own ground, and an inset top highlight. Machined hardware, not a div. */
+.lp-bezel{
+  position:relative;padding:7px;border-radius:26px;
+  background:rgba(255,255,255,.028);
+  border:1px solid var(--line);
+  box-shadow:0 34px 80px -28px rgba(0,0,0,.75);
+}
+.lp-bezel-core{
+  border-radius:19px;background:var(--surface);
+  border:1px solid var(--line-soft);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.055);
+  overflow:hidden;
+}
+.lp-bezel-sm{padding:5px;border-radius:18px}
+.lp-bezel-sm>.lp-bezel-core{border-radius:13px}
+
+/* ── CTA: island pill with a nested icon well ─────────────────────────────
+   The arrow never floats naked beside the label — it lives in its own circle,
+   flush with the pill's inner padding, and carries the kinetic tension. */
+.lp-cta{
+  display:inline-flex;align-items:center;gap:14px;
+  padding:8px 8px 8px 26px;border-radius:999px;
+  background:var(--accent);color:var(--paper);
+  font:700 13px 'Big Shoulders Text',sans-serif;letter-spacing:.06em;text-transform:uppercase;
+  box-shadow:0 10px 30px -8px rgba(255,176,32,.5),inset 0 1px 0 rgba(255,255,255,.32);
+  transition:background .5s var(--ease),transform .5s var(--ease),box-shadow .5s var(--ease);
+}
+.lp-cta:hover{background:var(--accent-light);box-shadow:0 16px 40px -10px rgba(255,176,32,.62),inset 0 1px 0 rgba(255,255,255,.4)}
+.lp-cta:active{transform:scale(.977)}
+.lp-cta-icon{
+  display:grid;place-items:center;width:34px;height:34px;border-radius:50%;
+  background:rgba(19,18,17,.14);
+  transition:transform .5s var(--ease),background .5s var(--ease);
+}
+.lp-cta:hover .lp-cta-icon{transform:translate(3px,-2px) scale(1.06);background:rgba(19,18,17,.22)}
+
+.lp-cta-ghost{
+  display:inline-flex;align-items:center;gap:12px;
+  padding:8px 8px 8px 24px;border-radius:999px;
+  background:rgba(255,255,255,.035);border:1px solid var(--line);
+  color:var(--ink-2);
+  font:700 13px 'Big Shoulders Text',sans-serif;letter-spacing:.06em;text-transform:uppercase;
+  transition:background .5s var(--ease),border-color .5s var(--ease),color .5s var(--ease),transform .5s var(--ease);
+}
+.lp-cta-ghost:hover{background:rgba(255,255,255,.07);border-color:var(--line-strong);color:var(--ink)}
+.lp-cta-ghost:active{transform:scale(.977)}
+.lp-cta-ghost .lp-cta-icon{width:32px;height:32px;background:rgba(255,255,255,.07)}
+.lp-cta-ghost:hover .lp-cta-icon{transform:translate(3px,-2px) scale(1.06);background:rgba(255,255,255,.12)}
+
+.lp-cta-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:42px}
+
+/* ── Fluid island nav: detached pill, never glued edge-to-edge ───────────── */
+.lp-nav{position:fixed;top:22px;left:0;right:0;z-index:900;display:flex;justify-content:center;padding:0 16px;pointer-events:none}
+.lp-nav-pill{
+  pointer-events:auto;display:flex;align-items:center;gap:30px;
+  padding:9px 9px 9px 20px;border-radius:999px;
+  background:rgba(19,18,17,.72);
+  -webkit-backdrop-filter:blur(22px) saturate(150%);backdrop-filter:blur(22px) saturate(150%);
+  border:1px solid var(--line);
+  box-shadow:0 20px 46px -18px rgba(0,0,0,.8),inset 0 1px 0 rgba(255,255,255,.07);
+  transition:transform .6s var(--ease),box-shadow .6s var(--ease),background .6s var(--ease);
+  max-width:100%;
+}
+.lp-nav-scrolled .lp-nav-pill{background:rgba(19,18,17,.9);box-shadow:0 24px 54px -18px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.09)}
+.lp-nav-brand{display:flex;align-items:center;gap:9px;font:700 16px 'Big Shoulders Text',sans-serif;letter-spacing:.02em;text-transform:uppercase;flex-shrink:0}
+.lp-nav-brand span span{color:var(--accent)}
+.lp-nav-links{display:flex;align-items:center;gap:4px}
+.lp-nav-link{
+  position:relative;padding:8px 13px;border-radius:999px;
+  font:600 11px 'Big Shoulders Text',sans-serif;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--muted);transition:color .45s var(--ease),background .45s var(--ease);
+}
+.lp-nav-link:hover{color:var(--ink);background:rgba(255,255,255,.055)}
+.lp-nav-cta{
+  display:inline-flex;align-items:center;gap:9px;
+  padding:8px 8px 8px 16px;border-radius:999px;background:var(--accent);color:var(--paper);
+  font:700 11px 'Big Shoulders Text',sans-serif;letter-spacing:.09em;text-transform:uppercase;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.3);
+  transition:background .45s var(--ease),transform .45s var(--ease);
+}
+.lp-nav-cta:hover{background:var(--accent-light)}
+.lp-nav-cta:active{transform:scale(.97)}
+.lp-nav-cta-icon{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:rgba(19,18,17,.16);transition:transform .45s var(--ease)}
+.lp-nav-cta:hover .lp-nav-cta-icon{transform:translate(2px,-1px)}
+
+/* Hamburger: two rules that rotate into a true X, never a swap-out icon. */
+.lp-burger{display:none;position:relative;width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.055);flex-shrink:0}
+.lp-burger i{
+  position:absolute;left:11px;width:16px;height:1.5px;border-radius:2px;background:var(--ink);
+  transition:transform .55s var(--ease),opacity .3s var(--ease);
+}
+.lp-burger i:nth-child(1){top:16px}
+.lp-burger i:nth-child(2){top:21px}
+.lp-burger-open i:nth-child(1){transform:translateY(2.5px) rotate(45deg)}
+.lp-burger-open i:nth-child(2){transform:translateY(-2.5px) rotate(-45deg)}
+
+/* Full-bleed menu overlay with staggered mask reveal on the links. */
+.lp-menu{
+  position:fixed;inset:0;z-index:890;display:flex;flex-direction:column;justify-content:center;
+  padding:0 26px;
+  background:rgba(12,11,10,.86);
+  -webkit-backdrop-filter:blur(30px);backdrop-filter:blur(30px);
+  opacity:0;pointer-events:none;
+  transition:opacity .55s var(--ease);
+}
+.lp-menu-open{opacity:1;pointer-events:auto}
+.lp-menu a{
+  display:flex;align-items:baseline;gap:16px;padding:16px 0;
+  border-bottom:1px solid var(--line-soft);
+  font-family:'Big Shoulders Text',sans-serif;font-weight:700;font-size:40px;letter-spacing:-.02em;
+  color:var(--ink);
+  opacity:0;transform:translateY(44px);
+  transition:opacity .6s var(--ease),transform .6s var(--ease),color .3s var(--ease);
+}
+.lp-menu a small{font:400 11px 'Fragment Mono',monospace;color:var(--faint);letter-spacing:.14em}
+.lp-menu a:hover{color:var(--accent)}
+.lp-menu-open a{opacity:1;transform:translateY(0)}
+.lp-menu-open a:nth-child(1){transition-delay:.09s}
+.lp-menu-open a:nth-child(2){transition-delay:.15s}
+.lp-menu-open a:nth-child(3){transition-delay:.21s}
+.lp-menu-open a:nth-child(4){transition-delay:.27s}
+.lp-menu-open a:nth-child(5){transition-delay:.33s}
+.lp-menu-open a:nth-child(6){transition-delay:.39s}
+.lp-menu-foot{display:flex;gap:12px;margin-top:38px}
+
+/* ── Hero: editorial split — massive type left, live board right ─────────── */
+.lp-hero{position:relative;z-index:1;padding:190px 0 130px;min-height:100dvh;display:flex;align-items:center}
+.lp-hero-grid{display:grid;grid-template-columns:minmax(0,1.02fr) minmax(0,.98fr);gap:64px;align-items:center;width:100%}
+.lp-hero-note{display:flex;align-items:center;gap:10px;margin-top:36px;font-size:12px;color:var(--faint)}
+.lp-hero-note svg{color:var(--accent);flex-shrink:0}
+
+/* ── Board mock: the product, rendered honestly, labeled as an example ───── */
+.lp-mock{font-size:13px}
+.lp-mock-chrome{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:11px 15px;border-bottom:1px solid var(--line);background:var(--paper);
+}
+.lp-mock-dots{display:flex;gap:6px}
+.lp-mock-dots i{width:8px;height:8px;border-radius:50%;background:var(--line-strong)}
+.lp-mock-tag{font:400 9px 'Fragment Mono',monospace;letter-spacing:.18em;text-transform:uppercase;color:var(--faint)}
+.lp-mock-body{padding:20px}
+
+.lp-mock-counters{display:flex;border-bottom:1px solid var(--line-soft);padding-bottom:18px;margin-bottom:6px}
+.lp-mock-counter{flex:1;min-width:0;padding:0 15px;border-left:1px solid var(--line-soft)}
+.lp-mock-counter:first-child{padding-left:0;border-left:0}
+.lp-mock-counter span{display:block;font:600 9px 'Big Shoulders Text',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin-bottom:7px}
+.lp-mock-counter strong{display:block;font:700 30px 'Fragment Mono',monospace;letter-spacing:-.03em;color:var(--ink);font-variant-numeric:tabular-nums;line-height:1}
+.lp-mock-counter.is-lit strong{color:var(--accent)}
+
+.lp-mock-row{display:flex;gap:13px;align-items:flex-start;padding:16px 0;border-top:1px solid var(--line-soft)}
+.lp-mock-row:first-of-type{border-top:0}
+.lp-mock-lamp{width:7px;height:7px;border-radius:50%;margin-top:6px;flex-shrink:0;background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.lp-mock-lamp.tone-warn{background:var(--danger);box-shadow:0 0 0 3px var(--danger-soft)}
+.lp-mock-lamp.tone-good{background:var(--success);box-shadow:0 0 0 3px var(--success-soft)}
+.lp-mock-row-main{min-width:0;flex:1}
+.lp-mock-kind{font:600 9px 'Big Shoulders Text',sans-serif;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-right:9px}
+.lp-mock-kind.tone-warn{color:var(--danger-dark)}
+.lp-mock-kind.tone-good{color:var(--success-dark)}
+.lp-mock-head{font:600 13px 'Public Sans',sans-serif;color:var(--ink)}
+.lp-mock-sub{margin:5px 0 0;font-size:12px;line-height:1.6;color:var(--muted)}
+.lp-mock-time{font:400 10px 'Fragment Mono',monospace;color:var(--faint);flex-shrink:0;margin-top:5px}
+
+/* Small mocks used inside the feature bento cells */
+.lp-mini{padding:16px;display:flex;flex-direction:column;gap:10px}
+.lp-mini-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line-soft)}
+.lp-mini-row:first-child{border-top:0}
+.lp-mini-mark{width:26px;height:26px;border-radius:6px;display:grid;place-items:center;flex-shrink:0;background:var(--surface-3);color:var(--ink-2);font:700 10px 'Fragment Mono',monospace}
+.lp-mini-main{min-width:0;flex:1}
+.lp-mini-main strong{display:block;font:600 12px 'Public Sans',sans-serif;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lp-mini-main span{display:block;font-size:11px;color:var(--faint);margin-top:2px}
+.lp-mini-pill{
+  flex-shrink:0;padding:4px 9px;border-radius:999px;
+  font:400 10px 'Fragment Mono',monospace;font-variant-numeric:tabular-nums;
+  background:var(--accent-soft);color:var(--accent-light);border:1px solid var(--accent-border);
+}
+.lp-mini-pill.tone-good{background:var(--success-soft);color:var(--success-dark);border-color:var(--success-border)}
+.lp-mini-pill.tone-flat{background:rgba(255,255,255,.05);color:var(--muted);border-color:var(--line)}
+
+.lp-mini-bars{display:flex;flex-direction:column;gap:11px;padding:4px 0}
+.lp-mini-bar-head{display:flex;justify-content:space-between;align-items:baseline;font:600 10px 'Big Shoulders Text',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.lp-mini-bar-head b{font:700 12px 'Fragment Mono',monospace;color:var(--ink);font-variant-numeric:tabular-nums}
+.lp-mini-track{height:4px;border-radius:999px;background:rgba(255,255,255,.06);overflow:hidden}
+.lp-mini-fill{height:100%;border-radius:999px;background:var(--accent)}
+.lp-mini-fill.tone-weak{background:var(--danger)}
+.lp-mini-fill.tone-good{background:var(--success)}
+
+.lp-mini-stack{display:flex;flex-direction:column;gap:7px}
+.lp-mini-stage{display:flex;align-items:center;gap:10px;padding:8px 11px;border-radius:8px;background:rgba(255,255,255,.032);border:1px solid var(--line-soft)}
+.lp-mini-stage i{width:6px;height:6px;border-radius:50%;background:var(--line-strong);flex-shrink:0}
+.lp-mini-stage.is-on{background:var(--accent-soft);border-color:var(--accent-border)}
+.lp-mini-stage.is-on i{background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.lp-mini-stage strong{flex:1;font:600 11px 'Big Shoulders Text',sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2)}
+.lp-mini-stage.is-on strong{color:var(--ink)}
+.lp-mini-stage em{font-style:normal;font:400 11px 'Fragment Mono',monospace;color:var(--faint);font-variant-numeric:tabular-nums}
+
+.lp-mini-chat{display:flex;flex-direction:column;gap:9px}
+.lp-mini-ask{align-self:flex-end;max-width:88%;padding:9px 13px;border-radius:13px 13px 3px 13px;background:var(--surface-3);color:var(--ink-2);font-size:12px;line-height:1.55}
+.lp-mini-say{max-width:94%;padding:11px 13px;border-radius:13px 13px 13px 3px;background:var(--accent-soft);border:1px solid var(--accent-border);color:var(--ink);font-size:12px;line-height:1.6}
+.lp-mini-cite{display:flex;align-items:center;gap:6px;margin-top:8px;font:400 9px 'Fragment Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--accent-light)}
+
+/* ── Problem strip: the before-state, as a ruled ledger ──────────────────── */
+.lp-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:70px;align-items:center}
+.lp-ledger{display:flex;flex-direction:column}
+.lp-ledger-row{display:flex;align-items:center;gap:16px;padding:19px 0;border-top:1px solid var(--line-soft)}
+.lp-ledger-row:first-child{border-top:0}
+.lp-ledger-row span{font:400 11px 'Fragment Mono',monospace;color:var(--faint);flex-shrink:0;width:26px}
+.lp-ledger-row p{margin:0;font-size:14px;line-height:1.6;color:var(--ink-2)}
+.lp-ledger-row svg{color:var(--faint);flex-shrink:0}
+
+/* ── How it works: three ruled steps ─────────────────────────────────────── */
+.lp-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;margin-top:66px}
+.lp-step{padding:0 34px;border-left:1px solid var(--line-soft)}
+.lp-step:first-child{padding-left:0;border-left:0}
+.lp-step-num{font:700 12px 'Fragment Mono',monospace;color:var(--accent);letter-spacing:.1em;display:block;margin-bottom:20px}
+.lp-step h3{font:600 21px 'Big Shoulders Text',sans-serif;letter-spacing:-.015em;margin:0 0 11px;color:var(--ink)}
+.lp-step p{margin:0;font-size:13px;line-height:1.72;color:var(--muted)}
+
+/* ── Feature bento: asymmetric grid, each cell shaped to its own content ── */
+.lp-bento{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:20px;margin-top:66px}
+.lp-cell{grid-column:span 2}
+.lp-cell-wide{grid-column:span 4}
+.lp-cell-half{grid-column:span 3}
+.lp-cell-full{grid-column:span 6}
+
+.lp-feature{
+  height:100%;display:flex;flex-direction:column;
+  padding:26px;
+  transition:transform .7s var(--ease);
+}
+.lp-bezel:hover .lp-feature{transform:translateY(-3px)}
+.lp-feature-icon{
+  width:38px;height:38px;border-radius:11px;display:grid;place-items:center;flex-shrink:0;
+  background:var(--accent-soft);border:1px solid var(--accent-border);color:var(--accent-light);
+  margin-bottom:20px;
+}
+.lp-feature h3{font:600 22px 'Big Shoulders Text',sans-serif;letter-spacing:-.015em;margin:0 0 10px;color:var(--ink)}
+.lp-feature p{margin:0;font-size:13px;line-height:1.72;color:var(--muted)}
+.lp-feature-facts{list-style:none;margin:20px 0 0;padding:0;display:flex;flex-direction:column}
+.lp-feature-facts li{
+  display:flex;gap:11px;align-items:flex-start;
+  padding:11px 0;border-top:1px solid var(--line-soft);
+  font-size:12.5px;line-height:1.6;color:var(--ink-2);
+}
+.lp-feature-facts li:first-child{border-top:0}
+.lp-feature-facts svg{color:var(--accent);flex-shrink:0;margin-top:3px}
+.lp-feature-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:30px;align-items:center;padding:32px}
+.lp-feature-split .lp-feature{padding:0}
+.lp-feature-mock{margin-top:20px}
+
+/* ── Trust: how it stays honest ──────────────────────────────────────────── */
+.lp-trust-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0;margin-top:60px;border-top:1px solid var(--line-soft)}
+.lp-trust-item{padding:34px 40px 34px 0;border-bottom:1px solid var(--line-soft)}
+.lp-trust-item:nth-child(even){padding-left:40px;padding-right:0;border-left:1px solid var(--line-soft)}
+.lp-trust-item h3{font:600 19px 'Big Shoulders Text',sans-serif;letter-spacing:-.01em;margin:0 0 10px;color:var(--ink);display:flex;align-items:center;gap:11px}
+.lp-trust-item h3 svg{color:var(--accent);flex-shrink:0}
+.lp-trust-item p{margin:0;font-size:13px;line-height:1.72;color:var(--muted)}
+
+/* ── FAQ: hairline rows, native disclosure ───────────────────────────────── */
+.lp-faq{margin-top:56px;border-top:1px solid var(--line-soft)}
+.lp-faq details{border-bottom:1px solid var(--line-soft)}
+.lp-faq summary{
+  list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:20px;
+  padding:24px 0;font:600 17px 'Big Shoulders Text',sans-serif;letter-spacing:-.01em;color:var(--ink);
+  transition:color .45s var(--ease);
+}
+.lp-faq summary::-webkit-details-marker{display:none}
+.lp-faq summary:hover{color:var(--accent)}
+.lp-faq-mark{
+  display:grid;place-items:center;width:28px;height:28px;border-radius:50%;flex-shrink:0;
+  background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--muted);
+  transition:transform .55s var(--ease),background .45s var(--ease),color .45s var(--ease);
+}
+.lp-faq details[open] .lp-faq-mark{transform:rotate(45deg);background:var(--accent-soft);color:var(--accent)}
+.lp-faq p{margin:0 0 26px;font-size:13.5px;line-height:1.75;color:var(--muted);max-width:70ch}
+
+/* ── Closer ──────────────────────────────────────────────────────────────── */
+.lp-closer{text-align:center;padding:76px 40px}
+.lp-closer .lp-lead{margin-left:auto;margin-right:auto}
+.lp-closer .lp-cta-row{justify-content:center}
+
+.lp-footer{position:relative;z-index:1;border-top:1px solid var(--line-soft);padding:44px 0 60px}
+.lp-footer-inner{display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap}
+.lp-footer-links{display:flex;gap:26px;flex-wrap:wrap}
+.lp-footer-links a{font-size:12px;color:var(--muted);transition:color .45s var(--ease)}
+.lp-footer-links a:hover{color:var(--accent)}
+
+/* ── Responsive: aggressive single-column collapse below 768px ───────────── */
+@media(max-width:1040px){
+  .lp-hero-grid{grid-template-columns:1fr;gap:56px}
+  .lp-split{grid-template-columns:1fr;gap:44px}
+  .lp-cell,.lp-cell-wide,.lp-cell-half{grid-column:span 3}
+  .lp-feature-split{grid-template-columns:1fr;gap:26px}
+}
+@media(max-width:768px){
+  .lp{--gutter:16px}
+  .lp-section{padding:88px 0}
+  .lp-section-tight{padding:72px 0}
+  .lp-hero{padding:132px 0 78px;min-height:auto}
+  .lp-nav-links{display:none}
+  .lp-nav-cta{display:none}
+  .lp-burger{display:block}
+  .lp-nav-pill{width:100%;justify-content:space-between;padding:8px 8px 8px 18px}
+  .lp-h1{font-size:clamp(42px,11vw,60px)}
+  .lp-lead{font-size:15px;margin-top:20px}
+  .lp-cta-row{margin-top:32px}
+  .lp-cta,.lp-cta-ghost{width:100%;justify-content:space-between}
+  .lp-steps{grid-template-columns:1fr;gap:0}
+  .lp-step{padding:26px 0;border-left:0;border-top:1px solid var(--line-soft)}
+  .lp-step:first-child{padding-top:0;border-top:0}
+  .lp-bento{grid-template-columns:1fr;gap:14px}
+  .lp-cell,.lp-cell-wide,.lp-cell-half,.lp-cell-full{grid-column:span 1}
+  .lp-feature{padding:22px}
+  .lp-feature-split{padding:22px}
+  .lp-trust-grid{grid-template-columns:1fr}
+  .lp-trust-item,.lp-trust-item:nth-child(even){padding:26px 0;border-left:0}
+  .lp-mock-counters{flex-wrap:wrap;gap:16px 0}
+  .lp-mock-counter{flex:0 0 50%;padding:0 14px}
+  .lp-mock-counter:nth-child(odd){padding-left:0;border-left:0}
+  .lp-closer{padding:48px 20px}
+  .lp-menu a{font-size:30px}
+  .lp-orb{filter:blur(80px);opacity:.35}
+}
+
+/* Motion sensitivity: reveals resolve instantly, nothing translates or blurs.
+   (globals.css already neutralises durations app-wide; this makes the landing
+   page's start-state safe rather than merely fast.) */
+@media (prefers-reduced-motion: reduce){
+  .lp-reveal{opacity:1;transform:none;filter:none}
+  .lp-menu a{opacity:1;transform:none}
+  .lp-cta:hover .lp-cta-icon,.lp-cta-ghost:hover .lp-cta-icon,.lp-bezel:hover .lp-feature{transform:none}
+}

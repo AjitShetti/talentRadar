@@ -6,7 +6,7 @@ One-off & maintenance purge script to eliminate contaminated/seeded data.
 Identifies and removes:
 1. Job records whose `source_url` fails the shared job URL validator
    (e.g., Wikipedia articles, Reddit threads, search-listing pages).
-2. Corresponding ChromaDB vector embeddings.
+2. Corresponding vector-store embeddings.
 3. Orphaned or garbage Company records (e.g. "En", "Www", "Reddit", "Wikipedia",
    or companies left with 0 active jobs).
 
@@ -19,15 +19,12 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-import sys
 from typing import Any
 
 from sqlalchemy import delete, func, select
-from sqlalchemy.orm import selectinload
 
-from config.settings import get_settings
-from ingestion.embeddings.chroma_store import ChromaJobStore
-from ingestion.validation import is_valid_job_url, validate_job_url
+from ingestion.embeddings.vector_store import get_vector_store
+from ingestion.validation import validate_job_url
 from storage.database import AsyncSessionLocal, engine
 from storage.models import Company, Job
 
@@ -52,7 +49,7 @@ GARBAGE_COMPANY_NAMES = {
 async def purge_contaminated_data(dry_run: bool = False) -> dict[str, int]:
     """
     Scan database for invalid job postings and orphaned companies,
-    then remove them from PostgreSQL and ChromaDB.
+    then remove them from PostgreSQL and the vector store.
     """
     logger.info("Starting database audit and purge (dry_run=%s)...", dry_run)
 
@@ -97,19 +94,22 @@ async def purge_contaminated_data(dry_run: bool = False) -> dict[str, int]:
             await session.commit()
             logger.info("Successfully deleted %d invalid jobs from PostgreSQL.", len(invalid_ids))
 
-            # Delete ChromaDB embeddings
+            # Delete the matching vector-store rows
             try:
-                chroma_store = ChromaJobStore()
+                store = get_vector_store()
                 deleted_embeddings = 0
-                for emb_id in set(embedding_ids_to_remove):
-                    try:
-                        chroma_store.delete(emb_id)
-                        deleted_embeddings += 1
-                    except Exception as emb_err:
-                        logger.warning("Could not delete ChromaDB embedding %s: %s", emb_id, emb_err)
-                logger.info("Deleted %d embeddings from ChromaDB.", deleted_embeddings)
-            except Exception as chroma_err:
-                logger.warning("ChromaDB connection unavailable or failed: %s", chroma_err)
+                if store is None:
+                    logger.info("No vector backend configured — nothing to purge there.")
+                else:
+                    for emb_id in set(embedding_ids_to_remove):
+                        try:
+                            store.delete(emb_id)
+                            deleted_embeddings += 1
+                        except Exception as emb_err:
+                            logger.warning("Could not delete embedding %s: %s", emb_id, emb_err)
+                    logger.info("Deleted %d embeddings from the vector store.", deleted_embeddings)
+            except Exception as store_err:
+                logger.warning("Vector store unavailable or failed: %s", store_err)
 
         # 2. Check for orphaned / garbage companies
         # A company is orphaned if it has 0 jobs associated

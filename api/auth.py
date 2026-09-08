@@ -133,24 +133,28 @@ async def get_current_user(
     return decode_access_token(credentials.credentials)
 
 
-async def require_role(required_role: str):
+def require_role(required_role: str):
     """
-    Dependency factory to require a specific user role.
+    Dependency factory requiring a specific user role.
 
-    Logic:
-        - Raise 403 if the user's role does NOT match the required role
-          AND the user is NOT an admin (admins are allowed everywhere).
+    A plain function, not a coroutine function: as ``async def`` this returned
+    a *coroutine object* rather than the inner callable, so
+    ``Depends(require_role("admin"))`` handed FastAPI something it could not
+    call and the guard could never be used on a route.
+
+    Rule: allow when the user holds the exact role, or is an admin (admins
+    pass everywhere).
 
     Usage:
-        @router.get("/admin", dependencies=[Depends(require_role("admin"))])
+        @router.post("/admin", dependencies=[Depends(require_role("admin"))])
     """
-    async def _check_role(user: dict = Depends(get_current_user)):
+    async def _check_role(user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
         user_role = user.get("role", "user")
-        # Allow access if: user has the exact required role OR user is admin
         if user_role != required_role and user_role != "admin":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions",
             )
         return user
+
     return _check_role

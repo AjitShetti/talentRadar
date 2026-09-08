@@ -1,65 +1,37 @@
-# Git
+# Keep the build context small: without this the Docker daemon uploads the
+# virtualenv, node_modules and the git history before the first RUN, which on
+# a free build tier is most of the build time.
+
 .git
-.gitignore
-
-# Python
-__pycache__
-*.py[cod]
-*$py.class
-*.egg-info
-.eggs
-build/
-dist/
-*.egg
-
-# Virtual envs
+.github
 .venv
-venv/
-env/
+venv
+env
 
-# Testing
+node_modules
+frontend
+
+__pycache__
+**/__pycache__
+*.py[cod]
 .pytest_cache
-htmlcov
-.coverage
-.tox
-.nox
-
-# Type checking / linting
 .mypy_cache
 .ruff_cache
+htmlcov
+.coverage
+coverage.xml
 
-# IDE
-.idea
-.vscode
-*.swp
-*.swo
-
-# Docs
-docs/_build
-site
-
-# Local env files
+# Local configuration and secrets — the image reads its settings from the
+# host's environment, never from a baked-in .env.
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
-# Docker
-Dockerfile
-docker-compose*.yml
-.docker
+# Design references and docs that never ship in the image
+stitch
+DESIGN.md
+PRODUCT.md
 
-# Fly
-fly.toml
-
-# Node (frontend builds independently)
-frontend/node_modules
-frontend/.next
-frontend/out
-
-# Data (large / local only)
-data/raw/
-data/raw/**
-
-# Misc
 *.log
+*.sqlite3
 .DS_Store

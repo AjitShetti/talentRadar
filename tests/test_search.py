@@ -401,13 +401,15 @@ class TestSemanticSearchEndpointBroadQueries:
     async def test_semantic_search_java_dev_with_db_fallback(self, search_db_session, seed_jobs):
         uow = UnitOfWork(search_db_session)
 
-        with patch("agents.rag_agent.ChromaJobStore") as MockChroma, \
-             patch("agents.rag_agent.embed_texts", return_value=[[0.1] * 384]), \
+        # No embed_texts patch: the agent no longer runs a separate (and
+        # discarded) embedding pass on the search path — the vector store
+        # embeds the query itself.
+        with patch("agents.rag_agent.get_vector_store") as MockStore, \
              patch("agents.orchestrator.AsyncGroq"), \
              patch("agents.rag_agent.AsyncSessionLocal", return_value=AsyncMock(__aenter__=AsyncMock(return_value=search_db_session), __aexit__=AsyncMock(return_value=False))):
 
-            mock_store = MockChroma.return_value
-            mock_store.search.return_value = []
+            mock_store = MockStore.return_value
+            mock_store.asearch = AsyncMock(return_value=[])
 
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:

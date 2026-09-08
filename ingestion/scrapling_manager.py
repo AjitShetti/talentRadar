@@ -17,6 +17,8 @@ from typing import Any
 
 import httpx
 
+from config.settings import get_settings
+
 logger = logging.getLogger(__name__)
 
 # Try importing Scrapling components
@@ -99,7 +101,12 @@ class ScraplingManager:
                     headers=headers,
                     params=params,
                     timeout=int(timeout),
-                    verify=False,
+                    # Certificates are verified. This was ``verify=False``,
+                    # which accepted any certificate from any host and made
+                    # every scrape trivially interceptable - the fetched HTML
+                    # is parsed into job rows and shown to users, so a
+                    # substituted response becomes content in the product.
+                    verify=True,
                 )
                 if page.status == 200:
                     raw_text = page.body.decode("utf-8", errors="ignore") if hasattr(page, "body") and isinstance(page.body, (bytes, bytearray)) else (page.text or "")
@@ -146,8 +153,16 @@ class ScraplingManager:
         """
         Stealth fetcher using Camoufox anti-detect browser with image/font blocking.
         Allows full JavaScript hydration for single-page applications (Naukri, etc.).
+
+        The browser is used only when ``ENABLE_STEALTH_SCRAPERS`` is on. It is
+        off by default for two reasons that both matter on a public, free
+        deployment: each call launches a headless Firefox, which OOMs a 512 MB
+        instance, and impersonating a browser is against the terms of the
+        sites this reaches. With it off the call still returns — it degrades
+        to the plain HTTP fetch below, which gets static pages and simply
+        finds nothing on the JS-hydrated ones.
         """
-        if CAMOUFOX_AVAILABLE and AsyncCamoufox is not None:
+        if get_settings().enable_stealth_scrapers and CAMOUFOX_AVAILABLE and AsyncCamoufox is not None:
             try:
                 async with AsyncCamoufox(headless=True) as browser:
                     page = await browser.new_page()

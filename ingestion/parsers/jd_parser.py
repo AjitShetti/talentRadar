@@ -39,7 +39,6 @@ from tenacity import (
     retry,
     retry_if_exception_type,
     stop_after_attempt,
-    wait_exponential,
 )
 
 from config.settings import get_settings
@@ -240,7 +239,6 @@ class JDParser:
         model: str = _DEFAULT_MODEL,
         inter_request_delay: float = 0.5,
     ) -> None:
-        from config.settings import get_settings
         settings = get_settings()
         _key = api_key if api_key is not None else settings.groq_api_key
         if not _key:
@@ -333,7 +331,7 @@ class JDParser:
             try:
                 jd = self.parse_jd(result.best_content, source_url=result.url)
                 parsed.append(jd)
-            except Exception as exc:
+            except Exception:
                 try:
                     from ingestion.seed_db import extract_job_from_raw
                     fallback_jd = extract_job_from_raw(result)

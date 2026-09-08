@@ -9,8 +9,8 @@ Tests are organised in 5 layers — each can be run independently:
   Layer 2 — Scraper: Tavily API connectivity + raw file save
   Layer 3 — Parser:  Groq LLM JD extraction
   Layer 4 — Postgres: DB connectivity + job upsert
-  Layer 5 — ChromaDB: embedding upsert + semantic search
-  Layer 6 — Full E2E: Tavily → LLM → Postgres → ChromaDB (real API keys)
+  Layer 5 — Vector store: embedding upsert + semantic search
+  Layer 6 — Full E2E: Tavily → LLM → Postgres → vector store (real API keys)
 
 Run options
 -----------
@@ -392,23 +392,26 @@ def test_layer4_postgres() -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# LAYER 5 — ChromaDB (requires running chromadb container)
+# LAYER 5 — Vector store (pgvector: needs the migrated database)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def test_layer5_chromadb() -> None:
-    print("\n── Layer 5: ChromaDB ─────────────────────────────────────────────")
+def test_layer5_vector_store() -> None:
+    print("\n── Layer 5: Vector store ─────────────────────────────────────────")
 
     try:
-        from ingestion.embeddings.chroma_store import ChromaJobStore
-        store = ChromaJobStore()
+        from ingestion.embeddings.vector_store import get_vector_store
+        store = get_vector_store()
+        if store is None:
+            fail("L5", "Vector store", "no backend (VECTOR_BACKEND=none, or unreachable)")
+            return
         count_before = store.count()
-        ok("L5", "ChromaDB connection", f"collection has {count_before} documents")
+        ok("L5", "Vector store connection", f"{count_before} embeddings stored")
     except Exception as e:
-        fail("L5", "ChromaDB connection", str(e))
+        fail("L5", "Vector store connection", str(e))
         return
 
     try:
-        test_id = "test-e2e-chroma-001"
+        test_id = "test-e2e-vector-001"
         store.add(
             job_id=test_id,
             text="Senior Python Engineer at Stripe, San Francisco. "
@@ -454,17 +457,17 @@ def test_layer5_chromadb() -> None:
 
     try:
         count_final = store.count()
-        ok("L5", "Final ChromaDB document count", f"{count_final} total documents")
+        ok("L5", "Final embedding count", f"{count_final} total documents")
     except Exception as e:
         fail("L5", "Document count", str(e))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# LAYER 6 — Full E2E mini-pipeline (Tavily → Parser → Postgres → ChromaDB)
+# LAYER 6 — Full E2E mini-pipeline (Tavily → Parser → Postgres → vector store)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def test_layer6_full_pipeline(tmp_path: Path) -> None:
-    print("\n── Layer 6: Full Pipeline (Tavily → LLM → Postgres → ChromaDB) ──")
+    print("\n── Layer 6: Full Pipeline (Tavily → LLM → Postgres → vectors) ──")
     from config.settings import get_settings
     settings = get_settings()
 
@@ -548,14 +551,16 @@ def test_layer6_full_pipeline(tmp_path: Path) -> None:
         fail("L6", "Step 3 — Save to Postgres", str(e))
         ext_id = None
 
-    # Step 4 — Embed to ChromaDB
+    # Step 4 — Embed into the vector store
     try:
-        from ingestion.embeddings.chroma_store import ChromaJobStore
+        from ingestion.embeddings.vector_store import get_vector_store
         pjd = parsed_jds[0]
         job_id = hashlib.md5(
             (pjd.source_url or pjd.title + pjd.company).encode()
         ).hexdigest()
-        store = ChromaJobStore()
+        store = get_vector_store()
+        if store is None:
+            raise RuntimeError("no vector backend configured")
         store.add(
             job_id=job_id,
             text=pjd.raw_text[:4096],
@@ -572,10 +577,10 @@ def test_layer6_full_pipeline(tmp_path: Path) -> None:
 
         # Verify it's searchable
         search_res = store.search(pjd.title, n_results=1)
-        ok("L6", "Step 4 — Embedded to ChromaDB",
+        ok("L6", "Step 4 — Embedded into the vector store",
            f"count={store.count()} | search returned {len(search_res)} result(s)")
     except Exception as e:
-        fail("L6", "Step 4 — Embed to ChromaDB", str(e))
+        fail("L6", "Step 4 — Embed into the vector store", str(e))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -637,7 +642,7 @@ def main() -> None:
             test_layer4_postgres()
 
         if run_all or args.layer == 5:
-            test_layer5_chromadb()
+            test_layer5_vector_store()
 
         if (run_all or args.layer == 6) and not args.quick:
             test_layer6_full_pipeline(tmp_dir)

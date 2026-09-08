@@ -15,17 +15,14 @@ functions with clear inputs/outputs.
 from __future__ import annotations
 
 import logging
-import uuid
-from dataclasses import asdict
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agents.state import QueryContext
 from storage.database import AsyncSessionLocal
 from storage.models import JobStatus, Job
 from storage.repository import UnitOfWork
-from services.base import as_list, parse_uuid
+from services.base import parse_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -186,6 +183,7 @@ async def calculate_match(
         }
     """
     import time
+    from dataclasses import replace
 
     from fastapi.concurrency import run_in_threadpool
     from ml.config import ScoringWeights
@@ -194,7 +192,10 @@ async def calculate_match(
     start = time.perf_counter()
     matcher = ResumeMatcher()
     if weights:
-        matcher.config.weights = ScoringWeights(**weights)
+        # PipelineConfig is a frozen dataclass, so assigning to .weights raised
+        # FrozenInstanceError - every call that actually passed custom weights
+        # failed outright. dataclasses.replace() builds the amended config.
+        matcher.config = replace(matcher.config, weights=ScoringWeights(**weights))
     result = await run_in_threadpool(
         matcher.match,
         resume_text=resume_text,
@@ -236,7 +237,6 @@ async def rank_jobs_for_profile(
     best matches with their missing skills and match reasons — this is
     the "Discover" step of the job-seeker journey.
     """
-    own = None
     session = AsyncSessionLocal()
     try:
         uow = UnitOfWork(session)

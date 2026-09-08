@@ -5,11 +5,11 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 SHELL := /bin/bash
-.PHONY: help up down logs migrate seed seed-companies test lint format typecheck clean
+.PHONY: help up down logs migrate seed seed-companies test lint format typecheck clean verify-deploy build-image
 
 # ── Docker Compose ──────────────────────────────────────────────────────────
 
-## Start full local stack (postgres, redis, chromadb, api, celery, frontend)
+## Start full local stack (postgres+pgvector, redis, api, frontend)
 up:
 	docker compose up -d
 
@@ -24,6 +24,18 @@ logs:
 ## Restart a single service (usage: make restart service=api)
 restart:
 	docker compose restart $(service)
+
+# ── Deployment ──────────────────────────────────────────────────────────────
+
+## Pre-flight a deployment: settings, database, pgvector, migrations, model
+## Run it with the target environment loaded. See DEPLOY.md.
+verify-deploy:
+	python -m scripts.verify_deploy
+
+## Build the production API image exactly as a free host would
+## (no PyTorch, no TeX Live, no browser — pass INSTALL_*=true to add them back)
+build-image:
+	docker build -f infra/Dockerfile -t talentradar-api:local .
 
 # ── Database ────────────────────────────────────────────────────────────────
 

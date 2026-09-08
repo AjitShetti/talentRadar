@@ -18,7 +18,6 @@ from dataclasses import dataclass, field
 from ml.config import (
     ALL_KNOWN_SKILLS,
     EDUCATION_HIERARCHY,
-    EDUCATION_KEYWORDS,
 )
 from ml.preprocessing import CleanedText
 from ml.utils import extract_year_range, get_logger

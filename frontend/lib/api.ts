@@ -54,6 +54,10 @@ export type ContactDiscovery = { company?: string | null; careers_url?: string |
 export type CompanyRole = { id: string; title: string; location?: string | null; is_remote?: boolean; seniority?: string | null; salary_raw?: string | null; skills: string[]; source_url?: string | null; posted_at?: string | null }
 export type CompanyDetail = CompanyCard & { linkedin_url?: string | null; github?: GithubOrg | null; tech_stack_curated: string[]; tech_stack_from_postings: string[]; culture_summary?: string | null; contacts: CompanyContact[]; jobs: CompanyRole[]; has_profile: boolean }
 export type NewContact = { kind?: string; name?: string | null; title?: string | null; email?: string | null; linkedin_url?: string | null; notes?: string | null; source_url?: string | null; verified?: boolean }
+// A dated commitment on the tracker — the only thing on the overview the user
+// cannot reschedule by ignoring it, so it leads the page.
+export type AgendaItem = { application_id: string; job_id: string | null; role: string; company: string; status: string; scheduled_at: string; days_away: number; when_label: string }
+export type ActivityItem = { application_id: string; role: string; company: string; from_status: string | null; to_status: string; note: string | null; created_at: string | null; days_ago: number | null }
 export type BriefingAction = { label: string; href: string; style: string }
 export type BriefingCard = { id: string; kind: string; title: string; detail: string; tone: string; actions: BriefingAction[]; meta: Record<string, unknown>; dismissible: boolean }
 export type Briefing = { generated_at: string; headline: string; cards: BriefingCard[]; hidden_count: number; stats: { total_applications?: number; saved?: number; applied?: number; interviews?: number; onboarding_completed?: boolean } }
@@ -64,7 +68,34 @@ export type LearningTask = { skill_name: string; title: string; description?: st
 export type LearningPlan = { tasks: LearningTask[]; total: number }
 
 export function token() { return typeof window === 'undefined' ? null : localStorage.getItem(TOKEN_KEY) }
-export function signedIn() { return Boolean(token()) }
+
+/**
+ * Read the `exp` claim without verifying the signature.
+ *
+ * The server is the only thing that decides whether a token is valid; this is
+ * purely so the UI does not render a whole authenticated page from a token it
+ * can already see has expired. Tokens last 7 days, so before this check a
+ * returning user got the full dashboard shell followed by a wall of failed
+ * requests instead of a redirect to sign in.
+ */
+function tokenExpiry(raw: string): number | null {
+  try {
+    const payload = raw.split('.')[1]
+    if (!payload) return null
+    const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'))
+    const exp = (JSON.parse(json) as { exp?: number }).exp
+    return typeof exp === 'number' ? exp * 1000 : null
+  } catch { return null }
+}
+
+export function signedIn() {
+  const raw = token()
+  if (!raw) return false
+  const expiresAt = tokenExpiry(raw)
+  // A token we cannot parse is left to the server to reject.
+  if (expiresAt !== null && expiresAt <= Date.now()) { signOut(); return false }
+  return true
+}
 export function currentEmail() { return typeof window === 'undefined' ? null : localStorage.getItem(EMAIL_KEY) }
 export function signOut() { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(EMAIL_KEY); clearPersistedState() }
 
@@ -79,7 +110,19 @@ async function request<T>(path: string, options: RequestInit = {}, authenticated
   const response = await fetch(`${API_URL}${path}`, { ...options, headers })
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as { detail?: string; message?: string }
-    if (response.status === 401) signOut()
+    if (response.status === 401) {
+      // Clearing the token was not enough: the page had already rendered, so
+      // the user sat looking at a broken screen. Send them to sign in and
+      // remember where they were.
+      signOut()
+      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+        window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`
+      }
+      throw new Error('Your session has expired. Please sign in again.')
+    }
+    if (response.status === 429) {
+      throw new Error('You are going a bit fast for us — wait a moment and try again.')
+    }
     throw new Error(body.detail || body.message || `Request failed (${response.status})`)
   }
   if (response.status === 204) return undefined as T

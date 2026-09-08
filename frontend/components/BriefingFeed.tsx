@@ -7,6 +7,7 @@ import { Briefing, BriefingCard } from '@/lib/api'
 /** Human label for a card's origin, shown above its title. */
 const KIND_LABELS: Record<string, string> = {
   priority: 'DO THIS FIRST',
+  scheduled_interview: 'ON THE CALENDAR',
   stale_application: 'GOING COLD',
   saved_backlog: 'UNFINISHED',
   interview_momentum: 'MOMENTUM',
@@ -14,26 +15,28 @@ const KIND_LABELS: Record<string, string> = {
 
 function Card({ card, onDismiss }: { card: BriefingCard; onDismiss: (id: string, days?: number) => void }) {
   return <article className="cp-card" data-tone={card.tone}>
-    <div className="cp-card-head">
-      <p className="eyebrow">{KIND_LABELS[card.kind] || card.kind.replace(/_/g, ' ').toUpperCase()}</p>
-      {card.dismissible && <div className="cp-card-tools">
-        <button className="icon-refresh" title="Snooze for a week" onClick={() => onDismiss(card.id, 7)}>
-          <AlarmClock size={14}/>
-        </button>
-        <button className="icon-refresh" title="Dismiss" onClick={() => onDismiss(card.id)}>
-          <X size={14}/>
-        </button>
+    <span className="cp-lamp" />
+    <div className="cp-card-body">
+      <div className="cp-card-headrow">
+        <h3>{card.title}<span className="cp-card-kind">{KIND_LABELS[card.kind] || card.kind.replace(/_/g, ' ').toUpperCase()}</span></h3>
+        {card.dismissible && <div className="cp-card-tools">
+          <button className="icon-refresh" title="Snooze for a week" onClick={() => onDismiss(card.id, 7)}>
+            <AlarmClock size={14}/>
+          </button>
+          <button className="icon-refresh" title="Dismiss" onClick={() => onDismiss(card.id)}>
+            <X size={14}/>
+          </button>
+        </div>}
+      </div>
+      <p>{card.detail}</p>
+      {card.actions.length > 0 && <div className="cp-card-actions">
+        {card.actions.map(action => <Link
+          key={action.label}
+          href={action.href}
+          className={action.style === 'primary' ? 'primary-button' : 'outline-button'}
+        >{action.label} <ArrowRight size={13}/></Link>)}
       </div>}
     </div>
-    <h3>{card.title}</h3>
-    <p>{card.detail}</p>
-    {card.actions.length > 0 && <div className="cp-card-actions">
-      {card.actions.map(action => <Link
-        key={action.label}
-        href={action.href}
-        className={action.style === 'primary' ? 'primary-button' : 'outline-button'}
-      >{action.label} <ArrowRight size={13}/></Link>)}
-    </div>}
   </article>
 }
 
@@ -57,8 +60,10 @@ export default function BriefingFeed({
     <div className="cp-section-head">
       <div className="panel-heading">
         <div>
-          <p className="eyebrow">TODAY&apos;S BRIEFING</p>
-          <h2>{briefing?.headline || 'What needs you today'}</h2>
+          {/* A stable section label, not the headline. The overview already
+              says the headline in its subhead, and printing the same sentence
+              twice a screen apart read as a bug rather than as emphasis. */}
+          <h2>Today&apos;s briefing</h2>
         </div>
       </div>
       {briefing && briefing.hidden_count > 0 && <span className="ci-count">{briefing.hidden_count} hidden</span>}

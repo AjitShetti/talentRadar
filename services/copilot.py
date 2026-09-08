@@ -59,6 +59,8 @@ logger = logging.getLogger(__name__)
 STALE_AFTER_DAYS = 10
 #: A saved job the user never applied to goes stale faster — postings expire.
 SAVED_STALE_AFTER_DAYS = 5
+#: How far ahead a scheduled interview becomes something to act on today.
+SCHEDULED_PREP_WINDOW_DAYS = 3
 #: Stages where silence means "chase it", as opposed to a closed outcome.
 IN_FLIGHT_STAGES = (
     ApplicationStatus.APPLIED,
@@ -194,6 +196,58 @@ async def _application_cards(user_id: str) -> list[dict[str, Any]]:
         await session.close()
 
 
+async def _scheduled_interview_cards(user_id: str) -> list[dict[str, Any]]:
+    """
+    Interviews already on the calendar.
+
+    This outranks everything else the briefing can say: a stale application
+    costs a reply, an interview tomorrow costs the round. Cards are emitted
+    only inside the prep window — a date three weeks out is not today's work.
+    """
+    from services.applications import day_agenda
+
+    agenda = await day_agenda(user_id=user_id, within_days=SCHEDULED_PREP_WINDOW_DAYS)
+
+    cards: list[dict[str, Any]] = []
+    for item in agenda:
+        days = int(item["days_away"])
+        when = str(item["when_label"]).lower()
+        cards.append(_card(
+            card_id=f"scheduled_interview:{item['application_id']}",
+            kind="scheduled_interview",
+            title=f"{item['role']} interview at {item['company']} — {when}",
+            detail=(
+                f"Scheduled for {_clock(item['scheduled_at'])}. "
+                + (
+                    "Run one mock round on this company's stack before you sit down."
+                    if days <= 1
+                    else "Block practice time now so the prep isn't the night before."
+                )
+            ),
+            tone="warning" if days <= 1 else "action",
+            actions=[
+                {"label": "Prep with a mock", "href": "/interview", "style": "primary"},
+                {"label": "Research the company", "href": "/company-intel", "style": "ghost"},
+            ],
+            meta={
+                "application_id": item["application_id"],
+                "days_away": days,
+                "scheduled_at": item["scheduled_at"],
+                "company": item["company"],
+            },
+            dismissible=days > 0,
+        ))
+    return cards
+
+
+def _clock(iso: str) -> str:
+    """Render a stored ISO timestamp as a readable time, tolerating junk."""
+    try:
+        return datetime.fromisoformat(iso).strftime("%d %b, %H:%M")
+    except ValueError:
+        return "a time on your tracker"
+
+
 async def _interview_card(user_id: str, applied: int) -> dict[str, Any] | None:
     """
     The one interview nudge the briefing owns: applications in flight and no
@@ -246,15 +300,16 @@ async def build_briefing(*, user_id: str) -> dict[str, Any]:
     """
     Assemble today's briefing.
 
-    Ordering is deliberate: the single next-best action always leads, then
-    anything decaying (stale applications), then the practice nudge. Cards the
-    user dismissed or snoozed are filtered out at the end so the id-based
-    dismissal works no matter which producer emitted the card.
+    Ordering is deliberate: a dated commitment (an interview on the calendar)
+    outranks everything, then the single next-best action, then anything
+    decaying (stale applications), then the practice nudge. Cards the user
+    dismissed or snoozed are filtered out at the end so the id-based dismissal
+    works no matter which producer emitted the card.
     """
     next_action = await recommend_next_action(user_id=user_id)
     context = next_action.get("context", {}) if isinstance(next_action, dict) else {}
 
-    cards: list[dict[str, Any]] = []
+    cards: list[dict[str, Any]] = await _scheduled_interview_cards(user_id)
 
     if next_action.get("recommendation"):
         cards.append(_card(
@@ -298,6 +353,12 @@ async def build_briefing(*, user_id: str) -> dict[str, Any]:
 
 def _headline(cards: list[dict[str, Any]], context: dict[str, Any]) -> str:
     """One line summarising the state of the queue."""
+    today = [
+        c for c in cards
+        if c["kind"] == "scheduled_interview" and c["meta"].get("days_away") == 0
+    ]
+    if today:
+        return f"You have {len(today)} interview(s) today — everything else can wait."
     urgent = sum(1 for c in cards if c["tone"] == "warning")
     if urgent:
         return f"{urgent} thing(s) need chasing today."

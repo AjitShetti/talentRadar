@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 from html import unescape
 from typing import Any
 

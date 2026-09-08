@@ -75,7 +75,7 @@ async def upsert_profile_endpoint(user_id: CurrentUserId, body: ProfileUpsertSch
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:  # surface a readable message instead of a bare 500
         logger.exception("Profile save failed for user %s", user_id)
-        raise HTTPException(status_code=500, detail=f"Could not save profile: {exc}") from exc
+        raise HTTPException(status_code=500, detail="Could not save your profile.") from exc
     if not result:
         raise HTTPException(status_code=400, detail="Could not save profile")
     return {"onboarding_completed": result.get("onboarding_completed", False), "profile": result}

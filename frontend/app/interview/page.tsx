@@ -6,6 +6,7 @@ import {
   Send, SkipForward, StopCircle, Volume2,
 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
+import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
 import { api, InterviewScore, InterviewState } from '@/lib/api'
 import { usePersistentState, useLatest } from '@/lib/persistent-state'
@@ -297,11 +298,14 @@ export default function InterviewPage() {
   const busy = stage === 'transcribing' || stage === 'evaluating'
   const liveVoice = Boolean(active?.voice) && !active?.done
 
-  return <RequireAuth><AppShell>
+  return <RequireAuth><AppShell narrow>
     <section className="page-heading">
-      <p className="eyebrow">LANGGRAPH INTERVIEW LAB</p>
-      <h1>Practice the conversation before it counts.</h1>
-      <p>Answer out loud and your interviewer listens, reacts, and probes — the same agent that scores every response.</p>
+      <div>
+        <span className="board-kicker">LangGraph interview lab</span>
+        <h1>Practice the conversation before it counts<span>.</span></h1>
+        <p>Answer out loud and your interviewer listens, reacts, and probes — the same agent that scores every response.</p>
+      </div>
+      {history.length > 0 && <div className="tracker-total"><strong><FlapText value={history.length} /></strong><span>sessions logged</span></div>}
     </section>
 
     {error && <p className="form-error">{error}</p>}

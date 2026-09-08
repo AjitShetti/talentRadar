@@ -6,7 +6,6 @@ Run multi-source job ingestion pipeline directly and populate DB + ChromaDB.
 
 import asyncio
 import logging
-import sys
 
 logging.basicConfig(
     level=logging.INFO,

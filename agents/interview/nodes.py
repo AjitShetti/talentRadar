@@ -80,7 +80,14 @@ async def node_generate_question(state: InterviewAgentState) -> InterviewAgentSt
 
     # Fallback: pick from static bank if LLM failed
     if not question:
-        used = {msg["content"] for msg in history if msg["role"] == "assistant"}
+        # ``history`` is submitted by the client each turn, so entries can be
+        # missing keys or not even be dicts. Subscripting them directly raised
+        # KeyError/TypeError out of the node and surfaced as a 500.
+        used = {
+            str(msg.get("content", ""))
+            for msg in history
+            if isinstance(msg, dict) and msg.get("role") == "assistant"
+        }
         question = get_fallback_question(track, difficulty, used)
         if question:
             logger.info("Using fallback question (q=%d)", q_index)

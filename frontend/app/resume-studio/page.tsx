@@ -5,6 +5,7 @@ import {
   Check, ChevronDown, ChevronUp, Download, Eye, EyeOff, Plus, RefreshCw, Trash2, UploadCloud,
 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
+import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
 import CopyButton from '@/components/CopyButton'
 import { api, ResumeDocument, ResumeItem, ResumeSection, ResumeSectionType } from '@/lib/api'
@@ -319,9 +320,11 @@ export default function ResumeStudioPage() {
     <RequireAuth>
       <AppShell>
         <section className="page-heading">
-          <p className="eyebrow">RESUME STUDIO</p>
-          <h1>Build your resume, section by section.</h1>
-          <p>Edit structured sections on the left — your LaTeX source, compiled PDF, and ATS score all update live as you type.</p>
+          <div>
+            <span className="board-kicker">Resume studio</span>
+            <h1>Build your resume, section by section<span>.</span></h1>
+            <p>Edit structured sections on the left — your LaTeX source, compiled PDF, and ATS score all update live as you type.</p>
+          </div>
         </section>
 
         {loading && <div className="card-empty">Loading your resume…</div>}
@@ -333,7 +336,7 @@ export default function ResumeStudioPage() {
               <h2>Live ATS score</h2>
             </div>
             <div className="ats-score-row">
-              <span className="ats-score-badge">{ats.score}<small>/100</small></span>
+              <span className="ats-score-badge"><FlapText value={ats.score} /><small>/100</small></span>
               <div style={{ flex: 1 }}>
                 {ats.suggestions.length > 0 ? (
                   <ul className="suggestion-list">

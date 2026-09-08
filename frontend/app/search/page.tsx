@@ -3,10 +3,13 @@
 import { FormEvent, useEffect, useRef, useState } from 'react'
 import { Bookmark, ExternalLink, MapPin, RefreshCw, Search, SlidersHorizontal } from 'lucide-react'
 import AppShell from '@/components/AppShell'
+import FlapText from '@/components/FlapText'
+import { Ripple } from '@/components/Ripple'
 import { api, Job, signedIn } from '@/lib/api'
 import { usePersistentState } from '@/lib/persistent-state'
 import { SuggestionProfile, pickSuggestions } from '@/lib/search-suggestions'
 import { EXPERIENCE_BANDS, INDIAN_CITIES, bandForYears, matchCity } from '@/lib/filters'
+import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 
 type FilterProfile = SuggestionProfile & { years_experience?: unknown; is_remote_preferred?: unknown }
 
@@ -83,7 +86,14 @@ export default function SearchPage() {
   }
 
   return <AppShell>
-    <section className="page-heading"><div><p className="eyebrow">OPPORTUNITY EXPLORER</p><h1>Find roles that fit your direction.</h1><p>Every result is a role hiring in India—use natural language, then narrow by city and experience.</p></div></section>
+    <section className="page-heading">
+      <div>
+        <span className="board-kicker">Opportunity explorer</span>
+        <h1>Find roles that fit your direction<span>.</span></h1>
+        <p>Every result is a role hiring in India — use natural language, then narrow by city and experience.</p>
+      </div>
+      {jobs.length > 0 && <div className="tracker-total"><strong><FlapText value={jobs.length} /></strong><span>results on board</span></div>}
+    </section>
     <form className="search-form" onSubmit={find}>
       <Search size={20}/>
       <input value={query} onChange={e => setQuery(e.target.value)} placeholder="e.g. Senior product design roles in fintech" />
@@ -112,7 +122,13 @@ export default function SearchPage() {
         {tips.map(tip => <button type="button" key={tip} onClick={() => setQuery(tip)}>{tip}</button>)}
       </aside>
       <section className="job-results">
-        {loading && <div className="loading-state">Scanning the Indian job market…</div>}
+        {loading && <div className="loading-state search-loading">
+          <span className="loading-mark">
+            <Ripple className="ripple-loader" />
+            <span className="ripple-static" aria-hidden />
+          </span>
+          Scanning the Indian job market…
+        </div>}
         {!loading && jobsReady && !jobs.length && <div className="empty-state"><Search size={25}/><h2>Start with a conversation.</h2><p>Describe your ideal role, skills, or working style to see relevant opportunities across India.</p></div>}
         {jobs.map(job => <article className="job-card" key={job.id}>
           <div className="job-card-top">
@@ -128,7 +144,7 @@ export default function SearchPage() {
           <div className="chips">{(job.skills || []).slice(0, 5).map(skill => <span key={skill}>{skill}</span>)}</div>
           <div className="job-actions">
             <button className="outline-button" onClick={() => save(job)} disabled={saved.includes(job.id)}><Bookmark size={14}/>{saved.includes(job.id) ? 'Saved' : 'Save to tracker'}</button>
-            {job.source_url && <a className="text-button" href={job.source_url} target="_blank">View original <ExternalLink size={14}/></a>}
+            {externalHref(job.source_url) && <a className="text-button" href={externalHref(job.source_url)!} {...EXTERNAL_LINK_PROPS}>View original <ExternalLink size={14}/></a>}
           </div>
         </article>)}
       </section>

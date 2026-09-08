@@ -9,9 +9,8 @@ from __future__ import annotations
 
 from typing import AsyncGenerator
 
-from fastapi import Depends, HTTPException, status
 
-from storage.database import AsyncSessionLocal, get_db
+from storage.database import AsyncSessionLocal
 from storage.repository import UnitOfWork, CompanyRepository, JobRepository, IngestionRunRepository
 
 

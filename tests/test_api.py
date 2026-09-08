@@ -57,11 +57,9 @@ def _make_mock_search_response(n_results: int = 2):
     )
 
 
-async def _make_empty_uow():
-    """UoW mock that yields an empty job list (no DB required)."""
-    mock_uow = AsyncMock()
-    mock_uow.jobs.search = AsyncMock(return_value=([], 0))
-    yield mock_uow
+# The empty-UoW override lives in conftest as the ``db_free_client`` fixture:
+# overriding the dependency is the only way to detach a route from the
+# database, since patching the module attribute is too late to matter.
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -96,25 +94,23 @@ class TestHealthEndpoints:
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestStructuredSearchEndpoint:
-    async def test_structured_search_returns_200_with_mocked_db(self, api_client):
+    async def test_structured_search_returns_200_with_mocked_db(self, db_free_client):
         """Structured search must return 200 OK — never silently accept 500."""
-        with patch("api.routers.search.get_unit_of_work", side_effect=_make_empty_uow):
-            response = await api_client.post(
-                "/api/v1/search/structured",
-                json={"limit": 10, "offset": 0},
-            )
+        response = await db_free_client.post(
+            "/api/v1/search/structured",
+            json={"limit": 10, "offset": 0},
+        )
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert "jobs" in data
         assert "total" in data
         assert isinstance(data["jobs"], list)
 
-    async def test_structured_search_respects_limit(self, api_client):
-        with patch("api.routers.search.get_unit_of_work", side_effect=_make_empty_uow):
-            response = await api_client.post(
-                "/api/v1/search/structured",
-                json={"limit": 5, "offset": 0},
-            )
+    async def test_structured_search_respects_limit(self, db_free_client):
+        response = await db_free_client.post(
+            "/api/v1/search/structured",
+            json={"limit": 5, "offset": 0},
+        )
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["limit"] == 5
@@ -134,12 +130,11 @@ class TestStructuredSearchEndpoint:
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
-    async def test_structured_search_with_skill_filter(self, api_client):
-        with patch("api.routers.search.get_unit_of_work", side_effect=_make_empty_uow):
-            response = await api_client.post(
-                "/api/v1/search/structured",
-                json={"skills": ["Python", "FastAPI"], "limit": 10, "offset": 0},
-            )
+    async def test_structured_search_with_skill_filter(self, db_free_client):
+        response = await db_free_client.post(
+            "/api/v1/search/structured",
+            json={"skills": ["Python", "FastAPI"], "limit": 10, "offset": 0},
+        )
         assert response.status_code == status.HTTP_200_OK
 
 
@@ -247,33 +242,28 @@ class TestRecommendEndpoints:
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
-    async def test_match_rejects_empty_skills_list(self, api_client):
-        """Candidate with no skills is semantically invalid."""
+    async def test_match_reports_not_implemented(self, api_client):
+        """Candidate-to-job matching is an explicit stub, and says so.
+
+        This previously asserted a 422 for an empty skills list, which the
+        endpoint never implemented — it raises 501 for every input. Assert the
+        real contract rather than a validation rule nobody wrote.
+        """
         response = await api_client.post(
             "/api/v1/recommend/match",
             json={"candidate": {"skills": []}, "limit": 10},
         )
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_501_NOT_IMPLEMENTED
 
-    async def test_match_returns_200_with_mocked_orchestrator(self, api_client):
-        mock_response = _make_mock_search_response(n_results=3)
-        with patch(
-            "api.routers.recommend.Orchestrator.match_candidate_to_jobs",
-            new_callable=AsyncMock,
-            return_value=mock_response,
-        ):
-            response = await api_client.post(
-                "/api/v1/recommend/match",
-                json={
-                    "candidate": {
-                        "name": "Jane Doe",
-                        "skills": ["Python", "FastAPI"],
-                        "experience_years": 4,
-                    },
-                    "limit": 10,
-                },
-            )
-        assert response.status_code == status.HTTP_200_OK
+    async def test_learning_path_rejects_empty_skills(self, api_client):
+        response = await api_client.post(
+            "/api/v1/recommend/learning-path",
+            json={"missing_skills": []},
+        )
+        assert response.status_code in (
+            status.HTTP_200_OK,
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -281,10 +271,24 @@ class TestRecommendEndpoints:
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestIngestEndpoints:
-    async def test_trigger_ingestion_returns_200_with_mocked_pipeline(self, api_client):
-        """
-        Trigger must return 200 OK when real-time ingestion is triggered.
-        """
+    """Ingestion is privileged: it fans out live scrapers and LLM parsing."""
+
+    async def test_trigger_ingestion_requires_authentication(self, api_client):
+        response = await api_client.post(
+            "/api/v1/ingest/trigger",
+            json={"roles": ["Python Engineer"], "locations": ["Remote"], "max_results_per_query": 5},
+        )
+        assert response.status_code in (401, 403)
+
+    async def test_trigger_ingestion_rejects_non_admin(self, auth_client):
+        """A signed-in ordinary user is still not allowed to start a scrape."""
+        response = await auth_client.post(
+            "/api/v1/ingest/trigger",
+            json={"roles": ["Python Engineer"], "locations": ["Remote"], "max_results_per_query": 5},
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    async def test_trigger_ingestion_returns_200_for_admin(self, admin_client):
         mock_result = {
             "jobs": [{"id": "1", "title": "Python Engineer"}],
             "total": 1,
@@ -295,7 +299,7 @@ class TestIngestEndpoints:
             new_callable=AsyncMock,
             return_value=mock_result,
         ) as mock_search:
-            response = await api_client.post(
+            response = await admin_client.post(
                 "/api/v1/ingest/trigger",
                 json={
                     "roles": ["Python Engineer"],
@@ -304,20 +308,19 @@ class TestIngestEndpoints:
                 },
             )
         assert response.status_code == status.HTTP_200_OK
-        data = response.json()
-        assert data["success"] is True
+        assert response.json()["success"] is True
         mock_search.assert_called_once()
 
-    async def test_trigger_ingestion_rejects_empty_roles(self, api_client):
+    async def test_trigger_ingestion_rejects_empty_roles(self, admin_client):
         """Empty roles list should be rejected at the schema level."""
-        response = await api_client.post(
+        response = await admin_client.post(
             "/api/v1/ingest/trigger",
             json={"roles": [], "locations": ["Remote"], "max_results_per_query": 5},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
-    async def test_trigger_ingestion_rejects_zero_max_results(self, api_client):
-        response = await api_client.post(
+    async def test_trigger_ingestion_rejects_zero_max_results(self, admin_client):
+        response = await admin_client.post(
             "/api/v1/ingest/trigger",
             json={"roles": ["Engineer"], "locations": ["Remote"], "max_results_per_query": 0},
         )

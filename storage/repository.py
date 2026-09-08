@@ -531,10 +531,16 @@ class JobRepository(BaseRepository[Job]):
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
     async def get_by_ids(self, ids: list[uuid.UUID]) -> Sequence[Job]:
-        """Fetch multiple jobs by their primary keys."""
+        """Fetch multiple jobs by their primary keys, with their companies.
+
+        ``company`` is eager-loaded to match ``search()``. Callers routinely
+        read ``job.company.name`` after the session has been committed and
+        closed; on a lazily-loaded relationship that raises MissingGreenlet
+        (async) or DetachedInstanceError, surfacing as an opaque 500.
+        """
         if not ids:
             return []
-        stmt = select(Job).where(Job.id.in_(ids))
+        stmt = select(Job).options(selectinload(Job.company)).where(Job.id.in_(ids))
         return (await self.session.execute(stmt)).scalars().all()
 
     async def get_by_external_ids(self, external_ids: list[str], source: str | None = None) -> Sequence[Job]:
@@ -543,7 +549,7 @@ class JobRepository(BaseRepository[Job]):
         Parameters
         ----------
         external_ids:
-            List of stable MD5 fingerprint IDs (matches ChromaDB document IDs).
+            List of stable MD5 fingerprint IDs (matches job_embeddings.id).
         source:
             Optional source filter (e.g. 'ats_crawler'). When omitted, all
             sources are searched — required for cross-source lookups like RAG.
@@ -854,7 +860,7 @@ class JobRepository(BaseRepository[Job]):
         await self.session.execute(stmt)
 
     async def set_embedding_id(self, id: uuid.UUID, embedding_id: str) -> None:
-        """Attach a ChromaDB embedding ID after vectorising the description."""
+        """Attach the vector-store row id after vectorising the description."""
         stmt = (
             update(Job)
             .where(Job.id == id)

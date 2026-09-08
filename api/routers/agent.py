@@ -70,7 +70,7 @@ async def briefing(user_id: CurrentUserId) -> dict[str, Any]:
         return await build_briefing(user_id=user_id)
     except Exception as exc:
         logger.error("Briefing failed: %s", exc, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Could not build your briefing: {exc}") from exc
+        raise HTTPException(status_code=500, detail="Could not build your briefing right now.") from exc
 
 
 @router.post("/chat", response_model=ChatResponseSchema)

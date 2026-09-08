@@ -1,0 +1,133 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Render Blueprint — the free-tier deployment target for TalentRadar
+# ─────────────────────────────────────────────────────────────────────────────
+# This replaces infra/cloudrun.yaml, which was never free: it set
+# minScale: "1" with cpu-throttling disabled, i.e. an always-on billed
+# instance, and pointed CHROMA_HOST at a service that does not exist on
+# Cloud Run.
+#
+# What this blueprint assumes you have created first (all free):
+#
+#   1. A Neon or Supabase Postgres database with pgvector.
+#      Both ship the extension; migration 010 runs `CREATE EXTENSION vector`.
+#      Copy the connection string into the DATABASE_URL variable below —
+#      Render marks it `sync: false`, so it is prompted for at deploy time
+#      and never committed here.
+#   2. A Groq API key (console.groq.com) — free tier.
+#   3. Optionally a Tavily key and a GitHub token; both features degrade
+#      cleanly without them.
+#
+# Then, once: run `alembic upgrade head` against that database. Render's
+# preDeployCommand is a paid feature, so migrations are not automatic on the
+# free plan — see DEPLOY.md.
+#
+# Free-plan realities, stated plainly: services sleep after 15 minutes of
+# inactivity and take ~30-60s to wake, and you get 512 MB of RAM and a
+# fraction of a CPU. That is enough for this app because the vector store is
+# now Postgres and the embedding model is ONNX rather than PyTorch — but if
+# memory is tight, set VECTOR_BACKEND=none and semantic search falls back to
+# the relational query with no model loaded at all.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ───────────────────────────── API ─────────────────────────────
+  - type: web
+    name: talentradar-api
+    runtime: docker
+    plan: free
+    # Free instances are offered in every Render region; Singapore is the
+    # closest to an India-only job board's users.
+    region: singapore
+    dockerfilePath: ./infra/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      # ---- Secrets you supply at deploy time (sync: false = prompt, never
+      # stored in git) ----
+      - key: DATABASE_URL
+        sync: false          # postgresql://user:pass@host/db?sslmode=require
+      - key: GROQ_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+
+      # ---- Generated once by Render, then held stable ----
+      # A fresh 32+ character secret per environment. Rotating it invalidates
+      # every issued token, which is the intended behaviour on first deploy:
+      # nothing signed by a development secret stays valid in production.
+      - key: JWT_SECRET_KEY
+        generateValue: true
+
+      # ---- Deployment-shape settings ----
+      # Managed Postgres requires TLS, and asyncpg does not read libpq's
+      # sslmode= from the DSN — config/settings.py strips it and
+      # storage/database.py requests TLS through connect_args instead.
+      - key: POSTGRES_SSL
+        value: "true"
+      # Render terminates TLS and proxies to the container, so the peer
+      # address is always Render's router. Without this every user shares one
+      # rate-limit bucket and the whole service starts 429-ing under light
+      # load. One hop, because there is exactly one proxy in front of us.
+      - key: TRUSTED_PROXY_HOPS
+        value: "1"
+      # Embeddings live in the same Postgres as everything else.
+      - key: VECTOR_BACKEND
+        value: pgvector
+      # One instance, so the in-process daily scan is safe to run here.
+      - key: ENABLE_SCHEDULER
+        value: "true"
+      # Free tier: 512 MB and a shared CPU. Keep the connection budget small —
+      # the ceiling is (pool + overflow) x workers, and free Postgres plans
+      # cap total connections low.
+      - key: DB_POOL_SIZE
+        value: "3"
+      - key: DB_MAX_OVERFLOW
+        value: "2"
+      # No headless browsers on a 512 MB instance, and no impersonating job
+      # boards from a public service. See config/settings.py.
+      - key: ENABLE_STEALTH_SCRAPERS
+        value: "false"
+      # No TeX in the image; resume PDFs render through PyMuPDF.
+      - key: PDF_ENGINE
+        value: auto
+      # Off in production: /docs enumerates every endpoint and the localhost
+      # CORS wildcard lets any page on a viewer's machine call the API with
+      # credentials.
+      - key: DEBUG
+        value: "false"
+      # Which browser origins may call this API — e.g.
+      # https://talentradar-web.onrender.com, comma-separated for several.
+      # Prompted rather than wired with fromService: the frontend already
+      # points at this service, and a reference back would make the two
+      # services circular. Render prints the frontend's URL as soon as it is
+      # created; paste it here, or set it after the first deploy.
+      - key: CORS_ORIGINS
+        sync: false
+      - key: PYTHONUNBUFFERED
+        value: "1"
+
+  # ─────────────────────────── Frontend ───────────────────────────
+  # Vercel is the other obvious home for this (also free, and better at
+  # Next.js); see DEPLOY.md. Kept here so one blueprint stands the whole
+  # thing up in one place.
+  - type: web
+    name: talentradar-web
+    runtime: docker
+    plan: free
+    region: singapore
+    # dockerfilePath is relative to the repository root; dockerContext is the
+    # directory the build runs in.
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    autoDeploy: true
+    envVars:
+      # Inlined into the client bundle at build time by the frontend
+      # Dockerfile's ARG — Render exposes service env vars as build args.
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          type: web
+          name: talentradar-api
+          property: url

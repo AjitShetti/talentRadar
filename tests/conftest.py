@@ -78,6 +78,77 @@ async def api_client():
         yield client
 
 
+@pytest_asyncio.fixture(scope="function")
+async def db_free_client():
+    """API client whose DB dependencies are stubbed out.
+
+    ``patch("api.routers.search.get_unit_of_work", ...)`` does **not** work:
+    FastAPI resolves ``Depends(get_unit_of_work)`` when the route is
+    registered and keeps a direct reference to the function object, so
+    rebinding the module attribute afterwards changes nothing and the request
+    still tried to open a real Postgres connection. ``dependency_overrides`` is
+    the supported seam, and it is keyed on the original callable.
+    """
+    from api.dependencies import get_unit_of_work
+    from api.main import app
+
+    async def _empty_uow():
+        uow = AsyncMock()
+        uow.jobs.search = AsyncMock(return_value=([], 0))
+        yield uow
+
+    app.dependency_overrides[get_unit_of_work] = _empty_uow
+    transport = ASGITransport(app=app)
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            yield client
+    finally:
+        app.dependency_overrides.pop(get_unit_of_work, None)
+
+
+@pytest_asyncio.fixture(scope="function")
+async def auth_client():
+    """API client carrying a valid bearer token for a synthetic user.
+
+    The endpoints under /api/v1/match spend LLM quota and CPU, so they are
+    authenticated. Tests exercising them need a token; nothing about the user
+    has to exist in the database because those handlers never look it up.
+    """
+    import uuid as _uuid
+
+    from api.auth import create_access_token
+    from api.main import app
+
+    token = create_access_token(data={"sub": str(_uuid.uuid4()), "email": "test@example.com", "role": "user"})
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {token}"},
+    ) as client:
+        yield client
+
+
+@pytest_asyncio.fixture(scope="function")
+async def admin_client():
+    """API client carrying an admin token, for the privileged endpoints."""
+    import uuid as _uuid
+
+    from api.auth import create_access_token
+    from api.main import app
+
+    token = create_access_token(
+        data={"sub": str(_uuid.uuid4()), "email": "admin@example.com", "role": "admin"}
+    )
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {token}"},
+    ) as client:
+        yield client
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Mock services
 # ─────────────────────────────────────────────────────────────────────────────

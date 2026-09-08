@@ -30,10 +30,8 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agents.interview.graph import interview_graph
 from agents.interview.nodes import (
     node_end_session,
     node_evaluate_answer,
@@ -55,7 +53,9 @@ from api.schemas.interview_schemas import (
     AnswerScoreDetailSchema,
     SessionDetailResponse,
 )
+from api.utils.uploads import read_capped, safe_filename
 from api.utils.voice_pipeline import STTError, VoicePipeline
+from config.settings import get_settings
 from storage.database import get_db_dep
 from storage.interview_repository import InterviewRepository
 from storage.models import InterviewDifficulty, InterviewTrack
@@ -91,6 +91,20 @@ async def get_current_user_id(
 
 CurrentUserId = Annotated[str, Depends(get_current_user_id)]
 DBSession = Annotated[AsyncSession, Depends(get_db_dep)]
+
+
+def _last_message(state: InterviewAgentState) -> str:
+    """Text of the most recent turn, tolerating an empty or malformed history.
+
+    ``conversation_history`` arrives from the client, so it can legitimately be
+    ``[]`` (or hold entries without a ``content`` key). Indexing it directly
+    raised IndexError/AttributeError and surfaced as a 500.
+    """
+    history = state.get("conversation_history") or []
+    if not history:
+        return ""
+    last = history[-1]
+    return str(last.get("content", "")) if isinstance(last, dict) else ""
 
 
 async def _load_owned_session(
@@ -153,7 +167,7 @@ async def start_session(
         logger.error("Failed to create interview session", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Could not create session: {exc}",
+            detail="Could not start an interview session.",
         ) from exc
 
     # -- Build initial state and run node_generate_question -------------- #
@@ -177,7 +191,7 @@ async def start_session(
         logger.error("Failed to generate first question", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Could not generate first question: {exc}",
+            detail="Could not generate the first question.",
         ) from exc
 
     return StartSessionResponse(
@@ -228,7 +242,7 @@ async def submit_answer(
         logger.error("Answer evaluation failed", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Evaluation failed: {exc}",
+            detail="Could not evaluate that answer.",
         ) from exc
 
     last_score = state.get("last_score", {})
@@ -249,7 +263,7 @@ async def submit_answer(
             was_followup=latest.get("was_followup", False),
         )
         await db.commit()
-    except Exception as exc:
+    except Exception:
         await db.rollback()
         logger.error("Failed to persist answer score", exc_info=True)
         # Non-fatal — session continues even if score persistence fails
@@ -262,7 +276,7 @@ async def submit_answer(
         # Generate the closing message and finalise in DB
         end_update = await node_end_session(state)
         state = {**state, **end_update}
-        next_question = state.get("conversation_history", [{}])[-1].get("content", "")
+        next_question = _last_message(state)
 
         # Persist final score
         try:
@@ -273,7 +287,7 @@ async def submit_answer(
                 total_score=total,
             )
             await db.commit()
-        except Exception as exc:
+        except Exception:
             await db.rollback()
             logger.error("Failed to complete session", exc_info=True)
 
@@ -288,7 +302,23 @@ async def submit_answer(
     else:  # next_question
         q_update = await node_generate_question(state)
         state = {**state, **q_update}
-        next_question = state.get("current_question", "")
+        if state.get("session_complete") or state.get("next_action") == "end":
+            # The question bank ran dry (LLM down and every fallback used).
+            # Close the session properly instead of re-sending the question the
+            # user just answered and claiming the session is still running.
+            end_update = await node_end_session(state)
+            state = {**state, **end_update}
+            next_question = _last_message(state)
+            session_complete = True
+            try:
+                total = await repo.compute_total_score(db, session_id)
+                await repo.complete_session(db, session_id=session_id, total_score=total)
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                logger.error("Failed to complete exhausted session", exc_info=True)
+        else:
+            next_question = state.get("current_question", "")
 
     return SubmitAnswerResponse(
         session_id=body.session_id,
@@ -335,7 +365,7 @@ async def end_session(
     state: InterviewAgentState = body.agent_state
     end_update = await node_end_session(state)
     state = {**state, **end_update}
-    closing = state.get("conversation_history", [{}])[-1].get("content", "")
+    closing = _last_message(state)
 
     # Compute final score
     try:
@@ -348,7 +378,7 @@ async def end_session(
             partial_score=total,
         )
         await db.commit()
-    except Exception as exc:
+    except Exception:
         await db.rollback()
         logger.error("Failed to finalise ended session", exc_info=True)
         total = 0.0
@@ -398,14 +428,17 @@ async def get_session_history(
         logger.error("Failed to fetch session history", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Could not fetch history: {exc}",
+            detail="Could not load your interview history.",
         ) from exc
 
     return SessionHistoryResponse(
         sessions=[
             SessionSummarySchema.model_validate(s) for s in sessions
         ],
-        total=len(sessions),
+        # Page-relative: this is what the repository returned for this window.
+        # (A true total needs a COUNT query the repository does not expose yet;
+        # the client pages until a short page comes back.)
+        total=offset + len(sessions),
         limit=limit,
         offset=offset,
     )
@@ -494,11 +527,15 @@ async def transcribe_audio(
     pipeline = VoicePipeline()
 
     try:
-        audio_bytes = await audio.read()
-        filename = audio.filename or "audio.webm"
+        audio_bytes = await read_capped(
+            audio, get_settings().max_resume_upload_bytes, label="Recording"
+        )
+        filename = safe_filename(audio.filename, fallback="audio.webm")
         transcript, provider = await pipeline.transcribe_audio(
             audio_bytes, filename=filename
         )
+    except HTTPException:
+        raise
     except STTError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -508,7 +545,7 @@ async def transcribe_audio(
         logger.error("Transcription endpoint error", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Transcription failed: {exc}",
+            detail="Could not transcribe that recording.",
         ) from exc
 
     return TranscribeResponse(

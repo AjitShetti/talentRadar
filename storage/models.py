@@ -14,6 +14,7 @@ Tables
 import uuid
 from datetime import datetime
 from enum import Enum as PyEnum
+from typing import Any
 
 from sqlalchemy import (
     BigInteger,
@@ -34,8 +35,10 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import UserDefinedType
 from sqlalchemy.sql import func
 
+from config.settings import get_settings
 from storage.database import Base
 
 
@@ -75,6 +78,34 @@ class StringArray(TypeDecorator):
         if dialect.name == "sqlite":
             return dialect.type_descriptor(JSON())
         return dialect.type_descriptor(ARRAY(String))
+
+
+class Vector(UserDefinedType):
+    """pgvector's ``vector(N)`` column type.
+
+    Hand-rolled rather than pulled from ``pgvector``'s Python package: all the
+    application needs is the DDL spelling plus a value that survives a round
+    trip, and the two queries that read or write a vector do so through
+    explicit SQL in ``ingestion/embeddings/pgvector_store.py`` (which binds
+    ``double precision[]`` and casts, so no driver-side type codec has to be
+    registered on either asyncpg or psycopg2). Declaring the column here is
+    what lets Alembic autogenerate see the table.
+    """
+
+    cache_ok = True
+
+    def __init__(self, dim: int) -> None:
+        self.dim = dim
+
+    def get_col_spec(self, **kw: object) -> str:
+        return f"vector({self.dim})"
+
+
+@compiles(Vector, "sqlite")
+def _compile_vector_sqlite(type_, compiler, **kw):
+    # The test suite creates the schema on SQLite, which has no vector type.
+    # Semantic search is never exercised there — only the table's existence.
+    return "TEXT"
 
 
 
@@ -327,7 +358,7 @@ class Job(Base):
     * Compensation is stored as raw text AND structured min/max columns
       so we can query ranges even when parsing is imperfect.
     * Skills / tags use a Postgres ARRAY for cheap containment queries.
-    * `embedding_id` holds the ChromaDB document ID for vector lookups.
+    * `embedding_id` holds the vector-store row id (job_embeddings.id).
     """
     __tablename__ = "jobs"
 
@@ -414,7 +445,7 @@ class Job(Base):
     # ---- Vector store reference ---------------------------------------- #
     embedding_id: Mapped[str | None] = mapped_column(
         String(256), nullable=True,
-        comment="ChromaDB document ID for semantic search lookups",
+        comment="Vector-store row id (job_embeddings.id) for semantic search lookups",
     )
 
     # ---- Analytics counters -------------------------------------------- #
@@ -604,6 +635,12 @@ class JobApplication(Base):
     )
 
     # Relationships
+    # The posting this application is for. One-way (no back_populates) because
+    # a Job has no reason to carry every user's application. Callers that
+    # render the job MUST selectinload() it: without a relationship the
+    # tracker endpoint issued a separate SELECT per row, and with one, a lazy
+    # access inside async code raises MissingGreenlet.
+    job: Mapped["Job | None"] = relationship("Job", lazy="raise")
     resume_version: Mapped["Resume | None"] = relationship(
         "Resume", back_populates="applications"
     )
@@ -1542,3 +1579,52 @@ class DailyJobMatch(Base):
 
     def __repr__(self) -> str:
         return f"<DailyJobMatch user={self.user_id} date={self.match_date} rank={self.rank}>"
+
+
+# ---------------------------------------------------------------------------
+# Vector store (pgvector)
+# ---------------------------------------------------------------------------
+
+class JobEmbedding(Base):
+    """A job description's embedding, stored in Postgres via pgvector.
+
+    This table is what replaced the ChromaDB server. It is deliberately
+    standalone rather than a column on ``jobs``:
+
+    * ``id`` is the same stable MD5 fingerprint of the source URL that
+      ``jobs.embedding_id`` holds and that ChromaDB used as its document id,
+      so the two stores are interchangeable and the existing rows keep
+      resolving;
+    * a job row can exist before it has been embedded (and an embedding can
+      outlive a re-ingested job), so the lifetimes are separate;
+    * embedding rows are wide and are never wanted in the ordinary job
+      queries, which would otherwise drag 384 floats per row across the wire.
+
+    Reads and writes go through ``ingestion/embeddings/pgvector_store.py``,
+    which issues explicit SQL — the ORM is not used for the vector column.
+    """
+
+    __tablename__ = "job_embeddings"
+
+    id: Mapped[str] = mapped_column(
+        String(256), primary_key=True,
+        comment="Stable MD5 fingerprint of source_url; matches jobs.embedding_id",
+    )
+    document: Mapped[str] = mapped_column(
+        Text, nullable=False, comment="The text that was embedded",
+    )
+    meta: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONB, nullable=False, server_default="{}",
+        comment="Flat, filterable fields (title, company, is_remote, skills_str …)",
+    )
+    embedding: Mapped[Any] = mapped_column(
+        Vector(get_settings().embedding_dim), nullable=False,
+        comment="all-MiniLM-L6-v2 embedding of `document`",
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(),
+        onupdate=func.now(), nullable=False,
+    )
+
+    def __repr__(self) -> str:
+        return f"<JobEmbedding id={self.id}>"

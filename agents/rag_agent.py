@@ -3,8 +3,9 @@ agents/rag_agent.py
 ~~~~~~~~~~~~~~~~~~~
 RAG (Retrieve-And-Generate) agent for intelligent job search.
 
-Retrieves relevant jobs from ChromaDB + PostgreSQL, reranks by
-relevance, and generates natural-language summaries using Groq LLM.
+Retrieves relevant jobs from the vector store (pgvector, by default, in
+the same Postgres as everything else) plus PostgreSQL, reranks by relevance,
+and generates natural-language summaries using Groq LLM.
 """
 
 from __future__ import annotations
@@ -20,14 +21,10 @@ from agents.state import (
     QueryContext,
     RetrievalResult,
 )
-from agents.prompts.rag_prompt import (
-    SYSTEM_JOB_SEARCH,
-    SYSTEM_RESULT_SUMMARY,
-)
+from agents.prompts.rag_prompt import SYSTEM_RESULT_SUMMARY
 from config.settings import get_settings
 from domain.geo import is_india, mentions_foreign_country
-from ingestion.embeddings.chroma_store import ChromaJobStore
-from ingestion.embeddings.embedder import embed_texts
+from ingestion.embeddings.vector_store import get_vector_store
 from storage.repository import UnitOfWork
 from storage.database import AsyncSessionLocal
 
@@ -49,7 +46,7 @@ class RAGAgent:
 
     Pipeline:
     1. Embed the user query
-    2. Search ChromaDB for similar job descriptions
+    2. Search the vector store for similar job descriptions
     3. Fetch full job records from PostgreSQL
     4. Rerank by relevance
     5. Generate summary via Groq LLM
@@ -57,8 +54,12 @@ class RAGAgent:
 
     def __init__(self):
         settings = get_settings()
+        self._settings = settings
         self._groq = AsyncGroq(api_key=settings.groq_api_key)
-        self._chroma = ChromaJobStore()
+        # Shared, process-wide store: building one binds an ONNX embedding
+        # model, and a RAGAgent is constructed per request. None here means
+        # "no vector backend" — an ordinary state, not a failure.
+        self._vectors = get_vector_store()
 
     async def search_jobs(
         self, context: QueryContext
@@ -77,9 +78,11 @@ class RAGAgent:
             Retrieved jobs with optional LLM summary.
         """
         try:
-            # Step 1 & 2: Build filters and search ChromaDB
-            _ = embed_texts([context.raw_query])
-            where = {}
+            # Step 1 & 2: Build metadata filters and run the vector search.
+            # The query is embedded by the store itself — doing it here as
+            # well ran a second, entirely discarded MiniLM forward pass on
+            # every single search.
+            where: dict[str, Any] = {}
             if context.is_remote is not None:
                 where["is_remote"] = context.is_remote
             if context.seniority:
@@ -87,23 +90,29 @@ class RAGAgent:
             if context.company:
                 where["company"] = context.company
 
-            # Use chroma store search
-            chroma_results = self._chroma.search(
-                query=context.raw_query,
-                n_results=context.limit * 2,  # Slight over-fetch for python-side skill filtering
-                where=where if where else None,
-            )
+            # Vector search, when a vector store is actually reachable.
+            # ``get_vector_store()`` returns None when the backend is absent
+            # or set to "none"; the relational fallback below then carries the
+            # whole search rather than the endpoint failing.
+            vector_results: list[dict[str, Any]] = []
+            if self._vectors is not None:
+                vector_results = await self._vectors.asearch(
+                    context.raw_query,
+                    n_results=context.limit * 2,  # over-fetch for python-side skill filtering
+                    where=where if where else None,
+                )
 
             # Step 3: Build RetrievalResult list
-            results = await self._build_results(chroma_results, context)
+            results = await self._build_results(vector_results, context)
 
-            # Step 4: Apply remaining filters (like skills, since Chroma doesn't natively do array contains well yet)
+            # Step 4: Apply remaining filters (skills especially — neither
+            # backend filters an array-contains cheaply)
             results = self._apply_filters(results, context)
 
             # Step 5: Fallback to database search if vector store returns fewer than 3 results
             if len(results) < 3:
                 logger.info(
-                    "ChromaDB returned %d results for query %r; falling back to relational DB search",
+                    "Vector store returned %d results for query %r; falling back to relational DB search",
                     len(results), context.raw_query,
                 )
                 db_results = await self._search_db_fallback(context)
@@ -168,23 +177,28 @@ class RAGAgent:
             return []
 
     async def _build_results(
-        self, chroma_results: list[dict[str, Any]] | dict[str, Any], context: QueryContext
+        self, vector_results: list[dict[str, Any]] | dict[str, Any], context: QueryContext
     ) -> list[RetrievalResult]:
-        """Convert ChromaDB results to RetrievalResult objects."""
+        """Convert vector-store hits to RetrievalResult objects.
+
+        Both shapes are accepted: the flat list of ``{id, document, metadata,
+        distance}`` dicts both stores return, and chromadb's raw
+        column-per-key payload, which callers and older tests still hand in.
+        """
         results = []
 
-        if not chroma_results:
+        if not vector_results:
             return results
 
         rows: list[dict[str, Any]] = []
-        if isinstance(chroma_results, dict):
-            raw_ids = chroma_results.get("ids", [[]])
+        if isinstance(vector_results, dict):
+            raw_ids = vector_results.get("ids", [[]])
             ids_list = raw_ids[0] if raw_ids and isinstance(raw_ids[0], list) else []
             if not ids_list:
                 return []
-            documents = (chroma_results.get("documents") or [[]])[0]
-            metadatas = (chroma_results.get("metadatas") or [[]])[0]
-            distances = (chroma_results.get("distances") or [[]])[0]
+            documents = (vector_results.get("documents") or [[]])[0]
+            metadatas = (vector_results.get("metadatas") or [[]])[0]
+            distances = (vector_results.get("distances") or [[]])[0]
             for idx, item_id in enumerate(ids_list):
                 rows.append({
                     "id": item_id,
@@ -192,8 +206,8 @@ class RAGAgent:
                     "metadata": metadatas[idx] if idx < len(metadatas) else {},
                     "distance": distances[idx] if idx < len(distances) else 0.0,
                 })
-        elif isinstance(chroma_results, list):
-            rows = chroma_results
+        elif isinstance(vector_results, list):
+            rows = vector_results
 
         if not rows:
             return results
@@ -286,7 +300,7 @@ class RAGAgent:
 
     async def _generate_summary(
         self, results: list[RetrievalResult], context: QueryContext
-    ) -> str:
+    ) -> str | None:
         """Generate a natural-language summary of search results."""
         jobs_text = "\n".join(
             f"- {r.title} at {r.company} ({r.location or 'Remote'})"
@@ -305,7 +319,7 @@ Summarize the top results and highlight key insights.
 
         try:
             response = await self._groq.chat.completions.create(
-                model="openai/gpt-oss-120b",
+                model=self._settings.groq_model,
                 messages=[
                     {"role": "system", "content": SYSTEM_RESULT_SUMMARY},
                     {"role": "user", "content": prompt},
@@ -313,7 +327,7 @@ Summarize the top results and highlight key insights.
                 temperature=0.3,
                 max_tokens=500,
             )
-            return response.choices[0].message.content
+            return response.choices[0].message.content or None
         except Exception as exc:
             logger.warning("Summary generation failed: %s", exc)
             return None

@@ -10,11 +10,9 @@ Two model groups:
 
 from __future__ import annotations
 
-from typing import Annotated
 import re
 
 from pydantic import (
-    AnyHttpUrl,
     BaseModel,
     Field,
     field_validator,
@@ -279,7 +277,6 @@ class ParsedJobDescription(BaseModel):
           location     → location_raw, plus resolved country / city
         """
         from datetime import datetime, timezone
-        import re
 
         # Strip common navigation / markdown noise from raw text for a cleaner
         # description that is useful for display and ChromaDB embeddings.

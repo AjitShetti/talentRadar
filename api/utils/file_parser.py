@@ -8,9 +8,14 @@ import io
 import logging
 
 try:
-    import fitz  # PyMuPDF
-except ImportError:
-    fitz = None
+    # `pymupdf` is the current module name; `fitz` is the deprecated alias and
+    # emits a warning on every import under PyMuPDF >= 1.24.
+    import pymupdf as fitz
+except ImportError:  # pragma: no cover
+    try:
+        import fitz  # PyMuPDF < 1.24
+    except ImportError:
+        fitz = None
 
 try:
     import docx
