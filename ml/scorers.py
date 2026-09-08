@@ -20,7 +20,7 @@ import numpy as np
 from ml.config import EDUCATION_HIERARCHY, PipelineConfig
 from ml.feature_extractor import ExtractedFeatures
 from ml.models.experience_matcher import ExperienceMatcher, ExperienceMatchResult
-from ml.models.skill_matcher import SkillMatcher, SkillMatchResult
+from ml.models.skill_matcher import SkillMatcher
 from ml.utils import clamp_score, get_logger
 
 logger = get_logger(__name__)
@@ -286,6 +286,19 @@ class EducationScorer(BaseScorer):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+class _OnnxEncoder:
+    """A ``SentenceTransformer``-shaped wrapper over the ONNX embedder.
+
+    Exists so :class:`SemanticScorer` keeps working on a deployment that does
+    not install PyTorch. Only the one method the scorer calls is implemented.
+    """
+
+    def encode(self, text: str, convert_to_numpy: bool = True) -> np.ndarray:
+        from ingestion.embeddings.embedder import embed_texts  # noqa: PLC0415
+
+        return np.asarray(embed_texts([text])[0], dtype=np.float32)
+
+
 class SemanticScorer(BaseScorer):
     """Scores based on semantic similarity using sentence embeddings.
 
@@ -299,10 +312,18 @@ class SemanticScorer(BaseScorer):
         self._model: Any = None
 
     def _load_model(self) -> Any:
-        """Lazy-load the sentence transformer model.
+        """Lazy-load an encoder, preferring sentence-transformers.
+
+        sentence-transformers pulls in PyTorch, which is roughly a gigabyte of
+        installed wheel — more than a free build tier will carry for one
+        scorer. It is therefore an optional extra (``pip install
+        .[semantic]``), and when it is absent this falls back to the same
+        all-MiniLM-L6-v2 weights running under ONNX Runtime, which the
+        embedding path already loads. Same model, same 384 dimensions, same
+        scores; only the runtime differs.
 
         Returns:
-            Loaded SentenceTransformer model
+            An object exposing ``.encode(text, convert_to_numpy=True)``.
         """
         if self._model is None:
             try:
@@ -310,6 +331,13 @@ class SemanticScorer(BaseScorer):
 
                 self._model = SentenceTransformer(self.model_name)
                 logger.info("Semantic model loaded", model=self.model_name)
+            except ImportError:
+                self._model = _OnnxEncoder()
+                logger.info(
+                    "sentence-transformers is not installed; using the ONNX "
+                    "MiniLM encoder instead",
+                    model=self.model_name,
+                )
             except Exception as e:
                 logger.error("Failed to load semantic model", error=str(e))
                 raise

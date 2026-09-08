@@ -372,7 +372,10 @@ class TestJDParserParseJd:
                 parser.parse_jd("Some job text")
 
     def test_raises_when_groq_api_key_missing(self):
-        with patch("config.settings.get_settings") as mock_settings:
+        # Patch the binding jd_parser resolves, not the definition site:
+        # ``from config.settings import get_settings`` at module scope means
+        # rebinding config.settings.get_settings afterwards is invisible here.
+        with patch("ingestion.parsers.jd_parser.get_settings") as mock_settings:
             mock_settings.return_value.groq_api_key = ""
             with pytest.raises(ValueError, match="GROQ_API_KEY"):
                 JDParser()

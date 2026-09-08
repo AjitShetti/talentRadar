@@ -33,11 +33,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ml.config import PipelineConfig, ScoringWeights
-from ml.feature_extractor import ExtractedFeatures, extract_features
+from ml.feature_extractor import extract_features
 from ml.models.skill_matcher import SkillMatcher
-from ml.preprocessing import CleanedText, preprocess_text
+from ml.preprocessing import preprocess_text
 from ml.scorers import CompositeScorer
-from ml.utils import get_logger, truncate_text
+from ml.utils import get_logger
 
 logger = get_logger(__name__)
 

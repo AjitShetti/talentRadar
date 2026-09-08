@@ -175,7 +175,7 @@ class TestRAGAgentGenerateSummary:
     @pytest.fixture
     def agent_with_mocked_groq(self):
         with patch("agents.rag_agent.AsyncGroq") as MockGroq, \
-             patch("agents.rag_agent.ChromaJobStore"):
+             patch("agents.rag_agent.get_vector_store"):
             mock_groq = MockGroq.return_value
             mock_groq.chat.completions.create = AsyncMock(
                 return_value=MagicMock(
@@ -196,7 +196,7 @@ class TestRAGAgentGenerateSummary:
     async def test_returns_none_on_groq_failure(self, sample_results, search_context):
         """Should return None (not raise) when Groq throws."""
         with patch("agents.rag_agent.AsyncGroq") as MockGroq, \
-             patch("agents.rag_agent.ChromaJobStore"):
+             patch("agents.rag_agent.get_vector_store"):
             mock_groq = MockGroq.return_value
             mock_groq.chat.completions.create = AsyncMock(
                 side_effect=Exception("Groq rate limit exceeded")
@@ -267,14 +267,13 @@ class TestRAGAgentSearchJobs:
         self, chroma_search_result, mock_job_orm, search_context
     ):
         with patch("agents.rag_agent.AsyncGroq"), \
-             patch("agents.rag_agent.ChromaJobStore") as MockChroma, \
-             patch("agents.rag_agent.embed_texts", return_value=[[0.1] * 384]), \
+             patch("agents.rag_agent.get_vector_store") as MockStore, \
              patch("agents.rag_agent.AsyncSessionLocal") as MockSession, \
              patch("agents.rag_agent.UnitOfWork") as MockUow:
 
             # Set up Chroma mock
-            mock_store = MockChroma.return_value
-            mock_store.search.return_value = chroma_search_result
+            mock_store = MockStore.return_value
+            mock_store.asearch = AsyncMock(return_value=chroma_search_result)
 
             # Set up DB mock — return a job for each id
             mock_uow_instance = AsyncMock()
@@ -290,7 +289,7 @@ class TestRAGAgentSearchJobs:
             MockSession.return_value = mock_session_cm
 
             agent = RAGAgent()
-            agent._chroma = mock_store
+            agent._vectors = mock_store
             agent._groq = MagicMock()
             agent._groq.chat.completions.create = AsyncMock(
                 return_value=MagicMock(
@@ -305,11 +304,16 @@ class TestRAGAgentSearchJobs:
 
     @pytest.mark.asyncio
     async def test_returns_failure_response_on_exception(self, search_context):
+        # The redundant embed_texts() pass the agent used to make on every
+        # search (and then discard) is gone, so the failure is injected where
+        # it now originates: the vector-store query itself.
         with patch("agents.rag_agent.AsyncGroq"), \
-             patch("agents.rag_agent.ChromaJobStore"), \
-             patch("agents.rag_agent.embed_texts", side_effect=RuntimeError("embedding failed")):
+             patch("agents.rag_agent.get_vector_store") as MockStore:
 
+            mock_store = MockStore.return_value
+            mock_store.asearch = AsyncMock(side_effect=RuntimeError("embedding failed"))
             agent = RAGAgent()
+            agent._vectors = mock_store
             response = await agent.search_jobs(search_context)
 
         assert response.success is False
@@ -325,13 +329,12 @@ class TestRAGAgentSearchJobs:
             "distances": [[]],
         }
         with patch("agents.rag_agent.AsyncGroq"), \
-             patch("agents.rag_agent.ChromaJobStore") as MockChroma, \
-             patch("agents.rag_agent.embed_texts", return_value=[[0.1] * 384]):
+             patch("agents.rag_agent.get_vector_store") as MockStore:
 
-            mock_store = MockChroma.return_value
-            mock_store.search.return_value = empty_chroma_result
+            mock_store = MockStore.return_value
+            mock_store.asearch = AsyncMock(return_value=empty_chroma_result)
             agent = RAGAgent()
-            agent._chroma = mock_store
+            agent._vectors = mock_store
             agent._groq = MagicMock()
 
             response = await agent.search_jobs(search_context)
@@ -408,7 +411,7 @@ class TestChromaJobStore:
     @pytest.fixture
     def store(self):
         with patch("ingestion.embeddings.chroma_store.chromadb.HttpClient") as MockClient, \
-             patch("ingestion.embeddings.chroma_store.embedding_functions.DefaultEmbeddingFunction"):
+             patch("ingestion.embeddings.chroma_store.get_embedding_function"):
             mock_client = MockClient.return_value
             mock_collection = MagicMock()
             mock_client.get_or_create_collection.return_value = mock_collection

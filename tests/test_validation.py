@@ -174,11 +174,11 @@ class TestRegressionContaminatedSeedCorp:
 
         with patch("ingestion.pipeline.AsyncSessionLocal", return_value=mock_uow), \
              patch("ingestion.pipeline.UnitOfWork", return_value=mock_uow), \
-             patch("ingestion.pipeline.ChromaJobStore") as MockChroma:
-            
-            mock_chroma_instance = MagicMock()
-            mock_chroma_instance.add_batch.return_value = 1
-            MockChroma.return_value = mock_chroma_instance
+             patch("ingestion.pipeline.get_vector_store") as mock_get_store:
+
+            mock_store = MagicMock()
+            mock_store.aadd_batch = AsyncMock(return_value=1)
+            mock_get_store.return_value = mock_store
 
             counts = await persist_parsed(items, source="test_source", run_id="run-123")
 

@@ -2,7 +2,7 @@
 ingestion/seed_db.py
 ~~~~~~~~~~~~~~~~~~~~
 Automated database seeder for TalentRadar.
-Scans test/fixture JSON files and populates PostgreSQL and ChromaDB.
+Scans test/fixture JSON files and populates PostgreSQL and the vector store.
 Protected with strict URL validation to ensure non-job content is never seeded.
 """
 
@@ -19,15 +19,13 @@ import re
 from typing import Any
 from urllib.parse import urlparse
 
-from config.settings import get_settings
-from ingestion.embeddings.chroma_store import ChromaJobStore
+from ingestion.embeddings.vector_store import get_vector_store
 from ingestion.parsers.schemas import ParsedJobDescription, RawJobResult
 from ingestion.scrapers.tavily_client import detect_source_from_url
 from ingestion.validation import is_valid_job_url, validate_job_url
 from storage.database import AsyncSessionLocal, Base, engine
-from storage.models import IngestionStatus, Job
+from storage.models import IngestionStatus
 from storage.repository import UnitOfWork
-from sqlalchemy import func, select
 
 
 def _company_domain(company_name: str, url: str | None) -> str:
@@ -225,7 +223,7 @@ def extract_job_from_raw(raw: RawJobResult) -> ParsedJobDescription:
 
 async def seed_database(force: bool = False, fixture_dir: str | None = None) -> None:
     """
-    Seed PostgreSQL and ChromaDB with validated job postings from fixture directory.
+    Seed PostgreSQL and the vector store with validated job postings from fixtures.
     Gated behind SEED_FROM_FIXTURES=true or force=True.
     """
     seed_enabled = os.getenv("SEED_FROM_FIXTURES", "false").lower() in ("true", "1", "yes")
@@ -285,7 +283,7 @@ async def seed_database(force: bool = False, fixture_dir: str | None = None) -> 
 
         inserted = 0
         updated = 0
-        chroma_items: list[dict[str, Any]] = []
+        embedding_items: list[dict[str, Any]] = []
 
         for raw in raw_results:
             try:
@@ -316,7 +314,7 @@ async def seed_database(force: bool = False, fixture_dir: str | None = None) -> 
             else:
                 updated += 1
 
-            chroma_items.append({
+            embedding_items.append({
                 "job_id": external_id,
                 "internal_job_id": job.id,
                 "text": (job_kwargs.get("description_clean") or pjd.raw_text)[:4096],
@@ -336,17 +334,23 @@ async def seed_database(force: bool = False, fixture_dir: str | None = None) -> 
 
         await session.commit()
 
-        logger.info("Upserted %d jobs (inserted: %d, updated: %d). Updating ChromaDB embeddings...", len(chroma_items), inserted, updated)
+        logger.info(
+            "Upserted %d jobs (inserted: %d, updated: %d). Writing embeddings...",
+            len(embedding_items), inserted, updated,
+        )
         try:
-            store = ChromaJobStore()
-            if chroma_items:
-                store.add_batch(chroma_items)
-                for item in chroma_items:
-                    await uow.jobs.set_embedding_id(item["internal_job_id"], item["job_id"])
-                await session.commit()
-                logger.info("Successfully updated ChromaDB vector embeddings.")
+            store = get_vector_store()
+            if store is not None and embedding_items:
+                embedded = await store.aadd_batch(embedding_items)
+                if embedded:
+                    for item in embedding_items:
+                        await uow.jobs.set_embedding_id(item["internal_job_id"], item["job_id"])
+                    await session.commit()
+                    logger.info("Wrote %d embeddings to the vector store.", embedded)
+            elif store is None:
+                logger.info("No vector backend configured — seeded jobs without embeddings.")
         except Exception as exc:
-            logger.warning("ChromaDB embedding warning during seeding: %s", exc)
+            logger.warning("Embedding warning during seeding: %s", exc)
 
         await uow.ingestion_runs.finish(
             ingestion_run.id,

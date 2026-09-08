@@ -29,12 +29,25 @@ INDIAN_JOB_DOMAINS = [
 ]
 
 
-from ingestion.validation import (
+# Re-exported from ingestion.validation so callers and tests have one import
+# site for URL vetting. Listed in __all__ because they look "unused" to a
+# linter here -- an auto-fix silently dropped two of them and broke every
+# importer.
+from ingestion.validation import (  # noqa: F401
     _matches_any_domain,
     _url_matches_domain,
-    _validate_url_format as _validate_url,
     is_valid_job_url,
 )
+from ingestion.validation import _validate_url_format as _validate_url  # noqa: F401
+
+__all__ = [
+    "TavilyJobScraper",
+    "detect_source_from_url",
+    "is_valid_job_url",
+    "_matches_any_domain",
+    "_url_matches_domain",
+    "_validate_url",
+]
 
 
 def detect_source_from_url(url: str) -> str:

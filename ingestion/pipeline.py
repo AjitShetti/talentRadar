@@ -1,7 +1,7 @@
 """
 ingestion/pipeline.py
 ~~~~~~~~~~~~~~~~~~~~~
-Shared ingestion pipeline: raw results → LLM parse → India filter → Postgres + ChromaDB.
+Shared ingestion pipeline: raw results → LLM parse → India filter → Postgres + vectors.
 
 Refactored out of ``ingestion/tasks.py`` so that any source (Tavily, ATS
 crawler, Greenhouse/Lever/Ashby/Cutshort) can reuse the same persist logic.
@@ -19,7 +19,7 @@ from storage.database import AsyncSessionLocal
 from storage.models import IngestionStatus
 from storage.repository import UnitOfWork
 
-from ingestion.embeddings.chroma_store import ChromaJobStore
+from ingestion.embeddings.vector_store import get_vector_store
 from ingestion.parsers.jd_parser import JDParser
 from ingestion.parsers.schemas import ParsedJobDescription, RawJobResult
 
@@ -45,7 +45,7 @@ async def persist_parsed(
     run_id: str,
 ) -> dict[str, int]:
     """
-    Upsert parsed job descriptions into Postgres + ChromaDB.
+    Upsert parsed job descriptions into Postgres + the vector store.
 
     Returns per-step counts: {"inserted", "updated", "skipped", "embedded"}.
     """
@@ -54,7 +54,7 @@ async def persist_parsed(
     from ingestion.validation import is_valid_job_url
 
     inserted = updated = skipped = embedded = 0
-    chroma_items: list[dict[str, Any]] = []
+    embedding_items: list[dict[str, Any]] = []
 
     async with AsyncSessionLocal() as session:
         uow = UnitOfWork(session)
@@ -113,7 +113,7 @@ async def persist_parsed(
                 else:
                     updated += 1
 
-                chroma_items.append({
+                embedding_items.append({
                     "job_id": external_id,
                     "text": (job_kwargs.get("description_clean") or data.raw_text)[:4096],
                     "metadata": {
@@ -135,12 +135,21 @@ async def persist_parsed(
 
             await session.commit()
 
-            if chroma_items:
-                store = ChromaJobStore()
-                embedded = store.add_batch(chroma_items)
-                for item in chroma_items:
-                    await uow.jobs.set_embedding_id(item["internal_job_id"], item["job_id"])
-                await session.commit()
+            if embedding_items:
+                # The vector store is optional: when there is no backend
+                # configured (or it is unreachable) the jobs are still in
+                # Postgres and search degrades to the relational path, so an
+                # absent store must not fail the run.
+                store = get_vector_store()
+                if store is not None:
+                    embedded = await store.aadd_batch(embedding_items)
+                if embedded:
+                    # Only claim an embedding id for rows that really were
+                    # embedded — otherwise jobs.embedding_id points at a
+                    # document nothing stored.
+                    for item in embedding_items:
+                        await uow.jobs.set_embedding_id(item["internal_job_id"], item["job_id"])
+                    await session.commit()
 
             await uow.ingestion_runs.finish(
                 ingestion_run.id,

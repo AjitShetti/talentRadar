@@ -24,6 +24,7 @@ import logging
 import time
 from typing import Any, AsyncGenerator
 
+from config.settings import get_settings
 from domain.entities import Job
 from ingestion.scrapers.ats_scraper import ATSScraper
 from ingestion.scrapers.indian_boards_scraper import IndianBoardsScraper
@@ -137,10 +138,19 @@ class RealtimeScraperEngine:
             ("linkedin", IndianBoardsScraper.search_linkedin_guest(query, location, is_remote), 5.0),
             ("foundit", IndianBoardsScraper.search_foundit_india(query, location, is_remote), 5.0),
             ("freshersworld", IndianBoardsScraper.search_freshersworld(query, location, is_remote), 4.0),
-            ("instahyre", StealthBoardsScraper.search_instahyre(query, location, is_remote), 5.0),
-            ("indeed_india", StealthBoardsScraper.search_indeed_india(query, location, is_remote), 7.0),
-            ("naukri", StealthBoardsScraper.search_naukri(query, location, is_remote), 10.0),
         ]
+        # The stealth boards each launch a headless browser, which a 512 MB
+        # instance cannot survive, and reaching them that way is against those
+        # sites' terms. Off unless ENABLE_STEALTH_SCRAPERS says otherwise —
+        # and built lazily, because an un-awaited coroutine is a warning and a
+        # leak. The remaining sources still answer, so search degrades in
+        # coverage rather than failing.
+        if get_settings().enable_stealth_scrapers:
+            sources.extend([
+                ("instahyre", StealthBoardsScraper.search_instahyre(query, location, is_remote), 5.0),
+                ("indeed_india", StealthBoardsScraper.search_indeed_india(query, location, is_remote), 7.0),
+                ("naukri", StealthBoardsScraper.search_naukri(query, location, is_remote), 10.0),
+            ])
 
         yield {
             "event": "init",
