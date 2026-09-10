@@ -79,6 +79,15 @@ dependencies = [
     # patchright at module level, so it cannot be installed without the
     # browser stack. ingestion/scrapling_manager.py already treats it as
     # optional and falls back to httpx with browser-like headers.
+    # TLS/HTTP2 browser impersonation (~5 MB). This is the tier that gets
+    # past the Cloudflare bot check on Indeed India and Instahyre: measured,
+    # plain httpx gets 403 + a JS challenge and this gets 200 with the
+    # listings. It is scrapling's impersonation engine, taken directly -
+    # scrapling itself stays out because `scrapling.fetchers` imports
+    # playwright and patchright at module level, which is ~300 MB of browser
+    # stack a 512 MB instance cannot run anyway. See
+    # ingestion/scrapling_manager.py.
+    "curl-cffi>=0.7.0",
     "tavily-python>=0.5.0,<1.0.0",
     "beautifulsoup4>=4.12.0,<5.0.0",
     "httpx>=0.27.0,<1.0.0",
@@ -152,7 +161,6 @@ semantic = [
 # extra alone does not switch the headless browser on.
 stealth = [
     "scrapling>=0.3.0",
-    "curl-cffi>=0.7.0",
     "playwright>=1.40.0",
     "patchright>=1.60.0",
     "camoufox>=0.5.0",

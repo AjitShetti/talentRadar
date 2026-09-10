@@ -266,3 +266,80 @@ Company Intel was a `repeat(auto-fill, minmax(252px,1fr))` card grid; it is now 
 - **Don't** add a hard-offset/neobrutalist shadow or a decorative glossy sweep to buttons or cards — this world's tactile language is a firm 1px press and a soft tinted lift, nothing louder.
 - **Don't** extend the "flap tile" seam motif (currently only on the nav brand mark) to metric numerals or general panel chrome — see the accepted gap below.
 - **Don't** use `.eyebrow` as a kicker above a page title — that job belongs to `.board-kicker` inside the ledger strip. `.eyebrow` survives only as a small-caps label *inside* a section (`.search-tips` head, the interview transcript, the resume block in Settings), alongside `.cp-card-kind`.
+
+## Overview Day Board — motion and the focus spine
+
+Reference mockup (source of truth for this surface): https://claude.ai/code/artifact/231a47a6-4eb5-46c6-ba15-92b28f7d4e2e
+
+The Overview answers one question — *what should I do today?* — so the ranked action list is the
+page's largest visual weight and everything else falls below it. Order on this route is fixed:
+masthead → Today's Focus → Fetched while you were away → quick actions → Where you stand → Close your gaps.
+
+### Motion tokens
+
+The board previously had exactly one authored motion (FlapText). It now has a named curve family,
+so that per-surface motion stops being improvised:
+
+```
+--ease-out:  cubic-bezier(.16,1,.3,1)   /* entrances: decisive, long decay */
+--ease-io:   cubic-bezier(.65,0,.35,1)  /* travel between two known states */
+--ease-fast: cubic-bezier(.4,0,.2,1)    /* small state changes: color, border */
+--t-fast:170ms  --t:300ms  --t-travel:420ms  --t-slow:640ms
+```
+
+Only `transform` and `opacity` are animated. Everything is disabled wholesale under
+`prefers-reduced-motion: reduce`.
+
+### Focus Spine (`.focus-list`)
+
+The three ranked actions hang off a single vertical hairline at `--spine` (112px desktop, 76px
+below 920px). Each action is marked by an oversized Big Shoulders plate numeral (56px; 66px and
+amber for 01) set right-aligned against the spine, with a 16px tick joining numeral to content.
+The lead action carries a left-to-right amber wash that fades to nothing by 62% — it bleeds out
+rather than terminating in a box edge, so nothing on this route reads as a card.
+
+### Travelling marker (`.glider`)
+
+**One** 2px amber bar rides the spine between actions — it is a single element that moves, never
+three highlights blinking independently. It rests on 01 (the thing to do first), follows hover and
+`focusin`, and returns to 01 ~90ms after the pointer leaves the list. While the list is engaged,
+un-hovered actions drop to `opacity:.42` so the row being read is the only one at full strength.
+The dim is suppressed below 920px — a touch device cannot un-hover to restore it.
+
+### Copilot Rail (`.rail` + `.drawer`)
+
+The copilot is **not** a panel on the Overview. It is a fixed 54px right-edge rail (amber sparkle
+button, vertically-set "COPILOT" label, green live dot) that opens a 390px drawer over a scrim.
+Escape closes it, focus moves to the input on open and back to the rail button on close, and the
+suggested prompts stagger in 150–300ms after the panel lands. Below 560px the rail becomes a bottom
+bar and the drawer goes full-width.
+
+### Sweep Manifest (`.role`)
+
+TalentRadar does not pre-match a candidate to a job board. It reads postings against the user's
+resume, so this surface names what it actually did: three postings with sweep timestamps, a
+plain-English reason each was kept, a five-tick fit meter, and a footer stating the work
+("Swept 4 boards · 61 postings read · 3 kept"). Never show a bare "N new matches" count.
+Rows follow the `.job-card` gesture exactly — the whole row slides 10px right on hover.
+
+### Amendment to the single-signature-motion rule
+
+The "Motion" section above states the system runs no per-item stagger. That still holds for grids
+and for every list that can grow. It is amended **only** for the three Today's Focus rows, which
+stagger in once on load at 70ms intervals (200/270/340ms) — a fixed-length, once-per-session
+entrance on the page's primary content, not a recurring per-item reveal. Do not extend it to the
+sweep manifest, the tracker, search results, or any other list.
+
+### Still true, and binding
+
+- Buttons press a firm 1px (`translateY(1px)`). **No scale**, on any button, including the rail.
+- Live numerals on this route (readout counts, gauge values, gap counts) render through `<FlapText>`
+  with `font-variant-numeric: tabular-nums` on the container.
+- No bordered, radius-cornered container anywhere on this route. Buttons cap at `2px`.
+
+### Known gap
+
+"Fetched while you were away" describes behaviour that does not exist yet. The only cron in the
+repo is `.github/workflows/keepalive.yml` (a 10-minute instance ping); `api/routers/ingest.py` is
+on-demand only and there is no Celery worker. Shipping this surface needs a scheduled job that
+runs ingestion against a resume-derived query and persists per-user kept results.

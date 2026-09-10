@@ -32,30 +32,50 @@ router = APIRouter(prefix="/ingest", tags=["Ingestion"])
 )
 async def trigger_ingestion(request: IngestRequestSchema):
     """
-    Trigger real-time multi-source job ingestion across ATS platforms and job boards.
+    Run multi-source job ingestion and persist the results.
 
-    Admin-only. This fans out live scrapers across seven job boards and runs
-    LLM parsing over everything they return, so an open endpoint was a free
-    lever for anyone to drain the project's Groq quota, pin the container, and
-    get the deployment's IP blocked by the boards being scraped.
+    Discovers postings across the enabled sources, parses each one with the LLM
+    JD parser, then upserts into Postgres and embeds into the vector store —
+    the same path as ``scripts/run_ingestion.py``. This is what populates the
+    tables the search endpoints read, so it is the way to fill a fresh database.
+
+    Admin-only. It runs LLM parsing over everything the sources return, so an
+    open endpoint was a free lever for anyone to drain the project's Groq
+    quota, pin the container, and get the deployment's IP blocked by the
+    boards being scraped.
+
+    Runs synchronously and can take minutes on a large role list; prefer the
+    script for a first bulk load of an empty deployment.
     """
     try:
-        from ingestion.engine import RealtimeScraperEngine
+        # ``RealtimeScraperEngine.search_all`` is the *live search* path: it fans
+        # scrapers out and caches the result in Redis for the search UI, and
+        # never writes to Postgres. Pointing the trigger at it meant an admin
+        # got "discovered N jobs" while the ``jobs`` table stayed empty, which
+        # is what left the deployed Find Roles page blank. ``dispatch_ingestion``
+        # is the parse → persist → embed path, and the only one that populates
+        # the database the search endpoints read from.
+        from ingestion.dispatcher import dispatch_ingestion
 
-        # Run real-time scraper fan-out across requested roles & locations
-        roles_str = " ".join(request.roles)
-        loc_str = request.locations[0] if request.locations else "India"
-        results = await RealtimeScraperEngine.search_all(
-            query=roles_str,
-            location=loc_str,
-            force_refresh=True,
+        result = await dispatch_ingestion(
+            roles=request.roles,
+            locations=request.locations,
+            max_results_per_query=request.max_results_per_query,
         )
+
+        inserted = result.get("inserted", 0)
+        updated = result.get("updated", 0)
+        embedded = result.get("embedded", 0)
+        fetched = result.get("total_fetched", 0)
 
         return IngestResponseSchema(
             success=True,
-            message=f"Live ingestion completed: discovered {results.get('total', 0)} jobs across active boards.",
-            dag_run_id="realtime-scrape-run",
-            estimated_time=f"Completed in {results.get('total_latency_ms', 0)}ms",
+            message=(
+                f"Ingestion complete: fetched {fetched}, "
+                f"inserted {inserted}, updated {updated}, embedded {embedded}."
+            ),
+            dag_run_id=str(result.get("run_id", "")),
+            estimated_time=None,
         )
 
     except Exception as exc:

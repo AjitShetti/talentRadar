@@ -18,10 +18,9 @@ import urllib.parse
 import uuid
 from datetime import datetime, timezone
 
-from bs4 import BeautifulSoup
-
 from domain.entities import Job
 from domain.enums import EmploymentType, JobStatus, SeniorityLevel
+from ingestion.scrapers._parsing import parse_html
 from ingestion.scrapling_manager import ScraplingManager
 
 logger = logging.getLogger(__name__)
@@ -98,7 +97,7 @@ class StealthBoardsScraper:
         seen_urls: set[str] = set()
 
         if status == 200 and html_content.strip():
-            soup = BeautifulSoup(html_content, "html.parser")
+            soup = await parse_html(html_content)
             
             # Find all job title links
             title_links = soup.find_all("a", class_=re.compile(r"title", re.I))
@@ -205,7 +204,7 @@ class StealthBoardsScraper:
         if status != 200 or not isinstance(html_content, str) or not html_content.strip():
             return []
 
-        soup = BeautifulSoup(html_content, "html.parser")
+        soup = await parse_html(html_content)
         job_cards = soup.find_all("div", class_=re.compile(r"job_seen_beacon|cardOutline|jobsearch-JobGrid-item", re.I))
         if not job_cards:
             job_cards = soup.find_all("td", class_=re.compile(r"resultContent", re.I))

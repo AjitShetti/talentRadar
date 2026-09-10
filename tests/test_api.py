@@ -289,16 +289,24 @@ class TestIngestEndpoints:
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
     async def test_trigger_ingestion_returns_200_for_admin(self, admin_client):
+        """The trigger runs the persisting pipeline, not the cache-only engine.
+
+        This previously patched ``RealtimeScraperEngine.search_all``, which is
+        the live-search path: it caches to Redis and never writes to Postgres.
+        See tests/test_ingest_trigger.py for the full contract.
+        """
         mock_result = {
-            "jobs": [{"id": "1", "title": "Python Engineer"}],
-            "total": 1,
-            "total_latency_ms": 450,
+            "run_id": "run-1",
+            "total_fetched": 12,
+            "inserted": 10,
+            "updated": 2,
+            "embedded": 10,
         }
         with patch(
-            "ingestion.engine.RealtimeScraperEngine.search_all",
+            "ingestion.dispatcher.dispatch_ingestion",
             new_callable=AsyncMock,
             return_value=mock_result,
-        ) as mock_search:
+        ) as mock_dispatch:
             response = await admin_client.post(
                 "/api/v1/ingest/trigger",
                 json={
@@ -309,7 +317,7 @@ class TestIngestEndpoints:
             )
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["success"] is True
-        mock_search.assert_called_once()
+        mock_dispatch.assert_called_once()
 
     async def test_trigger_ingestion_rejects_empty_roles(self, admin_client):
         """Empty roles list should be rejected at the schema level."""

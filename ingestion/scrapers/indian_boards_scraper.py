@@ -16,11 +16,11 @@ import re
 import urllib.parse
 import uuid
 from datetime import datetime, timezone
-
-from bs4 import BeautifulSoup
+from typing import Any
 
 from domain.entities import Job
 from domain.enums import EmploymentType, JobStatus, SeniorityLevel
+from ingestion.scrapers._parsing import parse_html
 from ingestion.scrapling_manager import ScraplingManager
 
 logger = logging.getLogger(__name__)
@@ -40,6 +40,65 @@ INDIAN_CITY_SYNONYMS = {
     "ahmedabad": "Ahmedabad",
     "india": "India",
 }
+
+
+def _epoch_ms_to_datetime(value: object) -> datetime:
+    """
+    Convert a millisecond epoch timestamp to an aware datetime.
+
+    Boards report posting dates as epoch milliseconds, as free text
+    ("a day ago"), or not at all. Anything unparseable falls back to now,
+    because a posting with no date is still a posting - and a null here
+    would make it sort as infinitely stale.
+    """
+    if isinstance(value, (int, float)) and value > 0:
+        try:
+            return datetime.fromtimestamp(value / 1000, tz=timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            pass
+    return datetime.now(timezone.utc)
+
+
+def _seniority_from_years(years: object) -> SeniorityLevel:
+    """Map a minimum-years-of-experience figure onto a seniority band."""
+    if not isinstance(years, (int, float)):
+        return SeniorityLevel.MID
+    if years <= 1:
+        return SeniorityLevel.JUNIOR
+    if years <= 5:
+        return SeniorityLevel.MID
+    if years <= 9:
+        return SeniorityLevel.SENIOR
+    return SeniorityLevel.LEAD
+
+
+def _clean_freshersworld_title(raw: str) -> str:
+    """
+    Reduce a Freshersworld card title to the role itself.
+
+    The markup renders titles as
+    ``"EHS Coordinator Job Opening in <company> at <state>Less"`` - the
+    company, the state, and the collapsed "Less"/"More" toggle text are all
+    part of the same text node.
+    """
+    title = re.sub(r"\s*(Less|More)$", "", raw.strip())
+    title = re.split(r"\s+Job Opening\s+in\s+", title, maxsplit=1)[0]
+    return title.strip(" -|,")
+
+
+def _title_matches_query(title: str, query: str) -> bool:
+    """
+    True when a posting title plausibly answers *query*.
+
+    Some boards ignore the role terms in their own search and return a
+    generic listing page. Requiring one significant query term in the title
+    keeps those out of the results.
+    """
+    title_low = title.lower()
+    terms = [t for t in re.split(r"[^a-z0-9+#.]+", query.lower()) if len(t) > 2]
+    if not terms:
+        return True
+    return any(term in title_low for term in terms)
 
 
 def normalize_location(loc_str: str | None) -> tuple[str, str, bool]:
@@ -99,7 +158,7 @@ class IndianBoardsScraper:
         if status != 200 or not isinstance(html_content, str) or not html_content.strip():
             return []
 
-        soup = BeautifulSoup(html_content, "html.parser")
+        soup = await parse_html(html_content)
         job_cards = soup.find_all("li")
         jobs: list[Job] = []
 
@@ -162,64 +221,90 @@ class IndianBoardsScraper:
         limit: int = 15,
     ) -> list[Job]:
         """
-        Scrapes Foundit India (formerly Monster India) job search results.
+        Fetch Foundit India (formerly Monster India) listings from its search API.
+
+        This reads the JSON endpoint the site's own result page calls, rather
+        than the rendered HTML. The HTML is a client-side shell: a live fetch
+        of ``/srp/results`` returns 252 KB containing a login widget, no
+        ``__NEXT_DATA__``, and not one posting - which is why the previous
+        class-name scrape parsed zero jobs from a 200 response, the quietest
+        possible failure.
+
+        The JSON additionally carries structured experience, salary and skill
+        fields that were never recoverable from the markup.
         """
         loc = location or "India"
-        encoded_query = urllib.parse.quote_plus(query)
-        encoded_loc = urllib.parse.quote_plus(loc)
-
-        url = f"https://www.foundit.in/srp/results?query={encoded_query}&locations={encoded_loc}"
+        params: dict[str, Any] = {
+            "start": 0,
+            "sort": 1,
+            "limit": limit,
+            "query": query,
+            "locations": loc,
+        }
         if is_remote:
-            url += "&workFromHome=true"
+            params["workFromHome"] = "true"
 
         headers = {
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept": "application/json",
             "Referer": "https://www.foundit.in/",
         }
 
-        status, html_content = await ScraplingManager.fetch_html_or_json(url, headers=headers, timeout=5.0)
-        if status != 200 or not isinstance(html_content, str) or not html_content.strip():
+        status, payload = await ScraplingManager.fetch_html_or_json(
+            "https://www.foundit.in/middleware/jobsearch",
+            headers=headers,
+            params=params,
+            timeout=8.0,
+        )
+        if status != 200 or not isinstance(payload, dict):
             return []
 
-        soup = BeautifulSoup(html_content, "html.parser")
-        job_cards = soup.find_all("div", class_=re.compile(r"cardContainer|srpResultCard", re.I))
+        entries = (payload.get("jobSearchResponse") or {}).get("data") or []
         jobs: list[Job] = []
 
-        for card in job_cards:
-            title_tag = card.find(class_=re.compile(r"jobTitle|cardTitle", re.I)) or card.find("h3") or card.find("a")
-            company_tag = card.find(class_=re.compile(r"companyName|company", re.I))
-            loc_tag = card.find(class_=re.compile(r"location|locationText", re.I))
-            link_tag = card.find("a", href=True)
-
-            if not title_tag:
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            title = (entry.get("title") or "").strip()
+            job_id = entry.get("jobId") or entry.get("id")
+            if not title or not job_id:
                 continue
 
-            title = title_tag.get_text(strip=True)
-            company_name = company_tag.get_text(strip=True) if company_tag else "Company"
-            loc_text = loc_tag.get_text(strip=True) if loc_tag else loc
-            source_url = link_tag["href"] if link_tag else None
-            if source_url and not source_url.startswith("http"):
-                source_url = f"https://www.foundit.in{source_url}"
+            company_name = (entry.get("companyName") or "Company").strip()
+            loc_text = (entry.get("locations") or loc).strip()
+
+            # Foundit's own applyUrl is an appcast.io click-tracker, which is
+            # neither a job board nor stable. The canonical posting lives at
+            # /job/<id> - it answers 403 to a scraper and 200 in a browser,
+            # which is the shape of a real page behind a bot check rather
+            # than a missing one.
+            source_url = f"https://www.foundit.in/job/{job_id}"
 
             country, city, remote_flag = normalize_location(loc_text)
+
+            skills_raw = entry.get("skills") or ""
+            skills = [s.strip() for s in skills_raw.split(",") if s.strip()][:12] if isinstance(skills_raw, str) else []
 
             job = Job(
                 id=uuid.uuid4(),
                 company_id=uuid.uuid4(),
-                external_id=str(uuid.uuid4()),
+                external_id=str(job_id),
                 source="foundit",
                 source_url=source_url,
                 title=title,
                 status=JobStatus.ACTIVE,
                 employment_type=EmploymentType.FULL_TIME,
-                seniority=SeniorityLevel.MID,
+                seniority=_seniority_from_years(
+                    (entry.get("minimumExperience") or {}).get("years")
+                    if isinstance(entry.get("minimumExperience"), dict)
+                    else None
+                ),
                 location_raw=loc_text,
                 country=country,
                 city=city,
                 is_remote=remote_flag or bool(is_remote),
-                skills=[s for s in query.split() if len(s) > 2] if query else [],
+                skills=skills or ([s for s in query.split() if len(s) > 2] if query else []),
                 tags=["foundit", "india"],
-                posted_at=datetime.now(timezone.utc),
+                posted_at=_epoch_ms_to_datetime(entry.get("createdAt")),
                 created_at=datetime.now(timezone.utc),
                 extra_metadata={"company_name": company_name, "source": "foundit"},
             )
@@ -255,36 +340,66 @@ class IndianBoardsScraper:
         if status != 200 or not isinstance(html_content, str) or not html_content.strip():
             return []
 
-        soup = BeautifulSoup(html_content, "html.parser")
+        soup = await parse_html(html_content)
         job_cards = soup.find_all("div", class_=re.compile(r"job-container|latest-jobs", re.I))
         jobs: list[Job] = []
 
         for card in job_cards:
-            title_tag = card.find(class_=re.compile(r"bold_font|job-title", re.I)) or card.find("h3") or card.find("a")
-            company_tag = card.find(class_=re.compile(r"company-name", re.I))
-            loc_tag = card.find(class_=re.compile(r"job-location", re.I))
-            link_tag = card.find("a", href=True)
+            # The title lives in span.wrap-title. The previous selector led
+            # with ``bold_font``, which on this page is the class on each
+            # *location* link - so every job came back titled "Bangalore".
+            title_tag = card.find("span", class_=re.compile(r"wrap-title", re.I)) or card.find(
+                "div", class_=re.compile(r"job-new-title", re.I)
+            )
+            company_tag = card.find("h3", class_=re.compile(r"latest-jobs-title", re.I))
+            loc_tag = card.find("span", class_=re.compile(r"job-location", re.I))
+            exp_tag = card.find("span", class_=re.compile(r"experience", re.I))
+            link_tag = card.find(
+                "a",
+                href=re.compile(r"freshersworld\.com/jobs/(?!jobsearch)[a-z0-9-]+-\d+$", re.I),
+            )
 
-            if not title_tag:
+            if not title_tag or not link_tag:
                 continue
 
-            title = title_tag.get_text(strip=True)
+            title = _clean_freshersworld_title(title_tag.get_text(strip=True))
+            if not title:
+                continue
+
+            # Freshersworld's slug search ignores the role terms: a query for
+            # "Python Developer" returns EHS Coordinator and Desktop Support
+            # postings. Surfacing those as search results is worse than
+            # surfacing nothing, so anything that does not match the query is
+            # dropped here rather than shown to a user.
+            if query and not _title_matches_query(title, query):
+                continue
+
             company_name = company_tag.get_text(strip=True) if company_tag else "Employer"
-            loc_text = loc_tag.get_text(strip=True) if loc_tag else "India"
-            source_url = link_tag["href"] if link_tag else None
+            loc_text = loc_tag.get_text(strip=True).replace("...", "").strip() if loc_tag else "India"
+            source_url = str(link_tag["href"])
 
             country, city, remote_flag = normalize_location(loc_text)
+            # "0 to 3 Years" -> the lower bound drives the seniority band.
+            exp_text = exp_tag.get_text(strip=True) if exp_tag else ""
+            exp_match = re.search(r"(\d+)", exp_text)
+            seniority = _seniority_from_years(int(exp_match.group(1)) if exp_match else None)
+
+            # The trailing numeric id in the posting URL is Freshersworld's own
+            # job id and is stable. A fresh uuid4 made the same posting look new
+            # on every scrape, defeating deduplication.
+            id_match = re.search(r"-(\d+)$", source_url)
+            external_id = id_match.group(1) if id_match else str(uuid.uuid4())
 
             job = Job(
                 id=uuid.uuid4(),
                 company_id=uuid.uuid4(),
-                external_id=str(uuid.uuid4()),
+                external_id=external_id,
                 source="freshersworld",
                 source_url=source_url,
                 title=title,
                 status=JobStatus.ACTIVE,
                 employment_type=EmploymentType.FULL_TIME,
-                seniority=SeniorityLevel.JUNIOR,
+                seniority=seniority,
                 location_raw=loc_text,
                 country=country,
                 city=city,

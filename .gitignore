@@ -136,6 +136,10 @@ celerybeat.pid
 # Environments
 .env
 .envrc
+# Every env variant (.env.production, .env.local, ...) — these carry real
+# credentials for the deployed Neon/Render stack. .env.example stays tracked.
+.env.*
+!.env.example
 .venv
 env/
 venv/
