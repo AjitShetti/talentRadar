@@ -249,6 +249,13 @@ a{text-decoration:none;color:inherit}
 .auth-switch{font-size:12px;color:var(--muted);text-align:center;margin-top:22px;border-top:1px solid var(--line-soft);padding-top:18px}
 .auth-switch a{color:var(--accent-dark);font-weight:700}
 .form-error{color:var(--danger-dark);font-size:12px;background:var(--danger-soft);border:1px solid var(--danger-border);padding:9px 11px;border-radius:6px}
+/* Where a result set came from — see SourcingNote in app/search/page.tsx.
+   Deliberately quiet: this is provenance, not a status the user must act on. */
+.sourcing-note{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);margin:0 0 4px}
+.sourcing-dot{width:6px;height:6px;border-radius:50%;flex:none}
+.sourcing-dot.live{background:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
+.sourcing-dot.indexed{background:var(--border-strong,#c7c7c7)}
+.sourcing-muted{opacity:.7}
 .success-message{color:var(--success-dark);font-size:12px;background:var(--success-soft);border:1px solid var(--success-border);padding:9px 11px;border-radius:6px}
 .loading-state{min-height:170px;display:flex;align-items:center;justify-content:center;gap:9px;color:var(--muted);font-size:13px}
 .spin{animation:spin 1s linear infinite}

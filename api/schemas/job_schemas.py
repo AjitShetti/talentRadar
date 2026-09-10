@@ -96,3 +96,10 @@ class SearchResponseSchema(BaseModel):
     total_found: int
     summary: str | None = Field(None, description="AI-generated summary")
     filters_applied: dict | None = None
+    # Whether this query went out to the job boards, and what happened when it
+    # did. Surfaced rather than kept internal so a thinner-than-usual result
+    # set is explainable — "searched 5 of 6 sources" beats silently returning
+    # less. Shape: {sourced, reason, live_count, indexed_count, sources_stats}.
+    sourcing: dict | None = Field(
+        None, description="Live-sourcing decision and per-source statistics"
+    )

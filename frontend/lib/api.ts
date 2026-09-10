@@ -11,6 +11,12 @@ export type Job = { id: string; title: string; company?: string | null; company_
 // computed by the APScheduler job in api/main.py (services/job_matching.py).
 export type JobMatch = { id: string; title: string; company: string; location: string; is_remote: boolean; skills: string[]; salary_raw?: string | null; source_url?: string | null; posted_at?: string | null; matched_role: string }
 export type Application = { id: string; job_id?: string | null; status: string; notes?: string | null; applied_at?: string | null; created_at: string; job?: Job | null }
+// What a semantic search did about going out to the job boards. Present so a
+// thinner-than-usual result set is explainable in the UI rather than silent:
+// `reason` says why sourcing did or did not run, and `sources_stats` carries
+// per-source counts and latencies for the fan-out.
+export type SourceStat = { latency_ms?: number; count?: number; status?: string }
+export type Sourcing = { sourced?: boolean; reason?: string; live_count?: number | null; indexed_count?: number | null; sources_stats?: Record<string, SourceStat> }
 export type InterviewState = Record<string, unknown>
 export type InterviewScore = { correctness: number; clarity: number; depth: number; answer_summary?: string; verbal_ack?: string | null }
 export type AtsResult = { ats_score: number; missing_skills: string[]; matched_skills: string[]; suggestions: string[]; reasoning: string }
@@ -140,7 +146,7 @@ export const api = {
   },
   dashboard: () => request<Record<string, unknown>>('/api/v1/dashboard/overview', {}, true),
   search: {
-    semantic: (query: string) => request<{ results: Job[]; total_found: number; summary?: string }>('/api/v1/search/semantic', { method: 'POST', body: JSON.stringify({ query, limit: 30 }) }),
+    semantic: (query: string) => request<{ results: Job[]; total_found: number; summary?: string; sourcing?: Sourcing }>('/api/v1/search/semantic', { method: 'POST', body: JSON.stringify({ query, limit: 30 }) }),
     structured: (query: string, filters: { location?: string; remote?: boolean; experience?: string } = {}) => request<{ jobs: Job[]; total: number }>('/api/v1/search/structured', { method: 'POST', body: JSON.stringify({ query, location: filters.location || undefined, is_remote: filters.remote || undefined, experience: filters.experience || undefined, india_only: true, limit: 30 }) }),
   },
   applications: {
