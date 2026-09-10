@@ -34,6 +34,7 @@ from services.applications import day_agenda, recent_activity, tracker_analytics
 from services.career import target_role_readiness
 from services.interviews import interview_insights
 from services.job_matching import compute_daily_matches_for_user, get_daily_matches_for_user
+from services.sweep import get_last_sweep
 from services.profiles import get_profile
 
 logger = logging.getLogger(__name__)
@@ -113,6 +114,15 @@ async def overview(user_id: CurrentUserId) -> dict[str, Any]:
         logger.warning("Daily job matches unavailable for user %s", user_id, exc_info=True)
         job_matches = None
 
+    # What the last sweep actually did, so the dashboard can say it ("swept 4
+    # boards, read 61 postings, kept 3") instead of showing a bare match count.
+    # Additive: a failure here must not blank the rest of the board.
+    try:
+        sweep = await get_last_sweep()
+    except Exception:
+        logger.warning("Sweep manifest unavailable", exc_info=True)
+        sweep = None
+
     return {
         "profile": {
             "exists": bool(profile),
@@ -130,4 +140,5 @@ async def overview(user_id: CurrentUserId) -> dict[str, Any]:
         "skills_focus": skills_focus,
         "interviews": interviews,
         "job_matches": job_matches,
+        "sweep": sweep,
     }

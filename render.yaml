@@ -79,6 +79,18 @@ services:
       # One instance, so the in-process daily scan is safe to run here.
       - key: ENABLE_SCHEDULER
         value: "true"
+      # Render's clock is UTC and the product is India-only, so "overnight" has
+      # to be written in UTC: 21:45 UTC is 03:15 IST. The keepalive workflow is
+      # what keeps the instance resident long enough for this to fire at all —
+      # a spun-down free instance runs no in-process cron.
+      - key: DAILY_MATCH_HOUR
+        value: "21"
+      - key: DAILY_MATCH_MINUTE
+        value: "45"
+      # The sweep scrapes and LLM-parses before it ranks. Set false to keep the
+      # nightly ranking pass but drop the ingestion cost.
+      - key: SWEEP_INGEST_ENABLED
+        value: "true"
       # Free tier: 512 MB and a shared CPU. Keep the connection budget small —
       # the ceiling is (pool + overflow) x workers, and free Postgres plans
       # cap total connections low.

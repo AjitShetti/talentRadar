@@ -241,8 +241,27 @@ class Settings(BaseSettings):
     enable_scheduler: bool = Field(
         default=True, description="Run the in-process daily job-match scheduler"
     )
+    # The scan uses the *server* clock, which is UTC on Render while the product
+    # is India-only — so an "overnight" sweep has to be set in UTC. 21:45 UTC is
+    # 03:15 IST, which is what the dashboard means by "fetched while you were
+    # away". Leaving this at a daytime UTC hour puts the sweep in the middle of
+    # the user's working day.
     daily_match_hour: int = Field(default=8, description="Hour (0-23) the daily job-match scan runs")
     daily_match_minute: int = Field(default=0, description="Minute (0-59) the daily job-match scan runs")
+
+    # The sweep ingests fresh postings before ranking them (services/sweep.py).
+    # Without this the daily scan only re-ranks whatever ingestion an admin
+    # happened to trigger by hand, so the same postings surface every morning.
+    # Turn it off to keep the ranking pass but skip the scraping/LLM cost.
+    sweep_ingest_enabled: bool = Field(
+        default=True, description="Ingest fresh postings at the start of the daily sweep"
+    )
+    sweep_max_roles: int = Field(
+        default=8, description="Cap on distinct target roles ingested per sweep"
+    )
+    sweep_results_per_role: int = Field(
+        default=3, description="Results per query per source during the sweep"
+    )
 
     # ------------------------------------------------------------------ #
     # Frontend / CORS                                                      #
