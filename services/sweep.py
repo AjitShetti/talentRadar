@@ -123,6 +123,27 @@ async def run_overnight_sweep() -> dict[str, Any]:
         logger.warning("Overnight sweep matching failed", exc_info=True)
         summary["matched"] = False
 
+    # Enrich a batch of the rows live search stored structurally. This is the
+    # deferred half of the "persist cheaply now, parse later" split that lets a
+    # 60-result search cost no Groq quota — bounded by a daily budget, so it
+    # cannot starve intent classification or the copilot.
+    try:
+        from services.job_enrichment import enrich_pending
+
+        summary["enriched"] = await enrich_pending()
+    except Exception:
+        logger.warning("Overnight sweep enrichment failed", exc_info=True)
+
+    # Retention runs last, after the night's writes. On a 0.5 GB Neon instance
+    # this is not housekeeping: a full database stops accepting writes
+    # altogether, and live sourcing can add ~60 rows per missed search.
+    try:
+        from services.job_retention import prune_stale_jobs
+
+        summary["pruned"] = await prune_stale_jobs()
+    except Exception:
+        logger.warning("Overnight sweep retention failed", exc_info=True)
+
     summary["finished_at"] = datetime.now().isoformat()
     return summary
 

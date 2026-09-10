@@ -50,7 +50,7 @@ async def probe(source: LiveSource, query: str, location: str | None, is_remote:
             source.fetch(query, location, is_remote),
             timeout=source.timeout_seconds,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return ProbeResult(
             source.name,
             source.tier,
@@ -59,7 +59,7 @@ async def probe(source: LiveSource, query: str, location: str | None, is_remote:
             "timeout",
             detail=f"exceeded {source.timeout_seconds}s",
         )
-    except Exception as exc:  # noqa: BLE001 - a probe reports failures, never propagates them
+    except Exception as exc:
         return ProbeResult(
             source.name,
             source.tier,

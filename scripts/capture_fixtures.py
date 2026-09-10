@@ -65,7 +65,7 @@ async def capture_one(source: LiveSource) -> dict[str, Any] | None:
             source.fetch(CAPTURE_QUERY, CAPTURE_LOCATION, None),
             timeout=max(source.timeout_seconds * 3, 20.0),
         )
-    except Exception as exc:  # noqa: BLE001 - a failed capture is reported, not raised
+    except Exception as exc:
         print(f"  {source.name:18} capture FAILED: {type(exc).__name__}: {exc}")
         return None
     finally:

@@ -336,7 +336,13 @@ class IndianBoardsScraper:
             "Referer": "https://www.freshersworld.com/",
         }
 
-        status, html_content = await ScraplingManager.fetch_html_or_json(url, headers=headers, timeout=5.0)
+        # 7s, and deliberately just under this source's 8s registry budget.
+        # Freshersworld ships a ~1.5 MB search page and its response time was
+        # measured swinging between 3.4s and 11.2s. On a timeout the fetcher
+        # falls through to the httpx tier, which re-downloads all 1.5 MB — so
+        # an inner timeout well below the outer one turns one slow response
+        # into two, and overruns the budget that was meant to contain it.
+        status, html_content = await ScraplingManager.fetch_html_or_json(url, headers=headers, timeout=7.0)
         if status != 200 or not isinstance(html_content, str) or not html_content.strip():
             return []
 

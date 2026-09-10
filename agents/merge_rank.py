@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 #: How much each signal can contribute. They sum to 1.0.
@@ -85,7 +85,7 @@ def dedup_key(job: dict[str, Any]) -> str:
     """
     company = (job.get("company_name") or job.get("company") or "").strip().lower()
     title = (job.get("title") or "").strip().lower()
-    return hashlib.md5(f"{company}:{title}:{_city_of(job)}".encode("utf-8")).hexdigest()
+    return hashlib.md5(f"{company}:{title}:{_city_of(job)}".encode()).hexdigest()
 
 
 def to_retrieval_dict(job: dict[str, Any]) -> dict[str, Any]:
@@ -121,11 +121,11 @@ def to_retrieval_dict(job: dict[str, Any]) -> dict[str, Any]:
 
 def _parse_dt(value: Any) -> datetime | None:
     if isinstance(value, datetime):
-        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
     if isinstance(value, str) and value:
         try:
             parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
         except ValueError:
             return None
     return None
@@ -156,7 +156,7 @@ def recency_score(job: dict[str, Any], now: datetime | None = None) -> float:
         # Unknown age scores mid, not zero: most scraped rows carry no real
         # posting date, and zeroing them would bury every live result.
         return 0.5
-    age_days = ((now or datetime.now(timezone.utc)) - posted).days
+    age_days = ((now or datetime.now(UTC)) - posted).days
     if age_days <= 0:
         return 1.0
     if age_days >= RECENCY_HORIZON_DAYS:

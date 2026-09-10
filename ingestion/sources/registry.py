@@ -92,7 +92,12 @@ def _build_registry() -> tuple[LiveSource, ...]:
             name="freshersworld",
             fetch=IndianBoardsScraper.search_freshersworld,
             tier="board",
-            timeout_seconds=4.0,
+            # 8s, not 4s. This board ships a ~1.5 MB search page and its
+            # response time was measured swinging between 3.4s and 11.2s, so a
+            # 4s budget failed a source that works and would have tripped its
+            # circuit breaker for no reason. Sources run concurrently, so the
+            # fan-out costs the slowest one, not the sum.
+            timeout_seconds=8.0,
         ),
         LiveSource(
             name="indeed_india",

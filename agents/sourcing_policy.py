@@ -25,7 +25,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 #: How long after a live fan-out the same query is served from the index.
 SOURCED_LOCK_TTL_SECONDS = 8 * 3600
@@ -122,13 +122,13 @@ def decide_sourcing(
         return SourcingDecision(True, "the query asks for recent postings")
 
     if newest_indexed_at is not None:
-        reference = now or datetime.now(timezone.utc)
+        reference = now or datetime.now(UTC)
         # A naive timestamp from the database is treated as UTC rather than
         # rejected; the alternative is a TypeError on the comparison below.
         newest = (
             newest_indexed_at
             if newest_indexed_at.tzinfo is not None
-            else newest_indexed_at.replace(tzinfo=timezone.utc)
+            else newest_indexed_at.replace(tzinfo=UTC)
         )
         age = reference - newest
         if age > timedelta(days=STALE_AFTER_DAYS):

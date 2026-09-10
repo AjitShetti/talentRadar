@@ -188,7 +188,7 @@ async def persist_live_jobs(jobs: list[Job], *, source_label: str = "live_search
             if await CacheBackend.exists(_seen_key(job.source_url or "")):
                 summary.duplicate += 1
                 continue
-        except Exception:  # noqa: BLE001 - the cache is optional
+        except Exception:
             pass
         fresh.append(job)
 
@@ -202,58 +202,57 @@ async def persist_live_jobs(jobs: list[Job], *, source_label: str = "live_search
         from storage.database import AsyncSessionLocal
         from storage.repository import UnitOfWork
 
-        async with AsyncSessionLocal() as session:
-            async with UnitOfWork(session) as uow:
-                for job in fresh:
-                    try:
-                        company_name = (job.extra_metadata or {}).get("company_name") or "Company"
-                        company, _ = await uow.companies.upsert_by_domain(
-                            domain=_company_domain(company_name),
-                            defaults={"name": company_name},
-                        )
+        async with AsyncSessionLocal() as session, UnitOfWork(session) as uow:
+            for job in fresh:
+                try:
+                    company_name = (job.extra_metadata or {}).get("company_name") or "Company"
+                    company, _ = await uow.companies.upsert_by_domain(
+                        domain=_company_domain(company_name),
+                        defaults={"name": company_name},
+                    )
 
-                        external_id = job.external_id or _stable_external_id(job)
-                        kwargs = build_job_kwargs(job)
-                        kwargs["company_id"] = company.id
+                    external_id = job.external_id or _stable_external_id(job)
+                    kwargs = build_job_kwargs(job)
+                    kwargs["company_id"] = company.id
 
-                        stored, created = await uow.jobs.upsert_by_external_id(
-                            external_id=external_id,
-                            source=job.source or source_label,
-                            defaults=kwargs,
-                        )
-                        if created:
-                            summary.inserted += 1
-                        else:
-                            summary.updated += 1
+                    stored, created = await uow.jobs.upsert_by_external_id(
+                        external_id=external_id,
+                        source=job.source or source_label,
+                        defaults=kwargs,
+                    )
+                    if created:
+                        summary.inserted += 1
+                    else:
+                        summary.updated += 1
 
-                        embedding_items.append(
-                            {
-                                "job_id": external_id,
-                                "text": embedding_text(job),
-                                "metadata": {
-                                    "title": job.title or "",
-                                    "company": company_name,
-                                    "location": job.location_raw or "",
-                                    "country": job.country or "",
-                                    "city": job.city or "",
-                                    "is_remote": bool(job.is_remote),
-                                    "seniority": job.seniority.value if job.seniority else "",
-                                    "employment_type": (
-                                        job.employment_type.value if job.employment_type else ""
-                                    ),
-                                    "skills_str": ", ".join(job.skills or []),
-                                    "source_url": job.source_url or "",
-                                    "source": job.source or source_label,
-                                },
-                                "internal_job_id": stored.id,
-                            }
-                        )
-                    except Exception as exc:  # noqa: BLE001 - one bad row must not lose the batch
-                        summary.failed += 1
-                        logger.debug("Could not persist %r: %s", (job.title or "")[:60], exc)
+                    embedding_items.append(
+                        {
+                            "job_id": external_id,
+                            "text": embedding_text(job),
+                            "metadata": {
+                                "title": job.title or "",
+                                "company": company_name,
+                                "location": job.location_raw or "",
+                                "country": job.country or "",
+                                "city": job.city or "",
+                                "is_remote": bool(job.is_remote),
+                                "seniority": job.seniority.value if job.seniority else "",
+                                "employment_type": (
+                                    job.employment_type.value if job.employment_type else ""
+                                ),
+                                "skills_str": ", ".join(job.skills or []),
+                                "source_url": job.source_url or "",
+                                "source": job.source or source_label,
+                            },
+                            "internal_job_id": stored.id,
+                        }
+                    )
+                except Exception as exc:
+                    summary.failed += 1
+                    logger.debug("Could not persist %r: %s", (job.title or "")[:60], exc)
 
-                await session.commit()
-    except Exception as exc:  # noqa: BLE001
+            await session.commit()
+    except Exception as exc:
         logger.warning("Live persistence could not write to the database: %s", exc)
         return summary
 
@@ -261,7 +260,7 @@ async def persist_live_jobs(jobs: list[Job], *, source_label: str = "live_search
     for job in fresh:
         try:
             await CacheBackend.set(_seen_key(job.source_url or ""), "1", SEEN_URL_TTL_SECONDS)
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
     # 5. Embed. The vector store is optional by design: without it the rows
@@ -297,10 +296,9 @@ async def _embed_quietly(items: list[dict[str, Any]]) -> None:
         from storage.database import AsyncSessionLocal
         from storage.repository import UnitOfWork
 
-        async with AsyncSessionLocal() as session:
-            async with UnitOfWork(session) as uow:
-                for item in items:
-                    await uow.jobs.set_embedding_id(item["internal_job_id"], item["job_id"])
-                await session.commit()
-    except Exception as exc:  # noqa: BLE001
+        async with AsyncSessionLocal() as session, UnitOfWork(session) as uow:
+            for item in items:
+                await uow.jobs.set_embedding_id(item["internal_job_id"], item["job_id"])
+            await session.commit()
+    except Exception as exc:
         logger.warning("Could not embed %d live jobs: %s", len(items), exc)
