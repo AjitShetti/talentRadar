@@ -33,7 +33,7 @@ async def test_sweep_ingests_before_it_ranks(monkeypatch: pytest.MonkeyPatch) ->
     async def _roles() -> list[str]:
         return ["Backend Engineer"]
 
-    async def _dispatch(**kwargs: Any) -> dict[str, Any]:
+    async def _dispatch(**kwargs: object) -> dict[str, Any]:
         calls.append("ingest")
         return {"sources": ["greenhouse", "lever"], "total_fetched": 61, "inserted": 4}
 
@@ -59,7 +59,7 @@ async def test_sweep_still_ranks_when_ingestion_fails(monkeypatch: pytest.Monkey
     async def _roles() -> list[str]:
         return ["Backend Engineer"]
 
-    async def _boom(**kwargs: Any) -> dict[str, Any]:
+    async def _boom(**kwargs: object) -> dict[str, Any]:
         raise RuntimeError("every source is down")
 
     async def _match() -> None:
@@ -83,7 +83,7 @@ async def test_sweep_skips_ingestion_with_no_target_roles(
     """No profiles, no scraping — an empty deployment must not scrape blindly."""
     called: list[str] = []
 
-    async def _dispatch(**kwargs: Any) -> dict[str, Any]:
+    async def _dispatch(**kwargs: object) -> dict[str, Any]:
         called.append("ingest")
         return {}
 

@@ -26,10 +26,9 @@ from typing import Any, AsyncGenerator
 
 from config.settings import get_settings
 from domain.entities import Job
-from ingestion.scrapers.ats_scraper import ATSScraper
-from ingestion.scrapers.indian_boards_scraper import IndianBoardsScraper
-from ingestion.scrapers.stealth_boards_scraper import StealthBoardsScraper
+from ingestion.sources.registry import default_live_sources
 from services.search_cache_service import SearchCacheService
+from services.source_health import SourceHealthService
 
 logger = logging.getLogger(__name__)
 
@@ -133,24 +132,30 @@ class RealtimeScraperEngine:
                 yield {"event": "done", "data": {"total_jobs": len(cached_data.get("jobs", [])), "is_cached": True}}
                 return
 
+        # The roster comes from ingestion/sources/registry.py rather than
+        # being built here, so the fan-out, the health service and the
+        # contract tests cannot disagree about what "the sources" are.
+        # Browser-requiring sources are excluded unless
+        # ENABLE_STEALTH_SCRAPERS says otherwise: a headless browser OOMs a
+        # 512 MB instance, and reaching those sites that way is against their
+        # terms.
+        roster = default_live_sources(enable_stealth=get_settings().enable_stealth_scrapers)
+
+        # Drop sources whose circuit breaker is open. A source that has failed
+        # repeatedly costs the user latency and risks escalating a block; the
+        # rest still answer, so search degrades in coverage rather than
+        # failing.
+        available_names = set(await SourceHealthService.filter_available([s.name for s in roster]))
+        skipped = [s.name for s in roster if s.name not in available_names]
+        roster = tuple(s for s in roster if s.name in available_names)
+
+        # Coroutines are created here, not in the registry: an un-awaited
+        # coroutine is a warning and a leak, so one is built only for a
+        # source that will actually run.
         sources = [
-            ("ats_platforms", ATSScraper.search_all_ats(query, location, is_remote), 5.0),
-            ("linkedin", IndianBoardsScraper.search_linkedin_guest(query, location, is_remote), 5.0),
-            ("foundit", IndianBoardsScraper.search_foundit_india(query, location, is_remote), 5.0),
-            ("freshersworld", IndianBoardsScraper.search_freshersworld(query, location, is_remote), 4.0),
+            (s.name, s.fetch(query, location, is_remote), s.timeout_seconds)
+            for s in roster
         ]
-        # The stealth boards each launch a headless browser, which a 512 MB
-        # instance cannot survive, and reaching them that way is against those
-        # sites' terms. Off unless ENABLE_STEALTH_SCRAPERS says otherwise —
-        # and built lazily, because an un-awaited coroutine is a warning and a
-        # leak. The remaining sources still answer, so search degrades in
-        # coverage rather than failing.
-        if get_settings().enable_stealth_scrapers:
-            sources.extend([
-                ("instahyre", StealthBoardsScraper.search_instahyre(query, location, is_remote), 5.0),
-                ("indeed_india", StealthBoardsScraper.search_indeed_india(query, location, is_remote), 7.0),
-                ("naukri", StealthBoardsScraper.search_naukri(query, location, is_remote), 10.0),
-            ])
 
         yield {
             "event": "init",
@@ -159,6 +164,9 @@ class RealtimeScraperEngine:
                 "location": location,
                 "is_remote": is_remote,
                 "sources": [s[0] for s in sources],
+                # Named explicitly so the UI can say "searched 6 of 8
+                # sources" rather than silently returning a thinner result.
+                "skipped_sources": skipped,
                 "timestamp": time.time(),
             },
         }
@@ -181,6 +189,20 @@ class RealtimeScraperEngine:
                 "count": len(jobs),
                 "status": status,
             }
+
+            # Feed the health registry from real traffic. This is the only
+            # thing that can notice a source quietly returning nothing after
+            # a site changes - the fixture tests replay a capture made before
+            # the change and keep passing.
+            try:
+                await SourceHealthService.record_attempt(
+                    source_name,
+                    job_count=len(jobs),
+                    latency_ms=latency_ms,
+                    status=status,
+                )
+            except Exception as exc:  # noqa: BLE001 - health is observability, never a failure path
+                logger.debug("Could not record health for %s: %s", source_name, exc)
 
             # Deduplicate new jobs
             new_job_dicts: list[dict[str, Any]] = []
