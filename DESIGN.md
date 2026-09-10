@@ -1,6 +1,6 @@
 ---
 name: TalentRadar
-description: AI-powered career intelligence for the Indian tech job market — read as a live departures board, not a dashboard of stat cards.
+description: AI-powered career intelligence for the Indian tech job market — read as a ruled operations sheet, not a dashboard of stat cards.
 colors:
   ink: "#ECEEF0"
   ink-2: "#C7CBD1"
@@ -11,6 +11,7 @@ colors:
   surface: "#1B1917"
   surface-2: "#211F1C"
   surface-3: "#2B2825"
+  ghost: "#3A3631"
   white: "#FFFFFF"
   line: "rgba(255,255,255,.10)"
   line-soft: "rgba(255,255,255,.055)"
@@ -41,6 +42,12 @@ typography:
     fontWeight: 700
     lineHeight: 1.1
     letterSpacing: "-0.4px"
+  plate:
+    fontFamily: "'Big Shoulders Text', sans-serif"
+    fontSize: "56px"
+    fontWeight: 800
+    lineHeight: 0.8
+    letterSpacing: "-1.5px"
   headline:
     fontFamily: "'Big Shoulders Text', sans-serif"
     fontSize: "18px"
@@ -71,7 +78,17 @@ typography:
     fontWeight: 400
     lineHeight: 1.3
     letterSpacing: "0.9px"
+motion:
+  ease-out: "cubic-bezier(.16,1,.3,1)"
+  ease-io: "cubic-bezier(.65,0,.35,1)"
+  ease-fast: "cubic-bezier(.4,0,.2,1)"
+  t-fast: "170ms"
+  t: "300ms"
+  t-travel: "420ms"
+  t-slow: "640ms"
 rounded:
+  none: "0"
+  xs: "2px"
   sm: "4px"
   md: "7px"
   lg: "9px"
@@ -109,237 +126,352 @@ components:
 
 # Design System: TalentRadar
 
-## Scope of this document — read this first
+## How to read this document
 
-**The board system now runs app-wide.** It started on the shared app chrome (`AppShell`/top nav), the Overview/dashboard, `BriefingFeed`, `CopilotWorkspace` and the shared `.job-card` row; every remaining route has since been structurally ported to it: Search (filter strip, tips rail, results), Applications (tracker rows + status rail), Interview Lab (start, session, voice stage, history), Resume Studio (editor shell, section rows, live ATS), Company Intel (directory rows + toolbar), Settings, Onboarding, and the Login/Signup split.
+This system is **normative on every route**. There is no second, older box-grid idiom running in
+parallel — a bordered, radius-cornered container anywhere is a deliberate exception (a surface that
+genuinely floats), not a leftover.
 
-This document is therefore **normative everywhere**. There is no longer a second, older box-grid idiom running in parallel — a bordered, radius-cornered container on any route is now a deliberate exception (a genuinely floating surface), not a leftover.
+Two things carry different weight here, and the difference matters if you are implementing:
 
-The exceptions, and the reason each one keeps a box:
-- **`.cp-chat`** — the copilot conversation is a distinct working surface inside a page, not a row in a list.
-- **`.ci-drawer`** (+ its backdrop) — an overlay sliding over the board.
-- **`.search-form` / `.ci-searchbar`** — the search bar floats above the results it filters.
-- **`.editor-pdf-frame`** — the compiled resume is a *document* sitting on the board, so it keeps a frame and the ambient lift.
-- **Accent-soft callouts** (`.question-card`, `.action-card`, `.insight-focus`, `.score-feedback`, `.resume-status`, `.form-error`) — semantic banners, sized to their message.
-- **Inputs, chips and pills** — a 1px `--line` outline is still the right affordance for something you type into or toggle.
+- **Shipped.** The app chrome, Search, Applications, Interview Lab, Resume Studio, Company Intel,
+  Settings, Onboarding and the auth split all run this system in `frontend/app/globals.css` today.
+- **Specified, not yet built.** The **Overview day board** described below replaces the previous
+  Overview iteration (`.dayboard` ledger table, `.metric-grid`, `.dashboard-grid`/`.bottom-grid`
+  panels, and the in-page copilot panel), which is what `frontend/app/dashboard/page.tsx` still
+  renders. Build against this document and the reference mockup, not against the current page.
 
-## Overview
+**Reference mockup for the Overview** (the review surface — feedback arrives as comments on it, and
+it is republished to the same URL rather than re-created):
+https://claude.ai/code/artifact/231a47a6-4eb5-46c6-ba15-92b28f7d4e2e
 
-**Creative North Star: "The Departures Board"**
+Boxes are kept only where a surface floats over something else:
+- **`.cp-chat`** — the copilot conversation is a working surface inside a page, not a row in a list.
+- **`.ci-drawer`** and the Overview's **copilot drawer** — overlays sliding over the board.
+- **`.search-form` / `.ci-searchbar`** — a search bar floats above the results it filters.
+- **`.editor-pdf-frame`** — the compiled resume is a *document* on the board, so it keeps a frame.
+- **Accent-soft callouts** (`.question-card`, `.action-card`, `.insight-focus`, `.score-feedback`,
+  `.resume-status`, `.form-error`) — semantic banners, sized to their message.
+- **Inputs, chips and pills** — a 1px `--line` outline is the right affordance for something you
+  type into or toggle.
 
-TalentRadar's Overview reads like a live station board, not a dashboard of stat cards: a graphite instrument face, ruled hairline rows instead of bordered boxes, and a single amber lamp color reserved for whatever needs the user's attention right now. The board's job is to make "what's stale, what's moving, what to do next" legible at a glance, the way a commuter reads a departures board instead of scanning a grid of tiles.
+## North Star: the ruled operations sheet
 
-The palette is warm-neutral graphite and brushed steel — deliberately not the cool blue-slate that reads as generic "AI dark mode" — with a warm off-white ink for text and a single indicator-lamp amber spent sparingly. Big Shoulders Text (condensed, uppercase-leaning) sets row labels and headings; Fragment Mono sets tabular/live data (scores, counts, dates); Public Sans carries reading copy. Structure comes from hairline rules (`--line`, `--line-soft`, `--line-strong`), not borders-around-boxes.
+TalentRadar is read the way a controller reads a printed operations sheet: a warm graphite ground,
+structure from hairline rules that run edge to edge, and a single amber lamp reserved for whatever
+needs the user right now. Nothing is a card. A row's importance is carried by its position, its
+type scale and whether the lamp is lit — never by giving it a border and a drop shadow.
 
-**Key Characteristics:**
-- Ranked hairline rows replace bordered-card grids on the board surfaces — status reads through position and a lamp dot, not through a boxed container.
-- One accent color, amber, is reserved for status/action; it is not used decoratively.
-- Big Shoulders Text (labels/headings) + Fragment Mono (data) + Public Sans (copy) — a three-role type system, no serif, no system-display face.
-- FlapText — a character-cascade reveal — is the board's one authored motion for live numbers.
-- Flat-ink surfaces are lifted with tinted shadow + inset highlight, not gloss or hard offset shadows.
+The palette is warm-neutral graphite and brushed steel — deliberately not the cool blue-slate that
+reads as generic "AI dark mode" — with a warm off-white ink and one indicator amber spent sparingly.
+Big Shoulders Text (condensed) sets labels, headings and plate numerals; Fragment Mono sets live and
+tabular data; Public Sans carries reading copy.
+
+**Key characteristics**
+- Full-bleed hairline rules separate sections; content sits in an inset column inside them.
+- Ranked hairline rows replace card grids everywhere — status reads through position and a lamp.
+- One accent, amber, for status and action only. Never a decorative fill.
+- A three-role type system: Big Shoulders (labels/headings/plates), Fragment Mono (data),
+  Public Sans (prose). No serif, no system-display face.
+- Motion is one named curve family plus one signature (FlapText). Nothing is animated for decoration.
 
 ## Colors
 
-Warm-neutral graphite instrument palette; the accent is a single indicator-lamp amber spent only on what needs the user, not as decoration.
-
 ### Primary
-- **Indicator Amber** (`#FFB020`, `--accent`): the one accent. Live-counter emphasis (FlapText numbers, lit ticks), primary buttons, active-lamp status dots, focus rings (as `accent-soft`/`accent-border`), hover states on interactive rows/links.
-- **Amber Dark** (`#E69A0E`, `--accent-dark`): hover state for primary buttons; link/action text color on dark surfaces (higher contrast than full accent for small text).
-- **Amber Light** (`#FFCB66`, `--accent-light`): accent text on the dark `focus-panel` surface where full amber would be too saturated against near-black.
+- **Indicator Amber** (`#FFB020`, `--accent`): the one accent. Live-counter emphasis, primary
+  buttons, active lamps, the travelling focus marker, lit ticks, hover on interactive rows.
+- **Amber Dark** (`#E69A0E`, `--accent-dark`): hover for primary buttons; action text on dark
+  surfaces where full amber is too light for small type.
+- **Amber Light** (`#FFCB66`, `--accent-light`): accent text and lit ticks on the darkest surfaces.
 
 ### Neutral
-- **Board Paper** (`#131211`, `--paper`): the app's base background — warm-near-black, not blue-black.
-- **Surface** (`#1B1917`, `--surface`) / **Surface 2** (`#211F1C`) / **Surface 3** (`#2B2825`): stacked panel/input backgrounds, each one step lighter for nested depth (card → input → chip).
-- **Ink** (`#ECEEF0`, `--ink`): primary text — warm-cool off-white, never pure white.
-- **Ink 2 / Muted / Faint** (`#C7CBD1` / `#9AA0A6` / `#868C94`): secondary text, metadata, timestamps, in decreasing order of emphasis.
-- **Hairline / Hairline Soft / Hairline Strong** (`rgba(255,255,255,.10/.055/.18)`, `--line` / `--line-soft` / `--line-strong`): the row-divider and section-divider vocabulary — `-strong` for structural boundaries (board header, briefing top rule), `-soft` for row-to-row rhythm within a list, base `-line` for input/card borders.
+- **Board Paper** (`#131211`, `--paper`): the base — warm near-black, never blue-black.
+- **Surface / 2 / 3** (`#1B1917` / `#211F1C` / `#2B2825`): stacked panel, input and chip grounds.
+- **Ghost** (`#3A3631`, `--ghost`): the unlit plate numeral. Dark enough to read as structure
+  rather than content, light enough to count as a numeral.
+- **Ink / Ink 2 / Muted / Faint** (`#ECEEF0` / `#C7CBD1` / `#9AA0A6` / `#868C94`): text in
+  decreasing emphasis. Ink is warm-cool off-white, never pure white.
+- **Hairline / Soft / Strong** (`rgba(255,255,255,.10/.055/.18)`): the divider vocabulary —
+  `-strong` for structural boundaries, `-soft` for row-to-row rhythm, base for input and chip edges.
 
 ### Semantic
-- **Success** (`#3ECF8E`) / **Danger** (`#F0575A`) / **Warning** (`#FFB020`, same value as accent): status-only, never decorative. Warning shares the accent hue intentionally — on this board, "needs you" and "amber" are the same signal.
+**Success** (`#3ECF8E`) / **Danger** (`#F0575A`) / **Warning** (`#FFB020`): status only, never
+decorative. Warning shares the accent hue intentionally — here, "needs you" and "amber" are one signal.
 
-### Named Rules
-**The One Lamp Rule.** Amber (`--accent`) is reserved for what needs the user: live data, primary actions, active/lit state, and status. It is never used as a decorative fill or a repeated brand flourish across a screen — its rarity is what makes the "needs you" signal legible.
+### The One Lamp Rule
+Amber is reserved for what needs the user: live data, primary actions, active state, status. It is
+never a decorative fill or a repeated brand flourish. Its rarity is what makes it legible.
 
-**The Hairline-Not-Border Rule.** On the board surfaces (nav, Overview, BriefingFeed, CopilotWorkspace, job-card rows), structure comes from `border-top`/`border-bottom` hairlines between ranked rows, not from `border` boxes around containers. A bordered, radius-cornered box (`.card-form`, `.editor-panel`, `.ci-card`) is the old pattern, still correct on the routes that haven't been rebuilt — do not mix the two idioms on one surface.
+### The Hairline-Not-Border Rule
+Structure comes from `border-top`/`border-bottom` hairlines between ranked rows, and from full-bleed
+section rules — not from `border` boxes around containers.
 
 ## Typography
 
-**Display/Label Font:** Big Shoulders Text (condensed sans, weights 500–800), with a sans-serif fallback.
-**Body Font:** Public Sans (weights 400–700), with a sans-serif fallback.
-**Data/Mono Font:** Fragment Mono, with a monospace fallback.
+**Display/Label:** Big Shoulders Text (500–800). **Body:** Public Sans (400–700).
+**Data:** Fragment Mono. Each with a real fallback stack.
 
-**Character:** Condensed, uppercase-leaning Big Shoulders Text gives row labels and headings a station-signage density; Fragment Mono gives every live number (scores, counts, dates, timestamps) a tabular, instrument-panel precision (`font-variant-numeric: tabular-nums` is applied wherever a number can change); Public Sans stays plain and legible for reading copy, so the two display faces don't have to carry paragraphs.
+Condensed Big Shoulders gives labels and headings a station-signage density; Fragment Mono gives
+every live number instrument-panel precision (`font-variant-numeric: tabular-nums` wherever a number
+can change); Public Sans stays plain for reading copy so the display faces never carry paragraphs.
 
 ### Hierarchy
-- **Display** (700, 32px, -0.4px tracking): the board header `h1` (`.board-header h1`) — one per page, greeting/date-ledger context.
-- **Headline** (600, 15–19px, -0.2 to -0.4px tracking): panel and card titles (`.panel-heading h2`, `.cp-card h3`, `.ci-drawer-title h2`).
-- **Data (mono)** (700, 25–33px, tabular-nums): the big live numbers — `.big-number`, `.ats-score-badge`, `.cp-stats strong`, `.market-stat strong`, `.tracker-total strong`. These are the only elements FlapText wraps.
-- **Body** (400, 12–13px, 1.6–1.7 line-height): reading copy — card descriptions, briefing detail text, chat bubbles.
-- **Label** (600, 9–11px, uppercase, 0.5–1.1px tracking): row-kind tags, section eyebrow-style meta (`.cp-card-kind`, `.metric-top span`, `.ci-fact span`) — set in Big Shoulders Text at small sizes or Fragment Mono when it's tabular metadata (timestamps, tier codes).
+- **Plate** (800, 54–66px, -1.5px): the Overview's ranked action numerals. The largest type in the
+  system, and the only place Big Shoulders runs above Display scale.
+- **Display** (700, 30–44px, -0.4 to -0.6px): a route's `h1`. One per page.
+- **Headline** (600–700, 15–28px): section headings and row titles.
+- **Data (mono)** (700, 25–33px, tabular-nums): the big live numbers. The only elements FlapText wraps.
+- **Body** (400, 12.5–15px, 1.5–1.7): reading copy.
+- **Label** (600, 9–11px, uppercase, 0.5–1.2px): row-kind tags and section eyebrows — Big Shoulders
+  at small sizes, or Fragment Mono when it is tabular metadata (timestamps, codes, counts).
 
-### Named Rules
-**The Mono-Means-Live Rule.** Fragment Mono is reserved for values that are data — counts, scores, dates, codes — not for arbitrary emphasis. If a number can change between renders, it's a Fragment Mono / `tabular-nums` candidate; if it's prose, it's Public Sans.
+### The Mono-Means-Live Rule
+Fragment Mono is for values that are data — counts, scores, dates, codes — not for arbitrary
+emphasis. If a number can change between renders it is a Fragment Mono / `tabular-nums` candidate.
 
-## Layout
+## Motion
 
-The board surfaces (Overview, BriefingFeed, CopilotWorkspace, nav) use a single centered content column (`.content-wrap`, max-width 1260px, 43px/42px/50px padding) rather than a masonry or card-grid layout. Within that column:
-- The header is a **ruled ledger strip** (`.board-header`): a bottom hairline (`border-bottom: 1px solid var(--line-strong)`), date-then-title-then-subhead stack on the left, one primary action on the right.
-- The metric row (`.metric-grid`) is a **flex row of counters divided by vertical hairlines** (`border-left: 1px solid var(--line-soft)` on each sibling after the first), not a grid of bordered cards.
-- Below that, `.dashboard-grid` (1.3fr/1fr, 44px gap) and `.bottom-grid` (1.3fr/1fr, 20px gap) split the page into ranked panels; adjacent panels in a row get a vertical hairline divider, not a gap-only separation.
-- Within any panel, rows are stacked with `border-top: 1px solid var(--line-soft)` between siblings and no divider before the first child — the recurring `:first-child{border-top:0}` pattern used by `.role-row`, `.task`, `.cp-card`, `.quick-actions a`, `.job-card`.
-
-Responsive collapse (900px / 1050px / 700px breakpoints) stacks the multi-column grids to one column and turns off the vertical hairline dividers in favor of horizontal ones — the row-based rhythm persists at every width, it just re-orients.
-
-The other routes use the same two moves at their own scale. A **two-column split gets a vertical hairline**, not a gap: `.results-layout` (tips rail | results), `.editor-shell` (sections | PDF preview), `.agent-grid`/`.studio-grid` — the second column carries `border-left: 1px solid var(--line-soft)` and 44px of padding, collapsing to a stacked single column with the rule removed. A **list of comparable things is a ranked row list**: `.ci-grid` (was a card grid, now hairline rows), `.application-table`, `.history-list`, `.editor-section-list`, `.mode-picker`, `.search-tips` buttons, `.vt-turn` — each with the `:first-child{border-top:0}` reset.
-
-## Elevation & Depth
-
-Flat-with-hairlines, with a light, deliberately non-glossy lift layer (the "REDESIGN LAYER" in `globals.css`) reserved for the few surfaces that genuinely float: a tinted inset top highlight plus a soft ambient drop shadow (`box-shadow: inset 0 1px 0 rgba(255,255,255,.03), 0 10px 24px rgba(0,0,0,.35)`) on `.cp-chat` and `.editor-pdf-frame`, a heavier version on `.focus-panel` and the `.ci-drawer`, and the search bars. Every ranked-row surface — metric grid, briefing rows, job cards, tracker rows, directory rows, editor sections, interview history — stays flat and relies on hairlines, not shadow, for structure. **If a surface does not float over something else, it does not get a shadow.**
-
-### Shadow Vocabulary
-- **Ambient card lift** (`inset 0 1px 0 rgba(255,255,255,.03), 0 10px 24px rgba(0,0,0,.35)`): boxed panels/cards that need to sit above the page ground.
-- **Accent glow** (`0 6px 16px rgba(255,176,32,.2)`): under `.primary-button`, the only colored shadow in the system — reinforces the one-lamp accent.
-- **Drawer/overlay shadow** (`-16px 0 44px rgba(0,0,0,.5)`): the Company Intel detail drawer sliding over the page.
-
-### Named Rules
-**The Matte-Metal Rule.** Buttons and interactive rows get a firm tactile press (`translateY(1px)` on `:active`) and a tinted resting shadow, never a glossy sweep or hard offset shadow — this board is brushed steel, not glass or neobrutalist paper.
-
-## Shapes
-
-Small, consistent corner radii scale with a container's role: 4px on tight inline chrome (icon buttons, brand mark), 6–7px on buttons/inputs/filter chips, 9–12px on panels/cards/drawers-in-miniature, and full-pill (`999px`/`20px`) on status chips and pills (`.match-pill`, `.ci-chip`, `.editor-status-pill`). Borders are 1px hairlines at `--line` (never heavier), used for input/chip/card outlines; structural separation inside ranked lists uses `border-top`/`border-bottom` hairlines instead of a surrounding border. There is no hard-offset/neobrutalist shadow anywhere in the system, and no sharp, radius-0 geometry — every corner is at least softly rounded.
-
-## Components
-
-### Buttons
-- **Shape:** 7px radius (`.primary-button`, `.outline-button`).
-- **Primary:** amber background (`--accent`), paper-dark text, 12px/17px padding, 700-weight 12px label type, amber glow shadow (`0 6px 16px rgba(255,176,32,.2)`).
-- **Hover / Active:** hover darkens to `--accent-dark`; active presses down 1px (`translateY(1px)`) — no scale, no glossy sweep.
-- **Outline/Ghost:** transparent-to-surface background, 1px hairline border, amber-dark text; hover fills with `--accent-soft` and border brightens to `--accent-border`.
-- **Text button:** no border/background, amber-dark text, brightens to full amber on hover — used for in-row secondary actions ("Open in search", "Clear plan").
-
-### Navigation (AppShell)
-- **Style:** a solid instrument-panel strip (`--paper` background, `border-bottom: 1px solid var(--line-strong)`), not a floating glass bar — it hides on scroll-down and reappears on scroll-up (a few px of slack against jitter), always visible near the top.
-- **Brand mark:** a single 24px amber tile with an inset top highlight and a horizontal seam line through its middle — "one flap tile," the system's physical motif in miniature.
-- **Nav items:** Big Shoulders Text label, uppercase, 11px, muted by default; active/hover state brightens text to `--ink` and reveals a 2px amber underline that scales in from the left (`scaleX` transform, not a color-only change).
-- **Mobile:** labels hide under 900px, icons remain; nav scrolls horizontally with hidden scrollbar rather than wrapping.
-
-### Signature Component: FlapText
-The board's one authored motion. Every live/changeable number (dashboard metrics, interview scores, ATS scores, Copilot stats) renders through `<FlapText>`, which splits the value into characters and staggers a short (~500ms, 45ms-per-character) 3D rotate-and-fade-in cascade, keyed by the value so a changed number replays the cascade instead of sitting static. It is disabled entirely under `prefers-reduced-motion`. This is deliberately the *only* recurring authored motion for numeric content — the system does not also run a per-item stagger on every grid (an earlier version did; it was removed in favor of this one signature).
-
-### Briefing Row (`BriefingFeed` / `.cp-card`)
-- **Style:** a hairline-divided row, not a card — no border, no background box. Each row opens with a 7px **status lamp** dot (`.cp-lamp`) whose color encodes tone (amber = primary/needs-you, red = warning, green = insight/momentum, light-amber = action) with a soft halo (`box-shadow: 0 0 0 3px [tone]-soft`).
-- **Anatomy:** lamp → kind label (Fragment Mono/Big Shoulders, uppercase, e.g. "GOING COLD", "MOMENTUM") inline with the headline → detail copy → action buttons that only appear as a set on hover/focus for the dismiss/snooze tools.
-- **Empty state:** a centered, low-key "nothing needs you" state with a single outline CTA — never a fabricated placeholder card.
-
-### Job Card Row (`.job-card`, shared by Overview and Search)
-- **Style:** hairline-topped row (no box), hover shifts the whole row 10px right and tints the background with `--line-soft` — a "slide to attend to me" gesture rather than a lift/shadow gesture.
-- **Anatomy:** company-mark chip → title/company → meta row (location, remote, salary) → skill chips → hairline-topped action row.
-
-### Ledger Strip (`.page-heading` / `.board-header`)
-Every route opens with the same ruled strip: a `.board-kicker` context line (Fragment Mono, 12px, uppercase, `--faint` — the dashboard uses a live date here, other routes name the surface), the title at Display scale with an amber full stop (`<span>.</span>`), and a `--muted` subhead — all left, with a bottom `--line-strong` rule. The right side carries **at most one** thing: a `.primary-button` (Overview) or a `.tracker-total` counter (Applications, Search, Interview Lab, Company Intel) whose number is Fragment Mono at Data scale, wrapped in `<FlapText>`, over a small-caps unit label.
-
-### Status Rail (`.status-tabs`)
-The tracker's status filter borrows the nav's vocabulary exactly: uppercase Big Shoulders labels on the page ground, the selected one brightening to `--ink` and lighting a 2px amber bar that scales in from the left. Never a row of filled pills — a filled amber pill for each of nine statuses would spend the one lamp color nine times.
-
-### Tracker Row (`.application-row`)
-A hairline-topped grid row opening with a 7px **status lamp** (`.app-lamp`) on the same tone vocabulary as the briefing: amber = live and needs you (applied → interview), green = offer, red = rejected/withdrawn, faint = saved. Then company mark → role/company → status select → mono date → row actions. Hovering slides the row 10px right, matching `.job-card`.
-
-### Directory Row (`.ci-card`)
-Company Intel was a `repeat(auto-fill, minmax(252px,1fr))` card grid; it is now one ranked row per employer — logo, name/industry, two-line description, tier code, stack chips and open-role count on a single hairline-divided line. Selection lights an amber left edge (`inset 3px 0 0 var(--accent)`) instead of an outline, so "the one you're reading" and "the one that needs you" stay the same signal. `.mode-card` (Interview Lab) and `.editor-section-card` (Resume Studio) use the identical lit-edge treatment for their selected/open state.
-
-### Metric Counter (`.metric-card`)
-- **Style:** no card chrome — a flex column separated from siblings by a vertical hairline (horizontal on mobile). Label (small caps Big Shoulders) + icon → big Fragment Mono number (wrapped in FlapText) → supporting copy → optional tick/trend row → link-out.
-
-## Do's and Don'ts
-
-### Do:
-- **Do** reserve amber (`--accent`) for status and action on the board surfaces — live numbers, primary buttons, active nav/lamp states. Never use it as a repeated decorative fill.
-- **Do** build new ranked-list surfaces (statuses, feeds, rows of comparable items) as hairline-divided rows with a `:first-child{border-top:0}` reset, matching `.role-row`/`.cp-card`/`.job-card`.
-- **Do** wrap any number that can change on re-render in `<FlapText>` and set `font-variant-numeric: tabular-nums` on its container.
-- **Do** keep Fragment Mono reserved for data/metadata, Big Shoulders Text for labels/headings, and Public Sans for prose — don't blend the two display faces into body copy.
-- **Do** open every route with the ruled ledger strip (`.page-heading`, which is the `.board-header` treatment): a `.board-kicker` context line in Fragment Mono small-caps, the title with its amber full stop, a `--muted` subhead, and at most one action or one `.tracker-total` counter on the right.
-- **Do** give a two-column split a vertical hairline and 44px of padding on the second column, and drop both when it stacks.
-
-### Don't:
-- **Don't** reintroduce a bordered, radius-cornered container for a list item, a form, a panel or a route's main content — the exceptions listed in *Scope* are the whole list, and each earns its box by genuinely floating.
-- **Don't** wrap a new bordered, radius-cornered box in amber-and-Big-Shoulders-Text and call it "on system" for a board surface — the defining move is hairline rows, not the color/type refresh.
-- **Don't** add a hard-offset/neobrutalist shadow or a decorative glossy sweep to buttons or cards — this world's tactile language is a firm 1px press and a soft tinted lift, nothing louder.
-- **Don't** extend the "flap tile" seam motif (currently only on the nav brand mark) to metric numerals or general panel chrome — see the accepted gap below.
-- **Don't** use `.eyebrow` as a kicker above a page title — that job belongs to `.board-kicker` inside the ledger strip. `.eyebrow` survives only as a small-caps label *inside* a section (`.search-tips` head, the interview transcript, the resume block in Settings), alongside `.cp-card-kind`.
-
-## Overview Day Board — motion and the focus spine
-
-Reference mockup (source of truth for this surface): https://claude.ai/code/artifact/231a47a6-4eb5-46c6-ba15-92b28f7d4e2e
-
-The Overview answers one question — *what should I do today?* — so the ranked action list is the
-page's largest visual weight and everything else falls below it. Order on this route is fixed:
-masthead → Today's Focus → Fetched while you were away → quick actions → Where you stand → Close your gaps.
-
-### Motion tokens
-
-The board previously had exactly one authored motion (FlapText). It now has a named curve family,
-so that per-surface motion stops being improvised:
+The system has a named curve family so per-surface motion stops being improvised:
 
 ```
 --ease-out:  cubic-bezier(.16,1,.3,1)   /* entrances: decisive, long decay */
 --ease-io:   cubic-bezier(.65,0,.35,1)  /* travel between two known states */
 --ease-fast: cubic-bezier(.4,0,.2,1)    /* small state changes: color, border */
---t-fast:170ms  --t:300ms  --t-travel:420ms  --t-slow:640ms
+--t-fast:170ms   --t:300ms   --t-travel:420ms   --t-slow:640ms
 ```
 
-Only `transform` and `opacity` are animated. Everything is disabled wholesale under
-`prefers-reduced-motion: reduce`.
+**Rules.** Animate `transform` and `opacity` only. One thing moves at a time. Every motion is
+disabled wholesale under `prefers-reduced-motion: reduce`, and any hover-only affordance is
+suppressed below 920px — a touch device cannot un-hover to restore what a hover dimmed.
 
-### Focus Spine (`.focus-list`)
+### Signature: FlapText
+Every live number renders through `<FlapText>`, which splits the value into characters and staggers
+a ~500ms (45ms per character) 3D rotate-and-fade cascade, keyed by the value so a change replays it.
+This is the system's one *recurring* authored motion for numeric content.
 
-The three ranked actions hang off a single vertical hairline at `--spine` (112px desktop, 76px
-below 920px). Each action is marked by an oversized Big Shoulders plate numeral (56px; 66px and
-amber for 01) set right-aligned against the spine, with a 16px tick joining numeral to content.
-The lead action carries a left-to-right amber wash that fades to nothing by 62% — it bleeds out
-rather than terminating in a box edge, so nothing on this route reads as a card.
+### The one stagger exemption
+The system runs no per-item stagger on grids or on any list that can grow — an earlier version did,
+and it was removed in favour of FlapText. This is exempted **only** for the three Today's Focus
+rows, which stagger in once on load at 70ms intervals (200/270/340ms): a fixed-length,
+once-per-session entrance on the page's primary content. Do not extend it to the sweep manifest,
+the tracker, search results, or any other list.
+
+### The Matte-Metal Rule
+Buttons and rows get a firm 1px press (`translateY(1px)`) and, where they float, a soft tinted
+shadow. **Never a scale**, never a glossy sweep, never a hard offset shadow. This board is brushed
+steel, not glass or neobrutalist paper.
+
+## Layout
+
+### The sheet (Overview)
+Sections are full-bleed **bands** separated by a single `--line-soft` rule that runs the entire
+width; content sits in an inset `.inner` column (max-width 1160px, `clamp(16px,4vw,40px)` side
+padding, 44px block padding). The rule reaching the viewport edge while the content stops short is
+what makes the page read as a printed sheet rather than a stack of sections.
+
+### Everywhere else
+A single centered content column (`.content-wrap`, max-width 1260px). Within it:
+- A **two-column split gets a vertical hairline**, not a gap: `.results-layout`, `.editor-shell`,
+  `.studio-grid` — the second column carries `border-left: 1px solid var(--line-soft)` and 44px of
+  padding, both dropped when it stacks.
+- A **list of comparable things is a ranked row list**: `.ci-grid`, `.application-table`,
+  `.history-list`, `.editor-section-list`, `.mode-picker`, `.vt-turn` — each with a
+  `:first-child{border-top:0}` reset.
+
+Responsive collapse (920px / 560px on the Overview; 900/1050/700px elsewhere) stacks multi-column
+grids and swaps vertical hairlines for horizontal ones. The row rhythm persists at every width.
+
+## Elevation & Depth
+
+Flat-with-hairlines. A light, non-glossy lift is reserved for the few surfaces that genuinely float:
+`inset 0 1px 0 rgba(255,255,255,.03), 0 10px 24px rgba(0,0,0,.35)` on `.cp-chat` and
+`.editor-pdf-frame`, heavier on `.ci-drawer`. **The Overview day board carries no shadow at all** —
+every one of its surfaces sits on the sheet.
+
+**If a surface does not float over something else, it does not get a shadow.**
+
+- **Ambient lift**: `inset 0 1px 0 rgba(255,255,255,.03), 0 10px 24px rgba(0,0,0,.35)`.
+- **Accent glow**: `0 6px 16px rgba(255,176,32,.2)` under `.primary-button` — the only colored
+  shadow in the system, and not used on the Overview.
+- **Drawer shadow**: `-16px 0 44px rgba(0,0,0,.5)` for the Company Intel and copilot drawers.
+
+## Shapes
+
+Radii scale with a container's role and stay small: **0 on the Overview's structural rules and
+bands**, 2px on the Overview's buttons and the copilot rail button, 4px on tight inline chrome,
+6–7px on buttons/inputs/chips elsewhere, 9–12px on the panels and drawers that keep a box, and full
+pill only on status chips. Borders are 1px hairlines at `--line`, never heavier.
+
+The Overview is deliberately the sharpest surface in the system: squared plates and edge-to-edge
+rules are the sheet metaphor. Do not soften them to match the older routes.
+
+## Components
+
+### Buttons
+- **Shape:** 2px on the Overview; 7px elsewhere (`.primary-button`, `.outline-button`).
+- **Primary:** amber ground, paper-dark text, 700-weight uppercase label type.
+- **Hover / active:** hover brightens toward `--accent-light` (Overview) or darkens to
+  `--accent-dark` (elsewhere); active presses 1px. No scale, anywhere, including the copilot rail.
+- **Outline/ghost:** 1px hairline border, `--ink-2` text; hover brightens border to
+  `--accent-border` and text to amber.
+- **Arrow affordance:** any button or text link ending in an arrow slides that arrow 3px right on
+  hover. The label does not move.
+
+### Navigation (AppShell)
+A solid instrument-panel strip (`--paper`, `border-bottom: 1px solid var(--line-strong)`), not a
+floating glass bar; hides on scroll-down and returns on scroll-up. Brand mark is one 24px amber tile
+with an inset highlight and a horizontal seam — "one flap tile", the system's physical motif in
+miniature. Nav items are uppercase Big Shoulders, muted, brightening to `--ink` with a 2px amber
+underline that scales in from the left. Labels hide under 900px; the bar scrolls rather than wraps.
+
+### Masthead (Overview) / Ledger Strip (every other route)
+A ruled strip with a bottom `--line-strong` rule: a Fragment Mono context line, the title at Display
+scale with an amber full stop (`<span>.</span>`), and a `--muted` subhead.
+
+On the Overview the right side carries a **stamp block only** — date, local time, last sweep, city,
+set in Fragment Mono and right-aligned. It carries no button: the copilot moved to the rail, and an
+action here would compete with Today's Focus for the page's one primary gesture. On other routes the
+right side carries at most one thing: a `.tracker-total` counter wrapped in `<FlapText>`.
+
+Below the Overview's subhead sits the **readout** — a single row of counts divided by vertical
+hairlines (`0 interviews today · 0 on the calendar · 0 in flight · 3 swept overnight`), Fragment Mono
+values over Big Shoulders small-caps labels. Counts live here, below the greeting and above the
+actions, because the page's job is to say what to do, not to report an account balance.
+
+### Focus Spine (`.focus-list`) — the Overview's hero
+Three ranked actions hang off a single vertical hairline at `--spine` (112px desktop, 76px below
+920px). Each is marked by a plate numeral right-aligned against the spine, with a 16px tick joining
+numeral to content. The lead action's numeral is amber at 66px; the others are `--ghost` at 56px.
+
+The lead action carries a left-to-right amber wash that fades to nothing by 62% — it **bleeds out**
+rather than terminating at an edge, which is what keeps it from reading as a card.
+
+Numbering here is real: it encodes priority, and the order is what the user is being told. Do not
+reuse plate numerals on a list whose order carries no meaning.
 
 ### Travelling marker (`.glider`)
-
-**One** 2px amber bar rides the spine between actions — it is a single element that moves, never
-three highlights blinking independently. It rests on 01 (the thing to do first), follows hover and
+**One** 2px amber bar rides the spine between actions — a single element that moves, never three
+highlights blinking independently. It rests on 01 (the thing to do first), follows both hover and
 `focusin`, and returns to 01 ~90ms after the pointer leaves the list. While the list is engaged,
 un-hovered actions drop to `opacity:.42` so the row being read is the only one at full strength.
-The dim is suppressed below 920px — a touch device cannot un-hover to restore it.
+Suppressed below 920px.
 
-### Copilot Rail (`.rail` + `.drawer`)
-
-The copilot is **not** a panel on the Overview. It is a fixed 54px right-edge rail (amber sparkle
-button, vertically-set "COPILOT" label, green live dot) that opens a 390px drawer over a scrim.
-Escape closes it, focus moves to the input on open and back to the rail button on close, and the
-suggested prompts stagger in 150–300ms after the panel lands. Below 560px the rail becomes a bottom
-bar and the drawer goes full-width.
+On hover the plate shifts 4px and the body 10px — a slight differential, so the row turns toward the
+reader rather than switching on.
 
 ### Sweep Manifest (`.role`)
+TalentRadar does not pre-match a candidate to a board; it reads postings against the user's resume.
+So this surface names what it actually did: postings with sweep timestamps, a plain-English reason
+each was kept, a five-tick fit meter, and a footer stating the work
+(`Swept 4 boards · 61 postings read · 3 kept`). **Never show a bare "N new matches" count.**
 
-TalentRadar does not pre-match a candidate to a job board. It reads postings against the user's
-resume, so this surface names what it actually did: three postings with sweep timestamps, a
-plain-English reason each was kept, a five-tick fit meter, and a footer stating the work
-("Swept 4 boards · 61 postings read · 3 kept"). Never show a bare "N new matches" count.
-Rows follow the `.job-card` gesture exactly — the whole row slides 10px right on hover.
+Rows follow the `.job-card` gesture exactly — the whole row slides 10px right on hover, an amber
+edge grows at the left, and the lit fit ticks brighten left-to-right at 45ms intervals.
 
-### Amendment to the single-signature-motion rule
+Data comes from `GET /api/v1/dashboard` → `job_matches` (top 3, `services/job_matching.py`) and
+`sweep` (the manifest footer, `services/sweep.py`).
 
-The "Motion" section above states the system runs no per-item stagger. That still holds for grids
-and for every list that can grow. It is amended **only** for the three Today's Focus rows, which
-stagger in once on load at 70ms intervals (200/270/340ms) — a fixed-length, once-per-session
-entrance on the page's primary content, not a recurring per-item reveal. Do not extend it to the
-sweep manifest, the tracker, search results, or any other list.
+### Gauge Row (`.gauges`) — "Where you stand"
+Three columns divided by vertical hairlines, each a small-caps label, a Big Shoulders value with a
+`--muted` unit, and a **measure**: a hairline with 5 etched ticks and a `--success` fill for the
+achieved portion. An empty gauge keeps its ticks and drops the fill, so "nothing yet" is visible as
+a shape rather than only as a zero. This replaces `.metric-card` on the Overview.
 
-### Still true, and binding
+### Gap Chart (`.chart`)
+Skill gaps are a real chart, not a list of bars: one shared axis (0–12) with a faint tick grid,
+labels naming values the chart actually reaches, a 2px amber rule per skill and an emphasized
+endpoint marker. Bars grow from the axis on load (820ms, 80ms apart); endpoints fade in after.
+Below-threshold skills use `--faint` rather than amber, so the lamp still means "act on this".
 
-- Buttons press a firm 1px (`translateY(1px)`). **No scale**, on any button, including the rail.
-- Live numerals on this route (readout counts, gauge values, gap counts) render through `<FlapText>`
-  with `font-variant-numeric: tabular-nums` on the container.
-- No bordered, radius-cornered container anywhere on this route. Buttons cap at `2px`.
+### Copilot Rail (`.rail`) and Drawer (`.drawer`)
+The copilot is **not** a panel on the Overview. It is a fixed 54px right-edge rail — amber sparkle
+button, vertically-set "COPILOT" label, green live dot — that opens a 390px drawer over a scrim.
+The rail icon rotates 90° while open. Escape closes; focus moves to the input on open and back to
+the rail button on close; suggested prompts stagger in 150–300ms after the panel lands and clicking
+one loads it into the input. Below 560px the rail becomes a bottom bar and the drawer goes
+full-width. The page reserves `padding-right: var(--rail)` so the sheet's rules stop at the rail.
 
-### Known gap
+### Signature Component: FlapText
+See *Motion*. Wrap every number that can change; set `tabular-nums` on its container.
 
-"Fetched while you were away" describes behaviour that does not exist yet. The only cron in the
-repo is `.github/workflows/keepalive.yml` (a 10-minute instance ping); `api/routers/ingest.py` is
-on-demand only and there is no Celery worker. Shipping this surface needs a scheduled job that
-runs ingestion against a resume-derived query and persists per-user kept results.
+### Briefing Row (`.cp-card`)
+A hairline-divided row opening with a 7px status lamp whose color encodes tone (amber = needs you,
+red = warning, green = momentum, light amber = action) with a soft halo. Lamp → kind label →
+headline → detail → hover-revealed dismiss/snooze actions. Empty state is a low-key "nothing needs
+you" line with one outline CTA, never a fabricated placeholder.
+
+### Job Card Row (`.job-card`)
+Hairline-topped row, no box; hover slides it 10px right and tints with `--line-soft`. Company mark →
+title/company → meta (location, remote, salary) → skill chips → hairline-topped action row.
+
+### Status Rail (`.status-tabs`)
+The tracker's filter borrows the nav vocabulary exactly: uppercase Big Shoulders on the page ground,
+the selected one brightening to `--ink` and lighting a 2px amber bar that scales in from the left.
+Never a row of filled pills — nine filled amber pills would spend the one lamp color nine times.
+
+### Tracker Row (`.application-row`)
+Hairline-topped grid row opening with a 7px status lamp: amber = live and needs you, green = offer,
+red = rejected/withdrawn, faint = saved. Company mark → role/company → status select → mono date →
+actions. Hover slides 10px right.
+
+### Directory Row (`.ci-card`)
+One ranked row per employer — logo, name/industry, description, tier code, stack chips, open-role
+count. Selection lights an amber left edge (`inset 3px 0 0 var(--accent)`), not an outline, so
+"the one you're reading" and "the one that needs you" stay the same signal. `.mode-card` and
+`.editor-section-card` use the identical lit-edge treatment.
+
+## The Overview, section by section
+
+Order is fixed, and each section answers one question:
+
+| # | Section | Answers |
+|---|---------|---------|
+| 1 | Masthead + readout | Who am I, when is this, and is anything on fire? |
+| 2 | **Today's focus** | What do I do first? *(largest visual weight on the page)* |
+| 3 | Fetched while you were away | What arrived overnight, and why was it kept? |
+| 4 | Quick actions | Where do I go if none of the above? |
+| 5 | Where you stand | How far along am I? |
+| 6 | Close your gaps | What is blocking me, and how do I fix it? |
+
+The Overview is a plan for the day, not an account report. Counts stay, but they sit below the
+actions — never above them, and never as the page's opening statement.
+
+## Do's and Don'ts
+
+### Do
+- **Do** reserve amber for status and action — live numbers, primary buttons, active lamps, the
+  travelling marker. Never a repeated decorative fill.
+- **Do** build ranked-list surfaces as hairline-divided rows with a `:first-child{border-top:0}` reset.
+- **Do** wrap any number that can change in `<FlapText>` with `tabular-nums` on its container.
+- **Do** keep Fragment Mono for data, Big Shoulders for labels/headings/plates, Public Sans for prose.
+- **Do** open every route with the ruled strip — and on the Overview, keep its right side a stamp
+  block, not a button.
+- **Do** give a two-column split a vertical hairline and 44px of padding, and drop both when it stacks.
+- **Do** state what the system actually did ("swept 4 boards, read 61 postings, kept 3") in place of
+  a bare metric.
+
+### Don't
+- **Don't** reintroduce a bordered, radius-cornered container for a list item, form, panel or a
+  route's main content — the exceptions in *How to read this document* are the whole list.
+- **Don't** put a card grid, a stat-tile row, or an in-page copilot panel back on the Overview.
+- **Don't** add a scale transform, a glossy sweep or a hard offset shadow to any button.
+- **Don't** extend the focus-row entrance stagger to any other list, or the plate numerals to a list
+  whose order means nothing.
+- **Don't** show "N new matches" — the product does not pre-match; it reads postings against a resume.
+- **Don't** let a hover-only affordance survive to touch widths.
+- **Don't** use `.eyebrow` as a kicker above a page title — that belongs to the ledger strip's
+  context line. `.eyebrow` is a small-caps label *inside* a section.
+
+## Backing services
+
+- **Overnight sweep** — `services/sweep.py::run_overnight_sweep()`, scheduled in-process by
+  APScheduler from `api/main.py` (there is no Celery worker in this stack). It ingests fresh
+  postings for the union of every onboarded user's target roles via `ingestion/dispatcher.py`, then
+  ranks them per user via `services/job_matching.py`. Neither half can raise: a scraper outage
+  degrades the sweep to "re-rank what we already have" rather than skipping the day.
+- **Schedule** — `DAILY_MATCH_HOUR`/`DAILY_MATCH_MINUTE`, on the *server* clock. Render runs UTC
+  and the product is India-only, so overnight has to be written in UTC: 21:45 UTC is 03:15 IST.
+  The `keepalive` workflow is what keeps the free instance resident long enough to fire at all —
+  a spun-down instance runs no in-process cron.
+- **Manifest** — `services/sweep.py::get_last_sweep()` reads the existing `ingestion_runs` audit log
+  (source list, discovery count, finish time); the dashboard returns it as `sweep`.

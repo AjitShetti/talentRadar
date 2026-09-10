@@ -22,6 +22,8 @@ import asyncio
 import hashlib
 import logging
 import time
+import uuid
+from datetime import datetime, timezone
 from typing import Any, AsyncGenerator
 
 from config.settings import get_settings
@@ -68,6 +70,67 @@ def job_to_dict(job: Job) -> dict[str, Any]:
         "created_at": job.created_at.isoformat() if job.created_at else None,
         "match_score": None,
     }
+
+
+def job_dicts_to_entities(job_dicts: list[dict[str, Any]]) -> list[Job]:
+    """
+    Rebuild :class:`Job` entities from the dicts the SSE stream emits.
+
+    The fan-out serialises jobs immediately (the stream needs JSON), but
+    persistence wants entities back. Rather than threading a second list of
+    entities through the streaming path - where it would be retained for the
+    whole search and doubled in memory on a 512 MB instance - the dicts are
+    rehydrated here, once, at the point of writing.
+
+    Rows that cannot be rebuilt are dropped rather than raising: this feeds a
+    background write, and one malformed row must not lose the batch.
+    """
+    from domain.enums import EmploymentType, JobStatus, SeniorityLevel
+
+    entities: list[Job] = []
+    for data in job_dicts:
+        try:
+            posted_raw = data.get("posted_at")
+            posted_at = None
+            if isinstance(posted_raw, str) and posted_raw:
+                try:
+                    posted_at = datetime.fromisoformat(posted_raw.replace("Z", "+00:00"))
+                except ValueError:
+                    posted_at = None
+
+            seniority_raw = data.get("seniority")
+            employment_raw = data.get("employment_type")
+
+            entities.append(
+                Job(
+                    id=uuid.uuid4(),
+                    company_id=uuid.uuid4(),
+                    external_id=None,
+                    source=data.get("source") or "live_search",
+                    source_url=data.get("source_url"),
+                    title=data.get("title") or "",
+                    status=JobStatus.ACTIVE,
+                    employment_type=EmploymentType(employment_raw) if employment_raw else None,
+                    seniority=SeniorityLevel(seniority_raw) if seniority_raw else None,
+                    location_raw=data.get("location_raw"),
+                    country=data.get("country"),
+                    city=data.get("city"),
+                    is_remote=bool(data.get("is_remote")),
+                    salary_raw=data.get("salary_raw"),
+                    salary_min=data.get("salary_min"),
+                    salary_max=data.get("salary_max"),
+                    salary_currency=data.get("salary_currency"),
+                    skills=data.get("skills") or [],
+                    tags=data.get("tags") or [],
+                    description_clean=data.get("description_clean"),
+                    posted_at=posted_at,
+                    created_at=datetime.now(timezone.utc),
+                    extra_metadata={"company_name": data.get("company_name") or data.get("company") or "Company"},
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Could not rebuild job entity from %r: %s", str(data.get("title"))[:60], exc)
+    return entities
 
 
 class RealtimeScraperEngine:
