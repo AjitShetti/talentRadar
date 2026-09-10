@@ -48,10 +48,6 @@ class LiveSource:
     # ``default_live_sources`` filters on - the fan-out never needs to know
     # which individual scraper is which.
     requires_browser: bool = False
-    # Basename of the recorded response under tests/fixtures/sources/. The
-    # contract tests assert every registered source has one, so a source
-    # cannot be added without a test.
-    fixture: str | None = None
 
 
 def _build_registry() -> tuple[LiveSource, ...]:
@@ -75,7 +71,6 @@ def _build_registry() -> tuple[LiveSource, ...]:
             fetch=ATSScraper.search_all_ats,
             tier="ats",
             timeout_seconds=5.0,
-            fixture="ats_greenhouse.json",
         ),
         # --- Public board endpoints reachable over plain HTTP. LinkedIn's
         # guest endpoint and Indeed's mobile JSON both sit behind Cloudflare,
@@ -86,35 +81,30 @@ def _build_registry() -> tuple[LiveSource, ...]:
             fetch=IndianBoardsScraper.search_linkedin_guest,
             tier="board",
             timeout_seconds=5.0,
-            fixture="linkedin_guest.html",
         ),
         LiveSource(
             name="foundit",
             fetch=IndianBoardsScraper.search_foundit_india,
             tier="board",
             timeout_seconds=5.0,
-            fixture="foundit.json",
         ),
         LiveSource(
             name="freshersworld",
             fetch=IndianBoardsScraper.search_freshersworld,
             tier="board",
             timeout_seconds=4.0,
-            fixture="freshersworld.html",
         ),
         LiveSource(
             name="indeed_india",
             fetch=StealthBoardsScraper.search_indeed_india,
             tier="board",
             timeout_seconds=7.0,
-            fixture="indeed_india.html",
         ),
         LiveSource(
             name="instahyre",
             fetch=StealthBoardsScraper.search_instahyre,
             tier="board",
             timeout_seconds=5.0,
-            fixture="instahyre.json",
         ),
         # --- Browser-only. Naukri hydrates its listings client-side, so
         # there is no HTML to parse without running JS. Excluded from the
@@ -126,7 +116,6 @@ def _build_registry() -> tuple[LiveSource, ...]:
             tier="stealth",
             timeout_seconds=10.0,
             requires_browser=True,
-            fixture="naukri.html",
         ),
     )
 
