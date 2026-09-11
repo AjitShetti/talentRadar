@@ -79,6 +79,18 @@ services:
       # One instance, so the in-process daily scan is safe to run here.
       - key: ENABLE_SCHEDULER
         value: "true"
+      # Render's clock is UTC and the product is India-only, so "overnight" has
+      # to be written in UTC: 21:45 UTC is 03:15 IST. The keepalive workflow is
+      # what keeps the instance resident long enough for this to fire at all —
+      # a spun-down free instance runs no in-process cron.
+      - key: DAILY_MATCH_HOUR
+        value: "21"
+      - key: DAILY_MATCH_MINUTE
+        value: "45"
+      # The sweep scrapes and LLM-parses before it ranks. Set false to keep the
+      # nightly ranking pass but drop the ingestion cost.
+      - key: SWEEP_INGEST_ENABLED
+        value: "true"
       # Free tier: 512 MB and a shared CPU. Keep the connection budget small —
       # the ceiling is (pool + overflow) x workers, and free Postgres plans
       # cap total connections low.
@@ -86,8 +98,11 @@ services:
         value: "3"
       - key: DB_MAX_OVERFLOW
         value: "2"
-      # No headless browsers on a 512 MB instance, and no impersonating job
-      # boards from a public service. See config/settings.py.
+      # No headless browsers on a 512 MB instance: Camoufox launches a real
+      # Firefox per call and OOMs the container. This flag governs *only*
+      # that tier. TLS/HTTP2 impersonation is a separate, browser-free thing
+      # — curl_cffi, ~5 MB, always installed — and it is what reaches the
+      # Cloudflare-protected boards. See ingestion/scrapling_manager.py.
       - key: ENABLE_STEALTH_SCRAPERS
         value: "false"
       # No TeX in the image; resume PDFs render through PyMuPDF.
@@ -108,6 +123,18 @@ services:
         sync: false
       - key: PYTHONUNBUFFERED
         value: "1"
+
+      # The shared cache. Without this the app still runs — every cache read
+      # and write degrades to an in-process dict — but on a free instance
+      # that sleeps after 15 minutes of inactivity, that dict is empty again
+      # on every wake, so in practice there is no cache at all: repeat
+      # searches re-scrape, and the 8-hour lock that keeps this deployment
+      # from hammering the job boards never survives to do its job.
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: talentradar-cache
+          property: connectionString
 
   # ─────────────────────────── Frontend ───────────────────────────
   # Vercel is the other obvious home for this (also free, and better at
@@ -139,3 +166,27 @@ services:
       # rebuild of this service, not just a restart.
       - key: NEXT_PUBLIC_API_URL
         sync: false
+
+  # ────────────────────────── Shared cache ──────────────────────────
+  # Render Key Value, free plan: 25 MB, no persistence, evicted under
+  # pressure. That is the right size for what is kept here, all of it
+  # reconstructible by doing the work again:
+  #
+  #   tr:search:<hash>   8h   aggregated search payloads
+  #   tr:sourced:<hash>  8h   the live fan-out lock — the IP-block guard
+  #   tr:seen:<url>      7d   cross-search URL dedupe
+  #   tr:health:<source> 24h  per-source health counters and breaker state
+  #   tr:budget:llm:<d>  48h  daily LLM enrichment ceiling
+  #
+  # allkeys-lru because every key here is a cache entry: under memory
+  # pressure the correct behaviour is to drop the coldest one, not to start
+  # refusing writes.
+  - type: keyvalue
+    name: talentradar-cache
+    plan: free
+    region: singapore
+    maxmemoryPolicy: allkeys-lru
+    # Free Key Value instances have no public endpoint; only services inside
+    # this Render account's private network connect, so no IP allowlist is
+    # needed (and an empty list here would deny everything).
+    ipAllowList: []

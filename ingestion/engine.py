@@ -22,14 +22,15 @@ import asyncio
 import hashlib
 import logging
 import time
+import uuid
+from datetime import datetime, timezone
 from typing import Any, AsyncGenerator
 
 from config.settings import get_settings
 from domain.entities import Job
-from ingestion.scrapers.ats_scraper import ATSScraper
-from ingestion.scrapers.indian_boards_scraper import IndianBoardsScraper
-from ingestion.scrapers.stealth_boards_scraper import StealthBoardsScraper
+from ingestion.sources.registry import default_live_sources
 from services.search_cache_service import SearchCacheService
+from services.source_health import SourceHealthService
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,67 @@ def job_to_dict(job: Job) -> dict[str, Any]:
         "created_at": job.created_at.isoformat() if job.created_at else None,
         "match_score": None,
     }
+
+
+def job_dicts_to_entities(job_dicts: list[dict[str, Any]]) -> list[Job]:
+    """
+    Rebuild :class:`Job` entities from the dicts the SSE stream emits.
+
+    The fan-out serialises jobs immediately (the stream needs JSON), but
+    persistence wants entities back. Rather than threading a second list of
+    entities through the streaming path - where it would be retained for the
+    whole search and doubled in memory on a 512 MB instance - the dicts are
+    rehydrated here, once, at the point of writing.
+
+    Rows that cannot be rebuilt are dropped rather than raising: this feeds a
+    background write, and one malformed row must not lose the batch.
+    """
+    from domain.enums import EmploymentType, JobStatus, SeniorityLevel
+
+    entities: list[Job] = []
+    for data in job_dicts:
+        try:
+            posted_raw = data.get("posted_at")
+            posted_at = None
+            if isinstance(posted_raw, str) and posted_raw:
+                try:
+                    posted_at = datetime.fromisoformat(posted_raw.replace("Z", "+00:00"))
+                except ValueError:
+                    posted_at = None
+
+            seniority_raw = data.get("seniority")
+            employment_raw = data.get("employment_type")
+
+            entities.append(
+                Job(
+                    id=uuid.uuid4(),
+                    company_id=uuid.uuid4(),
+                    external_id=None,
+                    source=data.get("source") or "live_search",
+                    source_url=data.get("source_url"),
+                    title=data.get("title") or "",
+                    status=JobStatus.ACTIVE,
+                    employment_type=EmploymentType(employment_raw) if employment_raw else None,
+                    seniority=SeniorityLevel(seniority_raw) if seniority_raw else None,
+                    location_raw=data.get("location_raw"),
+                    country=data.get("country"),
+                    city=data.get("city"),
+                    is_remote=bool(data.get("is_remote")),
+                    salary_raw=data.get("salary_raw"),
+                    salary_min=data.get("salary_min"),
+                    salary_max=data.get("salary_max"),
+                    salary_currency=data.get("salary_currency"),
+                    skills=data.get("skills") or [],
+                    tags=data.get("tags") or [],
+                    description_clean=data.get("description_clean"),
+                    posted_at=posted_at,
+                    created_at=datetime.now(timezone.utc),
+                    extra_metadata={"company_name": data.get("company_name") or data.get("company") or "Company"},
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Could not rebuild job entity from %r: %s", str(data.get("title"))[:60], exc)
+    return entities
 
 
 class RealtimeScraperEngine:
@@ -133,24 +195,30 @@ class RealtimeScraperEngine:
                 yield {"event": "done", "data": {"total_jobs": len(cached_data.get("jobs", [])), "is_cached": True}}
                 return
 
+        # The roster comes from ingestion/sources/registry.py rather than
+        # being built here, so the fan-out, the health service and the
+        # contract tests cannot disagree about what "the sources" are.
+        # Browser-requiring sources are excluded unless
+        # ENABLE_STEALTH_SCRAPERS says otherwise: a headless browser OOMs a
+        # 512 MB instance, and reaching those sites that way is against their
+        # terms.
+        roster = default_live_sources(enable_stealth=get_settings().enable_stealth_scrapers)
+
+        # Drop sources whose circuit breaker is open. A source that has failed
+        # repeatedly costs the user latency and risks escalating a block; the
+        # rest still answer, so search degrades in coverage rather than
+        # failing.
+        available_names = set(await SourceHealthService.filter_available([s.name for s in roster]))
+        skipped = [s.name for s in roster if s.name not in available_names]
+        roster = tuple(s for s in roster if s.name in available_names)
+
+        # Coroutines are created here, not in the registry: an un-awaited
+        # coroutine is a warning and a leak, so one is built only for a
+        # source that will actually run.
         sources = [
-            ("ats_platforms", ATSScraper.search_all_ats(query, location, is_remote), 5.0),
-            ("linkedin", IndianBoardsScraper.search_linkedin_guest(query, location, is_remote), 5.0),
-            ("foundit", IndianBoardsScraper.search_foundit_india(query, location, is_remote), 5.0),
-            ("freshersworld", IndianBoardsScraper.search_freshersworld(query, location, is_remote), 4.0),
+            (s.name, s.fetch(query, location, is_remote), s.timeout_seconds)
+            for s in roster
         ]
-        # The stealth boards each launch a headless browser, which a 512 MB
-        # instance cannot survive, and reaching them that way is against those
-        # sites' terms. Off unless ENABLE_STEALTH_SCRAPERS says otherwise —
-        # and built lazily, because an un-awaited coroutine is a warning and a
-        # leak. The remaining sources still answer, so search degrades in
-        # coverage rather than failing.
-        if get_settings().enable_stealth_scrapers:
-            sources.extend([
-                ("instahyre", StealthBoardsScraper.search_instahyre(query, location, is_remote), 5.0),
-                ("indeed_india", StealthBoardsScraper.search_indeed_india(query, location, is_remote), 7.0),
-                ("naukri", StealthBoardsScraper.search_naukri(query, location, is_remote), 10.0),
-            ])
 
         yield {
             "event": "init",
@@ -159,6 +227,9 @@ class RealtimeScraperEngine:
                 "location": location,
                 "is_remote": is_remote,
                 "sources": [s[0] for s in sources],
+                # Named explicitly so the UI can say "searched 6 of 8
+                # sources" rather than silently returning a thinner result.
+                "skipped_sources": skipped,
                 "timestamp": time.time(),
             },
         }
@@ -181,6 +252,20 @@ class RealtimeScraperEngine:
                 "count": len(jobs),
                 "status": status,
             }
+
+            # Feed the health registry from real traffic. This is the only
+            # thing that can notice a source quietly returning nothing after
+            # a site changes - the fixture tests replay a capture made before
+            # the change and keep passing.
+            try:
+                await SourceHealthService.record_attempt(
+                    source_name,
+                    job_count=len(jobs),
+                    latency_ms=latency_ms,
+                    status=status,
+                )
+            except Exception as exc:  # noqa: BLE001 - health is observability, never a failure path
+                logger.debug("Could not record health for %s: %s", source_name, exc)
 
             # Deduplicate new jobs
             new_job_dicts: list[dict[str, Any]] = []

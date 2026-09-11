@@ -1,17 +1,38 @@
 """
 ingestion/scrapling_manager.py
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Manager for Scrapling fetchers and stealth browser sessions.
+Multi-tier HTTP fetching for the job scrapers.
 
-Provides:
-- AsyncFetcher with TLS/HTTP2 browser impersonation (bypasses Cloudflare on Indeed/LinkedIn/Instahyre)
-- AsyncCamoufox / AsyncStealthyFetcher for anti-bot protected portals (Naukri Next.js hydration)
-- Built-in resource blocking (images, media, fonts) for 3-5x lower latency
-- Graceful multi-tier fallbacks ensuring 0 crashes even under network restrictions
+Three tiers, tried in order, each degrading into the next:
+
+1. **curl_cffi TLS/HTTP2 impersonation** - replays a real Chrome's TLS
+   fingerprint (JA3) and HTTP/2 settings. This is what gets past the
+   Cloudflare bot check on Indeed India and Instahyre. Measured: Indeed
+   returns 403 with an "enable javascript" challenge to plain httpx, and 200
+   with 1.3 MB of listings to this tier.
+2. **httpx with browser-like headers** - the ATS JSON APIs and static boards
+   never needed more than this.
+3. **Camoufox headless browser** - only for pages that hydrate client-side,
+   and only behind ``ENABLE_STEALTH_SCRAPERS``. Off, uninstalled and unused
+   in the deployed image; see below.
+
+Why curl_cffi rather than scrapling
+-----------------------------------
+Scrapling's impersonation *is* curl_cffi underneath, but ``scrapling.fetchers``
+imports playwright and patchright at module level, so taking its fetcher meant
+taking ~300 MB of browser stack that a 512 MB instance cannot run anyway.
+Binding to curl_cffi directly costs ~5 MB and yields the same fingerprint, so
+impersonation is now part of the default deployment rather than an opt-in
+extra it could never afford.
+
+Every tier is optional. With curl_cffi absent the module falls back to httpx
+and simply loses the Cloudflare-protected sources - an absent optional
+dependency degrades a feature, never the deployment.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -21,23 +42,36 @@ from config.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
-# Try importing Scrapling components
+# Tier 1: TLS/HTTP2 impersonation. ~5 MB, no browser, no JS engine.
 try:
-    from scrapling.fetchers import AsyncFetcher, Fetcher
-    SCRAPLING_AVAILABLE = True
-except ImportError:
-    SCRAPLING_AVAILABLE = False
-    AsyncFetcher = None
-    Fetcher = None
-    logger.warning("Scrapling is not importable. Falling back to HTTPX client.")
+    from curl_cffi.requests import AsyncSession as _CurlAsyncSession
 
-# Try importing Camoufox
+    CURL_CFFI_AVAILABLE = True
+except ImportError:  # pragma: no cover - exercised by the no-curl_cffi path
+    _CurlAsyncSession = None
+    CURL_CFFI_AVAILABLE = False
+    logger.info(
+        "curl_cffi is not installed; scraping falls back to httpx. "
+        "Cloudflare-protected sources (Indeed India, Instahyre) will return nothing."
+    )
+
+# Backwards-compatible alias. Callers and tests asked "is impersonation
+# available?" through this name long before the implementation changed.
+SCRAPLING_AVAILABLE = CURL_CFFI_AVAILABLE
+
+# Tier 3: headless browser, for client-side-hydrated pages only.
 try:
     from camoufox.async_api import AsyncCamoufox
+
     CAMOUFOX_AVAILABLE = True
 except ImportError:
     CAMOUFOX_AVAILABLE = False
     AsyncCamoufox = None
+
+# The Chrome build curl_cffi impersonates. Bumping this occasionally matters:
+# a fingerprint for a long-dead Chrome is itself a signal. Verified against
+# Indeed India and Instahyre on 2026-09-10.
+DEFAULT_IMPERSONATE = "chrome124"
 
 
 # Common default browser headers for fast HTTP scraping
@@ -85,42 +119,55 @@ class ScraplingManager:
         headers: dict[str, str] | None = None,
         params: dict[str, Any] | None = None,
         timeout: float = 6.0,
-        impersonate: str = "chrome124",
+        impersonate: str = DEFAULT_IMPERSONATE,
     ) -> tuple[int, str | dict[str, Any]]:
         """
-        Fast HTTP fetcher with browser TLS impersonation via Scrapling AsyncFetcher.
-        Falls back to HTTPX if Scrapling is unavailable.
-        Returns (status_code, text_or_json).
+        Fetch a URL, impersonating a real Chrome's TLS/HTTP2 fingerprint when
+        curl_cffi is available and falling back to httpx when it is not.
+
+        Returns ``(status_code, text_or_parsed_json)``.
         """
-        # Tier 1: Scrapling AsyncFetcher with TLS/HTTP2 impersonation
-        if SCRAPLING_AVAILABLE and AsyncFetcher is not None:
+        # Tier 1: curl_cffi with TLS/HTTP2 impersonation.
+        if CURL_CFFI_AVAILABLE and _CurlAsyncSession is not None:
             try:
-                page = await AsyncFetcher.get(
-                    url,
-                    impersonate=impersonate,
-                    headers=headers,
-                    params=params,
-                    timeout=int(timeout),
-                    # Certificates are verified. This was ``verify=False``,
-                    # which accepted any certificate from any host and made
-                    # every scrape trivially interceptable - the fetched HTML
-                    # is parsed into job rows and shown to users, so a
-                    # substituted response becomes content in the product.
-                    verify=True,
-                )
-                if page.status == 200:
-                    raw_text = page.body.decode("utf-8", errors="ignore") if hasattr(page, "body") and isinstance(page.body, (bytes, bytearray)) else (page.text or "")
-                    # Check if JSON
-                    if raw_text.strip().startswith(("{", "[")):
-                        try:
-                            import json
-                            return page.status, json.loads(raw_text)
-                        except Exception:
-                            return page.status, raw_text
-                    return page.status, raw_text
-                return page.status, page.text or ""
+                # curl_cffi sends the header set matching the browser it is
+                # impersonating. Adding DEFAULT_BROWSER_HEADERS on top would
+                # contradict that fingerprint - a header/TLS mismatch is
+                # precisely what bot checks look for - so only headers a
+                # caller asked for are passed through.
+                extra_headers = dict(headers or {})
+
+                async with _CurlAsyncSession() as session:
+                    resp = await session.get(
+                        url,
+                        impersonate=impersonate,
+                        headers=extra_headers or None,
+                        params=params,
+                        timeout=timeout,
+                        # Certificates are verified. This was ``verify=False``,
+                        # which accepted any certificate from any host and made
+                        # every scrape trivially interceptable - the fetched HTML
+                        # is parsed into job rows and shown to users, so a
+                        # substituted response becomes content in the product.
+                        verify=True,
+                        allow_redirects=True,
+                    )
+                    raw_text = resp.text or ""
+                    if resp.status_code == 200:
+                        stripped = raw_text.lstrip()
+                        if stripped.startswith(("{", "[")):
+                            try:
+                                return resp.status_code, json.loads(raw_text)
+                            except ValueError:
+                                return resp.status_code, raw_text
+                        return resp.status_code, raw_text
+                    logger.debug(
+                        "Impersonated fetch of %s returned %s; trying httpx.",
+                        url,
+                        resp.status_code,
+                    )
             except Exception as exc:
-                logger.debug(f"Scrapling AsyncFetcher failed for {url}: {exc}. Trying HTTPX fallback.")
+                logger.debug(f"curl_cffi fetch failed for {url}: {exc}. Trying HTTPX fallback.")
 
         # Tier 2: HTTPX client fallback
         client = await cls.get_http_client()
@@ -185,9 +232,11 @@ class ScraplingManager:
                     html_content = await page.content()
                     return status, html_content
             except Exception as exc:
-                logger.warning(f"Camoufox stealth fetch failed on {url}: {exc}. Trying Scrapling AsyncFetcher.")
+                logger.warning(f"Camoufox stealth fetch failed on {url}: {exc}. Falling back to the impersonated fetch.")
 
-        # Fallback to Scrapling AsyncFetcher with browser impersonation
+        # Fall back to the curl_cffi impersonation tier. It cannot run the
+        # page's JavaScript, so a client-side-hydrated board yields nothing
+        # here - that is a coverage loss, not an error.
         status, content = await cls.fetch_html_or_json(url, timeout=timeout)
         return status, content if isinstance(content, str) else str(content)
 

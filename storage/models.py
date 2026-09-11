@@ -448,6 +448,16 @@ class Job(Base):
         comment="Vector-store row id (job_embeddings.id) for semantic search lookups",
     )
 
+    # ---- Enrichment state ---------------------------------------------- #
+    # Live-scraped rows are written structurally, with no LLM call, so that a
+    # 60-result search costs zero Groq quota. They start "raw" and are parsed
+    # later - on demand, or by the budgeted scheduled pass. See
+    # services/job_persistence.py and migration 011.
+    enrichment_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="raw", server_default="enriched",
+        comment="raw = structural scrape only; enriched = LLM-parsed; failed = unparseable",
+    )
+
     # ---- Analytics counters -------------------------------------------- #
     view_count: Mapped[int] = mapped_column(
         BigInteger, nullable=False, default=0, server_default="0"

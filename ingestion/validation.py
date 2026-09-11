@@ -48,6 +48,12 @@ ALLOWED_JOB_DOMAINS = [
     "ashbyhq.com",
     "jobs.ashbyhq.com",
     "cutshort.io",
+    # Indian boards the live fan-out actually reaches. They were missing, so
+    # every posting these sources returned failed validation and was dropped
+    # before it could be persisted.
+    "foundit.in",
+    "instahyre.com",
+    "freshersworld.com",
     "wellfound.com",
     "angel.co",
     "workday.com",
@@ -190,6 +196,30 @@ def validate_job_url(url: str) -> tuple[bool, str]:
         if not re.search(r"job-listings-", path) and not re.search(r"job-detail", path):
             return False, "Naukri URL is a search or category page (job-listings-* required)"
         return True, "Valid Naukri posting URL"
+
+    if _url_matches_domain(url_clean, "foundit.in"):
+        # Individual posting is /job/<id-or-slug>. Without this the search
+        # page /srp/results?query=... passed as a job, because the generic
+        # allowlist branch below accepts any path containing "/job".
+        if not re.search(r"^/job/[^/?#]+", path):
+            return False, "Foundit URL is not an individual job posting (/job/<id> required)"
+        return True, "Valid Foundit posting URL"
+
+    if _url_matches_domain(url_clean, "instahyre.com"):
+        # Individual posting is /job-<id> (hyphen, not a path segment) or
+        # /job/<id>; /search-jobs and /jobs/... are listings. Both id forms
+        # are accepted because the scraper emits the hyphenated one and the
+        # site links the other.
+        if not re.search(r"^/job[-/]\d+", path):
+            return False, "Instahyre URL is not an individual job posting (/job-<id> required)"
+        return True, "Valid Instahyre posting URL"
+
+    if _url_matches_domain(url_clean, "freshersworld.com"):
+        # Individual posting is /jobs/<slug>-<numeric id>; the search page is
+        # /jobs/jobsearch/<slug>, which shares the /jobs/ prefix.
+        if "/jobs/jobsearch" in path or not re.search(r"^/jobs/[^/?#]+-\d+/?$", path):
+            return False, "Freshersworld URL is not an individual job posting (/jobs/<slug>-<id> required)"
+        return True, "Valid Freshersworld posting URL"
 
     if _url_matches_domain(url_clean, "cutshort.io"):
         # cutshort.io/job/<id_or_slug>

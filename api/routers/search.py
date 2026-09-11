@@ -253,10 +253,21 @@ async def search_jobs_semantic(request: SearchRequestSchema):
         for result in response.results
     ]
 
+    # What the graph did about live sourcing, so the UI can explain a thin
+    # result set instead of just showing one.
+    meta = response.metadata or {}
+    sourcing = {
+        **(meta.get("sourcing_decision") or {}),
+        "indexed_count": meta.get("indexed_count"),
+        "live_count": meta.get("live_count"),
+        "sources_stats": meta.get("sources_stats") or {},
+    }
+
     return SearchResponseSchema(
         results=job_results,
         total_found=response.metadata.get("total_found", len(response.results)),
         summary=response.summary,
+        sourcing=sourcing,
         filters_applied={"query": request.query},
     )
 

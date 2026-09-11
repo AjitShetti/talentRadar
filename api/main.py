@@ -90,9 +90,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # paste this line somewhere.
     logger.info("Database: %s", _safe_dsn(settings.database_url))
 
-    # Daily job-match scan. Runs in-process (no separate worker/beat service
-    # exists in this stack) and searches each user's target roles against
-    # already-ingested postings — see services/job_matching.py.
+    # The overnight sweep. Runs in-process (no separate worker/beat service
+    # exists in this stack): it ingests fresh postings for the union of every
+    # user's target roles, then ranks them per user — see services/sweep.py.
+    #
+    # This used to schedule the ranking pass alone, which only re-sorted rows an
+    # admin had ingested by hand, so the dashboard's "fetched while you were
+    # away" showed the same postings every morning.
     #
     # The scheduler is per *process*, so with more than one uvicorn worker the
     # job fires once per worker: N concurrent runs racing on the same
@@ -101,11 +105,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # process (or an external cron) instead.
     scheduler: AsyncIOScheduler | None = None
     if settings.enable_scheduler and AsyncIOScheduler is not None:
-        from services.job_matching import run_daily_matching_for_all_users
+        from services.sweep import run_overnight_sweep
 
         scheduler = AsyncIOScheduler()
         scheduler.add_job(
-            run_daily_matching_for_all_users,
+            run_overnight_sweep,
             trigger="cron",
             hour=settings.daily_match_hour,
             minute=settings.daily_match_minute,
@@ -118,8 +122,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         )
         scheduler.start()
         logger.info(
-            "Daily job-match scan scheduled for %02d:%02d server time",
-            settings.daily_match_hour, settings.daily_match_minute,
+            "Overnight sweep scheduled for %02d:%02d server time (ingest=%s)",
+            settings.daily_match_hour,
+            settings.daily_match_minute,
+            settings.sweep_ingest_enabled,
         )
     elif settings.enable_scheduler:
         logger.warning("In-process scheduler requested but apscheduler is not installed")

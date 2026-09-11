@@ -5,7 +5,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 SHELL := /bin/bash
-.PHONY: help up down logs migrate seed seed-companies test lint format typecheck clean verify-deploy build-image
+.PHONY: help up down logs migrate seed seed-companies test lint format typecheck clean verify-deploy build-image verify-sources capture-fixtures
 
 # ── Docker Compose ──────────────────────────────────────────────────────────
 
@@ -97,6 +97,19 @@ test-cov:
 ## Run a single test file (usage: make test-one file=tests/test_api.py)
 test-one:
 	pytest $(file) -v
+
+## Probe every live job source against the real internet and report what
+## came back. Exits non-zero if any source returns zero jobs. This is the
+## ground truth the fixture contract tests cannot give you: they replay a
+## capture made before a site changed, so they keep passing when it does.
+verify-sources:
+	python scripts/verify_sources.py
+
+## Re-record the source fixtures the contract tests replay. Run this when a
+## source legitimately changes shape, and review the diff — a fixture that
+## suddenly parses to zero jobs is exactly the change you want to catch.
+capture-fixtures:
+	python scripts/capture_fixtures.py
 
 # ── Cleanup ─────────────────────────────────────────────────────────────────
 

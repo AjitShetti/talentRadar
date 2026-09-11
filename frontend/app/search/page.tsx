@@ -5,7 +5,7 @@ import { Bookmark, ExternalLink, MapPin, RefreshCw, Search, SlidersHorizontal } 
 import AppShell from '@/components/AppShell'
 import FlapText from '@/components/FlapText'
 import { Ripple } from '@/components/Ripple'
-import { api, Job, signedIn } from '@/lib/api'
+import { api, Job, Sourcing, signedIn } from '@/lib/api'
 import { usePersistentState } from '@/lib/persistent-state'
 import { SuggestionProfile, pickSuggestions } from '@/lib/search-suggestions'
 import { EXPERIENCE_BANDS, INDIAN_CITIES, bandForYears, matchCity } from '@/lib/filters'
@@ -22,6 +22,9 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(false); const [error, setError] = useState('')
   const [saved, setSaved] = usePersistentState<string[]>('search.saved', [])
   const [profile, setProfile] = useState<SuggestionProfile | null>(null); const [tips, setTips] = useState<string[]>([])
+  // Set only by semantic search, which is the path that can go out to the job
+  // boards. Filtered searches run against the relational index and never do.
+  const [sourcing, setSourcing] = useState<Sourcing | null>(null)
 
   // Profile defaults are applied once, and only to filters the user has not set
   // themselves — a stored choice always wins over the profile.
@@ -67,9 +70,11 @@ export default function SearchPage() {
       if (hasFilters) {
         const response = await api.search.structured(query, { location, remote, experience })
         setJobs(response.jobs || [])
+        setSourcing(null)
       } else {
         const response = await api.search.semantic(query)
         setJobs(response.results || [])
+        setSourcing(response.sourcing || null)
       }
       shuffleTips()
     } catch (err) {
@@ -115,6 +120,7 @@ export default function SearchPage() {
       {hasFilters && <button type="button" className="text-button" onClick={clearFilters}>Clear filters</button>}
     </div>
     {error && <p className="form-error">{error}</p>}
+    {sourcing && <SourcingNote sourcing={sourcing} />}
     <div className="results-layout">
       <aside className="search-tips">
         <div className="tips-head"><p className="eyebrow">SEARCH BETTER</p><button type="button" className="icon-refresh" title="Show different ideas" onClick={shuffleTips}><RefreshCw size={13}/></button></div>
@@ -150,4 +156,33 @@ export default function SearchPage() {
       </section>
     </div>
   </AppShell>
+}
+
+
+/**
+ * Explains where a set of results came from.
+ *
+ * Without this a search that reached five of six boards looks identical to one
+ * that reached all six — the user just sees fewer roles and no reason why. The
+ * counts also make the index-first design legible: results appear immediately
+ * from what is already stored, and freshly scraped roles are marked as such.
+ */
+function SourcingNote({ sourcing }: { sourcing: Sourcing }) {
+  const stats = sourcing.sources_stats || {}
+  const names = Object.keys(stats)
+  const answered = names.filter(name => (stats[name]?.count ?? 0) > 0)
+  const live = sourcing.live_count ?? 0
+
+  if (!sourcing.sourced) {
+    // Not an error, and not worth alarming anyone about: the index already
+    // answered, which is the fast path working as intended.
+    return <p className="sourcing-note"><span className="sourcing-dot indexed" /> Answered from {sourcing.indexed_count ?? 0} indexed roles.</p>
+  }
+
+  return <p className="sourcing-note">
+    <span className="sourcing-dot live" />
+    Searched {answered.length} of {names.length} job {names.length === 1 ? 'source' : 'sources'} live
+    {live > 0 && <> — {live} newly found {live === 1 ? 'role' : 'roles'} added to your index</>}
+    {answered.length < names.length && <span className="sourcing-muted"> ({names.filter(n => !answered.includes(n)).join(', ')} returned nothing)</span>}
+  </p>
 }
