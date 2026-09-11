@@ -24,7 +24,7 @@ const nav = [
  * space piled up on one side. Narrowing the wrap itself keeps the heading and
  * the content on the same left and right edges, and centres the pair.
  */
-export default function AppShell({ children, narrow = false }: { children: React.ReactNode; narrow?: boolean }) {
+export default function AppShell({ children, narrow = false, bleed = false }: { children: React.ReactNode; narrow?: boolean; bleed?: boolean }) {
   const path = usePathname(); const router = useRouter()
   // currentEmail() reads localStorage, which is absent during server render.
   // Reading it inline made the server emit "Guest user" while the client's
@@ -67,6 +67,6 @@ export default function AppShell({ children, narrow = false }: { children: React
           : <Link className="small-link" href="/login">Sign in</Link>}
       </div>
     </header>
-    <main className="main-content"><div className={`page-wrap ${narrow ? 'page-wrap-narrow' : ''}`}>{children}</div></main>
+    <main className="main-content"><div className={`page-wrap ${narrow ? 'page-wrap-narrow' : ''} ${bleed ? 'page-wrap-bleed' : ''}`}>{children}</div></main>
   </div>
 }

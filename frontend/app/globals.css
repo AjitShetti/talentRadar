@@ -199,6 +199,10 @@ a{text-decoration:none;color:inherit}
    below are dropped inside it so the heading rule, the fields and the session
    panels all end on the same right edge instead of stopping short of it —
    which is what left the leftover space stacked on one side. */
+/* The Overview's ruled bands have to reach the viewport edge while their
+   content stays in a column, so that route opts out of the shared wrap and
+   re-insets itself with .ov-inner. */
+.page-wrap-bleed{max-width:none;padding:0}
 .page-wrap-narrow{max-width:784px}
 .page-wrap-narrow .card-form,
 .page-wrap-narrow .interview-start,
@@ -959,3 +963,251 @@ body::before{content:'';position:fixed;inset:0;z-index:2000;pointer-events:none;
 .editor-pdf-frame{width:100%;height:calc(100vh - 220px);min-height:520px;border:1px solid var(--line);border-radius:10px;background:var(--paper);box-shadow:inset 0 1px 0 rgba(255,255,255,.03),0 10px 24px rgba(0,0,0,.35)}
 .editor-empty-pdf{display:flex;align-items:center;justify-content:center;height:calc(100vh - 220px);min-height:520px;color:var(--faint);font-size:13px;border:0;border-top:1px solid var(--line-strong);border-bottom:1px solid var(--line-soft);border-radius:0;text-align:center;padding:20px}
 @media(max-width:1050px){.editor-shell{grid-template-columns:1fr;gap:0}.editor-shell>.editor-preview{border-left:0;padding-left:0;position:static;margin-top:32px}}
+/* ═══════════════════════════════════════════════════════════════════════════
+   OVERVIEW DAY BOARD
+   ───────────────────────────────────────────────────────────────────────────
+   The Overview as a ruled operations sheet: full-bleed section rules with an
+   inset content column, a ranked focus list hanging off a spine, and the
+   copilot moved to an edge rail. Replaces the old .dayboard / .metric-grid /
+   in-page copilot panel on this route only. See DESIGN.md.
+
+   Every class here is ov- prefixed: globals.css already owns .chart and
+   .action-*, and an unprefixed .chart would have silently restyled Company
+   Intel's graph.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root{
+  --ghost:#3A3631;
+  --ease-out:cubic-bezier(.16,1,.3,1);
+  --ease-io:cubic-bezier(.65,0,.35,1);
+  --ease-fast:cubic-bezier(.4,0,.2,1);
+  --t-fast:170ms; --t:300ms; --t-travel:420ms; --t-slow:640ms;
+  --ov-spine:112px; --ov-rail:54px;
+}
+
+@keyframes ov-rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+@keyframes ov-grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@keyframes ov-fade{from{opacity:0}to{opacity:1}}
+.ov-rise{animation:ov-rise var(--t-slow) var(--ease-out) both}
+
+/* The sheet. .page-wrap-bleed drops the 1260px column so these rules can run
+   edge to edge; the content is re-inset by .ov-inner. */
+.ov-page{padding-right:var(--ov-rail)}
+.ov-band{border-top:1px solid var(--line-soft)}
+.ov-band:first-child{border-top:0}
+.ov-inner{max-width:1160px;margin:0 auto;padding:44px clamp(16px,4vw,40px)}
+
+/* ── masthead ───────────────────────────────────────────────────────────── */
+.ov-masthead{border-bottom:1px solid var(--line-strong)}
+.ov-masthead .ov-inner{display:flex;align-items:flex-end;justify-content:space-between;gap:32px;flex-wrap:wrap;padding-block:36px 28px}
+.ov-masthead h1{font-family:'Big Shoulders Text',sans-serif;font-weight:700;font-size:clamp(30px,4.6vw,44px);letter-spacing:-.6px;line-height:1;margin:0}
+.ov-masthead h1 span{color:var(--accent)}
+.ov-sub{margin:10px 0 0;color:var(--ink-2);font-size:15px;max-width:54ch}
+.ov-stamp{text-align:right;font:11px 'Fragment Mono',monospace;line-height:1.9;color:var(--faint);letter-spacing:.3px}
+.ov-stamp b{display:block;font-weight:400;color:var(--ink-2)}
+
+/* the readout: counts below the greeting, never above it */
+.ov-readout{display:flex;flex-wrap:wrap;align-items:baseline;margin-top:22px}
+.ov-readout div{display:flex;align-items:baseline;gap:7px;padding-right:16px;margin-right:16px;border-right:1px solid var(--line)}
+.ov-readout div:last-child{border-right:0;margin-right:0;padding-right:0}
+.ov-readout b{font:15px 'Fragment Mono',monospace;color:var(--ink);font-variant-numeric:tabular-nums}
+.ov-readout span{font:10px 'Fragment Mono',monospace;letter-spacing:.9px;text-transform:uppercase;color:var(--faint)}
+.ov-readout div[data-live] b,.ov-readout div[data-live] span{color:var(--accent)}
+
+/* ── section heads: label, then a rule to the edge ──────────────────────── */
+.ov-head{display:flex;align-items:center;gap:16px;margin-bottom:28px}
+.ov-head h2{font-family:'Big Shoulders Text',sans-serif;font-weight:700;font-size:clamp(20px,2.6vw,26px);letter-spacing:-.2px;white-space:nowrap;margin:0}
+.ov-head .ov-rule{flex:1;height:1px;background:var(--line);transform-origin:left;animation:ov-grow var(--t-slow) var(--ease-out) both}
+.ov-head .ov-note{font:11px 'Fragment Mono',monospace;letter-spacing:.4px;color:var(--faint);white-space:nowrap}
+
+/* ── today's focus: the spine, plate numerals, one travelling marker ────── */
+.ov-focus .ov-inner{padding-block:52px 54px}
+.ov-focus .ov-head h2{font-size:clamp(26px,3.6vw,36px)}
+.ov-focus-wrap{position:relative}
+.ov-focus-list{margin:0;padding:0;list-style:none}
+.ov-focus-list::before{content:'';position:absolute;left:var(--ov-spine);top:10px;bottom:22px;width:1px;background:var(--line)}
+/* The marker is a 1px bar scaled to the row it marks, not a bar whose height
+   animates: travelling between rows changes both position and length at once,
+   and animating height would relayout the spine on every frame. One transform
+   carries both — translateY places it, scaleY sizes it, origin top. */
+.ov-glider{position:absolute;left:var(--ov-spine);width:2px;height:1px;opacity:0;background:var(--accent);
+  transform:translateY(0) scaleY(0);transform-origin:top;pointer-events:none;z-index:2;will-change:transform;
+  transition:transform var(--t-travel) var(--ease-io),opacity var(--t) var(--ease-fast)}
+
+.ov-act{position:relative;display:grid;grid-template-columns:calc(var(--ov-spine) - 16px) 1fr auto;align-items:center;gap:0 44px;padding:28px 0;
+  transition:opacity var(--t) var(--ease-fast)}
+.ov-act::after{content:'';position:absolute;left:var(--ov-spine);top:50%;width:16px;height:1px;background:var(--line-strong);
+  transform-origin:left;transition:transform var(--t) var(--ease-out),background var(--t) var(--ease-fast)}
+.ov-act + .ov-act{border-top:1px solid var(--line-soft)}
+.ov-act > *{transition:transform var(--t) var(--ease-out),color var(--t) var(--ease-fast)}
+
+.ov-focus-list[data-awake] .ov-act:not([data-hot]){opacity:.42}
+.ov-act[data-hot]::after{transform:scaleX(1.7);background:var(--accent)}
+.ov-act[data-hot] .ov-plate{color:var(--accent);transform:translateX(4px)}
+.ov-act[data-hot] .ov-act-body{transform:translateX(10px)}
+
+.ov-plate{font-family:'Big Shoulders Text',sans-serif;font-weight:800;font-size:56px;line-height:.8;letter-spacing:-1.5px;color:var(--ghost);text-align:right;font-variant-numeric:tabular-nums}
+.ov-act h3{font-family:'Big Shoulders Text',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.2px;margin:0}
+.ov-why{margin:7px 0 0;color:var(--muted);font-size:13.5px;max-width:60ch}
+.ov-tags{display:flex;flex-wrap:wrap;margin-top:13px;font:10.5px 'Fragment Mono',monospace;letter-spacing:.5px;text-transform:uppercase;color:var(--faint)}
+.ov-tags span{padding-right:11px;margin-right:11px;border-right:1px solid var(--line)}
+.ov-tags span:last-child{border-right:0;margin-right:0;padding-right:0}
+.ov-tags span[data-hot]{color:var(--accent)}
+
+/* the lead action: an amber wash that bleeds out rather than ending at an edge */
+.ov-act[data-lead]{padding-block:36px}
+.ov-act[data-lead]::before{content:'';position:absolute;inset:0 0 0 var(--ov-spine);pointer-events:none;
+  background:linear-gradient(90deg,rgba(255,176,32,.09),rgba(255,176,32,0) 62%);
+  opacity:.62;transition:opacity var(--t) var(--ease-fast)}
+.ov-act[data-lead][data-hot]::before{opacity:1}
+.ov-act[data-lead] .ov-plate{color:var(--accent);font-size:66px}
+.ov-act[data-lead] h3{font-size:28px}
+.ov-act[data-lead] .ov-why{font-size:14.5px;color:var(--ink-2)}
+
+/* ── buttons on the sheet: squared, 1px press, sliding arrow ────────────── */
+.ov-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 17px;border-radius:2px;min-height:40px;
+  font:600 12px 'Big Shoulders Text',sans-serif;text-transform:uppercase;letter-spacing:.9px;white-space:nowrap;
+  transition:background var(--t-fast) var(--ease-fast),border-color var(--t-fast) var(--ease-fast),color var(--t-fast) var(--ease-fast),transform var(--t-fast) var(--ease-out)}
+.ov-btn svg{flex-shrink:0;transition:transform var(--t) var(--ease-out)}
+.ov-btn:hover svg{transform:translateX(3px)}
+.ov-btn:active{transform:translateY(1px)}
+.ov-btn-accent{background:var(--accent);color:#1A1305;border:0}
+.ov-btn-accent:hover{background:var(--accent-light)}
+.ov-btn-line{border:1px solid var(--line-strong);color:var(--ink-2);background:transparent}
+.ov-btn-line:hover{border-color:var(--accent-border);color:var(--accent)}
+.ov-link{display:inline-flex;align-items:center;gap:6px;font:11px 'Fragment Mono',monospace;letter-spacing:.4px;color:var(--faint);
+  transition:color var(--t-fast) var(--ease-fast)}
+.ov-link:hover{color:var(--accent)}
+.ov-link svg{transition:transform var(--t) var(--ease-out)}
+.ov-link:hover svg{transform:translateX(3px)}
+
+/* ── sweep manifest ────────────────────────────────────────────────────── */
+.ov-sweep-list{border-top:1px solid var(--line-soft)}
+.ov-role{position:relative;display:grid;grid-template-columns:64px 1fr 150px auto;align-items:center;gap:0 28px;padding:20px 0;border-bottom:1px solid var(--line-soft)}
+.ov-role > *{transition:transform var(--t) var(--ease-out),color var(--t-fast) var(--ease-fast)}
+.ov-role::before{content:'';position:absolute;left:-14px;top:18%;width:2px;height:64%;background:var(--accent);
+  transform:scaleY(0);transform-origin:center;transition:transform var(--t) var(--ease-out)}
+.ov-role:hover::before{transform:scaleY(1)}
+.ov-role:hover > *{transform:translateX(10px)}
+.ov-role:hover .ov-rtitle{color:var(--accent)}
+.ov-role:hover .ov-rtime{color:var(--ink-2)}
+.ov-rtime{font:11px 'Fragment Mono',monospace;color:var(--faint);font-variant-numeric:tabular-nums}
+.ov-rtitle{font-family:'Big Shoulders Text',sans-serif;font-weight:700;font-size:18px;letter-spacing:.1px}
+.ov-rmeta{margin:4px 0 0;font-size:12.5px;color:var(--muted)}
+/* "Kept for" rather than a fit meter: the daily-match API returns the target
+   role a posting was matched against, not a score, so this column states the
+   real reason the row is here instead of inventing a number to fill five ticks.
+   Restore the tick meter when /dashboard/overview carries a match score. */
+.ov-fit{display:flex;flex-direction:column;gap:6px;min-width:0}
+.ov-fk{font:10px 'Fragment Mono',monospace;letter-spacing:.9px;text-transform:uppercase;color:var(--faint)}
+.ov-fv{font-size:12.5px;color:var(--ink-2);transition:color var(--t-fast) var(--ease-fast)}
+.ov-role:hover .ov-fv{color:var(--accent)}
+.ov-sweep-foot{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;padding-top:18px;font:11px 'Fragment Mono',monospace;color:var(--faint)}
+
+/* ── quick actions: three columns, hairline dividers, no boxes ──────────── */
+.ov-quick .ov-inner{padding-block:34px}
+.ov-qrow{display:grid;grid-template-columns:repeat(3,1fr)}
+.ov-qcol{display:flex;flex-direction:column;gap:8px;padding-inline:32px;border-left:1px solid var(--line-soft)}
+.ov-qcol:first-child{padding-left:0;border-left:0}
+.ov-qcol:last-child{padding-right:0}
+.ov-qtop{display:flex;align-items:center;gap:10px}
+.ov-qtop svg{color:var(--muted);transition:color var(--t-fast) var(--ease-fast),transform var(--t) var(--ease-out)}
+.ov-qcol:hover .ov-qtop svg{color:var(--accent);transform:translateY(-2px)}
+.ov-qcol h3{font-family:'Big Shoulders Text',sans-serif;font-weight:700;font-size:15px;letter-spacing:.9px;text-transform:uppercase;margin:0;
+  transition:color var(--t-fast) var(--ease-fast)}
+.ov-qcol:hover h3{color:var(--accent)}
+.ov-qcol p{margin:0;font-size:12.5px;color:var(--faint);flex:1}
+
+/* ── where you stand: three gauges on a shared baseline ─────────────────── */
+.ov-gauges{display:grid;grid-template-columns:repeat(3,1fr)}
+.ov-gauge{display:flex;flex-direction:column;gap:13px;padding-inline:36px;border-left:1px solid var(--line-soft)}
+.ov-gauge:first-child{padding-left:0;border-left:0}
+.ov-gauge:last-child{padding-right:0}
+.ov-gk{font:10px 'Fragment Mono',monospace;letter-spacing:1.1px;text-transform:uppercase;color:var(--faint)}
+.ov-gv{display:flex;align-items:baseline;gap:9px;font-family:'Big Shoulders Text',sans-serif;font-weight:800;font-size:34px;line-height:.9;letter-spacing:-.7px;font-variant-numeric:tabular-nums}
+.ov-gv small{font:12px 'Public Sans',sans-serif;color:var(--muted);letter-spacing:0}
+.ov-measure{position:relative;height:9px;border-top:1px solid var(--line)}
+.ov-measure i{position:absolute;top:-1px;left:0;height:1px;background:var(--success);transform-origin:left;animation:ov-grow 900ms var(--ease-out) 260ms both}
+.ov-measure b{position:absolute;top:-3px;width:1px;height:5px;background:var(--line)}
+.ov-stand-foot{display:flex;gap:24px;flex-wrap:wrap;margin-top:30px;padding-top:18px;border-top:1px solid var(--line-soft)}
+
+/* ── close your gaps ───────────────────────────────────────────────────────
+   A ranked list, not a chart. services/career.py returns gaps already ordered
+   by how much each one costs the user, but carries no per-skill frequency — so
+   there is no magnitude to plot and an axis would be a drawn guess. The rank
+   is the real signal, so the ordinal carries the weight. Make this a chart the
+   day SkillFocusItem gains a count. */
+.ov-gap{position:relative;display:grid;grid-template-columns:44px 1fr;align-items:baseline;gap:0 20px;padding:16px 0;border-top:1px solid var(--line-soft)}
+.ov-gap:first-child{border-top:0}
+.ov-gap > *{transition:transform var(--t) var(--ease-out),color var(--t-fast) var(--ease-fast)}
+.ov-gap:hover > *{transform:translateX(8px)}
+.ov-gap:hover .ov-name,.ov-gap:hover .ov-n{color:var(--accent)}
+.ov-n{font:14px 'Fragment Mono',monospace;color:var(--ghost);font-variant-numeric:tabular-nums;transition:color var(--t-fast) var(--ease-fast)}
+.ov-gap:first-child .ov-n{color:var(--accent)}
+.ov-gap .ov-name{display:block;font-family:'Big Shoulders Text',sans-serif;font-weight:700;font-size:17px;letter-spacing:.2px;transition:color var(--t-fast) var(--ease-fast)}
+.ov-gap .ov-gd{margin:5px 0 0;font-size:13px;color:var(--muted);max-width:56ch}
+.ov-gaps-foot{display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-top:28px;padding-top:22px;border-top:1px solid var(--line-soft)}
+.ov-gaps-foot p{margin:0;font-size:12.5px;color:var(--faint);max-width:44ch}
+
+/* ── copilot: an edge rail + drawer, off the day sheet ──────────────────── */
+.ov-railbar{position:fixed;top:60px;right:0;bottom:0;width:var(--ov-rail);z-index:40;
+  display:flex;flex-direction:column;align-items:center;gap:18px;padding-block:24px;
+  background:var(--surface);border-left:1px solid var(--line)}
+.ov-railbtn{display:grid;place-items:center;width:34px;height:34px;border-radius:2px;border:0;color:var(--paper);background:var(--accent);
+  transition:background var(--t-fast) var(--ease-fast),transform var(--t-fast) var(--ease-out)}
+.ov-railbtn:hover{background:var(--accent-light)}
+.ov-railbtn:active{transform:translateY(1px)}
+.ov-railbtn svg{transition:transform var(--t-travel) var(--ease-out)}
+.ov-railbtn[aria-expanded="true"] svg{transform:rotate(90deg)}
+.ov-raillabel{writing-mode:vertical-rl;font:10px 'Fragment Mono',monospace;letter-spacing:2.2px;text-transform:uppercase;color:var(--faint);
+  transition:color var(--t-fast) var(--ease-fast)}
+.ov-railbar:hover .ov-raillabel{color:var(--ink-2)}
+.ov-raildot{width:5px;height:5px;border-radius:50%;background:var(--success);margin-top:auto}
+
+.ov-scrim{position:fixed;inset:0;z-index:45;background:rgba(8,7,6,.5);opacity:0;visibility:hidden;
+  transition:opacity var(--t) var(--ease-fast),visibility var(--t)}
+.ov-scrim[data-open]{opacity:1;visibility:visible}
+.ov-drawer{position:fixed;top:0;right:var(--ov-rail);bottom:0;z-index:50;width:min(430px,calc(100vw - var(--ov-rail)));
+  display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--line-strong);
+  box-shadow:-16px 0 44px rgba(0,0,0,.5);
+  transform:translateX(100%);visibility:hidden;
+  transition:transform var(--t-travel) var(--ease-out),visibility var(--t-travel)}
+.ov-drawer[data-open]{transform:translateX(0);visibility:visible}
+.ov-drawer-top{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:26px 22px 20px;border-bottom:1px solid var(--line-soft)}
+.ov-drawer-top h2{font-family:'Big Shoulders Text',sans-serif;font-weight:700;font-size:20px;letter-spacing:-.2px;margin:0}
+.ov-drawer-top p{margin:6px 0 0;font-size:12.5px;color:var(--faint)}
+.ov-x{display:grid;place-items:center;width:30px;height:30px;border:0;background:transparent;color:var(--muted);
+  transition:color var(--t-fast) var(--ease-fast),transform var(--t) var(--ease-out)}
+.ov-x:hover{color:var(--ink);transform:rotate(90deg)}
+.ov-drawer-body{flex:1;min-height:0;overflow-y:auto;padding:0}
+.ov-drawer-body .cp-chat{border:0;border-radius:0;box-shadow:none;background:transparent}
+
+@media(max-width:920px){
+  :root{--ov-spine:76px}
+  .ov-plate{font-size:40px}
+  .ov-act[data-lead] .ov-plate{font-size:46px}
+  .ov-act{grid-template-columns:calc(var(--ov-spine) - 14px) 1fr;row-gap:18px;column-gap:28px}
+  .ov-act .ov-btn{grid-column:2;justify-self:start}
+  .ov-role{grid-template-columns:1fr auto;row-gap:12px}
+  .ov-rtime{grid-column:1/-1}
+  .ov-fit{grid-column:1}
+  .ov-qrow,.ov-gauges{grid-template-columns:1fr}
+  .ov-qcol,.ov-gauge{padding-inline:0;border-left:0;border-top:1px solid var(--line-soft);padding-block:22px}
+  .ov-qcol:first-child,.ov-gauge:first-child{border-top:0;padding-top:0}
+  .ov-gap{grid-template-columns:104px 1fr 48px;gap:12px}
+  .ov-masthead .ov-inner{align-items:flex-start}
+  .ov-stamp{text-align:left}
+  /* a touch device cannot un-hover, so it never gets the dim */
+  .ov-focus-list[data-awake] .ov-act:not([data-hot]){opacity:1}
+}
+@media(max-width:560px){
+  .ov-page{padding-right:0;padding-bottom:76px}
+  .ov-railbar{top:auto;left:0;width:auto;flex-direction:row;gap:12px;padding:12px 16px;border-left:0;border-top:1px solid var(--line)}
+  .ov-raillabel,.ov-raildot{display:none}
+  .ov-drawer{right:0;width:100vw}
+}
+@media (prefers-reduced-motion:reduce){
+  .ov-page *,.ov-page *::before,.ov-page *::after,.ov-drawer *,.ov-railbar *{animation:none!important;transition:none!important}
+  .ov-glider{opacity:0!important}
+  .ov-focus-list[data-awake] .ov-act:not([data-hot]){opacity:1}
+}
