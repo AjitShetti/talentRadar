@@ -47,6 +47,11 @@ class AgentState(TypedDict, total=False):
     # Input
     query: str
     user_id: str | None
+    # Set by callers that already know the intent (the search endpoint);
+    # classification then only extracts filters. Pagination is the caller's.
+    intent_override: str | None
+    limit: int | None
+    offset: int | None
 
     # Intent classification output
     intent: str          # IntentType value string
@@ -85,18 +90,29 @@ async def node_classify(state: AgentState) -> AgentState:
     """
     from agents.orchestrator import Orchestrator  # local import avoids cycles
 
+    override = state.get("intent_override")
+    limit = state.get("limit") or 10
+    offset = state.get("offset") or 0
+
     try:
         orchestrator = Orchestrator()
         context: QueryContext = await orchestrator._classify_intent(state["query"])
     except Exception as exc:
-        logger.warning("Intent classification failed, falling back to general: %s", exc)
+        fallback = override or IntentType.GENERAL.value
+        logger.warning("Intent classification failed, falling back to %s: %s", fallback, exc)
         return {
-            "intent": IntentType.GENERAL.value,
-            "context": {"raw_query": state.get("query", ""), "keywords": [], "skills": []},
+            "intent": fallback,
+            "context": {
+                "raw_query": state.get("query", ""),
+                "keywords": state.get("query", "").split() if override else [],
+                "skills": [],
+                "limit": limit,
+                "offset": offset,
+            },
         }
 
     return {
-        "intent": context.intent.value,
+        "intent": override or context.intent.value,
         "context": {
             "raw_query": context.raw_query,
             "keywords": context.keywords,
@@ -106,8 +122,8 @@ async def node_classify(state: AgentState) -> AgentState:
             "seniority": context.seniority,
             "employment_type": context.employment_type,
             "company": context.company,
-            "limit": context.limit,
-            "offset": context.offset,
+            "limit": limit,
+            "offset": offset,
         },
     }
 
@@ -172,7 +188,11 @@ async def node_live_search(state: AgentState) -> AgentState:
     results, so a dead scraper, an unreachable cache or a failed write
     degrades this turn to "what the index knew" rather than erroring.
     """
-    from agents.sourcing_policy import SOURCED_LOCK_TTL_SECONDS, sourced_lock_key
+    from agents.sourcing_policy import (
+        EMPTY_SOURCED_LOCK_TTL_SECONDS,
+        SOURCED_LOCK_TTL_SECONDS,
+        sourced_lock_key,
+    )
     from ingestion.engine import RealtimeScraperEngine
     from services.cache_backend import CacheBackend
 
@@ -180,6 +200,7 @@ async def node_live_search(state: AgentState) -> AgentState:
     query = ctx.get("raw_query") or state["query"]
     location = ctx.get("location") or "India"
     is_remote = ctx.get("is_remote")
+    reason = (state.get("sourcing_decision") or {}).get("reason", "index could not answer")
 
     try:
         results = await RealtimeScraperEngine.search_all(
@@ -193,17 +214,17 @@ async def node_live_search(state: AgentState) -> AgentState:
         return {
             "live_jobs": [],
             "sources_stats": {},
-            "sourcing_decision": {"sourced": False, "reason": f"live search failed: {exc}"},
+            "sourcing_decision": {"sourced": False, "reason": f"{reason}; live search failed: {exc}"},
         }
 
     live_jobs = results.get("jobs", []) or []
 
-    # Take the lock *after* a successful fan-out, so a failed attempt is
-    # retried rather than locked out for eight hours.
+    # Take the lock *after* the fan-out, so a failed attempt is retried rather
+    # than locked out. An empty fan-out gets only the short lock: it is far
+    # more often the boards failing than the job not existing.
+    ttl = SOURCED_LOCK_TTL_SECONDS if live_jobs else EMPTY_SOURCED_LOCK_TTL_SECONDS
     try:
-        await CacheBackend.set(
-            sourced_lock_key(query, location, is_remote), "1", SOURCED_LOCK_TTL_SECONDS
-        )
+        await CacheBackend.set(sourced_lock_key(query, location, is_remote), "1", ttl)
     except Exception as exc:
         logger.debug("Could not set the sourcing lock: %s", exc)
 
@@ -217,7 +238,7 @@ async def node_live_search(state: AgentState) -> AgentState:
         "sources_stats": results.get("sources_stats", {}),
         "sourcing_decision": {
             "sourced": True,
-            "reason": state.get("sourcing_decision", {}).get("reason", "index could not answer"),
+            "reason": reason,
             "live_count": len(live_jobs),
         },
     }
@@ -268,17 +289,30 @@ async def node_merge_rank(state: AgentState) -> AgentState:
     indexed = state.get("retrieved_jobs", []) or []
     live = state.get("live_jobs", []) or []
 
+    existing = state.get("final_response", {}) or {}
+    sourcing_metadata = {
+        "sources_stats": state.get("sources_stats", {}),
+        "sourcing_decision": state.get("sourcing_decision", {}),
+        "indexed_count": len(indexed),
+        "live_count": len(live),
+    }
+
     if not live:
-        # Nothing to merge. Returning early keeps the indexed ordering
-        # (relevance from the vector search) rather than re-ranking it on
-        # weaker signals.
-        return {}
+        # Nothing to merge. The indexed ordering (relevance from the vector
+        # search) is kept rather than re-ranked on weaker signals - but the
+        # sourcing metadata is still reported, or the UI cannot explain a thin
+        # result set.
+        return {
+            "final_response": {
+                **existing,
+                "metadata": {**(existing.get("metadata") or {}), **sourcing_metadata},
+            },
+        }
 
     # Normalised onto the RetrievalResult shape before leaving this node: the
     # orchestrator indexes r["job_id"] directly, and live rows carry "id".
     merged = [to_retrieval_dict(j) for j in merge_and_rank(indexed, live, query=query, limit=limit)]
 
-    existing = state.get("final_response", {}) or {}
     summary = (
         f"Found {len(merged)} matching roles "
         f"({len(indexed)} from the index, {len(merged) - len(indexed)} newly sourced)."
@@ -294,24 +328,21 @@ async def node_merge_rank(state: AgentState) -> AgentState:
             **existing,
             "success": True,
             "summary": summary,
-            "metadata": {
-                **(existing.get("metadata") or {}),
-                "sources_stats": state.get("sources_stats", {}),
-                "sourcing_decision": state.get("sourcing_decision", {}),
-                "indexed_count": len(indexed),
-                "live_count": len(live),
-            },
+            "metadata": {**(existing.get("metadata") or {}), **sourcing_metadata},
         },
     }
 
 
-async def route_after_retrieval(state: AgentState) -> Literal["node_live_search", "node_merge_rank"]:
+async def node_decide_sourcing(state: AgentState) -> AgentState:
     """Decide whether the index answered well enough, or we go to the internet.
 
-    Async because the 8-hour sourcing lock lives in the cache and has to be
-    read before deciding. The policy itself is in
-    :mod:`agents.sourcing_policy` - deterministic, no LLM call, and pure, so
-    every branch is testable; this function only gathers its inputs.
+    A node rather than logic inside the conditional edge: LangGraph discards
+    anything an edge function writes to ``state``, so the decision computed
+    there never reached the nodes after it and the API reported no reason.
+
+    The policy itself is in :mod:`agents.sourcing_policy` - deterministic, no
+    LLM call, and pure, so every branch is testable; this node only gathers
+    its inputs (including the 8-hour lock, which lives in the cache).
     """
     from agents.sourcing_policy import decide_sourcing, sourced_lock_key
 
@@ -353,12 +384,17 @@ async def route_after_retrieval(state: AgentState) -> Literal["node_live_search"
         force_refresh=bool(state.get("force_refresh")),
     )
 
-    state["sourcing_decision"] = decision.as_dict()
     if decision.should_source:
         logger.info("Sourcing live for %r: %s", query, decision.reason)
-        return "node_live_search"
+    else:
+        logger.debug("Not sourcing for %r: %s", query, decision.reason)
+    return {"sourcing_decision": decision.as_dict()}
 
-    logger.debug("Not sourcing for %r: %s", query, decision.reason)
+
+def route_after_retrieval(state: AgentState) -> Literal["node_live_search", "node_merge_rank"]:
+    """Follow the decision :func:`node_decide_sourcing` recorded."""
+    if (state.get("sourcing_decision") or {}).get("sourced"):
+        return "node_live_search"
     return "node_merge_rank"
 
 
@@ -532,6 +568,7 @@ def build_agent_graph() -> Any:
     # Register nodes
     builder.add_node("node_classify", node_classify)
     builder.add_node("node_rag_retrieve", node_rag_retrieve)
+    builder.add_node("node_decide_sourcing", node_decide_sourcing)
     builder.add_node("node_live_search", node_live_search)
     builder.add_node("node_merge_rank", node_merge_rank)
     builder.add_node("node_studio_agent", node_studio_agent)
@@ -556,8 +593,9 @@ def build_agent_graph() -> Any:
     # After retrieval, decide whether the index answered or we go live. The
     # router is deterministic (agents/sourcing_policy.py) — no second LLM call
     # on the search path.
+    builder.add_edge("node_rag_retrieve", "node_decide_sourcing")
     builder.add_conditional_edges(
-        "node_rag_retrieve",
+        "node_decide_sourcing",
         route_after_retrieval,
         {
             "node_live_search": "node_live_search",

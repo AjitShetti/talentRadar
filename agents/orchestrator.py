@@ -66,9 +66,19 @@ class Orchestrator:
         """
         from agents.graph import agent_graph  # avoid circular import at module level
 
+        # ``intent`` pins the route. The search endpoint passes SEARCH_JOBS:
+        # the classifier is built for chat and reads a bare role name ("data
+        # scientist", "devops") as small talk, which answered a search with
+        # an empty reply. Classification still runs for the filters it
+        # extracts (location, remoteness); only its intent is overridden.
+        intent = kwargs.get("intent")
         initial_state = {
             "query": query,
             "user_id": kwargs.get("user_id"),
+            "intent_override": IntentType(intent).value if intent else None,
+            "limit": kwargs.get("limit"),
+            "offset": kwargs.get("offset"),
+            "force_refresh": bool(kwargs.get("force_refresh", False)),
         }
 
         try:

@@ -25,6 +25,9 @@ export default function SearchPage() {
   // Set only by semantic search, which is the path that can go out to the job
   // boards. Filtered searches run against the relational index and never do.
   const [sourcing, setSourcing] = useState<Sourcing | null>(null)
+  // Distinguishes "no search yet" from "searched and found nothing"; both used
+  // to show the same prompt, so an empty result looked like the button did nothing.
+  const [searched, setSearched] = useState(false)
 
   // Profile defaults are applied once, and only to filters the user has not set
   // themselves — a stored choice always wins over the profile.
@@ -67,15 +70,26 @@ export default function SearchPage() {
     try {
       // Filters need exact column matching, so they run against the relational
       // index; an unfiltered query goes to semantic search instead.
+      let found: Job[] = []
+      let foundSourcing: Sourcing | null = null
       if (hasFilters) {
         const response = await api.search.structured(query, { location, remote, experience })
-        setJobs(response.jobs || [])
-        setSourcing(null)
-      } else {
-        const response = await api.search.semantic(query)
-        setJobs(response.results || [])
-        setSourcing(response.sourcing || null)
+        found = response.jobs || []
       }
+      // The relational index only knows what earlier searches stored, and a
+      // filtered search never goes out to the boards — so for a signed-in user,
+      // whose profile prefills the filters, a thin index answered every search
+      // with nothing. When it has nothing, ask semantic search, which can source
+      // live; the city and remoteness ride along in the query text.
+      if (!found.length) {
+        const phrased = [query.trim(), remote ? 'remote' : '', location ? `in ${location}` : ''].filter(Boolean).join(' ')
+        const response = await api.search.semantic(phrased)
+        found = response.results || []
+        foundSourcing = response.sourcing || null
+      }
+      setJobs(found)
+      setSourcing(foundSourcing)
+      setSearched(true)
       shuffleTips()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Search could not be completed.')
@@ -135,7 +149,9 @@ export default function SearchPage() {
           </span>
           Scanning the Indian job market…
         </div>}
-        {!loading && jobsReady && !jobs.length && <div className="empty-state"><Search size={25}/><h2>Start with a conversation.</h2><p>Describe your ideal role, skills, or working style to see relevant opportunities across India.</p></div>}
+        {!loading && jobsReady && !jobs.length && (searched
+          ? <div className="empty-state"><Search size={25}/><h2>No roles found yet.</h2><p>Nothing matched across the index or the job boards just now. Try a broader title, drop a filter, or search again in a little while.</p></div>
+          : <div className="empty-state"><Search size={25}/><h2>Start with a conversation.</h2><p>Describe your ideal role, skills, or working style to see relevant opportunities across India.</p></div>)}
         {jobs.map(job => <article className="job-card" key={job.id}>
           <div className="job-card-top">
             <div className="company-logo violet">{(job.company_name || job.company || '?').slice(0, 1)}</div>

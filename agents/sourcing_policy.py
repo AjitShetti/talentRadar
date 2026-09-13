@@ -31,6 +31,13 @@ from datetime import UTC, datetime, timedelta
 SOURCED_LOCK_TTL_SECONDS = 8 * 3600
 SOURCED_KEY_PREFIX = "tr:sourced:"
 
+#: The lock taken when a fan-out came back with nothing. An empty fan-out is
+#: usually the boards failing (a block, a timeout, a cold instance), not proof
+#: that no such job exists - locking it for 8 hours kept a query empty all day.
+#: Short rather than zero, so a genuinely niche query still cannot re-scrape
+#: on every keystroke.
+EMPTY_SOURCED_LOCK_TTL_SECONDS = 30 * 60
+
 #: Below this many indexed hits, the index is treated as too thin to answer.
 MIN_INDEXED_RESULTS = 8
 

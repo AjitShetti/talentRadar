@@ -93,15 +93,23 @@ Pre-commit hooks (ruff, ruff-format, mypy, pytest-fast) are configured in `.pre-
 
 The retrieval branch does not end at `node_rag_retrieve`. It continues:
 
-`node_rag_retrieve → route_after_retrieval → node_live_search → node_merge_rank → END`
+`node_rag_retrieve → node_decide_sourcing → route_after_retrieval → node_live_search → node_merge_rank → END`
 
-`route_after_retrieval` is deterministic (`agents/sourcing_policy.py`) — no
-second LLM call on the search path. It sends a query to the live scrapers when
+`node_decide_sourcing` is deterministic (`agents/sourcing_policy.py`) — no
+second LLM call on the search path — and records its decision in state;
+`route_after_retrieval` only reads it (LangGraph discards writes made inside an
+edge function). It sends a query to the live scrapers when
 the index is thin (< 8 hits), stale (> 14 days), or the query asks for
 something recent — **unless** the `tr:sourced:<fingerprint>` lock says this
-search already went out within 8 hours, which overrides everything but an
-explicit `force_refresh`. That lock is what stops a popular query re-scraping
-on every page load and getting the deployment's IP blocked.
+search already went out within 8 hours (30 minutes if that fan-out came back
+empty), which overrides everything but an explicit `force_refresh`. That lock
+is what stops a popular query re-scraping on every page load and getting the
+deployment's IP blocked.
+
+`POST /search/semantic` passes `intent=SEARCH_JOBS` to `process_query`, which
+pins the route; the classifier then only extracts filters. Without it the chat
+classifier read bare role names ("data scientist") as small talk and search
+returned nothing.
 
 `node_live_search` runs no LLM and persists in the background;
 `node_merge_rank` is a pure function (`agents/merge_rank.py`) blending
