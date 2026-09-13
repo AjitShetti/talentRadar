@@ -7,7 +7,27 @@ Pydantic schemas for job-related API requests and responses.
 from __future__ import annotations
 
 from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
+
+from domain.platforms import get_platform
+
+
+def _validate_platform_keys(value: list[str] | None) -> list[str] | None:
+    """Normalise platform keys, rejecting unknown ones.
+
+    Silently dropping an unknown key would widen the search to every platform,
+    which is the opposite of what the caller asked for.
+    """
+    if not value:
+        return None
+    keys: list[str] = []
+    for raw in value:
+        platform = get_platform(raw)
+        if platform is None:
+            raise ValueError(f"unknown platform {raw!r}")
+        if platform.key not in keys:
+            keys.append(platform.key)
+    return keys
 
 
 class JobFilterSchema(BaseModel):
@@ -26,6 +46,11 @@ class JobFilterSchema(BaseModel):
     india_only: bool = Field(
         True, description="Restrict results to postings located in India"
     )
+    platforms: list[str] | None = Field(
+        None,
+        description="Platforms the posting was listed on (any of): linkedin | naukri | "
+        "indeed | foundit | instahyre | cutshort | freshersworld | company_sites",
+    )
     employment_type: str | None = Field(None, description="Employment type")
     company_id: str | None = Field(None, description="Company UUID filter")
     company_name: str | None = Field(None, description="Company name filter")
@@ -35,6 +60,11 @@ class JobFilterSchema(BaseModel):
     status: str | None = Field("active", description="Job status filter")
     limit: int = Field(20, ge=1, le=100, description="Number of results")
     offset: int = Field(0, ge=0, description="Pagination offset")
+
+    @field_validator("platforms")
+    @classmethod
+    def check_platforms(cls, value: list[str] | None) -> list[str] | None:
+        return _validate_platform_keys(value)
 
 
 class JobResponseSchema(BaseModel):
@@ -46,6 +76,7 @@ class JobResponseSchema(BaseModel):
     company: str | None = None          # Convenience alias for semantic search results
     source: str | None = None           # Optional — not always available from vector search
     source_url: str | None = None
+    platform: str | None = Field(None, description="Platform key the posting was listed on")
     location_raw: str | None = None
     country: str | None = None
     city: str | None = None
@@ -88,6 +119,14 @@ class SearchRequestSchema(BaseModel):
     query: str = Field(..., min_length=1, max_length=1000, description="Natural language search query")
     limit: int = Field(20, ge=1, le=100, description="Number of results")
     offset: int = Field(0, ge=0, description="Pagination offset")
+    platforms: list[str] | None = Field(
+        None, description="Keep only postings listed on these platforms (see JobFilterSchema)"
+    )
+
+    @field_validator("platforms")
+    @classmethod
+    def check_platforms(cls, value: list[str] | None) -> list[str] | None:
+        return _validate_platform_keys(value)
 
 
 class SearchResponseSchema(BaseModel):

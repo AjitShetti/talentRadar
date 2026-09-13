@@ -6,7 +6,7 @@ export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000
 const TOKEN_KEY = 'talentradar_token'
 const EMAIL_KEY = 'talentradar_email'
 
-export type Job = { id: string; title: string; company?: string | null; company_name?: string | null; location_raw?: string | null; is_remote?: boolean; skills?: string[]; source_url?: string | null; salary_raw?: string | null; match_score?: number | null; description_clean?: string | null }
+export type Job = { id: string; title: string; company?: string | null; company_name?: string | null; location_raw?: string | null; is_remote?: boolean; skills?: string[]; source_url?: string | null; platform?: string | null; salary_raw?: string | null; match_score?: number | null; description_clean?: string | null }
 // One of the dashboard's daily top-3 picks for a Profile.target_roles entry —
 // computed by the APScheduler job in api/main.py (services/job_matching.py).
 export type JobMatch = { id: string; title: string; company: string; location: string; is_remote: boolean; skills: string[]; salary_raw?: string | null; source_url?: string | null; posted_at?: string | null; matched_role: string }
@@ -146,8 +146,8 @@ export const api = {
   },
   dashboard: () => request<Record<string, unknown>>('/api/v1/dashboard/overview', {}, true),
   search: {
-    semantic: (query: string) => request<{ results: Job[]; total_found: number; summary?: string; sourcing?: Sourcing }>('/api/v1/search/semantic', { method: 'POST', body: JSON.stringify({ query, limit: 30 }) }),
-    structured: (query: string, filters: { location?: string; remote?: boolean; experience?: string } = {}) => request<{ jobs: Job[]; total: number }>('/api/v1/search/structured', { method: 'POST', body: JSON.stringify({ query, location: filters.location || undefined, is_remote: filters.remote || undefined, experience: filters.experience || undefined, india_only: true, limit: 30 }) }),
+    semantic: (query: string, platforms: string[] = []) => request<{ results: Job[]; total_found: number; summary?: string; sourcing?: Sourcing }>('/api/v1/search/semantic', { method: 'POST', body: JSON.stringify({ query, platforms: platforms.length ? platforms : undefined, limit: 30 }) }),
+    structured: (query: string, filters: { location?: string; remote?: boolean; experience?: string; platforms?: string[] } = {}) => request<{ jobs: Job[]; total: number }>('/api/v1/search/structured', { method: 'POST', body: JSON.stringify({ query, location: filters.location || undefined, is_remote: filters.remote || undefined, experience: filters.experience || undefined, platforms: filters.platforms?.length ? filters.platforms : undefined, india_only: true, limit: 30 }) }),
   },
   applications: {
     list: () => request<{ applications: Application[]; total: number }>('/api/v1/applications/', {}, true),

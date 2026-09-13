@@ -27,7 +27,7 @@ from sqlalchemy import desc, func, select, update, and_, or_, cast
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlalchemy import String
+from sqlalchemy import ColumnElement, String
 
 from domain.geo import (
     INDIA_COUNTRY_VALUES,
@@ -35,6 +35,7 @@ from domain.geo import (
     MAJOR_INDIAN_CITIES,
     city_search_terms,
 )
+from domain.platforms import get_platform
 from storage.models import (
     Company,
     EmploymentType,
@@ -499,6 +500,28 @@ def _india_location_clause():
     )
 
 
+def _platform_clause(platform_keys: Sequence[str]) -> ColumnElement[bool] | None:
+    """
+    SQL predicate matching postings listed on any of the given platforms.
+
+    ``jobs.source`` is inconsistent across producers (see
+    :mod:`domain.platforms`), so a row matches on its stored source — bare or
+    ``<source>:<company>`` — or on the host in its URL. Unknown keys are
+    ignored; returns ``None`` when none of the keys is known.
+    """
+    clauses = []
+    for key in platform_keys:
+        platform = get_platform(key)
+        if platform is None:
+            continue
+        clauses.append(Job.source.in_(platform.sources))
+        clauses.extend(Job.source.like(f"{source}:%") for source in platform.sources)
+        for host in platform.hosts:
+            clauses.append(Job.source_url.ilike(f"%://{host}%"))
+            clauses.append(Job.source_url.ilike(f"%.{host}%"))
+    return or_(*clauses) if clauses else None
+
+
 # ===========================================================================
 # JobRepository
 # ===========================================================================
@@ -582,6 +605,8 @@ class JobRepository(BaseRepository[Job]):
         city: str | None = None,
         is_remote: bool | None = None,
         india_only: bool = False,
+        # Where the posting was listed (``domain.platforms`` keys)
+        platforms: Sequence[str] | None = None,
         # Salary range
         salary_min_gte: float | None = None,
         salary_max_lte: float | None = None,
@@ -639,6 +664,10 @@ class JobRepository(BaseRepository[Job]):
             base_filters.append(_india_location_clause())
         if is_remote is not None:
             base_filters.append(Job.is_remote == is_remote)
+        if platforms:
+            platform_clause = _platform_clause(platforms)
+            if platform_clause is not None:
+                base_filters.append(platform_clause)
         if salary_min_gte is not None:
             base_filters.append(Job.salary_min >= salary_min_gte)
         if salary_max_lte is not None:

@@ -291,6 +291,21 @@ a{text-decoration:none;color:inherit}
 .filter-bar input:focus,.filter-bar select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(255,176,32,.14)}
 .filter-bar .check-label{padding-bottom:11px}
 .filter-bar .text-button{margin-left:auto;padding-bottom:11px;font-size:11px}
+/* "Posted on" is a disclosure of checkboxes dressed as the neighbouring select. */
+.filter-bar>.filter-field{display:flex;flex-direction:column;gap:6px;font:600 10px 'Big Shoulders Text',sans-serif;letter-spacing:.9px;text-transform:uppercase;color:var(--faint)}
+.platform-picker{position:relative}
+.platform-picker>summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:170px;border:1px solid var(--line);border-radius:7px;padding:8px 10px;background:var(--surface);color:var(--ink);font:12px 'Public Sans';text-transform:none;letter-spacing:0;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+.platform-picker>summary::-webkit-details-marker{display:none}
+.platform-picker>summary svg{color:var(--faint);transition:transform .15s}
+.platform-picker[open]>summary{border-color:var(--accent);box-shadow:0 0 0 3px rgba(255,176,32,.14)}
+.platform-picker[open]>summary svg{transform:rotate(180deg)}
+.platform-picker>summary:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(255,176,32,.14)}
+.platform-menu{position:absolute;z-index:20;top:calc(100% + 6px);left:0;min-width:210px;display:flex;flex-direction:column;gap:2px;padding:6px;background:var(--surface-2);border:1px solid var(--line);border-radius:9px;box-shadow:0 12px 28px rgba(0,0,0,.35)}
+.platform-menu label{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;font:12px 'Public Sans';text-transform:none;letter-spacing:0;color:var(--ink);cursor:pointer}
+.platform-menu label:hover{background:var(--surface)}
+.platform-menu input{accent-color:var(--accent)}
+.filter-bar .platform-menu .text-button{margin:4px 0 0;padding:6px 8px 2px;align-self:flex-start;border-top:1px solid var(--line-soft);width:100%;text-align:left}
+@media(max-width:800px){.filter-bar>.filter-field{width:100%}.platform-picker>summary{min-width:0}.platform-menu{right:0}}
 
 .results-layout{display:grid;grid-template-columns:215px 1fr;gap:44px;margin-top:26px}
 .results-layout>.job-results{border-top:1px solid var(--line-soft);padding-top:6px}
@@ -322,7 +337,7 @@ a{text-decoration:none;color:inherit}
 .job-card h2{font:600 16px 'Big Shoulders Text';margin:0 0 4px}
 .job-card p{font-size:12px;color:var(--muted);margin:0}
 .match-pill{margin-left:auto;background:var(--accent-soft);color:var(--accent-dark);border-radius:20px;padding:5px 8px;font:10px 'Fragment Mono';font-variant-numeric:tabular-nums}
-.job-meta{display:flex;gap:13px;margin:15px 0;color:var(--faint);font-size:11px}
+.job-meta{display:flex;flex-wrap:wrap;gap:13px;margin:15px 0;color:var(--faint);font-size:11px}
 .job-meta span{display:flex;align-items:center;gap:4px}
 .chips{display:flex;flex-wrap:wrap;gap:5px}
 .chips span{font-size:10px;padding:4px 7px;border-radius:5px;background:var(--line-soft);color:var(--muted)}
