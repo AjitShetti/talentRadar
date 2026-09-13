@@ -21,12 +21,17 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from agents.interview.topics import (
+    TOPIC_MAX_LENGTH,
+    VALID_TRACKS,
+    InvalidTopicError,
+    normalize_topic,
+)
 
 # ---------------------------------------------------------------------------
 # Enums (mirrors storage.models enums as plain strings for validation)
 # ---------------------------------------------------------------------------
 
-VALID_TRACKS = {"python_dsa", "python_backend", "sql", "system_design"}
 VALID_DIFFICULTIES = {"beginner", "mid", "senior"}
 
 
@@ -38,8 +43,16 @@ class StartSessionRequest(BaseModel):
     """Request body to start a new mock interview session."""
 
     track: str = Field(
-        ...,
-        description="Interview track: python_dsa | python_backend | sql | system_design",
+        "technical",
+        description=(
+            "Round style: technical | coding | system_design | behavioral. "
+            "Legacy catalogue tracks python_dsa | python_backend | sql are still accepted."
+        ),
+    )
+    topic: str | None = Field(
+        None,
+        max_length=TOPIC_MAX_LENGTH * 2,  # pre-normalisation; the validator enforces the real cap
+        description="What to be interviewed on, in the candidate's words, e.g. 'React hooks'.",
     )
     difficulty: str = Field(
         ...,
@@ -60,6 +73,14 @@ class StartSessionRequest(BaseModel):
             raise ValueError(f"track must be one of {sorted(VALID_TRACKS)}")
         return v
 
+    @field_validator("topic")
+    @classmethod
+    def validate_topic(cls, v: str | None) -> str | None:
+        try:
+            return normalize_topic(v)
+        except InvalidTopicError as exc:
+            raise ValueError(str(exc)) from exc
+
     @field_validator("difficulty")
     @classmethod
     def validate_difficulty(cls, v: str) -> str:
@@ -75,6 +96,7 @@ class StartSessionResponse(BaseModel):
     question: str = Field(..., description="First question text (to be spoken via TTS)")
     question_index: int = Field(0, description="0-based question index")
     is_followup: bool = Field(False)
+    max_questions: int = Field(..., description="Original questions in a full session")
     # Full agent state — returned so the frontend can submit it back next turn
     agent_state: dict[str, Any] = Field(
         ..., description="Full InterviewAgentState for stateless round-trips"
@@ -113,11 +135,16 @@ class AnswerScoreSchema(BaseModel):
     clarity: float = Field(..., ge=0, le=10)
     depth: float = Field(..., ge=0, le=10)
     answer_summary: str | None = None
+    tip: str | None = Field(None, description="One line of coaching for the candidate")
+    scored: bool = Field(
+        True,
+        description="False when evaluation failed; the sub-scores are then meaningless and not saved",
+    )
     verbal_ack: str | None = Field(
         None,
         description=(
-            "Short spoken reaction the interviewer says before the next "
-            "question. Populated in voice_mode sessions only."
+            "What the interviewer says before the next question: a reaction "
+            "plus a transition. Populated in voice_mode sessions only."
         ),
     )
 
@@ -129,6 +156,7 @@ class SubmitAnswerResponse(BaseModel):
     question: str = Field(..., description="Next question text (or closing message if done)")
     question_index: int
     is_followup: bool
+    max_questions: int
     score: AnswerScoreSchema
     session_complete: bool = Field(False)
     agent_state: dict[str, Any] = Field(
@@ -179,6 +207,7 @@ class SessionSummarySchema(BaseModel):
 
     id: uuid.UUID
     track: str
+    topic: str | None = None
     difficulty: str
     total_score: float | None = None
     completed: bool
@@ -243,6 +272,7 @@ class SessionDetailResponse(BaseModel):
     """Full session with all per-question scores."""
     id: str
     track: str
+    topic: str | None = None
     difficulty: str
     total_score: float | None
     completed: bool
@@ -250,3 +280,17 @@ class SessionDetailResponse(BaseModel):
     created_at: datetime
     score_breakdown: dict[str, float]
     answer_scores: list[AnswerScoreDetailSchema]
+
+
+class TopicSuggestionsResponse(BaseModel):
+    """Topic chips for the setup screen."""
+
+    for_you: list[str] = Field(
+        default_factory=list,
+        description="From the candidate's profile: target roles, current role, skills",
+    )
+    popular: list[str] = Field(default_factory=list)
+    recent: list[str] = Field(
+        default_factory=list,
+        description="Topics from the candidate's own recent sessions, newest first",
+    )

@@ -56,24 +56,27 @@ class InterviewRepository:
         user_id: uuid.UUID,
         track: InterviewTrack,
         difficulty: InterviewDifficulty,
+        topic: str | None = None,
     ) -> InterviewSession:
         """
         Persist a new interview session record and return it.
 
         The session starts with ``completed=False`` and ``total_score=None``
         until :meth:`complete_session` is called at the end of the interview.
+        ``topic`` must already be normalised (``agents.interview.topics``).
         """
         session = InterviewSession(
             user_id=user_id,
             track=track,
+            topic=topic,
             difficulty=difficulty,
             completed=False,
         )
         db.add(session)
         await db.flush()  # populate server-generated id without committing
         logger.info(
-            "InterviewSession created: id=%s user=%s track=%s difficulty=%s",
-            session.id, user_id, track.value, difficulty.value,
+            "InterviewSession created: id=%s user=%s track=%s topic=%r difficulty=%s",
+            session.id, user_id, track.value, topic, difficulty.value,
         )
         return session
 

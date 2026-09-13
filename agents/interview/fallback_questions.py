@@ -116,6 +116,41 @@ _FALLBACK_QUESTIONS: dict[tuple[str, str], list[str]] = {
         "Design a notification system that delivers push, email, and SMS notifications with guaranteed delivery and deduplication.",
     ],
 }
+
+# Templates for a free-text topic, keyed by round style. There is no way to
+# pre-write questions for every subject a candidate can name, but these read
+# as a real interviewer's openers for any of them. Each says "{topic}" once.
+_TOPIC_TEMPLATES: dict[str, list[str]] = {
+    "technical": [
+        "Explain the core ideas behind {topic} to a teammate who has never used it.",
+        "What are the most common mistakes people make with {topic}, and how do you avoid them?",
+        "Tell me about a real problem you solved using {topic}. What trade-offs did you weigh?",
+        "How would you decide whether {topic} is the right choice for a new project?",
+        "What changed in {topic} recently that matters for day-to-day work?",
+        "How do you debug or troubleshoot something that goes wrong with {topic}?",
+    ],
+    "coding": [
+        "Walk me through how you would approach a performance problem in {topic}. What would you measure first?",
+        "Describe a tricky edge case you have hit in {topic} and how you handled it.",
+        "Pick a typical task in {topic} and talk me through your approach and its complexity.",
+        "How would you test a piece of {topic} work to be confident it is correct?",
+        "If a solution in {topic} worked but was too slow, how would you optimise it?",
+    ],
+    "system_design": [
+        "Design a system that relies heavily on {topic}. Start with the requirements you would clarify.",
+        "How would you scale a product built around {topic} from a thousand to a million users?",
+        "What are the main failure modes in a {topic} architecture, and how would you guard against them?",
+        "Walk me through the data flow of a service where {topic} is the core component.",
+        "What trade-offs would you make between consistency, cost and speed in a {topic} design?",
+    ],
+    "behavioral": [
+        "Tell me about a time you had to learn {topic} quickly to deliver something.",
+        "Describe a disagreement you had with a colleague about {topic}. How did you resolve it?",
+        "Tell me about a project involving {topic} that did not go to plan. What did you learn?",
+        "Give me an example of when you took ownership of a {topic} problem nobody else wanted.",
+        "How have you helped someone else get better at {topic}?",
+    ],
+}
 # fmt: on
 
 
@@ -127,6 +162,7 @@ def get_fallback_question(
     track: str,
     difficulty: str,
     used_questions: set[str],
+    topic: str | None = None,
 ) -> str | None:
     """
     Return a random fallback question not yet asked in this session.
@@ -135,11 +171,21 @@ def get_fallback_question(
         track:          Interview track key (e.g. "python_dsa").
         difficulty:     Difficulty key (e.g. "mid").
         used_questions: Set of question texts already posed this session.
+        topic:          The candidate's own subject, when they chose one.
 
     Returns:
         A question string, or None if all fallback questions are exhausted.
     """
-    pool = _FALLBACK_QUESTIONS.get((track, difficulty), [])
+    if topic:
+        templates = _TOPIC_TEMPLATES.get(track, _TOPIC_TEMPLATES["technical"])
+        pool = [template.format(topic=topic) for template in templates]
+    else:
+        pool = _FALLBACK_QUESTIONS.get((track, difficulty), [])
+        if not pool:
+            # A round style with no topic (e.g. "behavioral") has no static
+            # bank of its own; the generic templates keep the session alive.
+            templates = _TOPIC_TEMPLATES.get(track, _TOPIC_TEMPLATES["technical"])
+            pool = [template.format(topic="software engineering") for template in templates]
     available = [q for q in pool if q not in used_questions]
     if not available:
         return None
