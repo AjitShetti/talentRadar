@@ -21,12 +21,13 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import String, cast, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from services.base import parse_uuid
 from storage.database import AsyncSessionLocal
 from storage.models import Company, CompanyProfile, Job, JobStatus
 from storage.repository import UnitOfWork
-from services.base import parse_uuid
 
 if TYPE_CHECKING:
     from sqlalchemy import ColumnElement
@@ -440,7 +441,7 @@ async def company_intel(
         await session.close()
 
 
-async def _get_profile(session, company_id: Any) -> CompanyProfile | None:
+async def _get_profile(session: AsyncSession, company_id: Any) -> CompanyProfile | None:
     stmt = (
         select(CompanyProfile)
         .where(CompanyProfile.company_id == company_id)

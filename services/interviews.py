@@ -173,10 +173,7 @@ async def adaptive_difficulty(
         current_difficulty = "mid"
     idx = order.index(current_difficulty)
 
-    if not scores:
-        avg = 0.0
-    else:
-        avg = sum(scores) / len(scores)
+    avg = 0.0 if not scores else sum(scores) / len(scores)
 
     if avg >= min_improve and idx < len(order) - 1:
         nxt = order[idx + 1]
@@ -219,9 +216,9 @@ async def generate_prep_plan(
     if resume_text:
         try:
             resume_skills = list(
-                (await _extract_skill_set(resume_text))
+                await _extract_skill_set(resume_text)
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             resume_skills = []
 
     gap = sorted(set(s.lower() for s in job_skills) - set(s.lower() for s in resume_skills))
@@ -244,7 +241,7 @@ async def generate_prep_plan(
             f"Rounds: {rounds}\nFocus: {focus}"
         )
         summary = await _chat(system, prompt, max_tokens=600)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("Prep plan summary failed: %s", exc)
 
     return {
@@ -479,5 +476,5 @@ def json_safe(value: dict[str, Any] | None) -> str:
     import json
     try:
         return json.dumps(value or {}, default=str)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return "{}"

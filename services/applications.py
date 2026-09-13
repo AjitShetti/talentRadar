@@ -13,16 +13,16 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from services.base import parse_uuid
 from storage.database import AsyncSessionLocal
 from storage.models import ApplicationEvent, ApplicationStatus, Company, Job, JobApplication
-from services.base import parse_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +78,7 @@ async def update_application(
             try:
                 new_status = ApplicationStatus(status)
             except ValueError:
-                raise ValueError(f"Invalid status: {status}")
+                raise ValueError(f"Invalid status: {status}") from None
             if new_status != app.status:
                 event = ApplicationEvent(
                     application_id=app.id,
@@ -91,9 +91,9 @@ async def update_application(
                 # Track funnel timestamps
                 col = _TIMESTAMP_COLUMNS.get(new_status.value)
                 if col:
-                    setattr(app, col, datetime.now(tz=timezone.utc))
+                    setattr(app, col, datetime.now(tz=UTC))
                 if new_status in (ApplicationStatus.OFFER, ApplicationStatus.REJECTED):
-                    app.outcome_at = datetime.now(tz=timezone.utc)
+                    app.outcome_at = datetime.now(tz=UTC)
 
         if notes is not None:
             app.notes = notes

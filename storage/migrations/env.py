@@ -31,9 +31,9 @@ if str(PROJECT_ROOT) not in sys.path:
 # ---------------------------------------------------------------------------
 # Import application objects AFTER sys.path is patched.
 # ---------------------------------------------------------------------------
-from config.settings import get_settings  # noqa: E402
-from storage.database import Base          # noqa: E402
 import storage.models  # noqa: E402, F401  ← registers all ORM models
+from config.settings import get_settings  # noqa: E402
+from storage.database import Base  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Alembic config object (wraps alembic.ini values)

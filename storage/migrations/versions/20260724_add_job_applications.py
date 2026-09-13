@@ -5,8 +5,8 @@ Revises: 003_add_interview_tables
 Create Date: 2026-07-24
 
 """
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = 'add_job_applications'

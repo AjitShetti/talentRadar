@@ -4,7 +4,7 @@ import logging
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List
+from types import TracebackType
 from urllib.parse import urlparse
 
 import httpx
@@ -33,20 +33,20 @@ INDIAN_JOB_DOMAINS = [
 # site for URL vetting. Listed in __all__ because they look "unused" to a
 # linter here -- an auto-fix silently dropped two of them and broke every
 # importer.
-from ingestion.validation import (  # noqa: F401
+from ingestion.validation import (  # noqa: E402
     _matches_any_domain,
     _url_matches_domain,
     is_valid_job_url,
 )
-from ingestion.validation import _validate_url_format as _validate_url  # noqa: F401
+from ingestion.validation import _validate_url_format as _validate_url  # noqa: E402
 
 __all__ = [
     "TavilyJobScraper",
-    "detect_source_from_url",
-    "is_valid_job_url",
     "_matches_any_domain",
     "_url_matches_domain",
     "_validate_url",
+    "detect_source_from_url",
+    "is_valid_job_url",
 ]
 
 
@@ -75,7 +75,7 @@ def detect_source_from_url(url: str) -> str:
 
 
 class TavilyJobScraper:
-    def __init__(self, api_key: Optional[str] = None, raw_data_dir: Optional[str | Path] = None):
+    def __init__(self, api_key: str | None = None, raw_data_dir: str | Path | None = None) -> None:
         if not api_key:
             from config.settings import get_settings
             api_key = get_settings().tavily_api_key
@@ -85,19 +85,24 @@ class TavilyJobScraper:
         self._client = httpx.Client(timeout=15.0)
         self._raw_dir = Path(raw_data_dir) if raw_data_dir else Path("data") / "raw"
 
-    def __enter__(self):
+    def __enter__(self) -> "TavilyJobScraper":
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         self._client.close()
 
     def search(
         self,
         query: str,
         max_results: int = 10,
-        include_domains: Optional[List[str]] = None,
-        exclude_domains: Optional[List[str]] = None,
-    ) -> List[RawJobResult]:
+        include_domains: list[str] | None = None,
+        exclude_domains: list[str] | None = None,
+    ) -> list[RawJobResult]:
         payload = {
             "api_key": self._api_key,
             "query": query,
@@ -109,11 +114,11 @@ class TavilyJobScraper:
             payload["include_domains"] = include_domains
         if exclude_domains:
             payload["exclude_domains"] = exclude_domains
-        
+
         response = self._client.post("https://api.tavily.com/search", json=payload)
         response.raise_for_status()
         data = response.json()
-        
+
         results = []
         for item in data.get("results", []):
             url = item.get("url", "").strip()
@@ -128,7 +133,7 @@ class TavilyJobScraper:
                 continue
             if exclude_domains and _matches_any_domain(url, exclude_domains):
                 continue
-            
+
             try:
                 result = RawJobResult(
                     title=item.get("title", ""),
@@ -141,7 +146,7 @@ class TavilyJobScraper:
                 results.append(result)
             except Exception:
                 continue
-                
+
         return results
 
     def search_jobs(
@@ -149,9 +154,9 @@ class TavilyJobScraper:
         role: str,
         location: str,
         count: int = 10,
-        include_domains: Optional[List[str]] = None,
+        include_domains: list[str] | None = None,
         use_site_operators: bool = False,
-    ) -> List[RawJobResult]:
+    ) -> list[RawJobResult]:
         # NOTE: Tavily's API does not support `site:` operators correctly in
         # the query string — they cause irrelevant software-engineering articles
         # to be returned instead of job postings. Domain filtering is handled
@@ -165,28 +170,28 @@ class TavilyJobScraper:
             include_domains=include_domains,
         )
 
-    def save_raw(self, results: List[RawJobResult], run_id: str, role: str, location: str) -> List[Path]:
+    def save_raw(self, results: list[RawJobResult], run_id: str, role: str, location: str) -> list[Path]:
         role_slug = _slugify(role)
         loc_slug = _slugify(location)
         dest_dir = self._raw_dir / role_slug / loc_slug
         dest_dir.mkdir(parents=True, exist_ok=True)
-        
+
         paths = []
         for result in results:
             url_hash = hashlib.md5(result.url.encode()).hexdigest()
             file_path = dest_dir / f"{run_id}_{url_hash}.json"
-            
+
             # Using model_dump (pydantic v2) or dict()
             data = result.model_dump() if hasattr(result, "model_dump") else result.dict()
             data["run_id"] = run_id
             data["fetched_at"] = datetime.utcnow().isoformat()
-            
+
             with open(file_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
             paths.append(file_path)
-            
+
         return paths
 
     def load_raw(self, path: Path) -> dict:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             return json.load(f)

@@ -42,7 +42,7 @@ from domain.enums import (
     SeniorityLevel,
 )
 
-__all__ = [
+__all__ = [  # noqa: RUF022 - grouped by kind
     # Entities
     "AgentMemory",
     "AnalyticsSnapshot",

@@ -132,7 +132,7 @@ _STOP_WORDS: set[str] = {
     "too", "very", "just", "also", "now", "here", "there", "then", "once",
     "if", "as", "about", "into", "through", "during", "before", "after",
     "above", "below", "between", "under", "again", "further", "while",
-    "able", "also", "including", "related", "experience", "working",
+    "able", "including", "related", "experience", "working",
     "work", "years", "year", "least", "minimum", "plus", "team", "role",
     "position", "responsibilities", "requirements", "qualifications",
     "skills", "skill", "strong", "excellent", "good", "proficient",
@@ -234,14 +234,6 @@ def extract_experience(text: str) -> ExperienceFeatures:
         >>> features.years_max
         inf
     """
-    # Common experience patterns
-    experience_patterns = [
-        r"(?:\d+\.?\d*\+?\s*(?:[-–to]+\s*\d+\.?\d*)?\s*years?)",
-        r"(?:minimum|min\.?|at\s+least)\s+(\d+\.?\d*)\s*years?",
-        r"(\d+\.?\d*)\s*(?:or\s+more|plus|\+)\s*years?",
-        r"(\d+\.?\d*)\s*-\s*(\d+\.?\d*)\s*years?",
-    ]
-
     raw_mentions: list[str] = []
     year_ranges: list[tuple[float, float]] = []
 
@@ -353,7 +345,7 @@ def extract_education(text: str) -> EducationFeatures:
     detected_levels = list(set(detected_levels))
     highest_level = max(
         detected_levels,
-        key=lambda l: EDUCATION_HIERARCHY.get(l, 0),
+        key=lambda level: EDUCATION_HIERARCHY.get(level, 0),
     )
     level_score = EDUCATION_HIERARCHY.get(highest_level, 0)
 

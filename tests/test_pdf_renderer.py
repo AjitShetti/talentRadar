@@ -198,10 +198,12 @@ class TestFailureModes:
 
     def test_renderer_failures_arrive_as_LatexCompileError(self):
         """Callers only catch LatexCompileError; anything else is a 500."""
-        with patch("api.utils.pdf_renderer.render_latex_pdf", side_effect=PdfRenderError("boom")), \
-             patch("api.utils.latex_compiler.shutil.which", return_value=None):
-            with pytest.raises(LatexCompileError, match="boom"):
-                compile_latex_to_pdf(r"\begin{document}Hello\end{document}")
+        with (
+            patch("api.utils.pdf_renderer.render_latex_pdf", side_effect=PdfRenderError("boom")),
+            patch("api.utils.latex_compiler.shutil.which", return_value=None),
+            pytest.raises(LatexCompileError, match="boom"),
+        ):
+            compile_latex_to_pdf(r"\begin{document}Hello\end{document}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -232,7 +234,9 @@ class TestEngineSelection:
         assert pdf.startswith(b"%PDF")
 
     def test_latex_engine_refuses_to_silently_switch(self):
-        with self._settings("latex"), \
-             patch("api.utils.latex_compiler.shutil.which", return_value=None):
-            with pytest.raises(LatexCompileError, match="pdflatex is not installed"):
-                compile_latex_to_pdf(r"\begin{document}Hello\end{document}")
+        with (
+            self._settings("latex"),
+            patch("api.utils.latex_compiler.shutil.which", return_value=None),
+            pytest.raises(LatexCompileError, match="pdflatex is not installed"),
+        ):
+            compile_latex_to_pdf(r"\begin{document}Hello\end{document}")

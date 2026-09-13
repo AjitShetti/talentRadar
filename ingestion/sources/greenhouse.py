@@ -17,6 +17,7 @@ import logging
 import re
 from datetime import datetime
 from html import unescape
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -62,7 +63,7 @@ class GreenhouseSource(BaseJobSource):
 
     name = "greenhouse"
 
-    def __init__(self, *, raw_data_dir=None, tokens: list[str] | None = None) -> None:
+    def __init__(self, *, raw_data_dir: str | Path | None = None, tokens: list[str] | None = None) -> None:
         super().__init__(raw_data_dir=raw_data_dir)
         import os
         env_tokens = os.getenv("GREENHOUSE_TOKENS")
@@ -72,7 +73,7 @@ class GreenhouseSource(BaseJobSource):
         )
         self._client = httpx.Client(timeout=30.0)
 
-    def __enter__(self) -> "GreenhouseSource":
+    def __enter__(self) -> GreenhouseSource:
         return self
 
     def __exit__(self, *_: Any) -> None:

@@ -31,10 +31,9 @@ import asyncio
 import hashlib
 import json
 import logging
-import os
 import sys
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 # ── Make project root importable ─────────────────────────────────────────────
@@ -186,7 +185,7 @@ def test_layer2_tavily(tmp_path: Path) -> None:
 
     try:
         from ingestion.scrapers.tavily_client import TavilyJobScraper
-        with TavilyJobScraper(raw_data_dir=tmp_dir) as scraper:
+        with TavilyJobScraper(raw_data_dir=tmp_path) as scraper:
             results_list = scraper.search_jobs(
                 "Software Engineer", location="Remote", count=2
             )
@@ -302,7 +301,7 @@ def test_layer4_postgres() -> None:
                 run = await uow.ingestion_runs.create(
                     source="test_e2e",
                     status=IngestionStatus.RUNNING,
-                    started_at=datetime.now(tz=timezone.utc),
+                    started_at=datetime.now(tz=UTC),
                     run_config={"airflow_run_id": "test-run-e2e"},
                 )
                 await session.commit()
@@ -359,8 +358,9 @@ def test_layer4_postgres() -> None:
 
         # ── 4d: SQL verification query (direct psycopg) ──────────────────
         try:
-            from storage.database import AsyncSessionLocal
             from sqlalchemy import text
+
+            from storage.database import AsyncSessionLocal
 
             async with AsyncSessionLocal() as session:
                 rows = (await session.execute(
@@ -376,8 +376,9 @@ def test_layer4_postgres() -> None:
 
         # ── 4e: Job count ────────────────────────────────────────────────
         try:
-            from storage.database import AsyncSessionLocal
             from sqlalchemy import text
+
+            from storage.database import AsyncSessionLocal
 
             async with AsyncSessionLocal() as session:
                 total = (await session.execute(text("SELECT COUNT(*) FROM jobs"))).scalar()
@@ -481,7 +482,7 @@ def test_layer6_full_pipeline(tmp_path: Path) -> None:
     # Step 1 — Fetch
     try:
         from ingestion.scrapers.tavily_client import TavilyJobScraper
-        with TavilyJobScraper(raw_data_dir=tmp_dir) as scraper:
+        with TavilyJobScraper(raw_data_dir=tmp_path) as scraper:
             raw_results = scraper.search_jobs("Data Scientist", "Remote", count=2)
             scraper.save_raw(
                 raw_results,
@@ -522,7 +523,7 @@ def test_layer6_full_pipeline(tmp_path: Path) -> None:
             run = await uow.ingestion_runs.create(
                 source="tavily",
                 status=IngestionStatus.RUNNING,
-                started_at=datetime.now(tz=timezone.utc),
+                started_at=datetime.now(tz=UTC),
             )
             ext_id = hashlib.md5((pjd.source_url or pjd.title + pjd.company).encode()).hexdigest()
             job_kw = pjd.to_job_kwargs()
@@ -531,7 +532,7 @@ def test_layer6_full_pipeline(tmp_path: Path) -> None:
                 "ingestion_run_id": run.id,
                 "source": "tavily",
             })
-            job, created = await uow.jobs.upsert_by_external_id(
+            _job, created = await uow.jobs.upsert_by_external_id(
                 external_id=ext_id, source="tavily", defaults=job_kw
             )
             await uow.ingestion_runs.finish(

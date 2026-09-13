@@ -22,13 +22,11 @@ import pytest
 from agents.rag_agent import RAGAgent
 from agents.state import (
     AgentResponse,
-    CandidateProfile,
     IntentType,
     QueryContext,
     RetrievalResult,
 )
-from ingestion.embeddings.embedder import cosine_similarity, batch_cosine_similarity
-
+from ingestion.embeddings.embedder import batch_cosine_similarity, cosine_similarity
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Fixtures

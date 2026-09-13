@@ -196,7 +196,6 @@ class ExperienceScorer(BaseScorer):
         Returns:
             Estimated years of experience (0 if cannot infer)
         """
-        text = features.skills.all_tokens  # This won't work, let's use raw approach
         # We don't have raw text here, so return 0
         return 0.0
 
@@ -294,7 +293,7 @@ class _OnnxEncoder:
     """
 
     def encode(self, text: str, convert_to_numpy: bool = True) -> np.ndarray:
-        from ingestion.embeddings.embedder import embed_texts  # noqa: PLC0415
+        from ingestion.embeddings.embedder import embed_texts
 
         return np.asarray(embed_texts([text])[0], dtype=np.float32)
 
@@ -327,7 +326,7 @@ class SemanticScorer(BaseScorer):
         """
         if self._model is None:
             try:
-                from sentence_transformers import SentenceTransformer  # noqa: PLC0415
+                from sentence_transformers import SentenceTransformer
 
                 self._model = SentenceTransformer(self.model_name)
                 logger.info("Semantic model loaded", model=self.model_name)

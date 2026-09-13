@@ -32,6 +32,7 @@ as a background task and its failure must never surface to the user.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import logging
 import re
@@ -258,10 +259,8 @@ async def persist_live_jobs(jobs: list[Job], *, source_label: str = "live_search
 
     # 4. Mark URLs seen only after a successful write, so a failed run retries.
     for job in fresh:
-        try:
+        with contextlib.suppress(Exception):
             await CacheBackend.set(_seen_key(job.source_url or ""), "1", SEEN_URL_TTL_SECONDS)
-        except Exception:
-            pass
 
     # 5. Embed. The vector store is optional by design: without it the rows
     #    are still in Postgres and still reachable by relational search.

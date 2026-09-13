@@ -18,14 +18,13 @@ Covers (no external API calls — all Groq/Tavily calls are mocked):
 from __future__ import annotations
 
 import json
-import tempfile
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
-from ingestion.parsers.schemas import ParsedJobDescription, RawJobResult
 from ingestion.parsers.jd_parser import JDParser
+from ingestion.parsers.schemas import ParsedJobDescription, RawJobResult
 from ingestion.scrapers.tavily_client import (
     TavilyJobScraper,
     _matches_any_domain,
@@ -33,7 +32,6 @@ from ingestion.scrapers.tavily_client import (
     _url_matches_domain,
     _validate_url,
 )
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Fixtures
@@ -101,7 +99,7 @@ class TestRawJobResult:
         assert r.best_content == "Snippet text"
 
     def test_url_must_be_non_empty(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             RawJobResult(title="Engineer", url="", content="text")
 
     def test_url_is_stripped(self):

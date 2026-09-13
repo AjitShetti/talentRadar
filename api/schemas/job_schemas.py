@@ -7,7 +7,8 @@ Pydantic schemas for job-related API requests and responses.
 from __future__ import annotations
 
 from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict, field_validator
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from domain.platforms import get_platform
 

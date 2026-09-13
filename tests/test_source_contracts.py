@@ -74,7 +74,7 @@ def replay(monkeypatch: pytest.MonkeyPatch):
             url: str,
             headers: dict[str, str] | None = None,
             params: dict[str, Any] | None = None,
-            timeout: float = 6.0,
+            timeout: float = 6.0,  # noqa: ASYNC109 - mirrors ScraplingManager.fetch
             impersonate: str | None = None,
             **kwargs: Any,
         ) -> tuple[int, str | dict[str, Any]]:

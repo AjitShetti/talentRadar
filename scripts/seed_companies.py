@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from storage.database import AsyncSessionLocal
 from storage.models import Company, CompanyContact, CompanyProfile
@@ -68,7 +69,7 @@ def load_catalogue(city: str | None = None) -> list[dict[str, Any]]:
     return records
 
 
-async def _find_existing(session, record: dict[str, Any]) -> Company | None:
+async def _find_existing(session: AsyncSession, record: dict[str, Any]) -> Company | None:
     """
     Match the catalogue record to a row already in the table.
 
@@ -89,7 +90,7 @@ async def _find_existing(session, record: dict[str, Any]) -> Company | None:
     ).scalars().first()
 
 
-async def _sync_contacts(session, company: Company, record: dict[str, Any]) -> int:
+async def _sync_contacts(session: AsyncSession, company: Company, record: dict[str, Any]) -> int:
     """
     Reconcile the curated (``user_id IS NULL``) contacts for this company.
 

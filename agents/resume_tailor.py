@@ -38,7 +38,7 @@ You MUST output a valid JSON object with EXACTLY two keys:
 
 \begin{center}
     \textbf{\Huge \scshape CANDIDATE NAME} \\ \vspace{1pt}
-    \small Phone $|$ \href{mailto:email@example.com}{\underline{email@example.com}} $|$ 
+    \small Phone $|$ \href{mailto:email@example.com}{\underline{email@example.com}} $|$
     \href{https://linkedin.com/in/...}{\underline{linkedin.com/in/...}}
 \end{center}
 

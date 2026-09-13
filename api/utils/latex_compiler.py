@@ -134,8 +134,7 @@ def compile_latex_to_pdf(latex_content: str) -> bytes:
                     ],
                     cwd=temp_dir,
                     env=env,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
+                    capture_output=True,
                     timeout=COMPILE_TIMEOUT_SECONDS,
                     check=False,
                 )

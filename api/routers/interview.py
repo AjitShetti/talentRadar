@@ -38,11 +38,14 @@ from agents.interview.nodes import (
     node_generate_question,
 )
 from agents.interview.state import InterviewAgentState
+from api.auth import get_current_user
 from api.schemas.interview_schemas import (
+    AnswerScoreDetailSchema,
     AnswerScoreSchema,
     EndSessionRequest,
     EndSessionResponse,
     FinalScoreSchema,
+    SessionDetailResponse,
     SessionHistoryResponse,
     SessionSummarySchema,
     StartSessionRequest,
@@ -50,15 +53,13 @@ from api.schemas.interview_schemas import (
     SubmitAnswerRequest,
     SubmitAnswerResponse,
     TranscribeResponse,
-    AnswerScoreDetailSchema,
-    SessionDetailResponse,
 )
 from api.utils.uploads import read_capped, safe_filename
 from api.utils.voice_pipeline import STTError, VoicePipeline
 from config.settings import get_settings
 from storage.database import get_db_dep
 from storage.interview_repository import InterviewRepository
-from storage.models import InterviewDifficulty, InterviewTrack
+from storage.models import InterviewDifficulty, InterviewSession, InterviewTrack
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,6 @@ router = APIRouter(prefix="/interview", tags=["Interview"])
 # Auth dependency (reuses the existing JWT bearer pattern)
 # ---------------------------------------------------------------------------
 
-from api.auth import get_current_user
 
 async def get_current_user_id(
     user: Annotated[dict, Depends(get_current_user)],
@@ -111,7 +111,7 @@ async def _load_owned_session(
     db: AsyncSession,
     session_id: str,
     user_id: str,
-):
+) -> InterviewSession:
     """Resolve ``session_id`` and assert the caller owns it.
 
     Every endpoint that reads *or writes* a session must go through this.
@@ -120,7 +120,7 @@ async def _load_owned_session(
     try:
         sid = uuid.UUID(session_id)
     except (ValueError, AttributeError, TypeError):
-        raise HTTPException(status_code=400, detail="Invalid session_id")
+        raise HTTPException(status_code=400, detail="Invalid session_id") from None
 
     session = await InterviewRepository().get_session(db, sid)
     if session is None:
@@ -464,7 +464,7 @@ async def get_session_detail(
     try:
         sid = uuid.UUID(session_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid session_id")
+        raise HTTPException(status_code=400, detail="Invalid session_id") from None
 
     repo = InterviewRepository()
     session = await repo.get_session(db, sid)

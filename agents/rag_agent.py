@@ -15,18 +15,18 @@ from typing import Any
 
 from groq import AsyncGroq
 
+from agents.prompts.rag_prompt import SYSTEM_RESULT_SUMMARY
 from agents.state import (
     AgentResponse,
     IntentType,
     QueryContext,
     RetrievalResult,
 )
-from agents.prompts.rag_prompt import SYSTEM_RESULT_SUMMARY
 from config.settings import get_settings
 from domain.geo import is_india, mentions_foreign_country
 from ingestion.embeddings.vector_store import get_vector_store
-from storage.repository import UnitOfWork
 from storage.database import AsyncSessionLocal
+from storage.repository import UnitOfWork
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ class RAGAgent:
     5. Generate summary via Groq LLM
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         settings = get_settings()
         self._settings = settings
         self._groq = AsyncGroq(api_key=settings.groq_api_key)

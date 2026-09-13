@@ -12,16 +12,15 @@ from __future__ import annotations
 import hashlib
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
-
-from storage.database import AsyncSessionLocal
-from storage.models import IngestionStatus
-from storage.repository import UnitOfWork
 
 from ingestion.embeddings.vector_store import get_vector_store
 from ingestion.parsers.jd_parser import JDParser
 from ingestion.parsers.schemas import ParsedJobDescription, RawJobResult
+from storage.database import AsyncSessionLocal
+from storage.models import IngestionStatus
+from storage.repository import UnitOfWork
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +61,7 @@ async def persist_parsed(
         ingestion_run = await uow.ingestion_runs.create(
             source=source,
             status=IngestionStatus.RUNNING,
-            started_at=datetime.now(tz=timezone.utc),
+            started_at=datetime.now(tz=UTC),
             run_config={"pipeline_run_id": run_id},
         )
         await session.commit()

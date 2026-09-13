@@ -18,7 +18,7 @@ Available sources:
 from __future__ import annotations
 
 import os
-from typing import Callable
+from collections.abc import Callable
 
 from ingestion.sources.ashby import AshbySource
 from ingestion.sources.base import BaseJobSource, JobSource
@@ -53,13 +53,13 @@ def default_sources() -> list[str]:
 
 
 __all__ = [
+    "SOURCE_REGISTRY",
     "AshbySource",
     "BaseJobSource",
     "CutshortSource",
     "GreenhouseSource",
     "JobSource",
     "LeverSource",
-    "SOURCE_REGISTRY",
     "TavilySource",
     "build_source",
     "default_sources",

@@ -15,7 +15,6 @@ from functools import lru_cache
 
 from chromadb.utils import embedding_functions
 
-
 logger = logging.getLogger(__name__)
 
 # Default embedding function used by ChromaDB
@@ -80,7 +79,7 @@ def cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
     if len(vec_a) != len(vec_b):
         raise ValueError("Vectors must have the same dimension")
 
-    dot = sum(a * b for a, b in zip(vec_a, vec_b))
+    dot = sum(a * b for a, b in zip(vec_a, vec_b, strict=False))
     norm_a = math.sqrt(sum(a * a for a in vec_a))
     norm_b = math.sqrt(sum(b * b for b in vec_b))
 

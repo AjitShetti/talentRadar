@@ -103,7 +103,7 @@ Return ONLY JSON, no preamble."""
     try:
         raw = await _chat(system, prompt, temperature=0.2, max_tokens=700, json_mode=True)
         return json.loads(raw)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("ATS analysis failed: %s", exc)
         return {
             "ats_score": 0.0,
@@ -138,7 +138,7 @@ facts. Keep it under 350 words. Output plain text, no markdown headers."""
 """
     try:
         return await _chat(system, prompt, temperature=0.5, max_tokens=700)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("Cover letter generation failed: %s", exc)
         raise ValueError(f"Cover letter generation failed: {exc}") from exc
 
@@ -166,7 +166,7 @@ Return ONLY a JSON array."""
         if isinstance(data, dict):  # tolerate {"recommendations": [...]}
             data = data.get("recommendations", [])
         return data if isinstance(data, list) else []
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("Career advice generation failed: %s", exc)
         return []
 
@@ -328,7 +328,7 @@ def _pick_list(item: dict[str, Any], aliases: list[str]) -> list[str]:
     return []
 
 
-def _normalize_item(item: Any, section_type: str) -> dict[str, Any]:  # noqa: ANN401
+def _normalize_item(item: Any, section_type: str) -> dict[str, Any]:
     """Coerce one LLM-produced item to the editor's exact per-type key names.
 
     Models given a JSON-object contract still drift toward synonyms
@@ -398,7 +398,7 @@ def _normalize_skills_items(items_raw: list[Any]) -> list[dict[str, Any]]:
     return grouped
 
 
-def _unwrap_document(data: Any) -> dict[str, Any]:  # noqa: ANN401
+def _unwrap_document(data: Any) -> dict[str, Any]:
     if isinstance(data, list):
         data = data[0] if data and isinstance(data[0], dict) else {}
     if not isinstance(data, dict):
@@ -411,7 +411,7 @@ def _unwrap_document(data: Any) -> dict[str, Any]:  # noqa: ANN401
     return data
 
 
-def _normalize_resume_document(raw_data: Any) -> dict[str, Any]:  # noqa: ANN401
+def _normalize_resume_document(raw_data: Any) -> dict[str, Any]:
     data = _unwrap_document(raw_data)
     personal_raw = data.get("personal") if isinstance(data.get("personal"), dict) else {}
     personal = {

@@ -11,9 +11,10 @@ Provides:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from typing import Any
 import hashlib
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import bcrypt
 import jwt
@@ -69,7 +70,7 @@ def create_access_token(
         Encoded JWT token.
     """
     to_encode = data.copy()
-    expire = datetime.now(tz=timezone.utc) + (
+    expire = datetime.now(tz=UTC) + (
         expires_delta or timedelta(minutes=settings.jwt_expiry_minutes)
     )
     to_encode.update({"exp": expire})
@@ -112,13 +113,13 @@ def decode_access_token(token: str) -> dict[str, Any]:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has expired",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from None
     except (jwt.PyJWTError, jwt.InvalidTokenError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from None
 
 
 async def get_current_user(
@@ -133,7 +134,7 @@ async def get_current_user(
     return decode_access_token(credentials.credentials)
 
 
-def require_role(required_role: str):
+def require_role(required_role: str) -> Callable[..., Awaitable[dict[str, Any]]]:
     """
     Dependency factory requiring a specific user role.
 

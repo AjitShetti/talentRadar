@@ -11,7 +11,7 @@ Adds:
     - interview_answer_scores     One row per question answered in a session
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
@@ -20,9 +20,9 @@ from alembic import op
 # Revision identifiers — used by Alembic.
 # ---------------------------------------------------------------------------
 revision: str = "003_add_interview_tables"
-down_revision: Union[str, None] = "002_add_user_table"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "002_add_user_table"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 # ---------------------------------------------------------------------------

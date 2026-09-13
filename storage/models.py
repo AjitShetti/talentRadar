@@ -17,6 +17,7 @@ from enum import Enum as PyEnum
 from typing import Any
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     Date,
@@ -26,7 +27,6 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
-    JSON,
     String,
     Text,
     TypeDecorator,
@@ -35,28 +35,26 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.types import UserDefinedType
 from sqlalchemy.sql import func
+from sqlalchemy.sql.functions import Function
+from sqlalchemy.types import UserDefinedType
 
 from config.settings import get_settings
 from storage.database import Base
 
 
-from sqlalchemy.sql.functions import Function
-
-
 @compiles(JSONB, "sqlite")
-def _compile_jsonb_sqlite(type_, compiler, **kw):
+def _compile_jsonb_sqlite(type_: Any, compiler: Any, **kw: Any) -> str:
     return "JSON"
 
 
 @compiles(ARRAY, "sqlite")
-def _compile_array_sqlite(type_, compiler, **kw):
+def _compile_array_sqlite(type_: Any, compiler: Any, **kw: Any) -> str:
     return "JSON"
 
 
 @compiles(Function, "sqlite")
-def _compile_function_sqlite(element, compiler, **kw):
+def _compile_function_sqlite(element: Any, compiler: Any, **kw: Any) -> str:
     if element.name.lower() == "array_to_string":
         args = list(element.clauses)
         if args:
@@ -74,7 +72,7 @@ class StringArray(TypeDecorator):
     impl = ARRAY(String)
     cache_ok = True
 
-    def load_dialect_impl(self, dialect):
+    def load_dialect_impl(self, dialect: Any) -> Any:
         if dialect.name == "sqlite":
             return dialect.type_descriptor(JSON())
         return dialect.type_descriptor(ARRAY(String))
@@ -102,7 +100,7 @@ class Vector(UserDefinedType):
 
 
 @compiles(Vector, "sqlite")
-def _compile_vector_sqlite(type_, compiler, **kw):
+def _compile_vector_sqlite(type_: Any, compiler: Any, **kw: Any) -> str:
     # The test suite creates the schema on SQLite, which has no vector type.
     # Semantic search is never exercised there — only the table's existence.
     return "TEXT"
@@ -533,7 +531,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(50), default="user", server_default="user", nullable=False)
-    
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

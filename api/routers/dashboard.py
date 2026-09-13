@@ -34,8 +34,8 @@ from services.applications import day_agenda, recent_activity, tracker_analytics
 from services.career import target_role_readiness
 from services.interviews import interview_insights
 from services.job_matching import compute_daily_matches_for_user, get_daily_matches_for_user
-from services.sweep import get_last_sweep
 from services.profiles import get_profile
+from services.sweep import get_last_sweep
 
 logger = logging.getLogger(__name__)
 

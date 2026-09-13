@@ -34,7 +34,7 @@ class SearchCacheService:
     _redis_initialized: bool = False
 
     @classmethod
-    async def _get_redis(cls):
+    async def _get_redis(cls) -> Any:
         """Lazy-initialize async Redis client."""
         if not cls._redis_initialized:
             try:

@@ -19,10 +19,10 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from storage.database import AsyncSessionLocal
-from storage.models import JobStatus, Job
-from storage.repository import UnitOfWork
 from services.base import parse_uuid
+from storage.database import AsyncSessionLocal
+from storage.models import Job, JobStatus
+from storage.repository import UnitOfWork
 
 logger = logging.getLogger(__name__)
 
@@ -186,6 +186,7 @@ async def calculate_match(
     from dataclasses import replace
 
     from fastapi.concurrency import run_in_threadpool
+
     from ml.config import ScoringWeights
     from ml.resume_matcher import ResumeMatcher
 

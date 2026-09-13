@@ -156,7 +156,7 @@ def validate_job_url(url: str) -> tuple[bool, str]:
         # Indeed individual posting has /viewjob?jk=... or /rc/clk?jk=... or /viewjob/<id>
         params = parse_qs(query)
         if "/viewjob" in path or "/rc/clk" in path or "jk" in params:
-            if "jk" in params and params["jk"]:
+            if params.get("jk"):
                 return True, "Valid Indeed posting URL (with jk parameter)"
             if re.search(r"/viewjob/[^/?#]+", path):
                 return True, "Valid Indeed posting URL (with viewjob path id)"
@@ -172,8 +172,7 @@ def validate_job_url(url: str) -> tuple[bool, str]:
             return False, "Greenhouse URL missing job ID (/jobs/<id> required)"
         # Reject if path is only /<company> or /<company>/
         segments = [s for s in path.strip("/").split("/") if s]
-        if len(segments) < 2 or (len(segments) == 2 and segments[1] != "jobs"):
-            if "jobs" not in segments:
+        if (len(segments) < 2 or (len(segments) == 2 and segments[1] != "jobs")) and "jobs" not in segments:
                 return False, "Greenhouse URL points to company board index, not an individual job"
         return True, "Valid Greenhouse posting URL"
 

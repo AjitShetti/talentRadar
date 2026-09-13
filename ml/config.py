@@ -12,7 +12,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Final
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Default scoring weights (must sum to 1.0)
 # ─────────────────────────────────────────────────────────────────────────────

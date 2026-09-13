@@ -7,17 +7,17 @@ source domain detection, task defaults, and INR currency normalisation.
 
 import json
 from unittest.mock import MagicMock, patch
+
 import pytest
 
+from ingestion.parsers.jd_parser import JDParser
+from ingestion.parsers.schemas import ParsedJobDescription, RawJobResult
+from ingestion.scrapers.indian_boards_scraper import INDIAN_CITY_SYNONYMS
 from ingestion.scrapers.tavily_client import (
+    INDIAN_JOB_DOMAINS,
     TavilyJobScraper,
     detect_source_from_url,
-    INDIAN_JOB_DOMAINS,
 )
-from ingestion.parsers.schemas import RawJobResult, ParsedJobDescription
-from ingestion.parsers.jd_parser import JDParser
-from ingestion.scrapers.indian_boards_scraper import INDIAN_CITY_SYNONYMS
-
 
 MOCK_TAVILY_INDIAN_RESPONSE = {
     "results": [

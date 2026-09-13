@@ -9,13 +9,13 @@ Protected with strict URL validation to ensure non-job content is never seeded.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
 import glob
 import hashlib
 import json
 import logging
 import os
 import re
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
@@ -239,7 +239,7 @@ async def seed_database(force: bool = False, fixture_dir: str | None = None) -> 
     search_dirs = [fixture_dir] if fixture_dir else ["tests/fixtures", "data/fixtures"]
     raw_files: list[str] = []
     for d in search_dirs:
-        if os.path.exists(d):
+        if os.path.exists(d):  # noqa: ASYNC240 - one-off seeding script, not a request path
             raw_files.extend(glob.glob(f"{d}/**/*.json", recursive=True))
 
     if not raw_files:
@@ -251,7 +251,7 @@ async def seed_database(force: bool = False, fixture_dir: str | None = None) -> 
     raw_results: list[RawJobResult] = []
     for filepath in raw_files:
         try:
-            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+            with open(filepath, encoding="utf-8", errors="ignore") as f:  # noqa: ASYNC230 - seeding script
                 data = json.load(f)
                 url = data.get("url", "").strip()
                 if not url:
@@ -276,7 +276,7 @@ async def seed_database(force: bool = False, fixture_dir: str | None = None) -> 
         ingestion_run = await uow.ingestion_runs.create(
             source="db_seeder",
             status=IngestionStatus.RUNNING,
-            started_at=datetime.now(tz=timezone.utc),
+            started_at=datetime.now(tz=UTC),
             run_config={"files_count": len(raw_files), "unique_jobs": len(raw_results)},
         )
         await session.commit()

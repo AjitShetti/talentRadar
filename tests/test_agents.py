@@ -16,9 +16,6 @@ import pytest
 from agents.state import QueryContext, RetrievalResult
 
 
-
-
-
 class TestQueryContext:
     """Test QueryContext state object."""
 

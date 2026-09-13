@@ -15,10 +15,9 @@ import logging
 
 from fastapi import APIRouter, HTTPException, status
 
-
 from agents.learning_path import LearningPathGenerator
-from api.schemas.query_schemas import MatchRequestSchema, MatchResponseSchema
 from api.schemas.ai_core_schemas import GenerateLearningPathRequest, GenerateLearningPathResponse
+from api.schemas.query_schemas import MatchRequestSchema, MatchResponseSchema
 
 logger = logging.getLogger(__name__)
 

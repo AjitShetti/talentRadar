@@ -1,5 +1,5 @@
-import os
 import json
+import os
 import urllib.request
 
 base_dir = r"d:\projects\talentRadar\stitch"
@@ -7,7 +7,7 @@ os.makedirs(base_dir, exist_ok=True)
 
 # Load project metadata
 output_path = r"C:\Users\ajitp\.gemini\antigravity\brain\cd7ac7f5-4b57-4578-b2f0-812a12090254\.system_generated\steps\19\output.txt"
-with open(output_path, "r", encoding="utf-8") as f:
+with open(output_path, encoding="utf-8") as f:
     data = json.load(f)
 
 project = data["projects"][0]

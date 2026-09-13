@@ -92,54 +92,53 @@ async def enrich_job(job_id: str) -> bool:
         from storage.database import AsyncSessionLocal
         from storage.repository import UnitOfWork
 
-        async with AsyncSessionLocal() as session:
-            async with UnitOfWork(session) as uow:
-                job = await uow.jobs.get(uuid_mod.UUID(str(job_id)))
-                if job is None or job.enrichment_status == "enriched":
-                    return False
+        async with AsyncSessionLocal() as session, UnitOfWork(session) as uow:
+            job = await uow.jobs.get(uuid_mod.UUID(str(job_id)))
+            if job is None or job.enrichment_status == "enriched":
+                return False
 
-                # There is often little to parse - a scraped row may be title,
-                # company and location only. Feeding the parser what we have
-                # still recovers skills and seniority from the title.
-                company = job.company.name if getattr(job, "company", None) else ""
-                source_text = job.description_clean or f"{job.title} at {company} in {job.location_raw or 'India'}"
+            # There is often little to parse - a scraped row may be title,
+            # company and location only. Feeding the parser what we have
+            # still recovers skills and seniority from the title.
+            company = job.company.name if getattr(job, "company", None) else ""
+            source_text = job.description_clean or f"{job.title} at {company} in {job.location_raw or 'India'}"
 
-                # JDParser.parse_jd is synchronous and calls Groq over the
-                # network. Run on the event loop it would stall every other
-                # request on this single-worker instance for the duration.
-                parsed = await asyncio.to_thread(
-                    lambda: JDParser().parse_jd(source_text, source_url=job.source_url or "")
-                )
+            # JDParser.parse_jd is synchronous and calls Groq over the
+            # network. Run on the event loop it would stall every other
+            # request on this single-worker instance for the duration.
+            parsed = await asyncio.to_thread(
+                lambda: JDParser().parse_jd(source_text, source_url=job.source_url or "")
+            )
 
-                if parsed is None:
-                    await uow.jobs.update(job.id, enrichment_status="failed")
-                    await session.commit()
-                    return False
-
-                updates: dict[str, Any] = {"enrichment_status": "enriched"}
-                # Only fill gaps. The scraped values came from the board
-                # itself and are more trustworthy than an inference drawn from
-                # a thin description.
-                if parsed.skills and not job.skills:
-                    updates["skills"] = parsed.skills
-                if parsed.salary and not job.salary_raw:
-                    updates["salary_raw"] = parsed.salary
-                if parsed.salary_min is not None and job.salary_min is None:
-                    updates["salary_min"] = parsed.salary_min
-                if parsed.salary_max is not None and job.salary_max is None:
-                    updates["salary_max"] = parsed.salary_max
-                if parsed.seniority and not job.seniority:
-                    try:
-                        updates["seniority"] = SeniorityLevel(parsed.seniority)
-                    except ValueError:
-                        # The model returned a band that is not in the enum.
-                        # Dropping it is right: a bad seniority silently
-                        # excludes the job from every filtered search.
-                        logger.debug("Ignoring unknown seniority %r", parsed.seniority)
-
-                await uow.jobs.update(job.id, **updates)
+            if parsed is None:
+                await uow.jobs.update(job.id, enrichment_status="failed")
                 await session.commit()
-                return True
+                return False
+
+            updates: dict[str, Any] = {"enrichment_status": "enriched"}
+            # Only fill gaps. The scraped values came from the board
+            # itself and are more trustworthy than an inference drawn from
+            # a thin description.
+            if parsed.skills and not job.skills:
+                updates["skills"] = parsed.skills
+            if parsed.salary and not job.salary_raw:
+                updates["salary_raw"] = parsed.salary
+            if parsed.salary_min is not None and job.salary_min is None:
+                updates["salary_min"] = parsed.salary_min
+            if parsed.salary_max is not None and job.salary_max is None:
+                updates["salary_max"] = parsed.salary_max
+            if parsed.seniority and not job.seniority:
+                try:
+                    updates["seniority"] = SeniorityLevel(parsed.seniority)
+                except ValueError:
+                    # The model returned a band that is not in the enum.
+                    # Dropping it is right: a bad seniority silently
+                    # excludes the job from every filtered search.
+                    logger.debug("Ignoring unknown seniority %r", parsed.seniority)
+
+            await uow.jobs.update(job.id, **updates)
+            await session.commit()
+            return True
 
     except Exception as exc:
         logger.warning("Could not enrich job %s: %s", job_id, exc)

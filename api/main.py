@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 from urllib.parse import urlsplit
 
 try:
@@ -21,12 +21,12 @@ except ImportError:
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from starlette.middleware.base import BaseHTTPMiddleware
-
-from config.settings import get_settings
-from storage.database import close_engine
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.responses import Response
 
 from api.rate_limit import RateLimitMiddleware
+from config.settings import get_settings
+from storage.database import close_engine
 
 # Configure logging
 logging.basicConfig(
@@ -61,7 +61,7 @@ def _error_response(request: Request, exc: BaseException) -> JSONResponse:
 class ErrorEnvelopeMiddleware(BaseHTTPMiddleware):
     """Catch anything escaping the routers so CORS headers still get applied."""
 
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         try:
             return await call_next(request)
         except Exception as exc:
@@ -241,9 +241,22 @@ async def health_check():
 
 
 # Register routers
-from api.routers import search, query, recommend, ingest, match, auth, applications  # noqa: E402
-from api.routers import interview  # noqa: E402
-from api.routers import profile, resumes, company_intel, career, agent, dashboard  # noqa: E402
+from api.routers import (  # noqa: E402
+    agent,
+    applications,
+    auth,
+    career,
+    company_intel,
+    dashboard,
+    ingest,
+    interview,
+    match,
+    profile,
+    query,
+    recommend,
+    resumes,
+    search,
+)
 
 app.include_router(auth.router)
 app.include_router(search.router, prefix="/api/v1")

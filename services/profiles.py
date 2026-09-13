@@ -11,14 +11,14 @@ Deterministic tools for onboarding / profile management.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
 
+from services.base import as_list, parse_uuid
 from storage.database import AsyncSessionLocal
 from storage.models import Profile, Skill, UserSkill
-from services.base import as_list, parse_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +151,7 @@ async def upsert_profile(*, user_id: str, data: dict[str, Any]) -> dict[str, Any
         profile.onboarding_completed = bool(
             profile.full_name and profile.target_roles and profile.years_experience is not None
         )
-        profile.updated_at = datetime.now(tz=timezone.utc)
+        profile.updated_at = datetime.now(tz=UTC)
 
         # Upsert skills
         skills = as_list(data.get("skills"))

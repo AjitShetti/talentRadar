@@ -13,16 +13,14 @@ Provides:
 from __future__ import annotations
 
 import os
-from typing import AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-from config.settings import Settings, get_settings
+from config.settings import get_settings
 from storage.database import AsyncSessionLocal, Base, engine
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Settings override for tests
@@ -175,7 +173,7 @@ def mock_groq_client():
 def mock_tavily_client():
     """Mock Tavily API client."""
     from ingestion.parsers.schemas import RawJobResult
-    
+
     mock = MagicMock()
     mock.search_jobs = MagicMock(
         return_value=[

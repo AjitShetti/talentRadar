@@ -15,7 +15,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timezone
+from collections.abc import Awaitable
+from datetime import UTC, datetime
 
 from domain.entities import Job
 from domain.enums import EmploymentType, JobStatus, SeniorityLevel
@@ -141,7 +142,7 @@ class ATSScraper:
         for item in jobs_data:
             title = item.get("title", "")
             loc_name = item.get("location", {}).get("name", "")
-            
+
             if not matches_query(title, query):
                 continue
 
@@ -167,8 +168,8 @@ class ATSScraper:
                 is_remote=job_remote,
                 skills=[s for s in query.split() if len(s) > 2] if query else [],
                 tags=["ats", "greenhouse", company_slug],
-                posted_at=datetime.now(timezone.utc),
-                created_at=datetime.now(timezone.utc),
+                posted_at=datetime.now(UTC),
+                created_at=datetime.now(UTC),
                 extra_metadata={"company_name": company_slug.capitalize(), "ats": "greenhouse"}
             )
             matched_jobs.append(job)
@@ -217,8 +218,8 @@ class ATSScraper:
                 is_remote=job_remote or bool(item.get("isRemote")),
                 skills=[s for s in query.split() if len(s) > 2] if query else [],
                 tags=["ats", "ashby", company_slug],
-                posted_at=datetime.now(timezone.utc),
-                created_at=datetime.now(timezone.utc),
+                posted_at=datetime.now(UTC),
+                created_at=datetime.now(UTC),
                 extra_metadata={"company_name": company_slug.capitalize(), "ats": "ashby"}
             )
             matched_jobs.append(job)
@@ -267,8 +268,8 @@ class ATSScraper:
                 is_remote=job_remote or is_lever_remote,
                 skills=[s for s in query.split() if len(s) > 2] if query else [],
                 tags=["ats", "lever", company_slug],
-                posted_at=datetime.now(timezone.utc),
-                created_at=datetime.now(timezone.utc),
+                posted_at=datetime.now(UTC),
+                created_at=datetime.now(UTC),
                 extra_metadata={"company_name": company_slug.capitalize(), "ats": "lever"}
             )
             matched_jobs.append(job)
@@ -280,7 +281,7 @@ class ATSScraper:
         """
         Queries all configured Greenhouse, Ashby, and Lever companies concurrently with individual timeouts.
         """
-        async def _safe_fetch(coro):
+        async def _safe_fetch(coro: Awaitable[list[Job]]) -> list[Job]:
             try:
                 return await asyncio.wait_for(coro, timeout=2.0)
             except Exception:

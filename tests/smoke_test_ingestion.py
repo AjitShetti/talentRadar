@@ -1,9 +1,10 @@
 """Quick smoke test for schemas and parser logic (no LLM call needed)."""
 import sys
+
 sys.path.insert(0, "/app")
 
-from ingestion.parsers.schemas import ParsedJobDescription, RawJobResult
 from ingestion.parsers.jd_parser import JDParser
+from ingestion.parsers.schemas import ParsedJobDescription, RawJobResult
 
 # ── Test 1: RawJobResult basic construction ──────────────────────────────────
 r = RawJobResult(

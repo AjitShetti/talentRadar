@@ -15,7 +15,7 @@ import logging
 import re
 import urllib.parse
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from domain.entities import Job
@@ -53,10 +53,10 @@ def _epoch_ms_to_datetime(value: object) -> datetime:
     """
     if isinstance(value, (int, float)) and value > 0:
         try:
-            return datetime.fromtimestamp(value / 1000, tz=timezone.utc)
+            return datetime.fromtimestamp(value / 1000, tz=UTC)
         except (OverflowError, OSError, ValueError):
             pass
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _seniority_from_years(years: object) -> SeniorityLevel:
@@ -107,16 +107,16 @@ def normalize_location(loc_str: str | None) -> tuple[str, str, bool]:
     """
     if not loc_str:
         return "India", "India", False
-    
+
     loc_lower = loc_str.lower()
     is_remote = any(r in loc_lower for r in ["remote", "anywhere", "wfh", "work from home"])
-    
+
     city = ""
     for k, v in INDIAN_CITY_SYNONYMS.items():
         if k in loc_lower and k != "india":
             city = v
             break
-            
+
     country = "India" if ("india" in loc_lower or city) else "Global"
     return country, city or ("India" if country == "India" else "Remote"), is_remote
 
@@ -167,7 +167,6 @@ class IndianBoardsScraper:
             company_tag = card.find("h4", class_=re.compile(r"base-search-card__subtitle", re.I)) or card.find("h4")
             loc_tag = card.find("span", class_=re.compile(r"job-search-card__location", re.I))
             link_tag = card.find("a", class_=re.compile(r"base-card__full-link", re.I)) or card.find("a", href=True)
-            time_tag = card.find("time")
 
             if not title_tag:
                 continue
@@ -202,8 +201,8 @@ class IndianBoardsScraper:
                 is_remote=remote_flag or bool(is_remote),
                 skills=[s for s in query.split() if len(s) > 2] if query else [],
                 tags=["linkedin", "india"],
-                posted_at=datetime.now(timezone.utc),
-                created_at=datetime.now(timezone.utc),
+                posted_at=datetime.now(UTC),
+                created_at=datetime.now(UTC),
                 extra_metadata={"company_name": company_name, "source": "linkedin"},
             )
             jobs.append(job)
@@ -305,7 +304,7 @@ class IndianBoardsScraper:
                 skills=skills or ([s for s in query.split() if len(s) > 2] if query else []),
                 tags=["foundit", "india"],
                 posted_at=_epoch_ms_to_datetime(entry.get("createdAt")),
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
                 extra_metadata={"company_name": company_name, "source": "foundit"},
             )
             jobs.append(job)
@@ -412,8 +411,8 @@ class IndianBoardsScraper:
                 is_remote=remote_flag or bool(is_remote),
                 skills=[s for s in query.split() if len(s) > 2] if query else [],
                 tags=["freshersworld", "entry-level", "india"],
-                posted_at=datetime.now(timezone.utc),
-                created_at=datetime.now(timezone.utc),
+                posted_at=datetime.now(UTC),
+                created_at=datetime.now(UTC),
                 extra_metadata={"company_name": company_name, "source": "freshersworld"},
             )
             jobs.append(job)

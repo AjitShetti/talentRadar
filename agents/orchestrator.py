@@ -37,7 +37,7 @@ class Orchestrator:
     4. Return unified response
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         settings = get_settings()
         self._settings = settings
         self._groq = AsyncGroq(api_key=settings.groq_api_key)

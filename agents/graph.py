@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict
 
 from langgraph.graph import END, StateGraph
 
@@ -39,8 +39,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 # TypedDict is the canonical LangGraph state type
-from typing import TypedDict
-
 
 class AgentState(TypedDict, total=False):
     """State that flows through every node in the graph."""
@@ -254,7 +252,7 @@ def _schedule_live_persistence(live_jobs: list[dict[str, Any]]) -> None:
     async def _run() -> None:
         try:
             await persist_live_jobs(job_dicts_to_entities(live_jobs))
-        except Exception as exc:  # noqa: BLE001 - background work never surfaces
+        except Exception as exc:
             logger.warning("Background persistence of live jobs failed: %s", exc)
 
     try:

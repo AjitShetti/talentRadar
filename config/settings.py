@@ -9,6 +9,9 @@ from functools import lru_cache
 from typing import Literal
 from urllib.parse import parse_qsl, quote_plus, urlencode, urlsplit, urlunsplit
 
+from pydantic import AliasChoices, Field, computed_field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
 
 def _strip_query_params(dsn: str, drop: tuple[str, ...]) -> str:
     """Return ``dsn`` without the named query parameters."""
@@ -17,9 +20,6 @@ def _strip_query_params(dsn: str, drop: tuple[str, ...]) -> str:
         return dsn
     kept = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k not in drop]
     return urlunsplit(parts._replace(query=urlencode(kept)))
-
-from pydantic import AliasChoices, Field, computed_field
-from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
