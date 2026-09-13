@@ -21,6 +21,12 @@ logger = logging.getLogger(__name__)
 # Default embedding function used by ChromaDB
 _DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
+#: Texts handed to the model per call. A live search persists ~55 postings at
+#: once, and as a single ONNX batch they added ~316 MB of peak memory on top of
+#: the ~200 MB model — enough to kill a 512 MB Render instance seconds after the
+#: search answered. Eight at a time peaks near 100 MB and is no slower.
+EMBED_BATCH_SIZE = 8
+
 
 @lru_cache(maxsize=1)
 def get_embedding_function() -> embedding_functions.DefaultEmbeddingFunction:
@@ -48,7 +54,9 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
         Dense vector embeddings, one per input text.
     """
     ef = get_embedding_function()
-    embeddings = ef(texts)
+    embeddings: list[list[float]] = []
+    for start in range(0, len(texts), EMBED_BATCH_SIZE):
+        embeddings.extend(ef(texts[start : start + EMBED_BATCH_SIZE]))
     logger.info("Generated %d embeddings with model %s", len(embeddings), _DEFAULT_EMBEDDING_MODEL)
     return embeddings
 

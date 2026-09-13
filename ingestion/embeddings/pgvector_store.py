@@ -32,6 +32,7 @@ Python package, no per-connection type registration, no event listeners.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -271,7 +272,10 @@ class PgVectorJobStore:
         if not items or not await self._aready():
             return 0
         try:
-            params = self._upsert_params(items)
+            # Embedding is seconds of CPU for a live search's batch. On the
+            # event loop it stalled every request, /health included, which is
+            # Render's liveness probe.
+            params = await asyncio.to_thread(self._upsert_params, items)
             async with AsyncSessionLocal() as session:
                 await session.execute(self._upsert_sql(), params)
                 await session.commit()

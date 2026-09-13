@@ -128,6 +128,59 @@ class TestPgVectorSql:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Memory and the event loop
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestEmbeddingFitsA512MbInstance:
+    """A live search persists ~55 postings at once. Embedding them as one ONNX
+    batch added ~316 MB of peak memory and took the Render instance down
+    seconds after the search answered; the embedding also ran on the event
+    loop, so /health stopped answering while it did."""
+
+    def test_embed_texts_runs_the_model_in_small_batches(self):
+        from ingestion.embeddings import embedder
+
+        seen: list[int] = []
+
+        def fake_model(texts):
+            seen.append(len(texts))
+            return [[float(len(t))] for t in texts]
+
+        texts = [f"job {i}" for i in range(55)]
+        with patch.object(embedder, "get_embedding_function", return_value=fake_model):
+            vectors = embedder.embed_texts(texts)
+
+        assert max(seen) <= embedder.EMBED_BATCH_SIZE
+        assert sum(seen) == 55
+        assert vectors == [[float(len(t))] for t in texts], "order must survive batching"
+
+    @pytest.mark.asyncio
+    async def test_aadd_batch_embeds_off_the_event_loop(self):
+        import threading
+
+        store = PgVectorJobStore()
+        store._ready = True
+        store._ready_checked_at = float("inf")
+        threads: list[str] = []
+
+        def fake_embed(texts):
+            threads.append(threading.current_thread().name)
+            return [[0.0] for _ in texts]
+
+        session = MagicMock()
+        session.execute = AsyncMock()
+        session.commit = AsyncMock()
+        factory = MagicMock(return_value=MagicMock(
+            __aenter__=AsyncMock(return_value=session), __aexit__=AsyncMock(return_value=False),
+        ))
+        with patch("ingestion.embeddings.pgvector_store.embed_texts", side_effect=fake_embed), \
+             patch("ingestion.embeddings.pgvector_store.AsyncSessionLocal", factory):
+            assert await store.aadd_batch([{"job_id": "a", "text": "t"}]) == 1
+
+        assert threads and threads[0] != threading.main_thread().name
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Degradation
 # ─────────────────────────────────────────────────────────────────────────────
 
