@@ -100,6 +100,9 @@ jobs:
           POSTGRES_DB: talentradar_test
           GROQ_API_KEY: test_key
           TAVILY_API_KEY: test_key
+          # Required by Settings exactly as in the migration step above; without
+          # it tests/conftest.py fails to import and not a single test runs.
+          JWT_SECRET_KEY: ci_secret_key_at_least_32_characters_long
         run: pytest tests/ -v --tb=short
 
   # ─────────────────────────────────────────────────────────────
