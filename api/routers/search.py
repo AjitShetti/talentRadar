@@ -33,6 +33,7 @@ from api.schemas.job_schemas import (
 )
 from domain.experience import seniority_levels_for
 from domain.geo import is_india, resolve_city
+from domain.platforms import platform_of
 from ingestion.engine import RealtimeScraperEngine
 from storage.repository import JobRepository
 
@@ -169,6 +170,7 @@ async def search_jobs_structured(
         city=city,
         is_remote=filters.is_remote,
         india_only=filters.india_only,
+        platforms=filters.platforms,
         seniority=seniority_enum,
         seniority_levels=seniority_levels,
         employment_type=employment_type_enum,
@@ -189,6 +191,7 @@ async def search_jobs_structured(
             company=job.company.name if job.company else None,
             source=job.source,
             source_url=job.source_url,
+            platform=_platform_key(job.source, job.source_url),
             location_raw=job.location_raw,
             country=job.country,
             city=job.city,
@@ -229,12 +232,16 @@ async def search_jobs_semantic(request: SearchRequestSchema):
     - "Entry-level data science roles"
     """
     orchestrator = Orchestrator()
+    # A platform filter is applied after retrieval — semantic results carry
+    # only a URL to tell platforms apart — so ask for more than the page needs
+    # and trim, rather than handing back a page that the filter half-emptied.
+    fetch_limit = min(request.limit * 3, 100) if request.platforms else request.limit
     # This endpoint *is* a job search, so the intent is pinned. Left to the
     # chat classifier, "data scientist" read as small talk and returned nothing.
     response = await orchestrator.process_query(
         query=request.query,
         intent=IntentType.SEARCH_JOBS,
-        limit=request.limit,
+        limit=fetch_limit,
         offset=request.offset,
     )
 
@@ -252,10 +259,14 @@ async def search_jobs_semantic(request: SearchRequestSchema):
             seniority=result.seniority,
             skills=result.skills,
             source_url=result.source_url,
+            platform=_platform_key(None, result.source_url),
             match_score=result.score,
         )
         for result in response.results
     ]
+    if request.platforms:
+        job_results = [job for job in job_results if job.platform in request.platforms]
+        job_results = job_results[: request.limit]
 
     # What the graph did about live sourcing, so the UI can explain a thin
     # result set instead of just showing one.
@@ -267,13 +278,27 @@ async def search_jobs_semantic(request: SearchRequestSchema):
         "sources_stats": meta.get("sources_stats") or {},
     }
 
+    total_found = (
+        len(job_results)
+        if request.platforms
+        else response.metadata.get("total_found", len(response.results))
+    )
+    filters_applied: dict[str, Any] = {"query": request.query}
+    if request.platforms:
+        filters_applied["platforms"] = request.platforms
+
     return SearchResponseSchema(
         results=job_results,
-        total_found=response.metadata.get("total_found", len(response.results)),
+        total_found=total_found,
         summary=response.summary,
         sourcing=sourcing,
-        filters_applied={"query": request.query},
+        filters_applied=filters_applied,
     )
+
+
+def _platform_key(source: str | None, source_url: str | None) -> str | None:
+    platform = platform_of(source, source_url)
+    return platform.key if platform else None
 
 
 def _job_uuid_or_404(job_id: str) -> uuid.UUID:
@@ -318,6 +343,7 @@ async def get_job_detail(
         company_name=company_name,
         source=job.source,
         source_url=job.source_url,
+        platform=_platform_key(job.source, job.source_url),
         location_raw=job.location_raw,
         country=job.country,
         city=job.city,

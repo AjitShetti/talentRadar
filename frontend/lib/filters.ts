@@ -1,5 +1,5 @@
-// Job-search filter vocabulary. Mirrors domain/geo.py and domain/experience.py
-// on the backend — keep the keys in sync with those modules.
+// Job-search filter vocabulary. Mirrors domain/geo.py, domain/experience.py and
+// domain/platforms.py on the backend — keep the keys in sync with those modules.
 
 export const INDIAN_CITIES = [
   'Bengaluru', 'Hyderabad', 'Pune', 'Chennai', 'Mumbai', 'Delhi',
@@ -16,6 +16,23 @@ export const EXPERIENCE_BANDS: ExperienceBand[] = [
   { key: 'senior', label: '5-8 yrs', maxYears: 8 },
   { key: 'lead', label: '8+ yrs', maxYears: null },
 ]
+
+export type JobPlatform = { key: string; label: string }
+
+export const JOB_PLATFORMS: JobPlatform[] = [
+  { key: 'linkedin', label: 'LinkedIn' },
+  { key: 'naukri', label: 'Naukri' },
+  { key: 'indeed', label: 'Indeed' },
+  { key: 'foundit', label: 'Foundit' },
+  { key: 'instahyre', label: 'Instahyre' },
+  { key: 'cutshort', label: 'Cutshort' },
+  { key: 'freshersworld', label: 'Freshersworld' },
+  { key: 'company_sites', label: 'Company career sites' },
+]
+
+export function platformLabel(key: string | null | undefined): string {
+  return JOB_PLATFORMS.find(p => p.key === key)?.label || ''
+}
 
 /** Map a candidate's years of experience onto the band that fits. */
 export function bandForYears(years: number | null | undefined): string {

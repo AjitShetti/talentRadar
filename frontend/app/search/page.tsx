@@ -1,14 +1,14 @@
 'use client'
 
 import { FormEvent, useEffect, useRef, useState } from 'react'
-import { Bookmark, ExternalLink, MapPin, RefreshCw, Search, SlidersHorizontal } from 'lucide-react'
+import { Bookmark, ChevronDown, ExternalLink, Globe, MapPin, RefreshCw, Search, SlidersHorizontal } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import FlapText from '@/components/FlapText'
 import { Ripple } from '@/components/Ripple'
 import { api, Job, Sourcing, signedIn } from '@/lib/api'
 import { usePersistentState } from '@/lib/persistent-state'
 import { SuggestionProfile, pickSuggestions } from '@/lib/search-suggestions'
-import { EXPERIENCE_BANDS, INDIAN_CITIES, bandForYears, matchCity } from '@/lib/filters'
+import { EXPERIENCE_BANDS, INDIAN_CITIES, JOB_PLATFORMS, bandForYears, matchCity, platformLabel } from '@/lib/filters'
 import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 
 type FilterProfile = SuggestionProfile & { years_experience?: unknown; is_remote_preferred?: unknown }
@@ -18,6 +18,7 @@ export default function SearchPage() {
   const [location, setLocation, locationReady] = usePersistentState('search.location', '')
   const [experience, setExperience, experienceReady] = usePersistentState('search.experience', '')
   const [remote, setRemote, remoteReady] = usePersistentState('search.remote', false)
+  const [platforms, setPlatforms] = usePersistentState<string[]>('search.platforms', [])
   const [jobs, setJobs, jobsReady] = usePersistentState<Job[]>('search.jobs', [])
   const [loading, setLoading] = useState(false); const [error, setError] = useState('')
   const [saved, setSaved] = usePersistentState<string[]>('search.saved', [])
@@ -59,9 +60,9 @@ export default function SearchPage() {
   }, [profile, filtersReady, setLocation, setExperience, setRemote])
 
   function shuffleTips() { setTips(current => pickSuggestions(profile, current)) }
-  function clearFilters() { setLocation(''); setExperience(''); setRemote(false) }
+  function clearFilters() { setLocation(''); setExperience(''); setRemote(false); setPlatforms([]) }
 
-  const hasFilters = Boolean(location || experience || remote)
+  const hasFilters = Boolean(location || experience || remote || platforms.length)
 
   async function find(e: FormEvent) {
     e.preventDefault()
@@ -73,17 +74,18 @@ export default function SearchPage() {
       let found: Job[] = []
       let foundSourcing: Sourcing | null = null
       if (hasFilters) {
-        const response = await api.search.structured(query, { location, remote, experience })
+        const response = await api.search.structured(query, { location, remote, experience, platforms })
         found = response.jobs || []
       }
       // The relational index only knows what earlier searches stored, and a
       // filtered search never goes out to the boards — so for a signed-in user,
       // whose profile prefills the filters, a thin index answered every search
       // with nothing. When it has nothing, ask semantic search, which can source
-      // live; the city and remoteness ride along in the query text.
+      // live; the city and remoteness ride along in the query text, and the
+      // platform filter is applied to what comes back.
       if (!found.length) {
         const phrased = [query.trim(), remote ? 'remote' : '', location ? `in ${location}` : ''].filter(Boolean).join(' ')
-        const response = await api.search.semantic(phrased)
+        const response = await api.search.semantic(phrased, platforms)
         found = response.results || []
         foundSourcing = response.sourcing || null
       }
@@ -130,6 +132,7 @@ export default function SearchPage() {
           {EXPERIENCE_BANDS.map(band => <option key={band.key} value={band.key}>{band.label}</option>)}
         </select>
       </label>
+      <PlatformPicker selected={platforms} onChange={setPlatforms} />
       <label className="check-label"><input type="checkbox" checked={remote} onChange={e => setRemote(e.target.checked)} /> Remote only</label>
       {hasFilters && <button type="button" className="text-button" onClick={clearFilters}>Clear filters</button>}
     </div>
@@ -150,7 +153,9 @@ export default function SearchPage() {
           Scanning the Indian job market…
         </div>}
         {!loading && jobsReady && !jobs.length && (searched
-          ? <div className="empty-state"><Search size={25}/><h2>No roles found yet.</h2><p>Nothing matched across the index or the job boards just now. Try a broader title, drop a filter, or search again in a little while.</p></div>
+          ? <div className="empty-state"><Search size={25}/><h2>No roles found yet.</h2><p>{platforms.length
+            ? `Nothing matched on ${platforms.map(platformLabel).join(', ')} just now. Try adding more platforms, a broader title, or search again in a little while.`
+            : 'Nothing matched across the index or the job boards just now. Try a broader title, drop a filter, or search again in a little while.'}</p></div>
           : <div className="empty-state"><Search size={25}/><h2>Start with a conversation.</h2><p>Describe your ideal role, skills, or working style to see relevant opportunities across India.</p></div>)}
         {jobs.map(job => <article className="job-card" key={job.id}>
           <div className="job-card-top">
@@ -162,6 +167,7 @@ export default function SearchPage() {
             <span><MapPin size={14}/>{job.location_raw || (job.is_remote ? 'Remote' : 'Location not listed')}</span>
             {job.is_remote && <span>Remote-friendly</span>}
             {job.salary_raw && <span>{job.salary_raw}</span>}
+            {platformLabel(job.platform) && <span><Globe size={14}/>via {platformLabel(job.platform)}</span>}
           </div>
           <div className="chips">{(job.skills || []).slice(0, 5).map(skill => <span key={skill}>{skill}</span>)}</div>
           <div className="job-actions">
@@ -172,6 +178,46 @@ export default function SearchPage() {
       </section>
     </div>
   </AppShell>
+}
+
+
+/**
+ * Multi-select of the platforms a posting was listed on. A native <select
+ * multiple> needs Ctrl-click, which nobody discovers, so this is a disclosure
+ * holding checkboxes. Nothing selected means every platform.
+ */
+function PlatformPicker({ selected, onChange }: { selected: string[]; onChange: (next: string[]) => void }) {
+  const ref = useRef<HTMLDetailsElement>(null)
+
+  useEffect(() => {
+    function close(event: MouseEvent) {
+      if (ref.current?.open && !ref.current.contains(event.target as Node)) ref.current.open = false
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [])
+
+  function toggle(key: string) {
+    onChange(selected.includes(key) ? selected.filter(k => k !== key) : [...selected, key])
+  }
+
+  const summary = !selected.length
+    ? 'All platforms'
+    : selected.length === 1 ? platformLabel(selected[0]) : `${platformLabel(selected[0])} +${selected.length - 1}`
+
+  return <div className="filter-field">
+    <span id="platform-picker-label">Posted on</span>
+    <details className="platform-picker" ref={ref}>
+      <summary aria-labelledby="platform-picker-label"><span>{summary}</span><ChevronDown size={13}/></summary>
+      <div className="platform-menu" role="group" aria-label="Platforms">
+        {JOB_PLATFORMS.map(platform => <label key={platform.key}>
+          <input type="checkbox" checked={selected.includes(platform.key)} onChange={() => toggle(platform.key)} />
+          {platform.label}
+        </label>)}
+        {selected.length > 0 && <button type="button" className="text-button" onClick={() => onChange([])}>Any platform</button>}
+      </div>
+    </details>
+  </div>
 }
 
 
