@@ -106,7 +106,8 @@ export function useSpeaker(): Speaker {
     clearKeepAlive()
     keepAlive.current = setInterval(() => { if (synth.speaking) synth.resume() }, 5000)
 
-    const chunks = intoChunks(text)
+    // Questions may carry `code` backticks for the on-screen card; spoken, they are noise.
+    const chunks = intoChunks(text.replace(/`/g, ''))
     let index = 0
     const finish = () => { clearKeepAlive(); setSpeaking(false); resolve() }
     const next = () => {
@@ -137,6 +138,7 @@ export type TurnResult = {
   blob: Blob | null
   mime: string
   hadSpeech: boolean
+  speechMs: number
   durationMs: number
   reason: TurnReason
 }
@@ -144,11 +146,22 @@ export type TurnResult = {
 /** How the candidate currently sounds — drives the mic UI. */
 export type ListenPhase = 'idle' | 'waiting' | 'speaking' | 'pausing'
 
-const SILENCE_HANG_MS = 2200      // quiet this long after speech ends the turn
-const MIN_SPEECH_MS = 700         // ignore a cough before allowing auto-submit
-const NO_SPEECH_TIMEOUT_MS = 15000 // give up if they never started talking
-const MAX_TURN_MS = 150000        // hard cap on one spoken answer
-const CALIBRATION_MS = 500        // room-noise sample taken before VAD arms
+// End-to-end runs with a synthetic candidate showed a 2.2 s hang cutting an
+// answer at the first thinking pause: everything said after it was lost.
+// A 3.5 s hang still cut the same answer at a ~3.5 s thinking pause. People
+// pause for longer than that mid-answer; 5 s is the wait a human interviewer
+// gives, the UI says it is waiting, and "I'm done" ends the turn sooner.
+export const SILENCE_HANG_MS = 5000
+const MIN_SPEECH_MS = 700          // ignore a cough before allowing auto-submit
+// Senior questions deserve thinking time. At 15 s the turn ended on a silent
+// candidate and Whisper transcribed the silence as "Thank you." — which was
+// then scored as their answer.
+const NO_SPEECH_TIMEOUT_MS = 30000
+const MAX_TURN_MS = 180000         // hard cap on one spoken answer
+const CALIBRATION_MS = 500         // room-noise sample taken before VAD arms
+// Someone who starts talking inside the calibration window would otherwise set
+// the "noise floor" at speech level, and nothing they said after would count.
+const MAX_NOISE_FLOOR = 0.03
 
 export function micSupported(): boolean {
   return (
@@ -193,7 +206,7 @@ export function useListener(): Listener {
 
   const listen = useCallback(async (): Promise<TurnResult> => {
     const empty = (reason: TurnReason): TurnResult => (
-      { blob: null, mime: '', hadSpeech: false, durationMs: 0, reason }
+      { blob: null, mime: '', hadSpeech: false, speechMs: 0, durationMs: 0, reason }
     )
     if (!micSupported()) return empty('error')
 
@@ -242,6 +255,7 @@ export function useListener(): Listener {
             blob: parts.length ? new Blob(parts, { type: mime || 'audio/webm' }) : null,
             mime: mime || 'audio/webm',
             hadSpeech: speechMs >= MIN_SPEECH_MS,
+            speechMs,
             durationMs: Date.now() - startedAt,
             reason,
           })
@@ -271,7 +285,7 @@ export function useListener(): Listener {
           noiseFloor = Math.max(noiseFloor, rms)
           if (elapsed > CALIBRATION_MS) {
             calibrating = false
-            noiseFloor = Math.max(0.008, noiseFloor * 2)
+            noiseFloor = Math.min(MAX_NOISE_FLOOR, Math.max(0.008, noiseFloor * 2))
             lastLoudAt = now
           }
         } else if (rms > noiseFloor) {
@@ -300,6 +314,15 @@ export function useListener(): Listener {
   const abort = useCallback(() => stopRef.current?.('aborted'), [])
 
   return { listen, submitNow, abort, level, phase, supported: micSupported() }
+}
+
+// Whisper's well-known output for near-silent audio. Only discarded when the
+// voice detector also heard very little, so a real "thank you" survives.
+const WHISPER_SILENCE_HALLUCINATIONS = /^(thank you|thanks for watching|thank you for watching|you|bye)[.!]?$/i
+
+/** True when a transcript is Whisper filling silence rather than the candidate speaking. */
+export function isLikelyHallucination(transcript: string, speechMs: number): boolean {
+  return speechMs < 1500 && WHISPER_SILENCE_HALLUCINATIONS.test(transcript.trim())
 }
 
 /* ------------------------------------------------------------------ *
