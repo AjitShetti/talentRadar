@@ -7,10 +7,13 @@ import {
   Plus, Send, Trash2,
 } from 'lucide-react'
 import { AgentMemory, api, ChatJob, LearningPlan, LearningTask } from '@/lib/api'
-import { usePersistentState } from '@/lib/persistent-state'
+import { isTaskRunning, runTask, usePersistentState, useTaskRunning } from '@/lib/persistent-state'
 import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 
 type Turn = { role: 'user' | 'assistant'; content: string; jobs?: ChatJob[]; intent?: string }
+
+const CHAT_TASK = 'agent.chat'
+const PLAN_TASK = 'agent.plan'
 
 const FALLBACK_STARTERS = [
   'What should I focus on today?',
@@ -95,11 +98,13 @@ export default function CopilotWorkspace({ acceptUrlQuestion = false }: { accept
   const [memories, setMemories] = useState<AgentMemory[]>([])
   const [starters, setStarters] = useState<string[]>(FALLBACK_STARTERS)
   const [turns, setTurns, turnsHydrated] = usePersistentState<Turn[]>('agent.thread', [])
-  const [draft, setDraft] = useState('')
-  const [thinking, setThinking] = useState(false)
+  const [draft, setDraft] = usePersistentState('agent.draft', '')
+  // Replies and plans are tasks so they still land in the stored thread when
+  // the user has moved to another page before the copilot answers.
+  const thinking = useTaskRunning(CHAT_TASK)
   const [newMemory, setNewMemory] = useState('')
   const [learning, setLearning] = usePersistentState<LearningPlan | null>('agent.learning', null)
-  const [planning, setPlanning] = useState(false)
+  const planning = useTaskRunning(PLAN_TASK)
   const [error, setError] = useState('')
   const threadEnd = useRef<HTMLDivElement>(null)
   const askedFromUrl = useRef(false)
@@ -135,14 +140,13 @@ export default function CopilotWorkspace({ acceptUrlQuestion = false }: { accept
 
   async function ask(message: string) {
     const question = message.trim()
-    if (!question || thinking) return
+    if (!question || isTaskRunning(CHAT_TASK)) return
     const history = turns.map(t => ({ role: t.role, content: t.content }))
-    setTurns([...turns, { role: 'user', content: question }])
+    setTurns(current => [...current, { role: 'user', content: question }])
     setDraft('')
-    setThinking(true)
     setError('')
     try {
-      const reply = await api.agent.chat(question, history)
+      const reply = await runTask(CHAT_TASK, () => api.agent.chat(question, history))
       setTurns(current => [...current, {
         role: 'assistant',
         content: reply.reply,
@@ -156,8 +160,6 @@ export default function CopilotWorkspace({ acceptUrlQuestion = false }: { accept
         role: 'assistant',
         content: err instanceof Error ? err.message : 'Something went wrong on that one.',
       }])
-    } finally {
-      setThinking(false)
     }
   }
 
@@ -184,13 +186,11 @@ export default function CopilotWorkspace({ acceptUrlQuestion = false }: { accept
   }
 
   async function generatePlan() {
-    setPlanning(true)
+    if (isTaskRunning(PLAN_TASK)) return
     try {
-      setLearning(await api.career.recommend())
+      setLearning(await runTask(PLAN_TASK, () => api.career.recommend()))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create learning recommendations.')
-    } finally {
-      setPlanning(false)
     }
   }
 

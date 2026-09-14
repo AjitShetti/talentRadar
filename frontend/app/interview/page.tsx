@@ -9,7 +9,7 @@ import AppShell from '@/components/AppShell'
 import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
 import { api, InterviewScore, InterviewState } from '@/lib/api'
-import { usePersistentState, useLatest } from '@/lib/persistent-state'
+import { runTask, useLatest, useMounted, usePersistentState, useTaskRunning } from '@/lib/persistent-state'
 import {
   captionsSupported, filenameFor, isLikelyHallucination, ListenPhase, micSupported, ttsSupported,
   useCaptions, useListener, useSpeaker,
@@ -100,7 +100,11 @@ const STAGE_LABEL: Record<Stage, string> = {
   complete: 'Interview complete',
 }
 
-const RETRY_PROMPT = "Sorry, I didn't catch that. Could you say it again?"
+const START_TASK = 'interview.start'
+const ANSWER_TASK = 'interview.answer'
+const END_TASK = 'interview.end'
+
+const RETRY_PROMPT ="Sorry, I didn't catch that. Could you say it again?"
 const SILENCE_PROMPT = "Take your time. Whenever you're ready."
 
 export default function InterviewPage() {
@@ -113,11 +117,17 @@ export default function InterviewPage() {
   const [log, setLog] = usePersistentState<Turn[]>('interview.log', [])
   const [answer, setAnswer] = usePersistentState('interview.answer', '')
   const [history, setHistory] = useState<SessionSummary[]>([])
-  const [loading, setLoading] = useState(false)
-  const [ending, setEnding] = useState(false)
-  const [error, setError] = useState('')
+  // Starting, answering and ending are server round-trips that can outlast a
+  // visit to another page. As tasks they still update the stored session when
+  // they land, and a remounted page shows them as in progress meanwhile.
+  const starting = useTaskRunning(START_TASK)
+  const answering = useTaskRunning(ANSWER_TASK)
+  const ending = useTaskRunning(END_TASK)
+  const loading = starting || answering
+  const [error, setError] = usePersistentState('interview.error', '')
   const [notice, setNotice] = useState('')
   const [stage, setStage] = useState<Stage>('paused')
+  const mounted = useMounted()
 
   const speaker = useSpeaker()
   const listener = useListener()
@@ -183,7 +193,7 @@ export default function InterviewPage() {
   const sendAnswer = useCallback(async (text: string) => {
     const session = sessionRef.current
     if (!session) return null
-    const result = await api.interview.answer(session.id, text, session.state)
+    const result = await runTask(ANSWER_TASK, () => api.interview.answer(session.id, text, session.state))
     sessionRef.current = { id: session.id, state: result.agent_state }
     setActive(previous => previous && {
       ...previous,
@@ -298,11 +308,11 @@ export default function InterviewPage() {
     event?.preventDefault()
     const subject = topic.trim()
     if (subject.length < 2) { setError('Tell us what you want to be interviewed on.'); return }
-    setLoading(true); setError(''); setNotice('')
+    setError(''); setNotice('')
     const voice = mode === 'voice' && voiceReady
     let opening = ''
     try {
-      const session = await api.interview.start(style, subject, difficulty, voice)
+      const session = await runTask(START_TASK, () => api.interview.start(style, subject, difficulty, voice))
       sessionRef.current = { id: session.session_id, state: session.agent_state }
       setActive({
         id: session.session_id, question: session.question,
@@ -320,34 +330,34 @@ export default function InterviewPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not start the interview.')
       return
-    } finally {
-      setLoading(false)
     }
     // Outside the try: a failure inside the interview is not a start failure,
-    // and the loop reports its own errors.
-    if (opening) await runVoiceLoop(opening)
+    // and the loop reports its own errors. If the user left while the first
+    // question was on its way, the session is stored and waits, paused, for
+    // them to come back — never speak from a page that is not on screen.
+    if (opening && mounted.current) await runVoiceLoop(opening)
   }
 
   /** Typed submit — used by text mode and by the voice loop's typing fallback. */
   async function submitTyped(event: FormEvent) {
     event.preventDefault()
-    if (!active || !answer.trim()) return
-    setLoading(true); setError(''); setNotice('')
+    if (!active || !answer.trim() || loading) return
+    setError(''); setNotice('')
     const text = answer.trim()
+    let result
     try {
       appendLog('you', text)
       setAnswer('')
-      const result = await sendAnswer(text)
-      if (active.voice && result && !result.session_complete) {
-        setLoading(false)
-        await runVoiceLoop([result.score?.verbal_ack, result.question].filter(Boolean).join(' '))
-        return
-      }
-      if (result?.session_complete) setStage('complete')
+      result = await sendAnswer(text)
     } catch (err) {
+      // Put the answer back so a failed submit never costs the user what they wrote.
+      setAnswer(current => current || text)
       setError(err instanceof Error ? err.message : 'Could not submit your answer.')
-    } finally {
-      setLoading(false)
+      return
+    }
+    if (result?.session_complete) { setStage('complete'); return }
+    if (active.voice && result && mounted.current) {
+      await runVoiceLoop([result.score?.verbal_ack, result.question].filter(Boolean).join(' '))
     }
   }
 
@@ -361,17 +371,16 @@ export default function InterviewPage() {
   async function end() {
     if (!active) return
     stopEverything()
-    setEnding(true)
     try {
-      const result = await api.interview.end(active.id, active.state)
-      setActive({ ...active, done: true, closing: result.closing_message, finalScore: result.final_score.total_score })
+      const result = await runTask(END_TASK, () => api.interview.end(active.id, active.state))
+      setActive(previous => previous && previous.id === active.id
+        ? { ...previous, done: true, closing: result.closing_message, finalScore: result.final_score.total_score }
+        : previous)
       setStage('complete')
       refreshHistory()
-      if (active.voice) speaker.speak(result.closing_message)
+      if (active.voice && mounted.current) speaker.speak(result.closing_message)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not end session.')
-    } finally {
-      setEnding(false)
     }
   }
 
@@ -383,7 +392,9 @@ export default function InterviewPage() {
     sessionRef.current = null
   }
 
-  const busy = stage === 'transcribing' || stage === 'evaluating'
+  // The loop's stage is per visit; an answer still being evaluated is not.
+  const shownStage: Stage = answering ? 'evaluating' : stage
+  const busy = shownStage === 'transcribing' || shownStage === 'evaluating'
   const liveVoice = Boolean(active?.voice) && !active?.done
   const max = active?.max ?? DEFAULT_MAX_QUESTIONS
   const scores = ((active?.state?.scores as ScoreRecord[] | undefined) ?? [])
@@ -502,7 +513,7 @@ export default function InterviewPage() {
         {active.score && <LastAnswer score={active.score} />}
 
         {liveVoice && <VoiceStage
-          stage={stage}
+          stage={shownStage}
           phase={listener.phase}
           level={listener.level}
           caption={captions.text}
@@ -517,7 +528,7 @@ export default function InterviewPage() {
           <p>{withCode(active.question)}</p>
         </div>
 
-        {(!liveVoice || stage === 'typing') && <form onSubmit={submitTyped} className="answer-form">
+        {(!liveVoice || shownStage === 'typing') && <form onSubmit={submitTyped} className="answer-form">
           <textarea
             value={answer}
             onChange={event => setAnswer(event.target.value)}

@@ -6,14 +6,15 @@ import { Check, UploadCloud } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import RequireAuth from '@/components/RequireAuth'
 import { api } from '@/lib/api'
+import { usePersistentState } from '@/lib/persistent-state'
 
 export default function OnboardingPage() {
   const router = useRouter()
-  const [name, setName] = useState('')
-  const [role, setRole] = useState('')
-  const [location, setLocation] = useState('')
-  const [years, setYears] = useState('')
-  const [skills, setSkills] = useState('')
+  const [name, setName] = usePersistentState('onboarding.name', '')
+  const [role, setRole] = usePersistentState('onboarding.role', '')
+  const [location, setLocation] = usePersistentState('onboarding.location', '')
+  const [years, setYears] = usePersistentState('onboarding.years', '')
+  const [skills, setSkills] = usePersistentState('onboarding.skills', '')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
 
