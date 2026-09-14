@@ -1,8 +1,10 @@
 'use client'
 
+import { apiIsWaking, markApiAlive } from '@/lib/api-warmup'
 import { clearPersistedState } from '@/lib/persistent-state'
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+const WAKING_MESSAGE = 'The server is still starting up — give it a few seconds and try again.'
 const TOKEN_KEY = 'talentradar_token'
 const EMAIL_KEY = 'talentradar_email'
 
@@ -113,7 +115,16 @@ async function request<T>(path: string, options: RequestInit = {}, authenticated
     if (!accessToken) throw new Error('Please sign in to use this feature.')
     headers.set('Authorization', `Bearer ${accessToken}`)
   }
-  const response = await fetch(`${API_URL}${path}`, { ...options, headers })
+  let response: Response
+  try {
+    response = await fetch(`${API_URL}${path}`, { ...options, headers })
+  } catch (err) {
+    // "Failed to fetch" during a cold start reads as a broken app.
+    if (apiIsWaking()) throw new Error(WAKING_MESSAGE)
+    throw err
+  }
+  if ((response.status === 502 || response.status === 503) && apiIsWaking()) throw new Error(WAKING_MESSAGE)
+  if (response.status < 500) markApiAlive()
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as { detail?: unknown; message?: string }
     if (response.status === 401) {
