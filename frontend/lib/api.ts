@@ -18,7 +18,7 @@ export type Application = { id: string; job_id?: string | null; status: string; 
 export type SourceStat = { latency_ms?: number; count?: number; status?: string }
 export type Sourcing = { sourced?: boolean; reason?: string; live_count?: number | null; indexed_count?: number | null; sources_stats?: Record<string, SourceStat> }
 export type InterviewState = Record<string, unknown>
-export type InterviewScore = { correctness: number; clarity: number; depth: number; answer_summary?: string; verbal_ack?: string | null }
+export type InterviewScore = { correctness: number; clarity: number; depth: number; answer_summary?: string | null; tip?: string | null; scored?: boolean; verbal_ack?: string | null }
 export type AtsResult = { ats_score: number; missing_skills: string[]; matched_skills: string[]; suggestions: string[]; reasoning: string }
 export type TailorResult = { candidate_name: string; latex_content: string; pdf_base64: string | null; filename: string | null }
 export type SavedResume = { id: string; extracted_text: string; filename: string | null; updated_at: string | null }
@@ -115,7 +115,7 @@ async function request<T>(path: string, options: RequestInit = {}, authenticated
   }
   const response = await fetch(`${API_URL}${path}`, { ...options, headers })
   if (!response.ok) {
-    const body = await response.json().catch(() => ({})) as { detail?: string; message?: string }
+    const body = await response.json().catch(() => ({})) as { detail?: unknown; message?: string }
     if (response.status === 401) {
       // Clearing the token was not enough: the page had already rendered, so
       // the user sat looking at a broken screen. Send them to sign in and
@@ -129,10 +129,27 @@ async function request<T>(path: string, options: RequestInit = {}, authenticated
     if (response.status === 429) {
       throw new Error('You are going a bit fast for us — wait a moment and try again.')
     }
-    throw new Error(body.detail || body.message || `Request failed (${response.status})`)
+    throw new Error(errorMessage(body.detail) || body.message || `Request failed (${response.status})`)
   }
   if (response.status === 204) return undefined as T
   return response.json() as Promise<T>
+}
+
+/**
+ * FastAPI sends `detail` as a string for HTTPException but as a list of
+ * `{loc, msg}` objects for a 422 — which `new Error(list)` rendered as
+ * "[object Object]". Pydantic prefixes validator messages with "Value error, ".
+ */
+function errorMessage(detail: unknown): string {
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    return detail
+      .map(item => (item && typeof item === 'object' && 'msg' in item ? String((item as { msg: unknown }).msg) : ''))
+      .map(message => message.replace(/^Value error, /, ''))
+      .filter(Boolean)
+      .join(' ')
+  }
+  return ''
 }
 
 export const api = {
@@ -174,10 +191,12 @@ export const api = {
     },
   },
   interview: {
-    start: (track: string, difficulty: string, voice_mode = false) => request<{ session_id: string; question: string; question_index: number; agent_state: InterviewState }>('/api/v1/interview/sessions/start', { method: 'POST', body: JSON.stringify({ track, difficulty, voice_mode }) }, true),
-    answer: (session_id: string, answer: string, agent_state: InterviewState) => request<{ question: string; question_index: number; is_followup: boolean; session_complete: boolean; agent_state: InterviewState; score: InterviewScore }>('/api/v1/interview/sessions/answer', { method: 'POST', body: JSON.stringify({ session_id, answer, agent_state }) }, true),
+    // track is the round style (technical | coding | system_design | behavioral); topic is free text.
+    start: (track: string, topic: string, difficulty: string, voice_mode = false) => request<{ session_id: string; question: string; question_index: number; max_questions: number; agent_state: InterviewState }>('/api/v1/interview/sessions/start', { method: 'POST', body: JSON.stringify({ track, topic, difficulty, voice_mode }) }, true),
+    topics: () => request<{ for_you: string[]; recent: string[]; popular: string[] }>('/api/v1/interview/topics', {}, true),
+    answer: (session_id: string, answer: string, agent_state: InterviewState) => request<{ question: string; question_index: number; is_followup: boolean; max_questions: number; session_complete: boolean; agent_state: InterviewState; score: InterviewScore }>('/api/v1/interview/sessions/answer', { method: 'POST', body: JSON.stringify({ session_id, answer, agent_state }) }, true),
     end: (session_id: string, agent_state: InterviewState) => request<{ closing_message: string; final_score: { total_score: number; correctness: number; clarity: number; depth: number; questions_answered: number } }>('/api/v1/interview/sessions/end', { method: 'POST', body: JSON.stringify({ session_id, agent_state }) }, true),
-    history: () => request<{ sessions: Array<{ id: string; track: string; difficulty: string; total_score?: number; completed: boolean; created_at: string }> }>('/api/v1/interview/sessions/history', {}, true),
+    history: () => request<{ sessions: Array<{ id: string; track: string; topic?: string | null; difficulty: string; total_score?: number; completed: boolean; created_at: string }> }>('/api/v1/interview/sessions/history', {}, true),
     // Sent as multipart so the browser's MediaRecorder blob reaches Groq Whisper
     // untouched; provider='browser_fallback' means the caller should use its own
     // Web Speech transcript instead.

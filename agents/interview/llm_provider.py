@@ -45,9 +45,25 @@ class LLMProvider:
     #: generations were decommissioned by Groq and returned 404s here.
     MODEL = "openai/gpt-oss-120b"
 
+    #: A candidate is waiting on every call, so each attempt is time-boxed.
+    #: Two retries stay: Groq's free-tier 429s usually ask for well under a
+    #: second, and in end-to-end runs a single retry left answers unscored
+    #: that a second one would have scored.
+    TIMEOUT_SECONDS = 20.0
+    MAX_RETRIES = 2
+
     def __init__(self, model: str | None = None) -> None:
-        self._client = AsyncGroq(api_key=_settings.groq_api_key)
+        self._client = AsyncGroq(
+            api_key=_settings.groq_api_key,
+            timeout=self.TIMEOUT_SECONDS,
+            max_retries=self.MAX_RETRIES,
+        )
         self._model = model or _settings.groq_interview_model or self.MODEL
+
+    @property
+    def _is_reasoning_model(self) -> bool:
+        """gpt-oss spends completion tokens on hidden reasoning before answering."""
+        return "gpt-oss" in self._model
 
     # ------------------------------------------------------------------
     # Core completion helper
@@ -81,6 +97,14 @@ class LLMProvider:
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if self._is_reasoning_model:
+            # Reasoning tokens count against max_tokens. With the old 200-256
+            # budgets the model reasoned, then got cut off mid-question — the
+            # candidate heard "...and how they" — or mid-JSON, which Groq
+            # rejects as "Failed to generate JSON". Low effort plus headroom
+            # fixes both without making the turn noticeably slower.
+            kwargs["reasoning_effort"] = "low"
+            kwargs["max_tokens"] = max_tokens + 1024
         if expect_json:
             kwargs["response_format"] = {"type": "json_object"}
 
@@ -89,16 +113,32 @@ class LLMProvider:
         # fall back to the static question bank instead of 500-ing the API.
         try:
             response = await self._client.chat.completions.create(**kwargs)
-        except LLMProviderError:
-            raise
         except Exception as exc:
-            logger.warning("Groq call failed (model=%s): %s", self._model, exc)
-            raise LLMProviderError(f"Groq request failed for model {self._model!r}: {exc}") from exc
+            if expect_json and "json_validate_failed" in str(exc):
+                # Groq's JSON mode rejects output it cannot validate. One
+                # plain retry, parsed leniently, rescues most of these.
+                logger.info("Groq JSON mode rejected output; retrying without it")
+                kwargs.pop("response_format", None)
+                try:
+                    response = await self._client.chat.completions.create(**kwargs)
+                except Exception as retry_exc:
+                    raise self._provider_error(retry_exc) from retry_exc
+            else:
+                raise self._provider_error(exc) from exc
 
-        content = response.choices[0].message.content
+        choice = response.choices[0]
+        content = choice.message.content
         if not content:
             raise LLMProviderError("LLM returned empty content")
+        if choice.finish_reason == "length":
+            # A truncated question is worse than a fallback one: it is spoken
+            # aloud and the candidate cannot tell it was cut off.
+            raise LLMProviderError("LLM output was truncated at the token limit")
         return content.strip()
+
+    def _provider_error(self, exc: Exception) -> LLMProviderError:
+        logger.warning("Groq call failed (model=%s): %s", self._model, exc)
+        return LLMProviderError(f"Groq request failed for model {self._model!r}: {exc}")
 
     # ------------------------------------------------------------------
     # Interview-specific methods
@@ -184,7 +224,7 @@ class LLMProvider:
                     f"Track: {track} | Difficulty: {difficulty}\n\n"
                     "Evaluate the answer and return a JSON object with the "
                     "exact keys: correctness, clarity, depth, needs_followup, "
-                    "feedback_note, answer_summary"
+                    "feedback_note, answer_summary, tip"
                     + (", verbal_ack." if voice_mode else ".")
                 ),
             }
@@ -206,8 +246,15 @@ class LLMProvider:
         """Parse and validate the evaluation JSON returned by the LLM."""
         try:
             data = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise LLMProviderError(f"LLM eval output is not valid JSON: {raw!r}") from exc
+        except json.JSONDecodeError:
+            # The non-JSON-mode retry may wrap the object in prose or a fence.
+            start, end = raw.find("{"), raw.rfind("}")
+            try:
+                data = json.loads(raw[start : end + 1]) if 0 <= start < end else None
+            except json.JSONDecodeError:
+                data = None
+            if not isinstance(data, dict):
+                raise LLMProviderError(f"LLM eval output is not valid JSON: {raw!r}") from None
 
         required = {
             "correctness", "clarity", "depth",
@@ -230,4 +277,6 @@ class LLMProvider:
         # Optional — only requested in voice mode, and the model may still omit
         # it, so it is normalised rather than treated as a required key.
         data["verbal_ack"] = str(data.get("verbal_ack") or "")[:256]
+        # Optional coaching line shown on screen after the answer.
+        data["tip"] = str(data.get("tip") or "")[:400]
         return data

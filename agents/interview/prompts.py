@@ -17,12 +17,14 @@ Design notes
 
 from __future__ import annotations
 
+from agents.interview.topics import topic_context
+
 # ---------------------------------------------------------------------------
 # Base interviewer persona — injected once per session
 # ---------------------------------------------------------------------------
 
 _INTERVIEWER_BASE = """\
-You are an expert technical interviewer conducting a structured mock interview.
+You are an expert interviewer conducting a structured mock interview.
 Your tone is professional, encouraging, and concise.
 Ask ONE question at a time. Never repeat a question already asked in the conversation.
 Do not provide answers, hints, or explanations — only ask the question.
@@ -40,8 +42,8 @@ The candidate HEARS your question read aloud; they cannot re-read it.
 * Write exactly what a human interviewer would say out loud — plain sentences.
 * Never use code blocks, bullet points, numbered lists, markdown, or symbols
   like -> or {} — they are unintelligible when spoken.
-* Keep it to two sentences at most, and put the actual question last so it is
-  the part they remember.
+* Keep it under 30 words, and put the actual question last so it is the part
+  they remember. One ask only — a listener cannot hold a four-part question.
 * Spell out anything that reads badly aloud: say "big O of n log n", not "O(n log n)".
 * Ask for a spoken explanation of an approach, never for code to be dictated.
 """
@@ -97,8 +99,15 @@ _DIFFICULTY_GUIDANCE: dict[str, str] = {
 # Public prompt builders
 # ---------------------------------------------------------------------------
 
+def _focus(track: str, topic: str | None) -> str:
+    """The TOPIC AREA section: a free-text topic wins over the fixed catalogue."""
+    if topic:
+        return topic_context(track, topic)
+    return _TRACK_CONTEXT.get(track, "general technical topics")
+
+
 def build_question_prompt(
-    track: str, difficulty: str, voice_mode: bool = False
+    track: str, difficulty: str, voice_mode: bool = False, topic: str | None = None
 ) -> str:
     """
     Build the system prompt for question generation.
@@ -106,8 +115,9 @@ def build_question_prompt(
     Called once per turn by ``node_generate_question`` and
     ``node_generate_followup``.  When ``voice_mode`` is set the question is
     additionally constrained to a spoken register (see ``_VOICE_ADDENDUM``).
+    ``topic`` is the candidate's own subject (see ``agents/interview/topics.py``).
     """
-    track_ctx  = _TRACK_CONTEXT.get(track, "general technical topics")
+    track_ctx  = _focus(track, topic)
     diff_ctx   = _DIFFICULTY_GUIDANCE.get(difficulty, "intermediate level")
     voice_ctx  = f"\n\n{_VOICE_ADDENDUM}" if voice_mode else ""
 
@@ -115,13 +125,20 @@ def build_question_prompt(
         f"{_INTERVIEWER_BASE}{voice_ctx}\n\n"
         f"TOPIC AREA:\n{track_ctx}\n\n"
         f"DIFFICULTY LEVEL ({difficulty.upper()}):\n{diff_ctx}\n\n"
-        "Based on the conversation history, ask the NEXT logical technical "
-        "question. Keep the question clear and self-contained (under 3 sentences)."
+        "Based on the conversation history, ask the NEXT logical interview "
+        "question. Cover a different aspect of the topic than the questions "
+        "already asked.\n"
+        "Ask about ONE thing, the way a real interviewer does, and let follow-ups "
+        "dig deeper — never chain a list of asks like \"describe the components, "
+        "configuration, data flow, scaling and recovery\". At most one short "
+        "sub-question. Under 45 words.\n"
+        "Output only the question itself — no preamble such as \"Great\" or "
+        "\"Question 2:\", and no markdown except `backticks` around code identifiers."
     )
 
 
 def build_evaluator_prompt(
-    track: str, difficulty: str, voice_mode: bool = False
+    track: str, difficulty: str, voice_mode: bool = False, topic: str | None = None
 ) -> str:
     """
     Build the system prompt for answer evaluation.
@@ -133,17 +150,19 @@ def build_evaluator_prompt(
     on this existing call rather than costing a second LLM round-trip, which
     matters because the candidate is sitting in silence waiting for it.
     """
-    track_ctx = _TRACK_CONTEXT.get(track, "general technical topics")
+    track_ctx = _focus(track, topic)
     diff_ctx  = _DIFFICULTY_GUIDANCE.get(difficulty, "intermediate level")
     ack_key   = (
         ',\n  "verbal_ack":     "<one short spoken reaction, max 12 words>"'
         if voice_mode else ""
     )
     ack_guide = (
-        "\n\nverbal_ack — what the interviewer SAYS OUT LOUD before the next "
-        "question, e.g. \"Right, that covers the indexing side.\" or \"Okay, "
-        "let's move on.\" Acknowledge neutrally; never state the score, never "
-        "reveal whether the answer was right, never teach the correct answer."
+        "\n\nverbal_ack — what the interviewer SAYS OUT LOUD right after the "
+        "answer. React to something specific the candidate said, e.g. \"Right, "
+        "so you'd lean on the index there.\" Acknowledge neutrally; never state "
+        "the score, never reveal whether the answer was right, never teach the "
+        "correct answer. Do NOT announce what happens next (no \"let's move on\", "
+        "no \"next question\") — that is decided after you."
         if voice_mode else ""
     )
 
@@ -165,8 +184,17 @@ Return ONLY a JSON object with EXACTLY these keys:
   "depth":          <float 0-10>,
   "needs_followup": <true | false>,
   "feedback_note":  "<internal reasoning, max 2 sentences, NOT shown to the user>",
-  "answer_summary": "<brief neutral summary of what the candidate said, max 3 sentences>"{ack_key}
+  "answer_summary": "<brief neutral summary of what the candidate said, max 3 sentences>",
+  "tip":            "<ONE sentence of coaching addressed to the candidate as 'you'>"{ack_key}
 }}
+
+tip — shown to the candidate after they answer. Name the single most valuable
+thing to add or change, concretely (e.g. "Mention that useLayoutEffect runs
+before paint, and give the measuring-a-tooltip case."). If the answer was
+excellent, say what made it strong in one line. Never just restate the score.
+
+If the answer is empty, a filler such as "thank you", or unrelated to the
+question, score all three dimensions 0-1 and set needs_followup=false.
 
 Scoring guide:
   correctness  — factual / technical accuracy
@@ -181,7 +209,7 @@ Set needs_followup=false when the answer is complete, clearly wrong
 
 
 def build_followup_prompt(
-    track: str, difficulty: str, voice_mode: bool = False
+    track: str, difficulty: str, voice_mode: bool = False, topic: str | None = None
 ) -> str:
     """
     Build the system prompt for follow-up probe generation.
@@ -191,7 +219,7 @@ def build_followup_prompt(
     Caller injects the feedback_note hint directly into the system prompt
     via ``LLMProvider.generate_followup``.
     """
-    track_ctx = _TRACK_CONTEXT.get(track, "general technical topics")
+    track_ctx = _focus(track, topic)
     diff_ctx  = _DIFFICULTY_GUIDANCE.get(difficulty, "intermediate level")
     voice_ctx = f"\n\n{_VOICE_ADDENDUM}" if voice_mode else ""
 

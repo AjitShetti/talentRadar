@@ -116,6 +116,17 @@ class TestVerbalAckParsing:
         parsed = LLMProvider._parse_eval_json(LLMProvider, raw)  # type: ignore[arg-type]
         assert len(parsed["verbal_ack"]) == 256
 
+    def test_json_wrapped_in_prose_is_recovered(self) -> None:
+        """The retry without JSON mode may wrap the object in a sentence or fence."""
+        raw = "Here is the evaluation:\n```json\n" + self._BASE + ', "tip": "Name the GIL."}\n```'
+        parsed = LLMProvider._parse_eval_json(LLMProvider, raw)  # type: ignore[arg-type]
+        assert parsed["correctness"] == 8.0
+        assert parsed["tip"] == "Name the GIL."
+
+    def test_tip_is_optional(self) -> None:
+        parsed = LLMProvider._parse_eval_json(LLMProvider, self._BASE + "}")  # type: ignore[arg-type]
+        assert parsed["tip"] == ""
+
     def test_ack_does_not_become_a_required_key(self) -> None:
         """A missing ack must not fail parsing the way a missing score does."""
         with pytest.raises(LLMProviderError):
@@ -199,14 +210,40 @@ class TestVoiceModeNodes:
         result = await node_end_session(  # type: ignore[arg-type]
             _state(scores=[{"correctness": 5.0, "clarity": 5.0, "depth": 5.0}])
         )
-        assert "one question" in result["conversation_history"][-1]["content"]
+        assert "one answer" in result["conversation_history"][-1]["content"]
 
-    async def test_typed_closing_message_is_unchanged(self) -> None:
+    async def test_typed_closing_message_reads_naturally(self) -> None:
         scores = [{"correctness": 8.0, "clarity": 8.0, "depth": 8.0}] * 2
         result = await node_end_session(  # type: ignore[arg-type]
             _state(voice_mode=False, scores=scores)
         )
-        assert "question(s)" in result["conversation_history"][-1]["content"]
+        closing = result["conversation_history"][-1]["content"]
+        assert "2 answers" in closing
+        assert "80/100" in closing
+        # There is no separate results page; the breakdown renders in place.
+        assert "results page" not in closing
+
+    async def test_unscored_answers_do_not_drag_the_total(self) -> None:
+        scores = [
+            {"correctness": 8.0, "clarity": 8.0, "depth": 8.0},
+            {"correctness": 0.0, "clarity": 0.0, "depth": 0.0, "unscored": True},
+        ]
+        result = await node_end_session(  # type: ignore[arg-type]
+            _state(voice_mode=False, scores=scores)
+        )
+        assert "80/100" in result["conversation_history"][-1]["content"]
+
+    async def test_evaluation_failure_is_marked_unscored_not_faked(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        async def boom(*args: object, **kwargs: object) -> dict[str, Any]:
+            raise LLMProviderError("groq down")
+
+        monkeypatch.setattr(LLMProvider, "evaluate_answer", boom)
+        result = await node_evaluate_answer(_state(voice_mode=False))  # type: ignore[arg-type]
+        assert result["last_score"]["unscored"] is True
+        # The candidate's own answer must not come back as the "summary".
+        assert result["last_score"]["answer_summary"] == ""
 
 
 # ---------------------------------------------------------------------------

@@ -732,6 +732,11 @@ class InterviewSession(Base):
         nullable=False,
         index=True,
     )
+    topic: Mapped[str | None] = mapped_column(
+        String(80),
+        nullable=True,
+        comment="Free-text subject the candidate chose; NULL for catalogue tracks",
+    )
     difficulty: Mapped[InterviewDifficulty] = mapped_column(
         Enum(
             InterviewDifficulty,

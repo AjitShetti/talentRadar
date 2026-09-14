@@ -44,6 +44,7 @@ from agents.interview.state import (
     MAX_QUESTIONS_PER_SESSION,
     InterviewAgentState,
 )
+from agents.interview.topics import session_label
 
 logger = logging.getLogger(__name__)
 
@@ -67,8 +68,9 @@ async def node_generate_question(state: InterviewAgentState) -> InterviewAgentSt
     history    = list(state.get("conversation_history", []))
     q_index    = state.get("question_index", 0)
     voice_mode = state.get("voice_mode", False)
+    topic      = state.get("topic")
 
-    system_prompt = build_question_prompt(track, difficulty, voice_mode)
+    system_prompt = build_question_prompt(track, difficulty, voice_mode, topic)
     llm = LLMProvider()
     question: str | None = None
 
@@ -88,7 +90,7 @@ async def node_generate_question(state: InterviewAgentState) -> InterviewAgentSt
             for msg in history
             if isinstance(msg, dict) and msg.get("role") == "assistant"
         }
-        question = get_fallback_question(track, difficulty, used)
+        question = get_fallback_question(track, difficulty, used, topic)
         if question:
             logger.info("Using fallback question (q=%d)", q_index)
         else:
@@ -139,12 +141,13 @@ async def node_evaluate_answer(state: InterviewAgentState) -> InterviewAgentStat
     is_followup   = state.get("is_followup", False)
     scores        = list(state.get("scores", []))
     voice_mode    = state.get("voice_mode", False)
+    topic         = state.get("topic")
 
     # Append the user's answer to history
     updated_history = [*history, {"role": "user", "content": answer}]
 
     # Evaluate
-    system_prompt = build_evaluator_prompt(track, difficulty, voice_mode)
+    system_prompt = build_evaluator_prompt(track, difficulty, voice_mode, topic)
     llm = LLMProvider()
     score_data: dict[str, Any]
 
@@ -158,15 +161,21 @@ async def node_evaluate_answer(state: InterviewAgentState) -> InterviewAgentStat
             score_data["correctness"], score_data["clarity"], score_data["depth"],
         )
     except LLMProviderError as exc:
-        logger.warning("LLM evaluation failed (q=%d): %s — using neutral scores", question_index, exc)
+        logger.warning("LLM evaluation failed (q=%d): %s — answer left unscored", question_index, exc)
+        # The interview carries on, but the answer is marked unscored rather
+        # than given a made-up 5/10: that fake score used to be shown to the
+        # candidate (next to their own answer echoed back as the "summary")
+        # and averaged into their session and dashboard totals.
         score_data = {
-            "correctness": 5.0,
-            "clarity": 5.0,
-            "depth": 5.0,
+            "correctness": 0.0,
+            "clarity": 0.0,
+            "depth": 0.0,
             "needs_followup": False,
             "feedback_note": "Evaluation unavailable (LLM error).",
-            "answer_summary": answer[:256],
+            "answer_summary": "",
+            "tip": "",
             "verbal_ack": "Got it, thank you." if voice_mode else "",
+            "unscored": True,
         }
 
     # Attach positional metadata for the repository layer
@@ -224,8 +233,9 @@ async def node_generate_followup(state: InterviewAgentState) -> InterviewAgentSt
     followup_count = state.get("followup_count", 0)
     feedback_note  = state.get("last_score", {}).get("feedback_note", "")
     voice_mode     = state.get("voice_mode", False)
+    topic          = state.get("topic")
 
-    system_prompt = build_followup_prompt(track, difficulty, voice_mode)
+    system_prompt = build_followup_prompt(track, difficulty, voice_mode, topic)
     llm = LLMProvider()
     followup: str | None = None
 
@@ -270,31 +280,31 @@ async def node_end_session(state: InterviewAgentState) -> InterviewAgentState:
     track   = state.get("track", "")
     voice_mode = state.get("voice_mode", False)
 
-    # Compute aggregate total (0–100) from accumulated scores
-    if scores:
-        avg_c  = sum(s["correctness"] for s in scores) / len(scores)
-        avg_cl = sum(s["clarity"]     for s in scores) / len(scores)
-        avg_d  = sum(s["depth"]       for s in scores) / len(scores)
+    # Compute aggregate total (0–100) from the answers that were actually scored
+    scored = [s for s in scores if not s.get("unscored")]
+    if scored:
+        avg_c  = sum(s["correctness"] for s in scored) / len(scored)
+        avg_cl = sum(s["clarity"]     for s in scored) / len(scored)
+        avg_d  = sum(s["depth"]       for s in scored) / len(scored)
         total_score = round(((avg_c + avg_cl + avg_d) / 30.0) * 100.0, 1)
     else:
         total_score = 0.0
 
-    track_label = track.replace("_", " ").title()
-    if voice_mode:
-        # Spoken aloud, so no "question(s)" and no "/100" — both read badly.
-        answered = "one question" if len(scores) == 1 else f"{len(scores)} questions"
+    track_label = session_label(track, state.get("topic"))
+    answered = "one answer" if len(scores) == 1 else f"{len(scores)} answers"
+    if not scores:
+        closing = f"No problem — we can pick the {track_label} round up again whenever you're ready."
+    elif voice_mode:
+        # Spoken aloud, so no "/100" — it reads badly.
         closing = (
             f"That's everything I had for the {track_label} round. "
-            f"You worked through {answered}, and you scored "
-            f"{total_score:.0f} out of 100 overall. "
-            "Thanks for your time — your detailed feedback is on screen now."
+            f"Across {answered} you scored {total_score:.0f} out of 100. "
+            "Thanks for your time — your breakdown is on screen now."
         )
     else:
         closing = (
-            f"That wraps up our {track_label} interview session! "
-            f"You answered {len(scores)} question(s). "
-            f"Your overall score is {total_score:.0f}/100. "
-            "Great effort — check your detailed feedback on the results page."
+            f"That wraps up your {track_label} round: {answered}, "
+            f"{total_score:.0f}/100 overall. Your breakdown is below."
         )
     updated_history = [*history, {"role": "assistant", "content": closing}]
 

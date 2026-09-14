@@ -275,6 +275,21 @@ def _track_label(track: str) -> str:
     return TRACK_LABELS.get(track, track.replace("_", " ").title())
 
 
+def _round_key(session: Any) -> str:
+    """Group key for "weakest round": the topic when chosen, else the track.
+
+    Five sessions on five different topics are five different rounds — lumping
+    them under their shared style ("Technical") would hide which subject is weak.
+    """
+    topic = getattr(session, "topic", None)
+    return f"topic:{topic.lower()}" if topic else str(session.track.value)
+
+
+def _session_label(session: Any) -> str:
+    topic = getattr(session, "topic", None)
+    return str(topic) if topic else _track_label(session.track.value)
+
+
 async def interview_insights(
     *,
     user_id: str,
@@ -330,6 +345,7 @@ async def interview_insights(
     # -- Per-answer percentages, grouped by session and by track --------- #
     per_session: dict[Any, list[float]] = {}
     per_track: dict[str, list[float]] = {}
+    label_by_key: dict[str, str] = {}
     dim_totals: dict[str, float] = {key: 0.0 for key in DIMENSION_LABELS}
     scored_rows: list[tuple[float, Any]] = []
 
@@ -339,7 +355,9 @@ async def interview_insights(
             continue
         pct = _pct(row.score_correctness, row.score_clarity, row.score_depth)
         per_session.setdefault(row.session_id, []).append(pct)
-        per_track.setdefault(parent.track.value, []).append(pct)
+        round_key = _round_key(parent)
+        per_track.setdefault(round_key, []).append(pct)
+        label_by_key[round_key] = _session_label(parent)
         dim_totals["correctness"] += row.score_correctness
         dim_totals["clarity"] += row.score_clarity
         dim_totals["depth"] += row.score_depth
@@ -375,7 +393,7 @@ async def interview_insights(
     # -- Score trend, oldest -> newest ----------------------------------- #
     trend: list[dict[str, Any]] = [
         {
-            "label": _track_label(s.track.value),
+            "label": _session_label(s),
             "score": round(sum(per_session[s.id]) / len(per_session[s.id]), 1),
             "date": s.created_at.isoformat() if s.created_at else None,
             "completed": bool(s.completed),
@@ -394,14 +412,14 @@ async def interview_insights(
     session_count_by_track: dict[str, int] = {}
     for s in sessions:
         if per_session.get(s.id):
-            key = s.track.value
+            key = _round_key(s)
             session_count_by_track[key] = session_count_by_track.get(key, 0) + 1
 
     tracks: list[dict[str, Any]] = sorted(
         (
             {
                 "track": track,
-                "label": _track_label(track),
+                "label": label_by_key.get(track, _track_label(track)),
                 "score": round(sum(pcts) / len(pcts), 1),
                 "sessions": session_count_by_track.get(track, 0),
             }
@@ -428,7 +446,7 @@ async def interview_insights(
             {
                 "question": question[:160] + ("…" if len(question) > 160 else ""),
                 "score": round(pct, 1),
-                "track_label": _track_label(parent.track.value),
+                "track_label": _session_label(parent),
                 "difficulty": parent.difficulty.value,
                 "dimension": DIMENSION_LABELS[low_key],
                 "dimension_score": round(sub[low_key], 1),

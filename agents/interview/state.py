@@ -49,7 +49,20 @@ class InterviewAgentState(TypedDict, total=False):
     # Session config — set once on session start                           #
     # ------------------------------------------------------------------ #
     track: str
-    """Catalog track: python_dsa | python_backend | sql | system_design"""
+    """
+    Round style: technical | coding | system_design | behavioral, or a legacy
+    catalogue track (python_dsa | python_backend | sql).
+    """
+
+    topic: str | None
+    """
+    Free-text subject the candidate chose ("React hooks", "Product management").
+    None for legacy catalogue sessions. Normalised by
+    ``agents.interview.topics.normalize_topic`` at session start. The state
+    round-trips through the client, so the API layer restores ``track`` and
+    ``topic`` from the persisted session row on every turn rather than trusting
+    what came back.
+    """
 
     difficulty: str
     """Difficulty level chosen by the user: beginner | mid | senior"""

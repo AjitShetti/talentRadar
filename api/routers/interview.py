@@ -37,7 +37,8 @@ from agents.interview.nodes import (
     node_evaluate_answer,
     node_generate_question,
 )
-from agents.interview.state import InterviewAgentState
+from agents.interview.state import MAX_QUESTIONS_PER_SESSION, InterviewAgentState
+from agents.interview.topics import POPULAR_TOPICS, spoken_transition, suggest_topics
 from api.auth import get_current_user
 from api.schemas.interview_schemas import (
     AnswerScoreDetailSchema,
@@ -52,6 +53,7 @@ from api.schemas.interview_schemas import (
     StartSessionResponse,
     SubmitAnswerRequest,
     SubmitAnswerResponse,
+    TopicSuggestionsResponse,
     TranscribeResponse,
 )
 from api.utils.uploads import read_capped, safe_filename
@@ -130,6 +132,71 @@ async def _load_owned_session(
     return session
 
 
+def _persisted_config(session: InterviewSession) -> InterviewAgentState:
+    """Session config from the database row, overriding the client's copy.
+
+    ``agent_state`` round-trips through the browser, and ``topic`` is spliced
+    into the system prompt. Taking it from the row validated at session start
+    means an edited state cannot swap in an unvalidated topic (or a different
+    track) mid-interview.
+    """
+    return {
+        "track": session.track.value,
+        "topic": session.topic,
+        "difficulty": session.difficulty.value,
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /interview/topics
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/topics",
+    response_model=TopicSuggestionsResponse,
+    summary="Topic suggestions for a new session",
+    description=(
+        "Chips for the setup screen: topics from the candidate's profile, their "
+        "own recent topics, and a popular list. Any topic can still be typed."
+    ),
+)
+async def get_topic_suggestions(
+    user_id: CurrentUserId,
+    db: DBSession,
+) -> TopicSuggestionsResponse:
+    """Suggest interview topics. Never fails the page: a missing profile is empty."""
+    from services.profiles import get_profile
+
+    for_you: list[str] = []
+    try:
+        profile = await get_profile(user_id=user_id)
+    except Exception:
+        logger.warning("Topic suggestions: profile lookup failed", exc_info=True)
+        profile = None
+    if profile:
+        for_you = suggest_topics(
+            target_roles=profile.get("target_roles"),
+            current_role=profile.get("current_role"),
+            skills=[s["name"] for s in profile.get("skills", []) if s.get("name")],
+        )
+
+    recent: list[str] = []
+    try:
+        sessions = await InterviewRepository().get_session_history(
+            db, uuid.UUID(user_id), limit=20
+        )
+        recent = suggest_topics(skills=[s.topic for s in sessions if s.topic], limit=5)
+    except Exception:
+        logger.warning("Topic suggestions: history lookup failed", exc_info=True)
+
+    taken = {topic.lower() for topic in [*for_you, *recent]}
+    return TopicSuggestionsResponse(
+        for_you=for_you,
+        recent=recent,
+        popular=[topic for topic in POPULAR_TOPICS if topic.lower() not in taken],
+    )
+
+
 # ---------------------------------------------------------------------------
 # POST /interview/sessions/start
 # ---------------------------------------------------------------------------
@@ -160,6 +227,7 @@ async def start_session(
             user_id=uuid.UUID(user_id),
             track=InterviewTrack(body.track),
             difficulty=InterviewDifficulty(body.difficulty),
+            topic=body.topic,
         )
         await db.commit()
     except Exception as exc:
@@ -173,6 +241,7 @@ async def start_session(
     # -- Build initial state and run node_generate_question -------------- #
     initial_state: InterviewAgentState = {
         "track": body.track,
+        "topic": body.topic,
         "difficulty": body.difficulty,
         "user_id": user_id,
         "voice_mode": body.voice_mode,
@@ -199,6 +268,7 @@ async def start_session(
         question=agent_state.get("current_question", ""),
         question_index=agent_state.get("question_index", 0),
         is_followup=False,
+        max_questions=MAX_QUESTIONS_PER_SESSION,
         agent_state=agent_state,
     )
 
@@ -224,15 +294,16 @@ async def submit_answer(
 ) -> SubmitAnswerResponse:
     """Evaluate answer, save score, and return the next question."""
 
+    repo = InterviewRepository()
+    session_row = await _load_owned_session(db, body.session_id, user_id)
+    session_id = uuid.UUID(body.session_id)
+
     # -- Rehydrate agent state ------------------------------------------ #
     state: InterviewAgentState = {
         **body.agent_state,
+        **_persisted_config(session_row),
         "current_answer": body.answer,
     }
-
-    repo = InterviewRepository()
-    await _load_owned_session(db, body.session_id, user_id)
-    session_id = uuid.UUID(body.session_id)
 
     # -- Evaluate the answer -------------------------------------------- #
     try:
@@ -246,27 +317,32 @@ async def submit_answer(
         ) from exc
 
     last_score = state.get("last_score", {})
+    scored = not last_score.get("unscored", False)
 
     # -- Persist the score record --------------------------------------- #
-    try:
-        scores_list = state.get("scores", [])
-        latest = scores_list[-1] if scores_list else {}
-        await repo.save_answer_score(
-            db,
-            session_id=session_id,
-            question_index=latest.get("question_index", 0),
-            question_text=latest.get("question_text", ""),
-            score_correctness=last_score.get("correctness", 0.0),
-            score_clarity=last_score.get("clarity", 0.0),
-            score_depth=last_score.get("depth", 0.0),
-            answer_summary=last_score.get("answer_summary"),
-            was_followup=latest.get("was_followup", False),
-        )
-        await db.commit()
-    except Exception:
-        await db.rollback()
-        logger.error("Failed to persist answer score", exc_info=True)
-        # Non-fatal — session continues even if score persistence fails
+    # An unscored answer (evaluator unavailable) is not saved: a row of zeros
+    # would drag the session total and the dashboard insights down for an
+    # outage that was not the candidate's fault.
+    if scored:
+        try:
+            scores_list = state.get("scores", [])
+            latest = scores_list[-1] if scores_list else {}
+            await repo.save_answer_score(
+                db,
+                session_id=session_id,
+                question_index=latest.get("question_index", 0),
+                question_text=latest.get("question_text", ""),
+                score_correctness=last_score.get("correctness", 0.0),
+                score_clarity=last_score.get("clarity", 0.0),
+                score_depth=last_score.get("depth", 0.0),
+                answer_summary=last_score.get("answer_summary"),
+                was_followup=latest.get("was_followup", False),
+            )
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            logger.error("Failed to persist answer score", exc_info=True)
+            # Non-fatal — session continues even if score persistence fails
 
     # -- Determine next action and generate next question/message -------- #
     next_action = state.get("next_action", "next_question")
@@ -320,17 +396,29 @@ async def submit_answer(
         else:
             next_question = state.get("current_question", "")
 
+    verbal_ack = None
+    if state.get("voice_mode"):
+        verbal_ack = spoken_transition(
+            str(last_score.get("verbal_ack") or ""),
+            followup=bool(state.get("is_followup")) and not session_complete,
+            complete=session_complete,
+            turn=len(state.get("scores", [])),
+        ) or None
+
     return SubmitAnswerResponse(
         session_id=body.session_id,
         question=next_question,
         question_index=state.get("question_index", 0),
         is_followup=state.get("is_followup", False),
+        max_questions=MAX_QUESTIONS_PER_SESSION,
         score=AnswerScoreSchema(
             correctness=last_score.get("correctness", 0.0),
             clarity=last_score.get("clarity", 0.0),
             depth=last_score.get("depth", 0.0),
-            answer_summary=last_score.get("answer_summary"),
-            verbal_ack=last_score.get("verbal_ack") or None,
+            answer_summary=last_score.get("answer_summary") or None,
+            tip=last_score.get("tip") or None,
+            scored=scored,
+            verbal_ack=verbal_ack,
         ),
         session_complete=session_complete,
         agent_state=state,
@@ -357,12 +445,12 @@ async def end_session(
 ) -> EndSessionResponse:
     """Manually end a session and get the final score."""
 
-    await _load_owned_session(db, body.session_id, user_id)
+    session_row = await _load_owned_session(db, body.session_id, user_id)
     session_id = uuid.UUID(body.session_id)
     repo = InterviewRepository()
 
     # Run the end node to get the closing message
-    state: InterviewAgentState = body.agent_state
+    state: InterviewAgentState = {**body.agent_state, **_persisted_config(session_row)}
     end_update = await node_end_session(state)
     state = {**state, **end_update}
     closing = _last_message(state)
@@ -479,6 +567,7 @@ async def get_session_detail(
     return SessionDetailResponse(
         id=str(session.id),
         track=session.track.value,
+        topic=session.topic,
         difficulty=session.difficulty.value,
         total_score=session.total_score,
         completed=session.completed,
