@@ -10,6 +10,30 @@ import RequireAuth from '@/components/RequireAuth'
 import CopyButton from '@/components/CopyButton'
 import { api, ResumeDocument, ResumeItem, ResumeSection, ResumeSectionType } from '@/lib/api'
 import { computeAtsScore } from '@/lib/ats-score'
+import { readPersisted, runTask, usePersistentState, useTaskRunning, writePersisted } from '@/lib/persistent-state'
+
+// Edits autosave after a pause. Anyone who edits and then switches tabs inside
+// that pause used to lose the edit: the page reloaded the document from the
+// server before the save had gone out, and the next keystroke saved over it.
+// So unsaved edits are kept as a draft until the server has them, and a page
+// that mounts while a save is still in flight waits for it before loading.
+const DRAFT_KEY = 'resume.draft'
+const SAVE_TASK = 'resume.save'
+let inflightSave: Promise<void> | null = null
+
+function saveDocument(document: ResumeDocument): Promise<void> {
+  const previous = inflightSave ?? Promise.resolve()
+  // Chained, so two saves never race and the later document always wins.
+  const next = previous.then(() => runTask(SAVE_TASK, async () => {
+    await api.resumes.document.save(document)
+    // Only drop the draft if nothing was typed while this save was out.
+    if (readPersisted<ResumeDocument | null>(DRAFT_KEY) === document) writePersisted(DRAFT_KEY, null)
+  }))
+  const tracked = next.catch(() => { /* the draft stays, and the page says it is unsaved */ })
+  inflightSave = tracked
+  void tracked.then(() => { if (inflightSave === tracked) inflightSave = null })
+  return next
+}
 
 function base64ToBlob(base64: string, type: string) {
   const binary = atob(base64)
@@ -102,8 +126,11 @@ export default function ResumeStudioPage() {
   const [doc, setDoc] = useState<ResumeDocument | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
-  const [expanded, setExpanded] = useState<string | null>(null)
-  const [showLatex, setShowLatex] = useState(false)
+  const [expanded, setExpanded] = usePersistentState<string | null>('resume.expanded', null)
+  const [showLatex, setShowLatex] = usePersistentState('resume.showLatex', false)
+  const [draft] = usePersistentState<ResumeDocument | null>(DRAFT_KEY, null)
+  const saving = useTaskRunning(SAVE_TASK)
+  const [saveError, setSaveError] = useState('')
 
   const [importing, setImporting] = useState(false)
   const [importError, setImportError] = useState('')
@@ -127,18 +154,45 @@ export default function ResumeStudioPage() {
 
   useEffect(() => {
     let cancelled = false
-    api.resumes.document.get()
-      .then(loaded => {
+    async function load() {
+      // A save started on the previous visit has to land first, or this read
+      // returns the document from before those edits.
+      if (inflightSave) await inflightSave
+      const unsaved = readPersisted<ResumeDocument | null>(DRAFT_KEY)
+      if (unsaved) {
+        // The last save never reached the server — keep the edits and retry.
         if (cancelled) return
-        setDoc(loaded)
-        docRef.current = loaded
-        compileNow(loaded)
-      })
-      .catch(err => setLoadError(errorMessage(err, 'Could not load your resume.')))
+        setDoc(unsaved)
+        docRef.current = unsaved
+        persist(unsaved)
+        compileNow(unsaved)
+        return
+      }
+      const loaded = await api.resumes.document.get()
+      if (cancelled) return
+      setDoc(loaded)
+      docRef.current = loaded
+      compileNow(loaded)
+    }
+    load()
+      .catch(err => { if (!cancelled) setLoadError(errorMessage(err, 'Could not load your resume.')) })
       .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      // Leaving mid-pause: send the pending edit now instead of dropping it.
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current)
+        debounceRef.current = null
+        if (docRef.current) persist(docRef.current)
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  function persist(document: ResumeDocument) {
+    setSaveError('')
+    saveDocument(document).catch(err => setSaveError(errorMessage(err, 'Your latest changes are not saved yet.')))
+  }
 
   useEffect(() => {
     if (!pdfBase64) { setPdfUrl(null); return }
@@ -165,11 +219,13 @@ export default function ResumeStudioPage() {
   function updateDoc(next: ResumeDocument) {
     setDoc(next)
     docRef.current = next
+    writePersisted(DRAFT_KEY, next)
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
+      debounceRef.current = null
       const current = docRef.current
       if (!current) return
-      api.resumes.document.save(current).catch(() => {})
+      persist(current)
       compileNow(current)
     }, 800)
   }
@@ -186,6 +242,10 @@ export default function ResumeStudioPage() {
     setImporting(true)
     try {
       await api.resumes.extractText(file)
+      // The import replaces the document, so pending edits to the old one go.
+      if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null }
+      if (inflightSave) await inflightSave
+      writePersisted(DRAFT_KEY, null)
       const fresh = await api.resumes.document.get()
       setDoc(fresh)
       docRef.current = fresh
@@ -515,6 +575,10 @@ export default function ResumeStudioPage() {
 
             <div className="editor-preview">
               <div className="editor-preview-head">
+                <span className={`editor-status-pill${saving ? ' compiling' : saveError ? ' error' : ''}`} data-testid="resume-save-status">
+                  {saving ? <RefreshCw size={12} className="spin" /> : <Check size={12} />}
+                  {saving ? 'Saving…' : saveError ? 'Not saved' : draft ? 'Unsaved changes' : 'All changes saved'}
+                </span>
                 <span className={`editor-status-pill${compiling ? ' compiling' : compileError ? ' error' : ''}`}>
                   {compiling ? <RefreshCw size={12} className="spin" /> : <Check size={12} />}
                   {compiling ? 'Compiling…' : compileError ? 'Compile error' : 'PDF up to date'}
@@ -530,6 +594,7 @@ export default function ResumeStudioPage() {
                   )}
                 </div>
               </div>
+              {saveError && <p className="form-error" style={{ marginBottom: 10 }}>{saveError}</p>}
               {compileError && <p className="form-error" style={{ marginBottom: 10 }}>{compileError}</p>}
               {pdfUrl ? (
                 <iframe className="editor-pdf-frame" src={pdfUrl} title="Resume preview" />

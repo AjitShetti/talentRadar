@@ -6,12 +6,14 @@ import AppShell from '@/components/AppShell'
 import FlapText from '@/components/FlapText'
 import { Ripple } from '@/components/Ripple'
 import { api, Job, Sourcing, signedIn } from '@/lib/api'
-import { usePersistentState } from '@/lib/persistent-state'
+import { isTaskRunning, runTask, usePersistentState, useTaskRunning } from '@/lib/persistent-state'
 import { SuggestionProfile, pickSuggestions } from '@/lib/search-suggestions'
 import { EXPERIENCE_BANDS, INDIAN_CITIES, JOB_PLATFORMS, bandForYears, matchCity, platformLabel } from '@/lib/filters'
 import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 
 type FilterProfile = SuggestionProfile & { years_experience?: unknown; is_remote_preferred?: unknown }
+
+const SEARCH_TASK = 'search'
 
 export default function SearchPage() {
   const [query, setQuery] = usePersistentState('search.query', '')
@@ -20,20 +22,26 @@ export default function SearchPage() {
   const [remote, setRemote, remoteReady] = usePersistentState('search.remote', false)
   const [platforms, setPlatforms] = usePersistentState<string[]>('search.platforms', [])
   const [jobs, setJobs, jobsReady] = usePersistentState<Job[]>('search.jobs', [])
-  const [loading, setLoading] = useState(false); const [error, setError] = useState('')
+  // A search can take a while when it goes out to the boards, and people move
+  // to another page meanwhile. It runs as a task so the results still land,
+  // and so coming back shows it is still running rather than an empty board.
+  const loading = useTaskRunning(SEARCH_TASK)
+  const [error, setError] = usePersistentState('search.error', '')
   const [saved, setSaved] = usePersistentState<string[]>('search.saved', [])
   const [profile, setProfile] = useState<SuggestionProfile | null>(null); const [tips, setTips] = useState<string[]>([])
   // Set only by semantic search, which is the path that can go out to the job
   // boards. Filtered searches run against the relational index and never do.
-  const [sourcing, setSourcing] = useState<Sourcing | null>(null)
+  const [sourcing, setSourcing] = usePersistentState<Sourcing | null>('search.sourcing', null)
   // Distinguishes "no search yet" from "searched and found nothing"; both used
   // to show the same prompt, so an empty result looked like the button did nothing.
-  const [searched, setSearched] = useState(false)
+  const [searched, setSearched] = usePersistentState('search.searched', false)
 
   // Profile defaults are applied once, and only to filters the user has not set
   // themselves — a stored choice always wins over the profile.
-  const filtersReady = locationReady && experienceReady && remoteReady
-  const prefilled = useRef(false)
+  // Persisted, not a ref: a ref reset on every visit, so filters the user had
+  // cleared were refilled from the profile each time they came back.
+  const [prefilled, setPrefilled, prefilledReady] = usePersistentState('search.prefilled', false)
+  const filtersReady = locationReady && experienceReady && remoteReady && prefilledReady
 
   // Suggestions are randomised, so they are generated after mount (never during render)
   // and rotated on every search so the panel keeps offering new angles.
@@ -48,8 +56,8 @@ export default function SearchPage() {
   }, [])
 
   useEffect(() => {
-    if (!profile || !filtersReady || prefilled.current) return
-    prefilled.current = true
+    if (!profile || !filtersReady || prefilled) return
+    setPrefilled(true)
     const source = profile as FilterProfile
     const targets = Array.isArray(source.target_locations) ? source.target_locations : []
     const city = matchCity(typeof targets[0] === 'string' ? targets[0] as string : '')
@@ -57,7 +65,7 @@ export default function SearchPage() {
     setLocation(current => current || city)
     setExperience(current => current || bandForYears(years))
     setRemote(current => current || Boolean(source.is_remote_preferred))
-  }, [profile, filtersReady, setLocation, setExperience, setRemote])
+  }, [profile, filtersReady, prefilled, setPrefilled, setLocation, setExperience, setRemote])
 
   function shuffleTips() { setTips(current => pickSuggestions(profile, current)) }
   function clearFilters() { setLocation(''); setExperience(''); setRemote(false); setPlatforms([]) }
@@ -66,37 +74,37 @@ export default function SearchPage() {
 
   async function find(e: FormEvent) {
     e.preventDefault()
-    if (!query.trim()) return
-    setLoading(true); setError('')
+    if (!query.trim() || isTaskRunning(SEARCH_TASK)) return
+    setError('')
     try {
-      // Filters need exact column matching, so they run against the relational
-      // index; an unfiltered query goes to semantic search instead.
-      let found: Job[] = []
-      let foundSourcing: Sourcing | null = null
-      if (hasFilters) {
-        const response = await api.search.structured(query, { location, remote, experience, platforms })
-        found = response.jobs || []
-      }
-      // The relational index only knows what earlier searches stored, and a
-      // filtered search never goes out to the boards — so for a signed-in user,
-      // whose profile prefills the filters, a thin index answered every search
-      // with nothing. When it has nothing, ask semantic search, which can source
-      // live; the city and remoteness ride along in the query text, and the
-      // platform filter is applied to what comes back.
-      if (!found.length) {
-        const phrased = [query.trim(), remote ? 'remote' : '', location ? `in ${location}` : ''].filter(Boolean).join(' ')
-        const response = await api.search.semantic(phrased, platforms)
-        found = response.results || []
-        foundSourcing = response.sourcing || null
-      }
-      setJobs(found)
-      setSourcing(foundSourcing)
-      setSearched(true)
+      await runTask(SEARCH_TASK, async () => {
+        // Filters need exact column matching, so they run against the relational
+        // index; an unfiltered query goes to semantic search instead.
+        let found: Job[] = []
+        let foundSourcing: Sourcing | null = null
+        if (hasFilters) {
+          const response = await api.search.structured(query, { location, remote, experience, platforms })
+          found = response.jobs || []
+        }
+        // The relational index only knows what earlier searches stored, and a
+        // filtered search never goes out to the boards — so for a signed-in user,
+        // whose profile prefills the filters, a thin index answered every search
+        // with nothing. When it has nothing, ask semantic search, which can source
+        // live; the city and remoteness ride along in the query text, and the
+        // platform filter is applied to what comes back.
+        if (!found.length) {
+          const phrased = [query.trim(), remote ? 'remote' : '', location ? `in ${location}` : ''].filter(Boolean).join(' ')
+          const response = await api.search.semantic(phrased, platforms)
+          found = response.results || []
+          foundSourcing = response.sourcing || null
+        }
+        setJobs(found)
+        setSourcing(foundSourcing)
+        setSearched(true)
+      })
       shuffleTips()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Search could not be completed.')
-    } finally {
-      setLoading(false)
     }
   }
 

@@ -46,7 +46,7 @@ export default function CompanyIntelPage() {
   const [facets, setFacets] = useState<CompanyFacets | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = usePersistentState<string | null>('companyIntel.selectedId', null)
 
   // The search box types faster than the API answers, so debounce the term the
   // request actually uses rather than firing on every keystroke.
