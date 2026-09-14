@@ -17,6 +17,7 @@ import logging
 import re
 from datetime import datetime
 from html import unescape
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -57,7 +58,7 @@ class AshbySource(BaseJobSource):
 
     name = "ashby"
 
-    def __init__(self, *, raw_data_dir=None, orgs: list[str] | None = None) -> None:
+    def __init__(self, *, raw_data_dir: str | Path | None = None, orgs: list[str] | None = None) -> None:
         super().__init__(raw_data_dir=raw_data_dir)
         import os
         env_orgs = os.getenv("ASHBY_ORGS")
@@ -67,7 +68,7 @@ class AshbySource(BaseJobSource):
         )
         self._client = httpx.Client(timeout=30.0)
 
-    def __enter__(self) -> "AshbySource":
+    def __enter__(self) -> AshbySource:
         return self
 
     def __exit__(self, *_: Any) -> None:

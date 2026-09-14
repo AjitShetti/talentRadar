@@ -34,7 +34,7 @@ def upgrade() -> None:
     # ------------------------------------------------------------------ #
     # Pure SQL migration to avoid SQLAlchemy enum/type creation issues    #
     # ------------------------------------------------------------------ #
-    
+
     # Create ENUM types
     op.execute("""
         CREATE TYPE ingestion_status_enum AS ENUM ('pending', 'running', 'success', 'partial', 'failed')

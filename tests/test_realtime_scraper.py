@@ -7,19 +7,17 @@ search caching service, and the real-time scraper engine.
 
 from __future__ import annotations
 
-import asyncio
-import pytest
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 from domain.entities import Job
-from domain.enums import EmploymentType, JobStatus, SeniorityLevel
-from ingestion.scrapling_manager import ScraplingManager
+from ingestion.engine import RealtimeScraperEngine, compute_job_dedup_hash
 from ingestion.scrapers.ats_scraper import ATSScraper, matches_location, matches_query
 from ingestion.scrapers.indian_boards_scraper import IndianBoardsScraper, normalize_location
 from ingestion.scrapers.stealth_boards_scraper import StealthBoardsScraper
-from ingestion.engine import RealtimeScraperEngine, compute_job_dedup_hash, job_to_dict
+from ingestion.scrapling_manager import ScraplingManager
 from services.search_cache_service import SearchCacheService
-
 
 # ── Location & Query Matching Tests ──────────────────────────────────────────
 

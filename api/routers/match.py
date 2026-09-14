@@ -31,6 +31,7 @@ import base64
 import json
 import logging
 import uuid
+from collections.abc import AsyncIterator
 from functools import lru_cache
 from io import BytesIO
 from typing import Annotated, Any
@@ -349,7 +350,7 @@ async def evaluate_candidate(
 async def evaluate_stream(task_id: str, user_id: CurrentUserId) -> EventSourceResponse:
     """Stream evaluation status updates via Server-Sent Events."""
 
-    async def event_generator():
+    async def event_generator() -> AsyncIterator[dict[str, str]]:
         # 0.5s per tick — 120 ticks is a 60s ceiling, matching the documented
         # wait (the old loop ran 60 ticks and gave up after 30s).
         for _ in range(120):

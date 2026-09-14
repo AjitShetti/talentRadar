@@ -60,7 +60,7 @@ class LearningPathGenerator:
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ]
-        
+
         return self._call_llm(messages)
 
     @retry(

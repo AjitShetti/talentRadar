@@ -181,7 +181,7 @@ def inline_to_html(fragment: str) -> str:
         text = _wrap_command(text, name, "", "")
 
     # TeX ligatures for dashes, which resumes use in date ranges.
-    text = text.replace("---", "—").replace("--", "–")  # noqa: RUF001 - real dashes
+    text = text.replace("---", "—").replace("--", "–")
     text = text.replace("$|$", _PIPE).replace("|", _PIPE)
     text = text.replace(r"\\", _BREAK)
     text = _BARE_COMMANDS.sub("", text)

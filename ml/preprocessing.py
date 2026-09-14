@@ -262,10 +262,7 @@ def detect_sections(text: str) -> list[tuple[str, int, int]]:
 
     # Fill in end positions
     for i, (name, start, _) in enumerate(sections):
-        if i + 1 < len(sections):
-            end = sections[i + 1][1]
-        else:
-            end = len(text)
+        end = sections[i + 1][1] if i + 1 < len(sections) else len(text)
         sections[i] = (name, start, end)
 
     return sections
@@ -287,7 +284,7 @@ def extract_section_text(text: str) -> dict[str, str]:
     sections = detect_sections(text)
     result: dict[str, str] = {}
 
-    for section_name, start, end in sections:
+    for section_name, _start, end in sections:
         # Extract text after the header (skip the header itself)
         header_match = _SECTION_HEADERS[section_name].search(text)
         if header_match:

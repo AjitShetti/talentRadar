@@ -18,7 +18,7 @@ import json
 import logging
 import time
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -161,7 +161,7 @@ async def recommend_learning(
                     existing.description = t.get("description")
                     existing.resources = t.get("resources")
                     existing.priority = t.get("priority")
-                    existing.updated_at = datetime.now(tz=timezone.utc)
+                    existing.updated_at = datetime.now(tz=UTC)
                 else:
                     session.add(
                         LearningTask(

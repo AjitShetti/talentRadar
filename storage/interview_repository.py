@@ -18,10 +18,10 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Sequence
+from collections.abc import Sequence
+from datetime import UTC, datetime
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from storage.models import (
@@ -103,7 +103,7 @@ class InterviewRepository:
         interview_session.completed = True
         interview_session.total_score = round(total_score, 2)
         interview_session.duration_seconds = duration_seconds
-        interview_session.updated_at = datetime.now(timezone.utc)
+        interview_session.updated_at = datetime.now(UTC)
         db.add(interview_session)
         await db.flush()
         logger.info(
@@ -133,7 +133,7 @@ class InterviewRepository:
             round(partial_score, 2) if partial_score is not None else None
         )
         interview_session.duration_seconds = duration_seconds
-        interview_session.updated_at = datetime.now(timezone.utc)
+        interview_session.updated_at = datetime.now(UTC)
         db.add(interview_session)
         await db.flush()
         logger.info("InterviewSession abandoned: id=%s", session_id)

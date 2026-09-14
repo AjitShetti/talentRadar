@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 _COLLECTION_NAME = "job_descriptions"
 
 #: Cached store, plus when a failed connection was last attempted.
-_store: "ChromaJobStore | None" = None
+_store: ChromaJobStore | None = None
 _store_checked_at: float | None = None
 #: How long to wait before re-probing a Chroma server that was unreachable.
 _STORE_RETRY_SECONDS = 60.0

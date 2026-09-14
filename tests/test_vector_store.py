@@ -357,4 +357,4 @@ def test_migration_dimension_matches_the_model():
     from config.settings import Settings
 
     default_dim = Settings.model_fields["embedding_dim"].default
-    assert module.EMBEDDING_DIM == default_dim
+    assert default_dim == module.EMBEDDING_DIM

@@ -23,8 +23,9 @@ import hashlib
 import logging
 import time
 import uuid
-from datetime import datetime, timezone
-from typing import Any, AsyncGenerator
+from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
+from typing import Any
 
 from config.settings import get_settings
 from domain.entities import Job
@@ -124,11 +125,11 @@ def job_dicts_to_entities(job_dicts: list[dict[str, Any]]) -> list[Job]:
                     tags=data.get("tags") or [],
                     description_clean=data.get("description_clean"),
                     posted_at=posted_at,
-                    created_at=datetime.now(timezone.utc),
+                    created_at=datetime.now(UTC),
                     extra_metadata={"company_name": data.get("company_name") or data.get("company") or "Company"},
                 )
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug("Could not rebuild job entity from %r: %s", str(data.get("title"))[:60], exc)
     return entities
 
@@ -154,14 +155,14 @@ class RealtimeScraperEngine:
             jobs = await asyncio.wait_for(coro, timeout=timeout_seconds)
             latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
             return name, jobs or [], latency_ms, "success"
-        except asyncio.TimeoutError:
+        except TimeoutError:
             latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
             logger.warning(f"Scraper [{name}] timed out after {timeout_seconds}s")
             return name, [], latency_ms, "timeout"
         except Exception as exc:
             latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
             logger.error(f"Scraper [{name}] failed: {exc}")
-            return name, [], latency_ms, f"error: {str(exc)}"
+            return name, [], latency_ms, f"error: {exc!s}"
 
     @classmethod
     async def stream_search(
@@ -264,7 +265,7 @@ class RealtimeScraperEngine:
                     latency_ms=latency_ms,
                     status=status,
                 )
-            except Exception as exc:  # noqa: BLE001 - health is observability, never a failure path
+            except Exception as exc:
                 logger.debug("Could not record health for %s: %s", source_name, exc)
 
             # Deduplicate new jobs

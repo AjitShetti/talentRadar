@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 def extract_text_from_bytes(file_bytes: bytes, filename: str) -> str:
     """Extract text from a PDF or DOCX file represented as bytes."""
     filename_lower = filename.lower()
-    
+
     if filename_lower.endswith(".pdf"):
         if fitz is None:
             raise RuntimeError("PyMuPDF (fitz) is not installed. Cannot parse PDF.")

@@ -17,7 +17,6 @@ Tests cover:
 
 from __future__ import annotations
 
-import sys
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -121,7 +120,7 @@ class TestScoringWeights:
     def test_invalid_weights_raise_error(self):
         from ml.config import ScoringWeights
 
-        with pytest.raises(ValueError, match="must sum to 1.0"):
+        with pytest.raises(ValueError, match=r"must sum to 1\.0"):
             ScoringWeights(skills=0.5, experience=0.5, education=0.5, semantic=0.5)
 
     def test_to_dict(self):

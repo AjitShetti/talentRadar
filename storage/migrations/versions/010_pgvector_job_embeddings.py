@@ -20,7 +20,7 @@ not the deployment.
 from __future__ import annotations
 
 import logging
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
@@ -31,9 +31,9 @@ logger = logging.getLogger("alembic.runtime.migration")
 
 # revision identifiers, used by Alembic.
 revision: str = "010_pgvector_job_embeddings"
-down_revision: Union[str, None] = "009_daily_job_matches"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "009_daily_job_matches"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 #: Must match ``Settings.embedding_dim`` (all-MiniLM-L6-v2 → 384). Changing
 #: the model means a new migration, not an edit to this one.

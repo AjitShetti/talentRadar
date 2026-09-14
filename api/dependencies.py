@@ -7,11 +7,10 @@ repository instances, and shared services.
 
 from __future__ import annotations
 
-from typing import AsyncGenerator
-
+from collections.abc import AsyncGenerator
 
 from storage.database import AsyncSessionLocal
-from storage.repository import UnitOfWork, CompanyRepository, JobRepository, IngestionRunRepository
+from storage.repository import CompanyRepository, IngestionRunRepository, JobRepository, UnitOfWork
 
 
 async def get_unit_of_work() -> AsyncGenerator[UnitOfWork, None]:

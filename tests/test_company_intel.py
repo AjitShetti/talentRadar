@@ -17,6 +17,7 @@ Everything here runs without a database or a network.
 from __future__ import annotations
 
 import json
+from typing import ClassVar
 
 import pytest
 
@@ -278,7 +279,7 @@ class TestBrokerAndHiringPageGates:
 
 
 class TestExtract:
-    HIRING = {"hiring_context": True}
+    HIRING: ClassVar[dict[str, bool]] = {"hiring_context": True}
 
     def test_pulls_a_published_careers_inbox_out_of_page_text(self):
         page = "Write to us at careers@acme.com for open roles."

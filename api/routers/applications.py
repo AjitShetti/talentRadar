@@ -11,27 +11,30 @@ DELETE /applications/{id}      - remove an application
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from api.auth import get_current_user
 from api.schemas.application_schemas import (
     ApplicationCreateSchema,
-    ApplicationUpdateSchema,
-    ApplicationResponseSchema,
-    ApplicationListResponseSchema,
     ApplicationJobSchema,
+    ApplicationListResponseSchema,
+    ApplicationResponseSchema,
+    ApplicationUpdateSchema,
 )
 from storage.database import get_db_dep
-from storage.models import JobApplication, ApplicationStatus, Job
+from storage.models import ApplicationStatus, Job, JobApplication
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/applications", tags=["Applications"])
-from api.auth import get_current_user
+
 
 async def get_current_user_id(
     user: Annotated[dict, Depends(get_current_user)],
@@ -46,7 +49,6 @@ CurrentUserId = Annotated[str, Depends(get_current_user_id)]
 DBSession = Annotated[AsyncSession, Depends(get_db_dep)]
 
 
-from sqlalchemy.orm import selectinload
 
 async def _get_job(db: AsyncSession, job_id: uuid.UUID) -> Job | None:
     result = await db.execute(select(Job).options(selectinload(Job.company)).where(Job.id == job_id))
@@ -104,10 +106,8 @@ async def list_applications(
         .offset(offset)
     )
     if status_filter:
-        try:
+        with contextlib.suppress(ValueError):
             q = q.where(JobApplication.status == ApplicationStatus(status_filter))
-        except ValueError:
-            pass
 
     result = await db.execute(q)
     apps = result.scalars().all()
@@ -129,7 +129,7 @@ async def create_application(
     try:
         job_uuid = uuid.UUID(body.job_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid job_id")
+        raise HTTPException(status_code=400, detail="Invalid job_id") from None
 
     existing = await db.execute(
         select(JobApplication).where(
@@ -179,7 +179,7 @@ async def update_application(
     try:
         app_uuid = uuid.UUID(application_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid application_id")
+        raise HTTPException(status_code=400, detail="Invalid application_id") from None
 
     result = await db.execute(
         select(JobApplication).where(
@@ -195,7 +195,7 @@ async def update_application(
         try:
             app.status = ApplicationStatus(body.status)
         except ValueError:
-            raise HTTPException(status_code=400, detail=f"Invalid status: {body.status}")
+            raise HTTPException(status_code=400, detail=f"Invalid status: {body.status}") from None
     if body.notes is not None:
         app.notes = body.notes
     if body.applied_at is not None:
@@ -223,7 +223,7 @@ async def delete_application(
     try:
         app_uuid = uuid.UUID(application_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid application_id")
+        raise HTTPException(status_code=400, detail="Invalid application_id") from None
 
     result = await db.execute(
         select(JobApplication).where(

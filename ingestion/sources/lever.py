@@ -17,6 +17,7 @@ import logging
 import re
 from datetime import datetime
 from html import unescape
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -56,7 +57,7 @@ class LeverSource(BaseJobSource):
 
     name = "lever"
 
-    def __init__(self, *, raw_data_dir=None, companies: list[str] | None = None) -> None:
+    def __init__(self, *, raw_data_dir: str | Path | None = None, companies: list[str] | None = None) -> None:
         super().__init__(raw_data_dir=raw_data_dir)
         import os
         env_companies = os.getenv("LEVER_COMPANIES")
@@ -66,7 +67,7 @@ class LeverSource(BaseJobSource):
         )
         self._client = httpx.Client(timeout=30.0)
 
-    def __enter__(self) -> "LeverSource":
+    def __enter__(self) -> LeverSource:
         return self
 
     def __exit__(self, *_: Any) -> None:
@@ -85,9 +86,6 @@ class LeverSource(BaseJobSource):
 
         categories = posting.get("categories") or {}
         workplace = posting.get("workplaceType") or ""
-        remote = posting.get("workplaceType") in (
-            "remote", "hybrid", "Remote", "Hybrid"
-        ) or "remote" in str(workplace).lower()
 
         lists = posting.get("lists", [])
         additional = []

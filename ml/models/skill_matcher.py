@@ -173,9 +173,10 @@ class SkillMatcher:
 
                 # Check if skill is an alias for the canonical form of candidate
                 canonical_norm = self._normalize_skill(canonical)
-                if normalized == canonical_norm or skill_in_aliases:
-                    if candidate_normalized == canonical_norm or candidate_in_aliases:
-                        return canonical
+                if (normalized == canonical_norm or skill_in_aliases) and (
+                    candidate_normalized == canonical_norm or candidate_in_aliases
+                ):
+                    return canonical
 
         return None
 
@@ -293,8 +294,4 @@ class SkillMatcher:
                 return True
 
         # Substring match for compound skills (e.g., "React" in "React.js")
-        if len(norm_a) >= 3 and len(norm_b) >= 3:
-            if norm_a in norm_b or norm_b in norm_a:
-                return True
-
-        return False
+        return len(norm_a) >= 3 and len(norm_b) >= 3 and (norm_a in norm_b or norm_b in norm_a)

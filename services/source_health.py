@@ -144,7 +144,7 @@ class SourceHealthService:
 
         # Keep a short window; this is a health signal, not a metrics store,
         # and the value is capped at 25 MB of shared cache.
-        health.recent_latencies_ms = (health.recent_latencies_ms + [latency_ms])[-20:]
+        health.recent_latencies_ms = ([*health.recent_latencies_ms, latency_ms])[-20:]
 
         failed = status != "success"
         if failed:

@@ -11,7 +11,7 @@ rules that keep a 0.5 GB Neon instance and a free Groq tier alive.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -52,8 +52,8 @@ def make_job(
         skills=skills if skills is not None else ["Python", "Django"],
         tags=["foundit"],
         description_clean=description,
-        posted_at=datetime.now(timezone.utc),
-        created_at=datetime.now(timezone.utc),
+        posted_at=datetime.now(UTC),
+        created_at=datetime.now(UTC),
         extra_metadata={"company_name": company},
     )
 

@@ -1,5 +1,5 @@
 """ingestion/parsers/__init__.py"""
-from ingestion.parsers.schemas import ParsedJobDescription, RawJobResult
 from ingestion.parsers.jd_parser import JDParser
+from ingestion.parsers.schemas import ParsedJobDescription, RawJobResult
 
-__all__ = ["ParsedJobDescription", "RawJobResult", "JDParser"]
+__all__ = ["JDParser", "ParsedJobDescription", "RawJobResult"]

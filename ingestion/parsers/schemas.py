@@ -11,6 +11,7 @@ Two model groups:
 from __future__ import annotations
 
 import re
+from datetime import UTC
 
 from pydantic import (
     BaseModel,
@@ -18,7 +19,6 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Raw Tavily result
@@ -238,7 +238,7 @@ class ParsedJobDescription(BaseModel):
         return upper if upper in _KNOWN_CURRENCIES else None
 
     @model_validator(mode="after")
-    def backfill_seniority_from_experience(self) -> "ParsedJobDescription":
+    def backfill_seniority_from_experience(self) -> ParsedJobDescription:
         """
         Derive seniority from the stated experience when the LLM omitted it.
 
@@ -253,7 +253,7 @@ class ParsedJobDescription(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def salary_range_consistency(self) -> "ParsedJobDescription":
+    def salary_range_consistency(self) -> ParsedJobDescription:
         """Swap min/max if they are accidentally inverted."""
         if (
             self.salary_min is not None
@@ -276,7 +276,7 @@ class ParsedJobDescription(BaseModel):
           salary       → salary_raw
           location     → location_raw, plus resolved country / city
         """
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         # Strip common navigation / markdown noise from raw text for a cleaner
         # description that is useful for display and ChromaDB embeddings.
@@ -313,7 +313,7 @@ class ParsedJobDescription(BaseModel):
             # Set posted_at to now so jobs appear in trend date-range queries.
             # Real publish dates are rarely available from ATS pages; using
             # ingestion time is the best available proxy.
-            "posted_at": datetime.now(tz=timezone.utc),
+            "posted_at": datetime.now(tz=UTC),
             # employment_type / seniority are Postgres enum columns —
             # the caller must cast these to EmploymentType / SeniorityLevel
             # before passing to the ORM. Stored as raw strings here.

@@ -20,14 +20,14 @@ Design
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Generic, Sequence, Type, TypeVar
+from collections.abc import Sequence
+from datetime import UTC, datetime
+from typing import Any, Generic, TypeVar
 
-from sqlalchemy import desc, func, select, update, and_, or_, cast
+from sqlalchemy import ColumnElement, String, and_, cast, desc, func, or_, select, update
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlalchemy import ColumnElement, String
 
 from domain.geo import (
     INDIA_COUNTRY_VALUES,
@@ -66,7 +66,7 @@ class BaseRepository(Generic[ModelT]):
             model = Company
     """
 
-    model: Type[ModelT]
+    model: type[ModelT]
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -159,7 +159,7 @@ class BaseRepository(Generic[ModelT]):
         Update multiple records by PK list.
         Returns the number of rows affected.
         """
-        pk_col = getattr(self.model, "id")
+        pk_col = self.model.id
         stmt = (
             update(self.model)
             .where(pk_col.in_(ids))
@@ -303,7 +303,7 @@ class IngestionRunRepository(BaseRepository[IngestionRun]):
         return await self.update(
             id,
             status=IngestionStatus.RUNNING,
-            started_at=datetime.now(tz=timezone.utc),
+            started_at=datetime.now(tz=UTC),
         )
 
     async def finish(
@@ -322,7 +322,7 @@ class IngestionRunRepository(BaseRepository[IngestionRun]):
         return await self.update(
             id,
             status=status,
-            finished_at=datetime.now(tz=timezone.utc),
+            finished_at=datetime.now(tz=UTC),
             jobs_discovered=jobs_discovered,
             jobs_inserted=jobs_inserted,
             jobs_updated=jobs_updated,
@@ -461,13 +461,13 @@ def tokenize_and_expand_query(query_str: str) -> list[list[str]]:
     for token in tokens:
         synonyms = SYNONYM_MAP.get(token, [token])
         if token not in synonyms:
-            synonyms = [token] + synonyms
+            synonyms = [token, *synonyms]
         expanded_groups.append(synonyms)
 
     return expanded_groups
 
 
-def _build_term_group_clause(terms: list[str]):
+def _build_term_group_clause(terms: list[str]) -> ColumnElement[bool]:
     """Build an OR clause across fields for a group of term synonyms."""
     group_or_clauses = []
     for term in terms:
@@ -481,7 +481,7 @@ def _build_term_group_clause(terms: list[str]):
     return or_(*group_or_clauses)
 
 
-def _india_location_clause():
+def _india_location_clause() -> ColumnElement[bool]:
     """
     SQL predicate matching postings located in India.
 
@@ -1004,7 +1004,7 @@ class UnitOfWork:
         self.ingestion_runs = IngestionRunRepository(session)
         self.jobs = JobRepository(session)
 
-    async def __aenter__(self) -> "UnitOfWork":
+    async def __aenter__(self) -> UnitOfWork:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:  # noqa: ANN001

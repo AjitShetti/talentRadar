@@ -8,13 +8,13 @@ and pipeline persistence protection.
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 from ingestion.parsers.schemas import ParsedJobDescription, RawJobResult
 from ingestion.pipeline import persist_parsed
-from ingestion.seed_db import extract_job_from_raw, seed_database
+from ingestion.seed_db import extract_job_from_raw
 from ingestion.validation import (
-    BLOCKED_DOMAINS,
     is_valid_job_url,
     validate_job_url,
 )
@@ -62,7 +62,7 @@ class TestJobURLValidator:
         ],
     )
     def test_rejected_search_and_listing_pages(self, url: str):
-        is_valid, reason = validate_job_url(url)
+        is_valid, _reason = validate_job_url(url)
         assert is_valid is False
         assert not is_valid_job_url(url)
 

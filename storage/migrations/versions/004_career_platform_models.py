@@ -13,8 +13,8 @@ and extends existing tables:
   - interview_sessions: new track values, adaptive flag, app/prep links
 
 """
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "004_career_platform_models"

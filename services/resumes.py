@@ -107,7 +107,7 @@ async def tailor_resume(
             pdf_bytes = await compile_latex_to_pdf_async(latex)
             pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
             filename = f"{candidate_name}_resume.pdf"
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("PDF compilation failed; returning LaTeX only: %s", exc)
 
     return {

@@ -7,7 +7,7 @@ Unit tests for the India-only job scoping and the experience filter bands.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 import pytest_asyncio
@@ -31,7 +31,6 @@ from ingestion.parsers.schemas import ParsedJobDescription
 from storage.database import Base
 from storage.models import Company, Job, JobStatus, SeniorityLevel
 from storage.repository import JobRepository
-
 
 # ---------------------------------------------------------------------------
 # In-memory database fixture (no Postgres service required)
@@ -77,7 +76,7 @@ async def located_jobs(filter_db_session):
                 country=country,
                 seniority=seniority,
                 status=JobStatus.ACTIVE,
-                posted_at=datetime.now(tz=timezone.utc),
+                posted_at=datetime.now(tz=UTC),
             )
         )
     await filter_db_session.commit()

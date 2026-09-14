@@ -21,8 +21,8 @@ from ml.config import PipelineConfig, ScoringWeights
 from ml.resume_matcher import MatchResult, ResumeMatcher
 
 __all__ = [
-    "ResumeMatcher",
     "MatchResult",
     "PipelineConfig",
+    "ResumeMatcher",
     "ScoringWeights",
 ]

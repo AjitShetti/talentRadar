@@ -32,6 +32,7 @@ dependency degrades a feature, never the deployment.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 from typing import Any
@@ -118,7 +119,7 @@ class ScraplingManager:
         url: str,
         headers: dict[str, str] | None = None,
         params: dict[str, Any] | None = None,
-        timeout: float = 6.0,
+        timeout: float = 6.0,  # noqa: ASYNC109 - forwarded to the HTTP client's own timeout
         impersonate: str = DEFAULT_IMPERSONATE,
     ) -> tuple[int, str | dict[str, Any]]:
         """
@@ -193,7 +194,7 @@ class ScraplingManager:
     async def fetch_stealth(
         cls,
         url: str,
-        timeout: float = 12.0,
+        timeout: float = 12.0,  # noqa: ASYNC109 - forwarded to the browser's own timeout
         wait_for_selector: str | None = None,
         wait_seconds: float = 3.0,
     ) -> tuple[int, str]:
@@ -222,10 +223,8 @@ class ScraplingManager:
                     status = response.status if response else 200
 
                     if wait_for_selector:
-                        try:
+                        with contextlib.suppress(Exception):
                             await page.wait_for_selector(wait_for_selector, timeout=int(wait_seconds * 1000))
-                        except Exception:
-                            pass
                     elif wait_seconds > 0:
                         await page.wait_for_timeout(int(wait_seconds * 1000))
 
@@ -241,7 +240,7 @@ class ScraplingManager:
         return status, content if isinstance(content, str) else str(content)
 
     @classmethod
-    async def close(cls):
+    async def close(cls) -> None:
         """Close shared network clients."""
         if cls._http_client and not cls._http_client.is_closed:
             await cls._http_client.aclose()

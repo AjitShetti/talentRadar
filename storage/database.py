@@ -6,8 +6,8 @@ Reads connection details exclusively from config.settings — no hard-coded
 credentials anywhere in the storage layer.
 """
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
     AsyncSession,

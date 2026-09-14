@@ -30,6 +30,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
+from starlette.types import ASGIApp
 
 # Paths that must never be throttled: health checks feed container
 # orchestration, and the docs are static.
@@ -50,7 +51,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     def __init__(
         self,
-        app,
+        app: ASGIApp,
         *,
         default_requests: int,
         default_window: int,

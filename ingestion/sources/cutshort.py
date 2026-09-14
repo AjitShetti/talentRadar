@@ -16,6 +16,7 @@ jobs table.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from ingestion.parsers.schemas import RawJobResult
@@ -32,12 +33,12 @@ class CutshortSource(BaseJobSource):
 
     name = "cutshort"
 
-    def __init__(self, *, raw_data_dir=None, api_key: str | None = None) -> None:
+    def __init__(self, *, raw_data_dir: str | Path | None = None, api_key: str | None = None) -> None:
         super().__init__(raw_data_dir=raw_data_dir)
         self._api_key = api_key
         self._max_per_query = 10
 
-    def __enter__(self) -> "CutshortSource":
+    def __enter__(self) -> CutshortSource:
         return self
 
     def __exit__(self, *_: Any) -> None:

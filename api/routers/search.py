@@ -11,9 +11,11 @@ Provides:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import uuid
+from collections.abc import AsyncIterator
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -22,7 +24,7 @@ from sse_starlette.sse import EventSourceResponse
 from agents.orchestrator import Orchestrator
 from agents.state import IntentType
 from api.auth import get_current_user
-from api.dependencies import get_unit_of_work, get_job_repository
+from api.dependencies import get_job_repository, get_unit_of_work
 from api.schemas.job_schemas import (
     JobDetailResponseSchema,
     JobFilterSchema,
@@ -63,7 +65,7 @@ async def stream_job_search(
     Indian job portals (Foundit, Freshersworld, LinkedIn Guest), and stealth boards (Naukri, Indeed).
     Progressively emits discovered jobs with per-source latency statistics.
     """
-    async def event_generator():
+    async def event_generator() -> AsyncIterator[dict[str, str]]:
         try:
             async for event_item in RealtimeScraperEngine.stream_search(
                 query=query,
@@ -122,30 +124,24 @@ async def search_jobs_structured(
     - Salary range
     - Date range
     """
-    from storage.models import JobStatus, SeniorityLevel, EmploymentType
+    from storage.models import EmploymentType, JobStatus, SeniorityLevel
 
     # These enums are keyed by their lowercase values ("active", "full_time"),
     # so incoming filter strings are normalised the same way.
     status_enum = JobStatus.ACTIVE
     if filters.status:
-        try:
+        with contextlib.suppress(ValueError):
             status_enum = JobStatus(filters.status.lower())
-        except ValueError:
-            pass
 
     seniority_enum = None
     if filters.seniority:
-        try:
+        with contextlib.suppress(ValueError):
             seniority_enum = SeniorityLevel(filters.seniority.lower().replace("-", "_"))
-        except ValueError:
-            pass
 
     employment_type_enum = None
     if filters.employment_type:
-        try:
+        with contextlib.suppress(ValueError):
             employment_type_enum = EmploymentType(filters.employment_type.lower().replace("-", "_"))
-        except ValueError:
-            pass
 
     # An experience band ("3-5 yrs") covers several seniority levels.
     seniority_levels = [

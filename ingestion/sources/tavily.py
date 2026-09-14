@@ -10,6 +10,7 @@ Used as a catch-all / fallback for job boards without a stable public API
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from ingestion.parsers.schemas import RawJobResult
@@ -44,7 +45,7 @@ class TavilySource(BaseJobSource):
     def __init__(
         self,
         *,
-        raw_data_dir=None,
+        raw_data_dir: str | Path | None = None,
         api_key: str | None = None,
         domains: list[str] | None = None,
     ) -> None:
@@ -52,7 +53,7 @@ class TavilySource(BaseJobSource):
         self._api_key = api_key
         self._domains = domains or _DEFAULT_DOMAINS
 
-    def __enter__(self) -> "TavilySource":
+    def __enter__(self) -> TavilySource:
         return self
 
     def __exit__(self, *_: Any) -> None:

@@ -15,8 +15,8 @@ Covers:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
@@ -24,13 +24,12 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from agents.rag_agent import RAGAgent
-from agents.state import IntentType, QueryContext, RetrievalResult
+from agents.state import QueryContext, RetrievalResult
 from api.dependencies import get_unit_of_work
 from api.main import app
 from storage.database import Base
 from storage.models import Company, EmploymentType, Job, JobStatus, SeniorityLevel
 from storage.repository import JobRepository, UnitOfWork, tokenize_and_expand_query
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # In-Memory Database Fixtures (No Postgres service required)
@@ -75,7 +74,7 @@ async def seed_jobs(search_db_session):
             seniority=SeniorityLevel.SENIOR,
             employment_type=EmploymentType.FULL_TIME,
             status=JobStatus.ACTIVE,
-            posted_at=datetime.now(tz=timezone.utc),
+            posted_at=datetime.now(tz=UTC),
         ),
         Job(
             id=uuid.uuid4(),
@@ -90,7 +89,7 @@ async def seed_jobs(search_db_session):
             seniority=SeniorityLevel.MID,
             employment_type=EmploymentType.FULL_TIME,
             status=JobStatus.ACTIVE,
-            posted_at=datetime.now(tz=timezone.utc),
+            posted_at=datetime.now(tz=UTC),
         ),
         Job(
             id=uuid.uuid4(),
@@ -105,7 +104,7 @@ async def seed_jobs(search_db_session):
             seniority=SeniorityLevel.MID,
             employment_type=EmploymentType.FULL_TIME,
             status=JobStatus.ACTIVE,
-            posted_at=datetime.now(tz=timezone.utc),
+            posted_at=datetime.now(tz=UTC),
         ),
         Job(
             id=uuid.uuid4(),
@@ -120,7 +119,7 @@ async def seed_jobs(search_db_session):
             seniority=SeniorityLevel.LEAD,
             employment_type=EmploymentType.FULL_TIME,
             status=JobStatus.ACTIVE,
-            posted_at=datetime.now(tz=timezone.utc),
+            posted_at=datetime.now(tz=UTC),
         ),
         # Software Engineer roles (3 jobs)
         Job(
@@ -136,7 +135,7 @@ async def seed_jobs(search_db_session):
             seniority=SeniorityLevel.SENIOR,
             employment_type=EmploymentType.FULL_TIME,
             status=JobStatus.ACTIVE,
-            posted_at=datetime.now(tz=timezone.utc),
+            posted_at=datetime.now(tz=UTC),
         ),
         Job(
             id=uuid.uuid4(),
@@ -151,7 +150,7 @@ async def seed_jobs(search_db_session):
             seniority=SeniorityLevel.MID,
             employment_type=EmploymentType.FULL_TIME,
             status=JobStatus.ACTIVE,
-            posted_at=datetime.now(tz=timezone.utc),
+            posted_at=datetime.now(tz=UTC),
         ),
         Job(
             id=uuid.uuid4(),
@@ -166,7 +165,7 @@ async def seed_jobs(search_db_session):
             seniority=SeniorityLevel.LEAD,
             employment_type=EmploymentType.FULL_TIME,
             status=JobStatus.ACTIVE,
-            posted_at=datetime.now(tz=timezone.utc),
+            posted_at=datetime.now(tz=UTC),
         ),
         # Fullstack Developer roles (3 jobs)
         Job(
@@ -182,7 +181,7 @@ async def seed_jobs(search_db_session):
             seniority=SeniorityLevel.SENIOR,
             employment_type=EmploymentType.FULL_TIME,
             status=JobStatus.ACTIVE,
-            posted_at=datetime.now(tz=timezone.utc),
+            posted_at=datetime.now(tz=UTC),
         ),
         Job(
             id=uuid.uuid4(),
@@ -197,7 +196,7 @@ async def seed_jobs(search_db_session):
             seniority=SeniorityLevel.MID,
             employment_type=EmploymentType.FULL_TIME,
             status=JobStatus.ACTIVE,
-            posted_at=datetime.now(tz=timezone.utc),
+            posted_at=datetime.now(tz=UTC),
         ),
         Job(
             id=uuid.uuid4(),
@@ -212,7 +211,7 @@ async def seed_jobs(search_db_session):
             seniority=SeniorityLevel.PRINCIPAL,
             employment_type=EmploymentType.FULL_TIME,
             status=JobStatus.ACTIVE,
-            posted_at=datetime.now(tz=timezone.utc),
+            posted_at=datetime.now(tz=UTC),
         ),
     ]
 
@@ -399,8 +398,6 @@ class TestSemanticSearchEndpointBroadQueries:
 
     @pytest.mark.asyncio
     async def test_semantic_search_java_dev_with_db_fallback(self, search_db_session, seed_jobs):
-        uow = UnitOfWork(search_db_session)
-
         # No embed_texts patch: the agent no longer runs a separate (and
         # discarded) embedding pass on the search path — the vector store
         # embeds the query itself.

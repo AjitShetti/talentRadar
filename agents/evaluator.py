@@ -20,7 +20,7 @@ _MAX_TOKENS = 1500
 _TEMPERATURE = 0.0
 
 _SYSTEM_PROMPT = """\
-You are an expert technical recruiter and resume evaluator. Your task is to evaluate 
+You are an expert technical recruiter and resume evaluator. Your task is to evaluate
 how well a candidate's resume matches a given job description.
 
 You must return a single valid JSON object containing exactly the following schema:
@@ -58,7 +58,7 @@ class CandidateEvaluator:
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ]
-        
+
         raw_response = self._call_llm(messages)
         return self._extract_json(raw_response)
 
@@ -83,4 +83,4 @@ class CandidateEvaluator:
         try:
             return json.loads(text)
         except json.JSONDecodeError as exc:
-            raise ValueError(f"Failed to parse JSON: {exc}. Text: {text[:300]}")
+            raise ValueError(f"Failed to parse JSON: {exc}. Text: {text[:300]}") from exc

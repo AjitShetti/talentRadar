@@ -86,7 +86,7 @@ _YEARS_TO_LEVEL: tuple[tuple[float, SeniorityLevel], ...] = (
 )
 
 # JDs write ranges with a hyphen, an en dash, or the word "to".
-_YEARS_RE = re.compile(r"(\d{1,2})(?:\s*(?:\+|plus))?\s*(?:-|to|–)?\s*(\d{1,2})?\s*\+?\s*(?:years?|yrs?)")  # noqa: RUF001
+_YEARS_RE = re.compile(r"(\d{1,2})(?:\s*(?:\+|plus))?\s*(?:-|to|–)?\s*(\d{1,2})?\s*\+?\s*(?:years?|yrs?)")
 _FRESHER_RE = re.compile(r"\b(fresher|fresh graduate|entry[- ]level|no experience|0\s*years?)\b")
 _INTERN_RE = re.compile(r"\b(intern|internship|trainee|apprentice)\b")
 

@@ -11,7 +11,7 @@ nodes that call them.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from agents.merge_rank import (
     completeness_score,
@@ -32,7 +32,7 @@ from agents.sourcing_policy import (
     wants_fresh_results,
 )
 
-NOW = datetime(2026, 9, 11, 12, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 9, 11, 12, 0, tzinfo=UTC)
 
 
 def job(**overrides):

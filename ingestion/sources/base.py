@@ -11,6 +11,7 @@ Every source exposes:
 
 from __future__ import annotations
 
+from datetime import UTC
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -57,7 +58,7 @@ class BaseJobSource:
     ) -> list[Path]:
         import hashlib
         import json
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         from ingestion.scrapers.tavily_client import _slugify
 
@@ -69,7 +70,7 @@ class BaseJobSource:
             url_hash = hashlib.md5(result.url.encode()).hexdigest()[:12]
             fp = dest / f"{url_hash}.json"
             payload = {
-                "fetched_at": datetime.now(tz=timezone.utc).isoformat(),
+                "fetched_at": datetime.now(tz=UTC).isoformat(),
                 "source": self.name,
                 "query_role": role,
                 "query_location": location,

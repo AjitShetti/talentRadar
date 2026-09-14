@@ -405,4 +405,4 @@ class JDParser:
         try:
             return json.loads(match.group(0))
         except json.JSONDecodeError as exc:
-            raise ValueError(f"Could not extract valid JSON from LLM response: {exc}. Text: {text[:300]}")
+            raise ValueError(f"Could not extract valid JSON from LLM response: {exc}. Text: {text[:300]}") from exc

@@ -15,7 +15,7 @@ logging.basicConfig(
 logger = logging.getLogger("run_ingestion")
 
 
-async def main():
+async def main() -> None:
     logger.info("Starting live job ingestion from Greenhouse, Ashby, Lever...")
     from ingestion.dispatcher import dispatch_ingestion
 

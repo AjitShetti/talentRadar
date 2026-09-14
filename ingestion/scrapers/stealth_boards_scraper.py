@@ -16,7 +16,7 @@ import logging
 import re
 import urllib.parse
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from domain.entities import Job
 from domain.enums import EmploymentType, JobStatus, SeniorityLevel
@@ -47,16 +47,16 @@ def normalize_location(loc_str: str | None) -> tuple[str, str, bool]:
     """Returns (country, city, is_remote)"""
     if not loc_str:
         return "India", "India", False
-    
+
     loc_lower = loc_str.lower()
     is_remote = any(r in loc_lower for r in ["remote", "anywhere", "wfh", "work from home"])
-    
+
     city = ""
     for k, v in INDIAN_CITY_SYNONYMS.items():
         if k in loc_lower and k != "india":
             city = v
             break
-            
+
     country = "India" if ("india" in loc_lower or city) else "Global"
     return country, city or ("India" if country == "India" else "Remote"), is_remote
 
@@ -79,7 +79,7 @@ class StealthBoardsScraper:
         """
         clean_role = re.sub(r"[^a-zA-Z0-9]+", "-", query.strip().lower()).strip("-")
         clean_loc = re.sub(r"[^a-zA-Z0-9]+", "-", (location or "india").strip().lower()).strip("-")
-        
+
         # Build Naukri search URL
         url = f"https://www.naukri.com/{clean_role}-jobs-in-{clean_loc}"
         if is_remote:
@@ -98,7 +98,7 @@ class StealthBoardsScraper:
 
         if status == 200 and html_content.strip():
             soup = await parse_html(html_content)
-            
+
             # Find all job title links
             title_links = soup.find_all("a", class_=re.compile(r"title", re.I))
             if not title_links:
@@ -159,9 +159,9 @@ class StealthBoardsScraper:
                     is_remote=remote_flag or bool(is_remote),
                     salary_raw=salary_text,
                     skills=extracted_tags,
-                    tags=["naukri", "india"] + extracted_tags[:3],
-                    posted_at=datetime.now(timezone.utc),
-                    created_at=datetime.now(timezone.utc),
+                    tags=["naukri", "india", *extracted_tags[:3]],
+                    posted_at=datetime.now(UTC),
+                    created_at=datetime.now(UTC),
                     extra_metadata={"company_name": company_name, "source": "naukri", "experience": exp_text},
                 )
                 jobs.append(job)
@@ -234,7 +234,7 @@ class StealthBoardsScraper:
             company_name = comp_tag.get_text(strip=True) if comp_tag else "Company"
             loc_text = loc_tag.get_text(strip=True) if loc_tag else loc
             desc_text = snippet_tag.get_text(strip=True) if snippet_tag else None
-            
+
             source_url = None
             if link_tag and link_tag.has_attr("href"):
                 href = link_tag["href"]
@@ -260,8 +260,8 @@ class StealthBoardsScraper:
                 is_remote=remote_flag or bool(is_remote),
                 skills=[s for s in query.split() if len(s) > 2] if query else [],
                 tags=["indeed", "india"],
-                posted_at=datetime.now(timezone.utc),
-                created_at=datetime.now(timezone.utc),
+                posted_at=datetime.now(UTC),
+                created_at=datetime.now(UTC),
                 extra_metadata={"company_name": company_name, "source": "indeed"},
             )
             jobs.append(job)
@@ -304,7 +304,7 @@ class StealthBoardsScraper:
             company_name = employer.get("company_name", "Company")
             locations = obj.get("locations", [])
             loc_text = ", ".join(locations) if isinstance(locations, list) and locations else (location or "India")
-            
+
             job_id = obj.get("id")
             landing_url = f"https://www.instahyre.com/job-{job_id}" if job_id else "https://www.instahyre.com"
 
@@ -328,8 +328,8 @@ class StealthBoardsScraper:
                 is_remote=remote_flag or bool(is_remote),
                 skills=[s for s in query.split() if len(s) > 2] if query else [],
                 tags=["instahyre", "india", "startup"],
-                posted_at=datetime.now(timezone.utc),
-                created_at=datetime.now(timezone.utc),
+                posted_at=datetime.now(UTC),
+                created_at=datetime.now(UTC),
                 extra_metadata={"company_name": company_name, "source": "instahyre"},
             )
             jobs.append(job)

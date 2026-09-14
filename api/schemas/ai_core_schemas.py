@@ -1,13 +1,14 @@
 """
 api/schemas/ai_core_schemas.py
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Pydantic schemas for AI Core features: 
+Pydantic schemas for AI Core features:
 - LLM-as-a-judge matching
 - Learning path generation
 - Resume tailoring
 """
 
 from pydantic import BaseModel, Field
+
 
 class EvaluationResult(BaseModel):
     match_score: int = Field(..., description="Overall match score out of 100", ge=0, le=100)
