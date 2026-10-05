@@ -16,12 +16,17 @@
 #     `talentradar-web` service is still running, suspend it or this will run
 #     out partway through the month.
 #
-# GitHub's scheduled runs are best-effort, and in practice this schedule fires
-# every 2–5 hours, not every 10 minutes. So this workflow does NOT keep the
-# instance awake on its own: nearly every run lands on a sleeping instance and
-# pays the full wake. It still catches a service that is down. To actually keep
-# the API resident, point an external monitor (cron-job.org, UptimeRobot) at
-# /health every 10 minutes — those fire on time.
+# GitHub's scheduled runs are best-effort: a ten-minute cron actually fired
+# every 2-9 hours, so a run that pinged once and exited left the instance
+# asleep nearly all day. A run therefore *stays* for most of the six hours a
+# job is allowed, pinging every ten minutes, and starts its own successor as it
+# finishes. The schedule is now only the safety net that restarts the chain if
+# a run is ever lost; it no longer has to be on time.
+#
+# This is free because the repository is public (Actions minutes are not
+# metered). On a private repository it would use ~43,000 minutes a month - move
+# the ping to an external monitor (cron-job.org, UptimeRobot) before making the
+# repository private.
 #
 # The ping tolerates a slow wake (scripts/keepalive.sh, tested in
 # tests/test_keepalive_script.py). The old step failed with curl exit 28 when
@@ -33,31 +38,61 @@ name: keepalive
 
 on:
   schedule:
-    # Off the top of the hour, when GitHub's scheduler is least congested.
-    - cron: "7-59/10 * * * *"
+    # Safety net only - see above. Off the top of the hour, when GitHub's
+    # scheduler is least congested.
+    - cron: "7 */3 * * *"
   workflow_dispatch: {}
 
-# Never let a backlog of late runs pile up. A newer run waits rather than
-# cancelling one that is mid-wake, which only showed up as a spurious
-# "cancelled" run.
+# One holder at a time. A run that arrives while another is holding waits for
+# it rather than cancelling it, and takes over when it ends.
 concurrency:
   group: keepalive
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  actions: write   # to start the next run in the chain
+
 jobs:
   ping:
     runs-on: ubuntu-latest
-    # The script's own deadline is 8 minutes; this is only the backstop.
-    timeout-minutes: 10
+    # A job may run for six hours. Hold for 5h40m and leave the rest for a
+    # slow final wake and the hand-over.
+    timeout-minutes: 355
     steps:
       - uses: actions/checkout@v4
         with:
           sparse-checkout: scripts/keepalive.sh
           sparse-checkout-cone-mode: false
 
-      - name: Ping the API
+      - name: Keep the API awake
         env:
-          # Override in repo Settings → Variables if the service is renamed.
+          # Override in repo Settings -> Variables if the service is renamed.
           URL: ${{ vars.KEEPALIVE_URL || 'https://talentradar-api.onrender.com/health' }}
           DEADLINE_SECONDS: "480"
-        run: bash scripts/keepalive.sh
+          HOLD_SECONDS: "20400"
+          # Render sleeps after 15 idle minutes; ten leaves room for a slow ping.
+          INTERVAL_SECONDS: "600"
+        run: |
+          end=$(( $(date +%s) + HOLD_SECONDS ))
+          last=0
+          while :; do
+            bash scripts/keepalive.sh && last=0 || last=$?
+            [ "$(date +%s)" -ge "$end" ] && break
+            sleep "$INTERVAL_SECONDS"
+          done
+          # One missed ping mid-run is a blip; a service still down at the end
+          # of the hold is worth a red run.
+          exit "$last"
+
+      - name: Hand over to the next run
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A scheduled run may already be waiting behind this one; starting
+          # another would only cancel it.
+          waiting=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow keepalive.yml             --json status -q '[.[] | select(.status == "pending" or .status == "queued")] | length')
+          if [ "${waiting:-0}" -eq 0 ]; then
+            gh workflow run keepalive.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME"
+          fi
