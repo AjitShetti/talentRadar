@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Ordering for the directory: the tiers people scan for first come first.
-TIER_ORDER = ["big_tech", "unicorn", "gcc", "scaleup", "startup", "services"]
+TIER_ORDER = ["big_tech", "unicorn", "gcc", "scaleup", "startup", "agency", "services"]
 
 # Industry facet tuning. The catalogue carries a descriptive industry string
 # per company (good on a card, bad as a filter), so the dropdown only offers the
@@ -50,6 +50,7 @@ TIER_LABELS = {
     "unicorn": "Unicorn",
     "scaleup": "Scale-up",
     "startup": "Startup",
+    "agency": "Agency & Studio",
     "services": "IT Services",
 }
 

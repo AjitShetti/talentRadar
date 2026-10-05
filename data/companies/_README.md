@@ -18,13 +18,13 @@ propagate on the next run.
 | field | notes |
 | --- | --- |
 | `name`, `domain`, `website_url` | `domain` is the upsert key — keep it unique |
-| `careers_url` | linked from the detail panel and seeded as a `careers_page` contact |
+| `careers_url` | linked from the detail panel and seeded as a `careers_page` contact. Leave it `null` (and `contacts` empty) rather than guess a path |
 | `github_org` | GitHub org slug only, not a URL. Verified live at read time — a wrong slug 404s and the panel simply hides the open-source block |
 | `linkedin_url` | company page |
-| `tier` | `big_tech` \| `gcc` \| `unicorn` \| `scaleup` \| `startup` \| `services` |
+| `tier` | `big_tech` \| `gcc` \| `unicorn` \| `scaleup` \| `startup` \| `agency` \| `services` — `agency` is a consultancy, product studio or marketing agency; `services` is large-scale IT services |
 | `industry` | free text, drives the industry facet |
 | `office_cities` | Indian cities with an engineering office — the directory filters on this, *not* on `hq_city` (Google's HQ is not in India but it hires here) |
-| `description` | one or two plain sentences on what the company actually does |
+| `description` | one or two plain sentences on what the company actually does. An accelerator goes here too ("Y Combinator-backed (W21).") — the directory search reads this field, and there is no accelerator column |
 | `tech_stack` | technologies the company has publicly discussed using |
 | `contacts` | see below |
 
