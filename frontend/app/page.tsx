@@ -7,10 +7,12 @@ import {
 import LandingNav from '@/components/landing/LandingNav'
 import Reveal from '@/components/landing/Reveal'
 import SignedInRedirect from '@/components/landing/SignedInRedirect'
+import PostingCheck from '@/components/public/PostingCheck'
 import {
   CopilotMock, HeroBoard, IntelMock, InterviewMock, PipelineMock, ResumeMock, SearchMock,
 } from '@/components/landing/BoardMock'
 import './landing.css'
+import './public.css'
 
 /*
   THESIS: the public page is the same instrument as the app, seen from outside —
@@ -27,19 +29,19 @@ import './landing.css'
 */
 
 export const metadata: Metadata = {
-  title: 'TalentRadar — One board for your entire job search',
+  title: 'TalentRadar — Know the job is real. Walk in prepared.',
   description:
-    'TalentRadar pulls Indian tech roles from every source, tracks every application, runs mock interviews, tailors your resume, and tells you what to do today — grounded in your own records, not generic advice.',
+    'Find out whether a tech job posting in India is still open, then prepare for that exact role: a mock interview built from the posting, your resume compared against what it asks for, and the people you could ask for a referral.',
   keywords: ['job search India', 'tech jobs India', 'application tracker', 'mock interview practice', 'ATS resume', 'career copilot'],
   openGraph: {
-    title: 'TalentRadar — One board for your entire job search',
+    title: 'TalentRadar — Know the job is real. Walk in prepared.',
     description: 'Search, track, practise, write and research from a single board. India-only tech roles, grounded in your own data.',
     type: 'website',
     siteName: 'TalentRadar',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'TalentRadar — One board for your entire job search',
+    title: 'TalentRadar — Know the job is real. Walk in prepared.',
     description: 'Search, track, practise, write and research from a single board. India-only tech roles, grounded in your own data.',
   },
 }
@@ -111,12 +113,13 @@ export default function LandingPage() {
                   <i className="lp-eyebrow-dot" aria-hidden="true" />
                   India · Tech roles only
                 </span>
-                <h1 className="lp-h1">Your whole job search, on <em>one board</em>.</h1>
+                <h1 className="lp-h1">Know the job is real. Walk in <em>prepared</em>.</h1>
                 <p className="lp-lead">
-                  Six tabs, three trackers and a spreadsheet is not a system. TalentRadar pulls Indian tech
-                  roles from every source, tracks every application, runs your interview practice, tailors
-                  your resume, and each morning tells you the one thing to do first — computed from your
-                  own records, not generic advice.
+                  Sending a hundred applications into postings nobody is filling is not a strategy.
+                  TalentRadar checks each role against the employer&rsquo;s own careers feed — still listed,
+                  how long it has been open, whether it keeps being re-listed — then gets you ready for the
+                  ones worth your time: a mock interview built from that posting, your resume against what
+                  it asks for, and who could refer you.
                 </p>
                 <div className="lp-cta-row">
                   <Link className="lp-cta" href="/signup">
@@ -132,6 +135,8 @@ export default function LandingPage() {
                   <MapPin size={14} strokeWidth={1.25} />
                   Built for the Indian market — postings outside India never reach your board.
                 </p>
+                {/* The product's first promise, usable before signing up. */}
+                <PostingCheck compact />
               </Reveal>
 
               <Reveal delay={140}><HeroBoard /></Reveal>

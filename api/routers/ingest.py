@@ -14,9 +14,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
-from api.auth import get_current_user, require_role
+from api.auth import get_current_user, require_cron_or_admin, require_role
 from api.dependencies import get_unit_of_work
 from api.schemas.query_schemas import IngestRequestSchema, IngestResponseSchema
 
@@ -210,3 +210,19 @@ async def reset_source_health(source_name: str) -> dict[str, Any]:
 
     await SourceHealthService.reset(source_name)
     return {"success": True, "source": source_name, "message": "Health counters cleared."}
+
+
+@router.post("/reverify", dependencies=[Depends(require_cron_or_admin)])
+async def reverify_postings(limit: int = Query(default=150, ge=1, le=500)) -> dict[str, int]:
+    """
+    Re-check stored ATS postings against the employer's careers API.
+
+    Called on a schedule by ``.github/workflows/reverify.yml`` - there is no
+    worker process. Each run refreshes ``last_verified_at`` on postings still
+    served and sets ``closed_at`` on those that are gone, which is the
+    evidence the liveness verdict is built from.
+    """
+    from services import liveness
+
+    return await liveness.reverify_batch(limit=limit)
+

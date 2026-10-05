@@ -12,19 +12,22 @@ Provides:
 from __future__ import annotations
 
 import hashlib
+import hmac
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import bcrypt
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from config.settings import get_settings
 
 # Bearer token scheme
 security = HTTPBearer()
+# For guards that accept something other than a bearer token as well.
+_optional_security = HTTPBearer(auto_error=False)
 
 settings = get_settings()
 
@@ -132,6 +135,33 @@ async def get_current_user(
         @router.get("/protected", dependencies=[Depends(get_current_user)])
     """
     return decode_access_token(credentials.credentials)
+
+
+async def require_cron_or_admin(
+    x_cron_token: str | None = Header(default=None),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_optional_security),
+) -> None:
+    """
+    Guard for maintenance endpoints a scheduler calls.
+
+    There is no worker process, so scheduled work arrives as an HTTP request
+    from a GitHub Action, which holds a shared secret rather than a user
+    account. Allow that secret, or a signed-in admin; refuse everyone else.
+    """
+    expected = get_settings().cron_token
+    if expected and x_cron_token and hmac.compare_digest(x_cron_token, expected):
+        return
+    if credentials is not None:
+        try:
+            user = decode_access_token(credentials.credentials)
+        except HTTPException:
+            user = {}
+        if user.get("role") == "admin":
+            return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Insufficient permissions",
+    )
 
 
 def require_role(required_role: str) -> Callable[..., Awaitable[dict[str, Any]]]:

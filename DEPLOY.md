@@ -167,6 +167,31 @@ or sign in and use the ingest endpoint, which is admin-only now
 
 ---
 
+## v2 additions
+
+Run the migrations — `013_job_liveness` and `014_interview_role` — the same
+way as the earlier ones (`alembic upgrade head` against Neon; Render's
+`preDeployCommand` is a paid feature).
+
+New environment variables:
+
+| Where | Variable | Purpose |
+|---|---|---|
+| Render (API) | `CRON_TOKEN` | Shared secret for `POST /api/v1/ingest/reverify`. Unset means admins only. |
+| GitHub → Settings → Secrets | `CRON_TOKEN` | Same value. Without it `.github/workflows/reverify.yml` skips cleanly. |
+| GitHub → Settings → Variables | `API_BASE_URL` | Only if the API is not at `talentradar-api.onrender.com`. |
+| Vercel (Config, not Secret) | `NEXT_PUBLIC_SITE_URL` | Canonical origin for the sitemap and canonical links. |
+| Vercel (Config, optional) | `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` | Analytics. Absent key means no events are sent. |
+
+The public pages (`/r/...`, `/hiring/...`) are built at deploy time from
+`GET /api/v1/public/roles` and revalidated every six hours. The Vercel build
+therefore calls the API; if it is asleep the build still succeeds and those
+pages are generated on first request instead.
+
+The re-check runs every six hours from GitHub Actions and costs nothing. It
+wakes the instance first, so it also counts toward Render's 750 free hours —
+four short wakes a day is well inside the budget.
+
 ## Knobs worth knowing
 
 | Variable | Default | What it buys |

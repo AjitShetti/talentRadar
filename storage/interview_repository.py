@@ -57,6 +57,8 @@ class InterviewRepository:
         track: InterviewTrack,
         difficulty: InterviewDifficulty,
         topic: str | None = None,
+        job_id: uuid.UUID | None = None,
+        role_context: str | None = None,
     ) -> InterviewSession:
         """
         Persist a new interview session record and return it.
@@ -70,6 +72,8 @@ class InterviewRepository:
             track=track,
             topic=topic,
             difficulty=difficulty,
+            job_id=job_id,
+            role_context=role_context,
             completed=False,
         )
         db.add(session)

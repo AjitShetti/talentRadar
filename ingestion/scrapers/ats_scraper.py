@@ -17,9 +17,12 @@ import logging
 import uuid
 from collections.abc import Awaitable
 from datetime import UTC, datetime
+from enum import Enum
+from typing import Any
 
 from domain.entities import Job
 from domain.enums import EmploymentType, JobStatus, SeniorityLevel
+from domain.liveness import parse_source_timestamp
 from ingestion.scrapling_manager import ScraplingManager
 
 logger = logging.getLogger(__name__)
@@ -123,10 +126,108 @@ def matches_location(job_location: str, target_location: str | None, is_remote_o
     return False, is_job_remote, country, city
 
 
+class PostingCheck(str, Enum):
+    """Outcome of asking an ATS whether it still serves one posting."""
+
+    OPEN = "open"
+    CLOSED = "closed"
+    # Could not tell. Never treated as closed: a rate limit or an outage is
+    # not evidence that an employer stopped hiring.
+    ERROR = "error"
+
+
+RECHECK_TIMEOUT_SECONDS = 5.0
+_RETRY_PAUSE_SECONDS = 0.2
+_GONE_STATUSES = frozenset({404, 410})
+
+
 class ATSScraper:
     """
     High-speed aggregator querying Greenhouse, Ashby, and Lever job boards in parallel.
     """
+
+    # ── re-checking a single posting ────────────────────────────────────────
+
+    @classmethod
+    async def _fetch_for_recheck(cls, url: str) -> tuple[int, Any]:
+        """One GET with a single retry on a timeout or a 5xx. Never raises."""
+        status: int = 0
+        data: Any = ""
+        for attempt in range(2):
+            try:
+                status, data = await ScraplingManager.fetch_html_or_json(
+                    url, timeout=RECHECK_TIMEOUT_SECONDS
+                )
+            except Exception as exc:
+                logger.debug("Re-check of %s failed: %s", url, exc)
+                status, data = 0, ""
+            if status and status < 500:
+                break
+            if attempt == 0:
+                await asyncio.sleep(_RETRY_PAUSE_SECONDS)
+        return status, data
+
+    @classmethod
+    async def fetch_ashby_open_ids(cls, company_slug: str) -> set[str] | None:
+        """
+        Ids currently on an Ashby board, or ``None`` when the board could not
+        be read. Ashby has no per-posting endpoint, so membership of the board
+        is the only check available.
+        """
+        status, data = await cls._fetch_for_recheck(
+            f"https://api.ashbyhq.com/posting-api/job-board/{company_slug}"
+        )
+        if status != 200 or not isinstance(data, dict) or not isinstance(data.get("jobs"), list):
+            return None
+        return {str(item.get("id")) for item in data["jobs"] if isinstance(item, dict)}
+
+    @classmethod
+    async def check_posting(
+        cls,
+        source: str,
+        external_id: str,
+        *,
+        ashby_boards: dict[str, set[str] | None] | None = None,
+    ) -> PostingCheck:
+        """
+        Ask the employer's ATS whether it still serves this posting.
+
+        ``ashby_boards`` lets a batch read each Ashby board once instead of
+        once per posting.
+        """
+        ats, _, slug = (source or "").partition(":")
+        ats, slug = ats.strip().lower(), slug.strip()
+        if not slug or not external_id:
+            return PostingCheck.ERROR
+
+        if ats == "ashby":
+            if ashby_boards is not None and slug in ashby_boards:
+                open_ids = ashby_boards[slug]
+            else:
+                open_ids = await cls.fetch_ashby_open_ids(slug)
+                if ashby_boards is not None:
+                    ashby_boards[slug] = open_ids
+            if open_ids is None:
+                return PostingCheck.ERROR
+            return PostingCheck.OPEN if external_id in open_ids else PostingCheck.CLOSED
+
+        if ats == "greenhouse":
+            url = f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs/{external_id}"
+        elif ats == "lever":
+            url = f"https://api.lever.co/v0/postings/{slug}/{external_id}"
+        else:
+            return PostingCheck.ERROR
+
+        status, data = await cls._fetch_for_recheck(url)
+        if status in _GONE_STATUSES:
+            return PostingCheck.CLOSED
+        # A 200 that is not the posting itself is a challenge page or an
+        # error envelope, and proves nothing either way.
+        if status == 200 and isinstance(data, dict) and data.get("id") is not None:
+            return PostingCheck.OPEN
+        return PostingCheck.ERROR
+
+    # ── searching boards ─────────────────────────────────────────────────────
 
     @classmethod
     async def fetch_greenhouse_company(cls, company_slug: str, query: str, location: str | None, is_remote: bool | None) -> list[Job]:
@@ -168,7 +269,10 @@ class ATSScraper:
                 is_remote=job_remote,
                 skills=[s for s in query.split() if len(s) > 2] if query else [],
                 tags=["ats", "greenhouse", company_slug],
-                posted_at=datetime.now(UTC),
+                # The employer's publish time, or nothing - never the clock.
+                posted_at=parse_source_timestamp(item.get("first_published")),
+                source_posted_at=parse_source_timestamp(item.get("first_published")),
+                source_updated_at=parse_source_timestamp(item.get("updated_at")),
                 created_at=datetime.now(UTC),
                 extra_metadata={"company_name": company_slug.capitalize(), "ats": "greenhouse"}
             )
@@ -218,7 +322,10 @@ class ATSScraper:
                 is_remote=job_remote or bool(item.get("isRemote")),
                 skills=[s for s in query.split() if len(s) > 2] if query else [],
                 tags=["ats", "ashby", company_slug],
-                posted_at=datetime.now(UTC),
+                # The employer's publish time, or nothing - never the clock.
+                posted_at=parse_source_timestamp(item.get("publishedAt")),
+                source_posted_at=parse_source_timestamp(item.get("publishedAt")),
+                source_updated_at=parse_source_timestamp(item.get("updatedAt")),
                 created_at=datetime.now(UTC),
                 extra_metadata={"company_name": company_slug.capitalize(), "ats": "ashby"}
             )
@@ -268,7 +375,10 @@ class ATSScraper:
                 is_remote=job_remote or is_lever_remote,
                 skills=[s for s in query.split() if len(s) > 2] if query else [],
                 tags=["ats", "lever", company_slug],
-                posted_at=datetime.now(UTC),
+                # The employer's publish time, or nothing - never the clock.
+                posted_at=parse_source_timestamp(item.get("createdAt")),
+                source_posted_at=parse_source_timestamp(item.get("createdAt")),
+                source_updated_at=parse_source_timestamp(item.get("updatedAt")),
                 created_at=datetime.now(UTC),
                 extra_metadata={"company_name": company_slug.capitalize(), "ats": "lever"}
             )

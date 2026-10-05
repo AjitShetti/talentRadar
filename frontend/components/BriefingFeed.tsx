@@ -10,6 +10,7 @@ const KIND_LABELS: Record<string, string> = {
   scheduled_interview: 'ON THE CALENDAR',
   stale_application: 'GOING COLD',
   saved_backlog: 'UNFINISHED',
+  closed_role: 'NO LONGER LISTED',
   interview_momentum: 'MOMENTUM',
 }
 

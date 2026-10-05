@@ -37,6 +37,7 @@ from domain.experience import seniority_levels_for
 from domain.geo import is_india, resolve_city
 from domain.platforms import platform_of
 from ingestion.engine import RealtimeScraperEngine
+from services import liveness
 from storage.repository import JobRepository
 
 logger = logging.getLogger(__name__)
@@ -207,6 +208,9 @@ async def search_jobs_structured(
         )
         for job in jobs
     ]
+    verdicts = await liveness.load_verdicts([job.id for job in job_responses])
+    for job_response in job_responses:
+        job_response.liveness = verdicts.get(job_response.id)
 
     return JobListResponseSchema(
         jobs=job_responses,
@@ -264,6 +268,17 @@ async def search_jobs_semantic(request: SearchRequestSchema):
         job_results = [job for job in job_results if job.platform in request.platforms]
         job_results = job_results[: request.limit]
 
+    # Attach what we know about whether each role is still open, and keep the
+    # ones the employer has stopped listing out of the way unless asked.
+    verdicts = await liveness.load_verdicts([job.id for job in job_results])
+    for job in job_results:
+        job.liveness = verdicts.get(job.id)
+    closed_hidden = 0
+    if not request.include_closed:
+        open_results = [job for job in job_results if not _is_closed(job)]
+        closed_hidden = len(job_results) - len(open_results)
+        job_results = open_results
+
     # What the graph did about live sourcing, so the UI can explain a thin
     # result set instead of just showing one.
     meta = response.metadata or {}
@@ -277,7 +292,7 @@ async def search_jobs_semantic(request: SearchRequestSchema):
     total_found = (
         len(job_results)
         if request.platforms
-        else response.metadata.get("total_found", len(response.results))
+        else max(response.metadata.get("total_found", len(response.results)) - closed_hidden, 0)
     )
     filters_applied: dict[str, Any] = {"query": request.query}
     if request.platforms:
@@ -289,7 +304,12 @@ async def search_jobs_semantic(request: SearchRequestSchema):
         summary=response.summary,
         sourcing=sourcing,
         filters_applied=filters_applied,
+        closed_hidden=closed_hidden,
     )
+
+
+def _is_closed(job: JobResponseSchema) -> bool:
+    return bool(job.liveness) and job.liveness.get("state") == "closed"
 
 
 def _platform_key(source: str | None, source_url: str | None) -> str | None:
@@ -356,6 +376,7 @@ async def get_job_detail(
         posted_at=job.posted_at,
         created_at=job.created_at,
         embedding_id=job.embedding_id,
+        liveness=(await liveness.load_verdicts([str(job.id)])).get(str(job.id)),
     )
 
     return JobDetailResponseSchema(job=job_response)

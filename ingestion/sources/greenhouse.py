@@ -113,7 +113,9 @@ class GreenhouseSource(BaseJobSource):
         ]
         full_text = "\n\n".join(p for p in content_parts if p)
 
-        published = job.get("updated_at") or job.get("first_published")
+        # first_published is when the role went up; updated_at moves on every
+        # edit, and preferring it made a year-old posting look new.
+        published = job.get("first_published") or job.get("updated_at")
         published_date = None
         if published:
             try:

@@ -80,6 +80,10 @@ class Job(BaseModel):
     view_count: int = 0
     apply_count: int = 0
     posted_at: datetime | None = None
+    # What the employer's own system reports, kept apart from ``posted_at`` so
+    # an edit is never mistaken for a new posting. See domain/liveness.py.
+    source_posted_at: datetime | None = None
+    source_updated_at: datetime | None = None
     expires_at: datetime | None = None
     extra_metadata: dict | None = None
     created_at: datetime | None = None

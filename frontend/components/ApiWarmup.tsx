@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useSyncExternalStore } from 'react'
+import { usePathname } from 'next/navigation'
 import { API_URL } from '@/lib/api'
 import { GIVE_UP_MS, serverWarmupState, subscribeWarmup, wakeApi, warmupState } from '@/lib/api-warmup'
 
@@ -14,6 +15,12 @@ export default function ApiWarmup() {
   const { phase, startedAt, wasCold } = useSyncExternalStore(subscribeWarmup, warmupState, serverWarmupState)
   const [now, setNow] = useState(() => Date.now())
   const [showReady, setShowReady] = useState(false)
+  // Public role and company pages are static and need nothing from the API
+  // to be read, so a "starting the server" strip there would announce a
+  // wait the visitor is not actually in. The wake still runs — whoever
+  // clicks through to sign up arrives at a warm instance.
+  const pathname = usePathname()
+  const quiet = pathname.startsWith('/r/') || pathname.startsWith('/hiring/')
 
   useEffect(() => {
     void wakeApi(API_URL)
@@ -38,6 +45,8 @@ export default function ApiWarmup() {
     const hide = setTimeout(() => setShowReady(false), 2500)
     return () => clearTimeout(hide)
   }, [phase, wasCold])
+
+  if (quiet) return null
 
   if (phase === 'waking' && startedAt) {
     const seconds = Math.max(0, Math.floor((now - startedAt) / 1000))

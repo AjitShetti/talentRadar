@@ -35,3 +35,18 @@ export const EXTERNAL_LINK_PROPS = {
   target: '_blank',
   rel: 'noopener noreferrer',
 } as const
+
+/**
+ * A `?next=` value, if it is safe to navigate to after sign-in.
+ *
+ * Only a path on this site: it must start with a single "/" and contain no
+ * backslash or scheme. Anything else — an absolute URL, "//host", a backslash path —
+ * would turn the sign-in page into a redirector to wherever a link's author
+ * chose, so it is dropped and the caller falls back to its default.
+ */
+export function safeNextPath(value: string | null | undefined): string | null {
+  if (!value || value.length > 512) return null
+  if (!value.startsWith('/') || value.startsWith('//') || value.includes('\\') || value.includes('://')) return null
+  return value
+}
+

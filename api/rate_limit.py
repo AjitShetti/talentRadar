@@ -39,6 +39,12 @@ EXEMPT_PATHS = frozenset({"/health", "/docs", "/redoc", "/openapi.json", "/docs/
 # Credential endpoints get the strict budget.
 AUTH_PATHS = frozenset({"/api/auth/login", "/api/auth/signup"})
 
+# Everything on the strict budget. Besides credentials, that is the public
+# posting check: it needs no account and makes an outbound request per call,
+# so an open budget would let anyone use this deployment to hammer an
+# employer's careers API from our address.
+STRICT_PATHS = AUTH_PATHS | frozenset({"/api/v1/public/check"})
+
 
 @dataclass
 class _Bucket:
@@ -109,7 +115,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if path in EXEMPT_PATHS or request.method == "OPTIONS":
             return await call_next(request)
 
-        limit, window = self._auth if path in AUTH_PATHS else self._default
+        limit, window = self._auth if path in STRICT_PATHS else self._default
         now = time.monotonic()
         self._prune(now)
 

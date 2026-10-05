@@ -1,0 +1,66 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Re-check stored postings against the employers' careers APIs
+# ─────────────────────────────────────────────────────────────────────────────
+# The liveness verdict ("confirmed open 6 hours ago", "closed at the source")
+# is only as good as the last time someone asked the source. There is no
+# worker process on the free tier, so this workflow is the scheduler: it wakes
+# the API, then asks it to re-check a bounded batch.
+#
+# Needs one repository secret, CRON_TOKEN, matching the API's CRON_TOKEN
+# environment variable. Without it the run exits cleanly and does nothing -
+# a fork or a fresh clone must not go red for lacking a secret.
+#
+# GitHub's scheduled runs are best-effort and often hours late. That is fine
+# here: a verification stays valid for 72 hours (domain/liveness.py).
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: reverify
+
+on:
+  schedule:
+    - cron: "23 */6 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: reverify
+  cancel-in-progress: false
+
+jobs:
+  reverify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      API_BASE: ${{ vars.API_BASE_URL || 'https://talentradar-api.onrender.com' }}
+      CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
+    steps:
+      - name: Skip when no token is configured
+        id: gate
+        run: |
+          if [ -z "$CRON_TOKEN" ]; then
+            echo "::notice::CRON_TOKEN secret is not set; skipping the re-check."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'true'
+        with:
+          sparse-checkout: scripts/keepalive.sh
+          sparse-checkout-cone-mode: false
+
+      # The instance is usually asleep when this fires; wake it first so the
+      # re-check itself is not what pays the cold start.
+      - name: Wake the API
+        if: steps.gate.outputs.run == 'true'
+        env:
+          URL: ${{ env.API_BASE }}/health
+          DEADLINE_SECONDS: "480"
+        run: bash scripts/keepalive.sh
+
+      - name: Re-check postings
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          curl --fail-with-body --silent --show-error --max-time 300 \
+            -X POST "$API_BASE/api/v1/ingest/reverify?limit=150" \
+            -H "X-Cron-Token: $CRON_TOKEN"

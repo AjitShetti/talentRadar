@@ -191,3 +191,33 @@ async def test_urls_are_not_marked_seen_when_the_write_fails(monkeypatch):
     job = make_job()
     await persist_live_jobs([job])
     assert await CacheBackend.exists(_seen_key(job.source_url or "")) is False
+
+
+# ── liveness dates ───────────────────────────────────────────────────────────
+
+
+def test_source_dates_are_written_through():
+    job = make_job()
+    job.source_posted_at = datetime(2026, 8, 1, tzinfo=UTC)
+    job.source_updated_at = datetime(2026, 9, 1, tzinfo=UTC)
+    kwargs = build_job_kwargs(job)
+    assert kwargs["source_posted_at"] == datetime(2026, 8, 1, tzinfo=UTC)
+    assert kwargs["source_updated_at"] == datetime(2026, 9, 1, tzinfo=UTC)
+
+
+def test_a_missing_publish_date_never_overwrites_a_stored_one():
+    # The upsert sets every key it is given, so a key that is absent is the
+    # only thing that protects the value already in the row.
+    job = make_job()
+    job.posted_at = None
+    kwargs = build_job_kwargs(job)
+    assert "source_posted_at" not in kwargs
+    assert "posted_at" not in kwargs
+
+
+def test_every_write_is_a_sighting_and_reopens_the_role():
+    before = datetime.now(UTC)
+    kwargs = build_job_kwargs(make_job())
+    assert kwargs["last_seen_at"] >= before
+    assert kwargs["closed_at"] is None
+    assert "first_seen_at" not in kwargs

@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useRef, useState } from 'react'
 import { Bookmark, ChevronDown, ExternalLink, Globe, MapPin, RefreshCw, Search, SlidersHorizontal } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import FlapText from '@/components/FlapText'
+import LivenessStamp from '@/components/LivenessStamp'
 import { Ripple } from '@/components/Ripple'
 import { api, Job, Sourcing, signedIn } from '@/lib/api'
 import { isTaskRunning, runTask, usePersistentState, useTaskRunning } from '@/lib/persistent-state'
@@ -14,6 +15,11 @@ import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 type FilterProfile = SuggestionProfile & { years_experience?: unknown; is_remote_preferred?: unknown }
 
 const SEARCH_TASK = 'search'
+
+// A dossier exists only for roles stored in the index. A result scraped a
+// moment ago carries its source's id until it is persisted, and has no page yet.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const isStoredRole = (id: string) => UUID.test(id)
 
 export default function SearchPage() {
   const [query, setQuery] = usePersistentState('search.query', '')
@@ -35,6 +41,10 @@ export default function SearchPage() {
   // Distinguishes "no search yet" from "searched and found nothing"; both used
   // to show the same prompt, so an empty result looked like the button did nothing.
   const [searched, setSearched] = usePersistentState('search.searched', false)
+  // Roles the employer has stopped listing are left out unless asked for;
+  // the count is kept so the page can say so instead of silently showing fewer.
+  const [showClosed, setShowClosed] = usePersistentState('search.showClosed', false)
+  const [closedHidden, setClosedHidden] = usePersistentState('search.closedHidden', 0)
 
   // Profile defaults are applied once, and only to filters the user has not set
   // themselves — a stored choice always wins over the profile.
@@ -82,9 +92,12 @@ export default function SearchPage() {
         // index; an unfiltered query goes to semantic search instead.
         let found: Job[] = []
         let foundSourcing: Sourcing | null = null
+        let hidden = 0
         if (hasFilters) {
           const response = await api.search.structured(query, { location, remote, experience, platforms })
-          found = response.jobs || []
+          const all = response.jobs || []
+          found = showClosed ? all : all.filter(job => job.liveness?.state !== 'closed')
+          hidden = all.length - found.length
         }
         // The relational index only knows what earlier searches stored, and a
         // filtered search never goes out to the boards — so for a signed-in user,
@@ -94,10 +107,12 @@ export default function SearchPage() {
         // platform filter is applied to what comes back.
         if (!found.length) {
           const phrased = [query.trim(), remote ? 'remote' : '', location ? `in ${location}` : ''].filter(Boolean).join(' ')
-          const response = await api.search.semantic(phrased, platforms)
+          const response = await api.search.semantic(phrased, platforms, showClosed)
           found = response.results || []
           foundSourcing = response.sourcing || null
+          hidden = response.closed_hidden || 0
         }
+        setClosedHidden(hidden)
         setJobs(found)
         setSourcing(foundSourcing)
         setSearched(true)
@@ -142,10 +157,12 @@ export default function SearchPage() {
       </label>
       <PlatformPicker selected={platforms} onChange={setPlatforms} />
       <label className="check-label"><input type="checkbox" checked={remote} onChange={e => setRemote(e.target.checked)} /> Remote only</label>
+      <label className="check-label"><input type="checkbox" checked={showClosed} onChange={e => setShowClosed(e.target.checked)} /> Show closed roles</label>
       {hasFilters && <button type="button" className="text-button" onClick={clearFilters}>Clear filters</button>}
     </div>
     {error && <p className="form-error">{error}</p>}
     {sourcing && <SourcingNote sourcing={sourcing} />}
+    {closedHidden > 0 && <p className="sourcing-note"><span className="sourcing-dot indexed" /> {closedHidden} {closedHidden === 1 ? 'role was' : 'roles were'} left out because the employer no longer lists {closedHidden === 1 ? 'it' : 'them'}.</p>}
     <div className="results-layout">
       <aside className="search-tips">
         <div className="tips-head"><p className="eyebrow">SEARCH BETTER</p><button type="button" className="icon-refresh" title="Show different ideas" onClick={shuffleTips}><RefreshCw size={13}/></button></div>
@@ -168,7 +185,7 @@ export default function SearchPage() {
         {jobs.map(job => <article className="job-card" key={job.id}>
           <div className="job-card-top">
             <div className="company-logo violet">{(job.company_name || job.company || '?').slice(0, 1)}</div>
-            <div><h2>{job.title}</h2><p>{job.company_name || job.company || 'Company not listed'}</p></div>
+            <div><h2>{isStoredRole(job.id) ? <a href={`/roles/${job.id}`}>{job.title}</a> : job.title}</h2><p>{job.company_name || job.company || 'Company not listed'}</p></div>
             {job.match_score != null && <span className="match-pill">{Math.round(job.match_score * (job.match_score <= 1 ? 100 : 1))}% match</span>}
           </div>
           <div className="job-meta">
@@ -177,8 +194,10 @@ export default function SearchPage() {
             {job.salary_raw && <span>{job.salary_raw}</span>}
             {platformLabel(job.platform) && <span><Globe size={14}/>via {platformLabel(job.platform)}</span>}
           </div>
+          <LivenessStamp liveness={job.liveness} />
           <div className="chips">{(job.skills || []).slice(0, 5).map(skill => <span key={skill}>{skill}</span>)}</div>
           <div className="job-actions">
+            {isStoredRole(job.id) && <a className="outline-button" href={`/roles/${job.id}`}>Open dossier</a>}
             <button className="outline-button" onClick={() => save(job)} disabled={saved.includes(job.id)}><Bookmark size={14}/>{saved.includes(job.id) ? 'Saved' : 'Save to tracker'}</button>
             {externalHref(job.source_url) && <a className="text-button" href={externalHref(job.source_url)!} {...EXTERNAL_LINK_PROPS}>View original <ExternalLink size={14}/></a>}
           </div>

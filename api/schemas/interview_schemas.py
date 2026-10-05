@@ -65,6 +65,23 @@ class StartSessionRequest(BaseModel):
             "to a spoken register and returns a verbal_ack with each score."
         ),
     )
+    job_id: str | None = Field(
+        None,
+        description=(
+            "Prepare for this posting: the interviewer is given the role, its "
+            "skills and an excerpt of the description. Omit for a general session."
+        ),
+    )
+
+    @field_validator("job_id")
+    @classmethod
+    def validate_job_id(cls, v: str | None) -> str | None:
+        if v is None or not v.strip():
+            return None
+        try:
+            return str(uuid.UUID(v.strip()))
+        except ValueError as exc:
+            raise ValueError("job_id must be a UUID") from exc
 
     @field_validator("track")
     @classmethod
@@ -194,6 +211,9 @@ class EndSessionResponse(BaseModel):
     completed: bool
     final_score: FinalScoreSchema
     closing_message: str
+    job_id: str | None = Field(
+        None, description="The posting this session prepared for, when there was one"
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -69,6 +69,7 @@ async def _chat(
     temperature: float = 0.3,
     max_tokens: int = 800,
     json_mode: bool = False,
+    reasoning_effort: str | None = None,
 ) -> str:
     client = get_llm()
     kwargs: dict[str, Any] = {
@@ -82,6 +83,11 @@ async def _chat(
     }
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
+    # The configured models reason before answering, and those tokens are
+    # billed against max_tokens. A caller doing light writing can ask for
+    # less of it; left unset, the provider default applies.
+    if reasoning_effort:
+        kwargs["reasoning_effort"] = reasoning_effort
     response = await client.chat.completions.create(**kwargs)
     return response.choices[0].message.content or ""
 

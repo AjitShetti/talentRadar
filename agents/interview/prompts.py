@@ -17,6 +17,7 @@ Design notes
 
 from __future__ import annotations
 
+from agents.interview.role_context import role_context_section
 from agents.interview.topics import topic_context
 
 # ---------------------------------------------------------------------------
@@ -99,15 +100,25 @@ _DIFFICULTY_GUIDANCE: dict[str, str] = {
 # Public prompt builders
 # ---------------------------------------------------------------------------
 
-def _focus(track: str, topic: str | None) -> str:
-    """The TOPIC AREA section: a free-text topic wins over the fixed catalogue."""
-    if topic:
-        return topic_context(track, topic)
-    return _TRACK_CONTEXT.get(track, "general technical topics")
+def _focus(track: str, topic: str | None, role_context: str | None = None) -> str:
+    """
+    The TOPIC AREA section: a free-text topic wins over the fixed catalogue,
+    and a role the candidate is preparing for narrows either one.
+    """
+    base = (
+        topic_context(track, topic)
+        if topic
+        else _TRACK_CONTEXT.get(track, "general technical topics")
+    )
+    return f"{base}{role_context_section(role_context)}"
 
 
 def build_question_prompt(
-    track: str, difficulty: str, voice_mode: bool = False, topic: str | None = None
+    track: str,
+    difficulty: str,
+    voice_mode: bool = False,
+    topic: str | None = None,
+    role_context: str | None = None,
 ) -> str:
     """
     Build the system prompt for question generation.
@@ -117,7 +128,7 @@ def build_question_prompt(
     additionally constrained to a spoken register (see ``_VOICE_ADDENDUM``).
     ``topic`` is the candidate's own subject (see ``agents/interview/topics.py``).
     """
-    track_ctx  = _focus(track, topic)
+    track_ctx  = _focus(track, topic, role_context)
     diff_ctx   = _DIFFICULTY_GUIDANCE.get(difficulty, "intermediate level")
     voice_ctx  = f"\n\n{_VOICE_ADDENDUM}" if voice_mode else ""
 
@@ -138,7 +149,11 @@ def build_question_prompt(
 
 
 def build_evaluator_prompt(
-    track: str, difficulty: str, voice_mode: bool = False, topic: str | None = None
+    track: str,
+    difficulty: str,
+    voice_mode: bool = False,
+    topic: str | None = None,
+    role_context: str | None = None,
 ) -> str:
     """
     Build the system prompt for answer evaluation.
@@ -150,7 +165,7 @@ def build_evaluator_prompt(
     on this existing call rather than costing a second LLM round-trip, which
     matters because the candidate is sitting in silence waiting for it.
     """
-    track_ctx = _focus(track, topic)
+    track_ctx = _focus(track, topic, role_context)
     diff_ctx  = _DIFFICULTY_GUIDANCE.get(difficulty, "intermediate level")
     ack_key   = (
         ',\n  "verbal_ack":     "<one short spoken reaction, max 12 words>"'
@@ -209,7 +224,11 @@ Set needs_followup=false when the answer is complete, clearly wrong
 
 
 def build_followup_prompt(
-    track: str, difficulty: str, voice_mode: bool = False, topic: str | None = None
+    track: str,
+    difficulty: str,
+    voice_mode: bool = False,
+    topic: str | None = None,
+    role_context: str | None = None,
 ) -> str:
     """
     Build the system prompt for follow-up probe generation.
@@ -219,7 +238,7 @@ def build_followup_prompt(
     Caller injects the feedback_note hint directly into the system prompt
     via ``LLMProvider.generate_followup``.
     """
-    track_ctx = _focus(track, topic)
+    track_ctx = _focus(track, topic, role_context)
     diff_ctx  = _DIFFICULTY_GUIDANCE.get(difficulty, "intermediate level")
     voice_ctx = f"\n\n{_VOICE_ADDENDUM}" if voice_mode else ""
 
