@@ -213,6 +213,50 @@ _BODY_RE = re.compile(r"\\begin\{document\}(.*)\\end\{document\}", re.DOTALL)
 _CENTER_RE = re.compile(r"\\begin\{center\}(.*?)\\end\{center\}", re.DOTALL)
 
 
+_MARKUP_RE = re.compile(r"(<[^>]+>|&[a-zA-Z0-9#]+;)")
+_LOWER_RUN_RE = re.compile(r"[^\W\d_A-Z]+")
+
+
+def _small_caps(markup: str) -> str:
+    """Typeset inline HTML the way ``\\scshape`` does: caps, small where lowercase.
+
+    The template sets the name and every section heading in small capitals,
+    which is most of what makes it recognisable. CSS ``font-variant`` is not
+    an option here: MuPDF draws it from the font's private-use glyphs, so the
+    heading *looks* right and extracts as garbage — fatal for a document whose
+    whole point is to be read by an ATS. Uppercasing the lowercase runs at a
+    reduced size draws the same shapes and leaves real letters in the PDF.
+    """
+    out: list[str] = []
+    for chunk in _MARKUP_RE.split(markup):
+        if _MARKUP_RE.fullmatch(chunk):
+            out.append(chunk)
+        else:
+            out.append(
+                _LOWER_RUN_RE.sub(lambda m: f'<span class="sc">{m.group().upper()}</span>', chunk)
+            )
+    return "".join(out)
+
+
+_LIGATURE_LEAD_RE = re.compile(r"f(?=[fil])")
+
+
+def _unligate(markup: str) -> str:
+    """Stop the layout engine fusing ``fi``/``fl``/``ff`` into ligature glyphs.
+
+    The engine shapes those pairs into single glyphs and writes the ligature
+    code point into the PDF, so "workflow" is stored as "workﬂow" — and a
+    keyword search for "workflow", which is how an ATS reads a resume, misses
+    it. There is no CSS switch for this in MuPDF; putting the ``f`` in its own
+    span ends the shaping run, which draws the letters separately and stores
+    them as themselves.
+    """
+    return "".join(
+        chunk if _MARKUP_RE.fullmatch(chunk) else _LIGATURE_LEAD_RE.sub("<span>f</span>", chunk)
+        for chunk in _MARKUP_RE.split(markup)
+    )
+
+
 def _header_html(body: str) -> tuple[str, str]:
     """Pull the centred name/contact header out, returning (html, remainder)."""
     match = _CENTER_RE.search(body)
@@ -223,7 +267,7 @@ def _header_html(body: str) -> tuple[str, str]:
     lines = [ln.strip() for ln in re.split(r"\\\\", block) if ln.strip()]
     parts: list[str] = []
     if lines:
-        parts.append(f'<div class="name">{inline_to_html(lines[0])}</div>')
+        parts.append(f'<div class="name">{_small_caps(inline_to_html(lines[0]))}</div>')
     for line in lines[1:]:
         rendered = inline_to_html(line)
         if rendered:
@@ -231,16 +275,29 @@ def _header_html(body: str) -> tuple[str, str]:
     return "".join(parts), body[: match.start()] + body[match.end() :]
 
 
+#: Point size of each row's right-hand cell, used to size that column.
+_RIGHT_CELL_PT = {"entry": 11.0, "subentry": 10.0, "project": 10.0}
+
+
 def _two_column(left: str, right: str, *, cls: str) -> str:
     """One entry row: title on the left, dates flush right.
 
     A one-row table, because that is what the Story engine actually honours —
     it has no flexbox, and ``text-align`` on an inline span does nothing.
+
+    Left alone, the engine sizes the columns without regard to their content,
+    which wrapped "Jul 2026" onto two lines beside a long project title. TeX
+    gives the right-hand column its natural width and the left the rest
+    (``l@{\\extracolsep{\\fill}}r``); the width is estimated from the text to
+    do the same.
     """
+    right_html = inline_to_html(right)
+    plain = html.unescape(re.sub(r"<[^>]+>", "", right_html))
+    width = min(round(len(plain) * _RIGHT_CELL_PT.get(cls, 11.0) * 0.56) + 6, 300) if plain else 1
     return (
         f'<table class="row {cls}"><tr>'
         f'<td class="l">{inline_to_html(left)}</td>'
-        f'<td class="r">{inline_to_html(right)}</td>'
+        f'<td class="r" style="width: {width}px">{right_html}</td>'
         "</tr></table>"
     )
 
@@ -307,7 +364,8 @@ def _iter_blocks(body: str) -> Iterator[str]:
             if bullets_open:
                 yield close_bullets()
                 bullets_open = False
-            yield f'<div class="section">{inline_to_html(arg[0])}</div><div class="rule"></div>'
+            heading = _small_caps(inline_to_html(arg[0]))
+            yield f'<div class="section">{heading}</div><div class="rule"></div>'
         elif name == "resumeSubheading":
             args, pos = _split_args(body, after, 4)
             if bullets_open:
@@ -320,7 +378,7 @@ def _iter_blocks(body: str) -> Iterator[str]:
             if bullets_open:
                 yield close_bullets()
                 bullets_open = False
-            cls = "entry" if name == "resumeProjectHeading" else "subentry"
+            cls = "project" if name == "resumeProjectHeading" else "subentry"
             yield _two_column(args[0], args[1], cls=cls)
         elif name in ("resumeItem", "resumeSubItem"):
             args, pos = _split_args(body, after, 1)
@@ -349,7 +407,7 @@ def _iter_blocks(body: str) -> Iterator[str]:
                 if bullets_open:
                     yield close_bullets()
                     bullets_open = False
-                yield f'<div class="para">{rendered}</div>'
+                yield f'<div class="para item">{rendered}</div>'
         else:
             pos = after
             continue  # not a block macro: the text run keeps growing
@@ -374,55 +432,66 @@ def latex_to_html(latex_content: str) -> str:
 
     header, body = _header_html(body)
     blocks = "".join(_iter_blocks(body))
-    return f'<div class="resume">{header}{blocks}</div>'
+    return f'<div class="resume">{_unligate(header + blocks)}</div>'
 
 
 # ---------------------------------------------------------------------------
 # Layout
 # ---------------------------------------------------------------------------
 
-#: Deliberately close to the LaTeX template: Letter paper, half-inch margins,
-#: small-caps-ish section headings over a rule, tight bullet spacing.
+#: The template's own measurements, restated for the Story engine: an 11pt
+#: serif article on Letter paper with half-inch margins; a ``\\Huge`` bold
+#: small-caps name; ``\\large`` small-caps section headings over a rule;
+#: ``\\small`` (10pt) bullets, sub-rows and skills; entries indented 0.15in.
+#: One CSS px is one PDF point here.
 _CSS = """
-body { font-family: sans-serif; font-size: 10.5px; color: #000; }
-.name { font-size: 22px; font-weight: bold; text-align: center; margin-bottom: 2px; }
+body { font-family: serif; font-size: 11px; color: #000; line-height: 1.1; }
+.sc { font-size: 0.8em; }
+.name { font-size: 25px; font-weight: bold; text-align: center; margin-bottom: 1px; }
 .contact { font-size: 10px; text-align: center; margin-bottom: 1px; }
-.section { font-size: 13px; margin-top: 9px; margin-bottom: 0px; }
-.rule { border-bottom: 0.7px solid #000; margin-bottom: 3px; }
+.section { font-size: 12.5px; margin-top: 6px; margin-bottom: 0px; }
+.rule { border-bottom: 0.5px solid #000; margin-bottom: 3px; }
 table.row { width: 100%; margin-top: 1px; }
+table.subentry { margin-top: 0px; }
 table.row td { padding: 0px; vertical-align: top; }
+td.l { text-align: left; padding-left: 11px; }
+td.r { text-align: right; white-space: nowrap; }
 .entry .l { font-weight: bold; }
-.subentry .l { font-style: italic; font-size: 10px; }
-.subentry .r { font-style: italic; font-size: 10px; }
-td.l { text-align: left; }
-td.r { text-align: right; }
+.subentry td { font-style: italic; font-size: 10px; }
+.project td { font-size: 10px; }
 .para { margin-top: 2px; }
-ul { margin-top: 1px; margin-bottom: 2px; }
-li { margin-bottom: 1px; }
-/* Matches the template's \\usepackage[hidelinks]{hyperref}: links are part of
-   the text, not decoration. */
-a { color: #000000; text-decoration: none; }
+.item { font-size: 10px; margin-left: 11px; }
+ul { font-size: 10px; margin-top: 1px; margin-bottom: 2px; margin-left: 12px; }
+li { margin-bottom: 0px; }
+/* The template underlines its links and leaves them black
+   (\\usepackage[hidelinks]{hyperref} with \\underline). ``a:link``, because
+   the engine's own blue is set on that selector and a bare ``a`` loses to it. */
+a:link { color: #000000; text-decoration: underline; }
 """
+
+
+#: A resume longer than this is a runaway, not a resume.
+_MAX_PAGES = 12
 
 
 def render_html_to_pdf(body_html: str) -> bytes:
     """Lay ``body_html`` out on Letter pages and return the PDF bytes."""
+    page_rect = pymupdf.paper_rect("letter")
+    content_rect = page_rect + (36, 36, -36, -36)  # noqa: RUF005 - Rect arithmetic, not a list
+
+    def next_page(page_number: int, _filled: object) -> tuple[object, object, None]:
+        if page_number >= _MAX_PAGES:
+            raise PdfRenderError(f"the resume runs past {_MAX_PAGES} pages")
+        return page_rect, content_rect, None
+
     try:
         story = pymupdf.Story(html=f"<body>{body_html}</body>", user_css=_CSS)
+        # write_with_links, not a bare DocumentWriter: drawing a Story page by
+        # page lays the text out but leaves every <a> as plain ink, so the
+        # LinkedIn and GitHub links a recruiter clicks went nowhere.
+        document = story.write_with_links(next_page)
         buffer = io.BytesIO()
-        writer = pymupdf.DocumentWriter(buffer)
-        page_rect = pymupdf.paper_rect("letter")
-        content_rect = page_rect + (36, 36, -36, -36)  # noqa: RUF005 - Rect arithmetic, not a list
-
-        more = True
-        pages = 0
-        while more and pages < 12:  # a resume that long is a runaway, not a resume
-            device = writer.begin_page(page_rect)
-            more, _ = story.place(content_rect)
-            story.draw(device)
-            writer.end_page()
-            pages += 1
-        writer.close()
+        document.save(buffer, garbage=3, deflate=True)
     except Exception as exc:  # broad by design: surfaced as a clean 422/warning
         raise PdfRenderError(f"The resume could not be rendered as a PDF: {exc}") from exc
 

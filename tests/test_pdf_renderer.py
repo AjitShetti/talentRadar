@@ -73,17 +73,17 @@ class TestRoundTrip:
     @pytest.mark.parametrize(
         "expected",
         [
-            "Ada Lovelace",                 # header
+            "ADA LOVELACE",                 # header, in small capitals
             "Backend Engineer",             # headline
             "ada@example.com",              # linked contact
-            "Professional Summary",         # section heading
+            "PROFESSIONAL SUMMARY",         # section heading, in small capitals
             "50% throughput growth",        # escaped percent survives
             "C++ & Go",                     # escaped ampersand
             "Senior Engineer",              # entry title
             "Stripe",                       # entry subtitle
             "2022 - Present",               # right-hand column
             "Cut p99 latency 38%",          # bullet
-            "Technical Skills",
+            "TECHNICAL SKILLS",
             "Python, Go, SQL",              # skills row
         ],
     )
@@ -108,6 +108,78 @@ class TestRoundTrip:
         dates = next(s for s in spans if "2022 - Present" in s["text"])
         assert dates["bbox"][0] > title["bbox"][2], "dates should sit right of the title"
         assert dates["bbox"][2] > page.rect.width * 0.75, "dates should be flush right"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# It is the template, and an ATS can read it
+# ─────────────────────────────────────────────────────────────────────────────
+
+PROJECT_DOCUMENT = {
+    "personal": {
+        "full_name": "Ada Lovelace",
+        "email": "ada@example.com",
+        "links": [{"label": "GitHub", "url": "https://github.com/ada"}],
+    },
+    "sections": [{
+        "type": "projects", "title": "Projects", "order": 0,
+        "items": [{
+            "name": "Ledger Search — Hybrid Retrieval Engine",
+            "tech": "Python · FastAPI · OpenSearch · Apache Airflow · PostgreSQL · Docker",
+            "dates": "Jul 2026",
+            "link": "https://github.com/ada/ledger",
+            "bullets": ["Built an efficient workflow engine with offline profiling"],
+        }],
+    }],
+}
+
+
+def _spans(page: object) -> list[dict]:
+    return [
+        span
+        for block in page.get_text("dict")["blocks"]  # type: ignore[attr-defined]
+        for line in block.get("lines", [])
+        for span in line["spans"]
+    ]
+
+
+class TestTemplateFidelity:
+    @pytest.fixture(scope="class")
+    def page(self):
+        return pymupdf.open("pdf", render_latex_pdf(render_resume_latex(PROJECT_DOCUMENT)))[0]
+
+    def test_it_is_set_in_a_serif_face(self, page):
+        fonts = {span["font"] for span in _spans(page)}
+        assert not any("Sans" in font or "Helv" in font for font in fonts), fonts
+
+    def test_section_headings_are_small_capitals(self, page):
+        """A full-size initial followed by smaller capitals, as \\scshape sets it."""
+        spans = _spans(page)
+        initial = next(s for s in spans if s["text"].strip() == "P")
+        rest = next(s for s in spans if s["text"].strip() == "ROJECTS")
+        assert rest["size"] < initial["size"]
+
+    def test_links_are_clickable(self, page):
+        """Drawing the Story without links left LinkedIn/GitHub as dead text."""
+        targets = {link.get("uri") for link in page.get_links()}
+        assert {"mailto:ada@example.com", "https://github.com/ada", "https://github.com/ada/ledger"} <= targets
+
+    def test_links_are_black_like_the_template(self, page):
+        link_text = next(s for s in _spans(page) if "GitHub" in s["text"])
+        assert link_text["color"] == 0
+
+    def test_no_ligature_code_points_reach_the_text_layer(self, page):
+        """ "workﬂow" does not match a search for "workflow"."""
+        text = page.get_text()
+        assert not [ch for ch in text if "ﬀ" <= ch <= "ﬆ"]
+        for word in ("efficient", "workflow", "offline", "profiling"):
+            assert word in text
+
+    def test_a_short_date_is_not_wrapped_by_a_long_title(self, page):
+        assert "Jul 2026" in page.get_text()
+
+    def test_a_project_tech_stack_is_not_bold(self, page):
+        tech = next(s for s in _spans(page) if "OpenSearch" in s["text"])
+        assert "Bold" not in tech["font"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
