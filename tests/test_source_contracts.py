@@ -190,3 +190,58 @@ async def test_source_returns_empty_list_rather_than_raising(source: LiveSource,
 
     monkeypatch.setattr(ScraplingManager, "fetch_html_or_json", dead_fetch)
     assert await source.fetch("Python Developer", "Bengaluru", None) == []
+
+
+# ── publish dates come from the source, never from the clock ─────────────────
+
+
+async def test_ats_jobs_carry_the_employers_publish_date(replay):
+    """
+    A posting's age is the first thing the liveness verdict reads. The ATS
+    scraper used to stamp every row with ``datetime.now()``, which made a role
+    first published in 2021 look posted today.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from domain.liveness import parse_source_timestamp
+    from ingestion.scrapers.ats_scraper import ATSScraper
+
+    data = replay("ats_platforms")
+    jobs = await ATSScraper.search_all_ats(data["query"], data["location"], None)
+    assert jobs
+
+    published: dict[str, datetime] = {}
+    for entry in data["requests"].values():
+        payload = entry["payload"]
+        for item in (payload.get("jobs", []) if isinstance(payload, dict) else payload):
+            stamp = parse_source_timestamp(
+                item.get("first_published") or item.get("publishedAt") or item.get("createdAt")
+            )
+            if stamp is not None:
+                published[str(item.get("id"))] = stamp
+
+    now = datetime.now(UTC)
+    for job in jobs:
+        expected = published.get(job.external_id or "")
+        assert expected is not None, f"fixture has no publish date for {job.source_url}"
+        assert job.source_posted_at == expected
+        assert job.posted_at == expected
+        assert now - job.posted_at > timedelta(seconds=60)
+
+
+async def test_greenhouse_keeps_the_edit_date_apart_from_the_publish_date(replay):
+    from ingestion.scrapers.ats_scraper import ATSScraper
+
+    # The recorded query matches no Greenhouse role, so ask the recorded
+    # boards directly for something they all have.
+    replay("ats_platforms")
+    greenhouse = [
+        job
+        for slug in ("stripe", "postman", "inmobi")
+        for job in await ATSScraper.fetch_greenhouse_company(slug, "engineer", None, None)
+    ]
+    assert greenhouse
+    for job in greenhouse:
+        assert job.source_updated_at is not None
+        assert job.source_posted_at is not None
+        assert job.source_updated_at >= job.source_posted_at

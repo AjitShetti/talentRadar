@@ -264,6 +264,24 @@ a{text-decoration:none;color:inherit}
 .loading-state{min-height:170px;display:flex;align-items:center;justify-content:center;gap:9px;color:var(--muted);font-size:13px}
 .spin{animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
+/* API cold-start strip — see components/ApiWarmup.tsx. A board status row
+   pinned to the foot of the viewport: lamp, what is happening, and the real
+   elapsed clock. Shown only when the API is slow, so amber is earned. */
+.api-wake{position:fixed;z-index:70;left:50%;bottom:20px;transform:translateX(-50%);width:min(560px,calc(100vw - 32px));display:flex;align-items:center;gap:14px;padding:12px 16px;background:var(--surface);border:1px solid var(--line-strong);border-left:2px solid var(--accent);border-radius:6px;box-shadow:0 12px 32px rgba(0,0,0,.45);animation:api-wake-in .3s cubic-bezier(.16,1,.3,1)}
+.api-wake[data-phase="down"]{border-left-color:var(--danger)}
+.api-wake[data-phase="ready"]{border-left-color:var(--success)}
+.api-wake-lamp{flex:none;width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px var(--accent-soft);animation:api-wake-pulse 1.6s ease-in-out infinite}
+.api-wake[data-phase="down"] .api-wake-lamp{background:var(--danger);box-shadow:0 0 0 4px var(--danger-soft);animation:none}
+.api-wake[data-phase="ready"] .api-wake-lamp{background:var(--success);box-shadow:0 0 0 4px var(--success-soft);animation:none}
+.api-wake-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.api-wake-copy strong{font:600 13px 'Big Shoulders Text',sans-serif;text-transform:uppercase;letter-spacing:.5px;color:var(--ink)}
+.api-wake-copy span{font-size:12px;line-height:1.45;color:var(--muted)}
+.api-wake-clock{flex:none;font:500 15px 'Fragment Mono',monospace;color:var(--accent-light);font-variant-numeric:tabular-nums}
+.api-wake-retry{flex:none;background:transparent;color:var(--ink);border:1px solid var(--line-strong);border-radius:6px;padding:7px 12px;font-size:12px;font-weight:700}
+.api-wake-retry:hover{border-color:var(--ink-2)}
+@keyframes api-wake-in{from{opacity:0;transform:translate(-50%,10px)}}
+@keyframes api-wake-pulse{50%{opacity:.35}}
+@media (prefers-reduced-motion: reduce){.api-wake,.api-wake-lamp{animation:none}}
 .form-page{max-width:630px}
 .card-form{max-width:600px;background:transparent;border:0;padding:0;border-radius:0;margin-top:2px}
 .card-form label small{font-weight:400;color:var(--muted)}
@@ -339,6 +357,81 @@ a{text-decoration:none;color:inherit}
 .match-pill{margin-left:auto;background:var(--accent-soft);color:var(--accent-dark);border-radius:20px;padding:5px 8px;font:10px 'Fragment Mono';font-variant-numeric:tabular-nums}
 .job-meta{display:flex;flex-wrap:wrap;gap:13px;margin:15px 0;color:var(--faint);font-size:11px}
 .job-meta span{display:flex;align-items:center;gap:4px}
+/* Liveness stamp — components/LivenessStamp.tsx. A ruled status line, not a
+   badge: the verdict reads as an entry on the sheet and its evidence opens
+   beneath it. The mark's shape changes with state so it is not colour-only. */
+.liveness{margin:0 0 13px;font-size:11px;color:var(--muted);--live:var(--faint)}
+.liveness summary,p.liveness{display:flex;align-items:center;gap:8px;list-style:none}
+.liveness summary{cursor:pointer}
+.liveness summary::-webkit-details-marker{display:none}
+.liveness summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:3px}
+.liveness-mark{width:7px;height:7px;border-radius:50%;flex:none;background:var(--live)}
+.liveness-headline{font:10px 'Fragment Mono';letter-spacing:.6px;text-transform:uppercase;color:var(--live)}
+.liveness-why{margin-left:2px;font-size:10px;color:var(--faint);text-decoration:underline;text-underline-offset:3px}
+.liveness[open] .liveness-why{color:var(--muted)}
+.liveness ul{margin:8px 0 0 3px;padding:0 0 0 12px;border-left:1px solid var(--line);list-style:none;display:grid;gap:4px}
+.liveness li{font-size:11.5px;line-height:1.5;color:var(--muted)}
+.liveness-verified_open{--live:var(--success)}
+.liveness-ageing,.liveness-reposted{--live:var(--warning-dark)}
+.liveness-ageing .liveness-mark,.liveness-reposted .liveness-mark{border-radius:1px;transform:rotate(45deg)}
+.liveness-closed{--live:var(--danger-dark)}
+.liveness-closed .liveness-mark{border-radius:0;height:2px;width:9px}
+.liveness-open_unverified .liveness-mark,.liveness-unknown .liveness-mark{background:transparent;box-shadow:inset 0 0 0 1.5px var(--live)}
+/* Role Dossier — app/roles/[id]/page.tsx. Four numbered entries on a ruled
+   sheet. The number sits in the margin as a plate; the entries are separated
+   by rules, not boxed, so the page reads top to bottom as one argument. */
+.dossier-back{display:inline-flex;align-items:center;gap:6px;font:10px 'Fragment Mono';letter-spacing:.9px;text-transform:uppercase;color:var(--faint);margin-bottom:18px}
+.dossier-back:hover{color:var(--muted)}
+.dossier-heading .outline-button{flex:none}
+.dossier{list-style:none;margin:0;padding:0}
+.dossier-entry{display:grid;grid-template-columns:74px minmax(0,1fr);gap:8px;padding:26px 0;border-top:1px solid var(--line-soft)}
+.dossier-entry:first-child{border-top:0;padding-top:0}
+.dossier-no{font:800 40px 'Big Shoulders Text';line-height:.85;letter-spacing:-1px;color:var(--ghost)}
+.dossier-entry h2{font:600 18px 'Big Shoulders Text';letter-spacing:-.2px;margin:0 0 12px}
+.dossier-entry .liveness{margin-bottom:0}
+.dossier-entry .liveness-headline{font-size:12px}
+.dossier-entry .liveness li{font-size:13px}
+.dossier-lead{margin:0 0 14px;font-size:13.5px;line-height:1.6;color:var(--ink-2);max-width:640px}
+.dossier-lead strong{font-family:'Fragment Mono';color:var(--ink)}
+.dossier-none{margin:0;font-size:13px;line-height:1.6;color:var(--muted);max-width:640px}
+.dossier-none .text-button{margin-left:6px}
+.dossier-note{margin:12px 0 0;font-size:12px;line-height:1.55;color:var(--faint);max-width:640px}
+.dossier-skills{display:grid;grid-template-columns:170px minmax(0,1fr);gap:10px;align-items:start;padding:9px 0;border-top:1px solid var(--line-soft)}
+.dossier-skills-label{font:10px 'Fragment Mono';letter-spacing:.8px;text-transform:uppercase;color:var(--faint);padding-top:5px}
+.dossier-skills-have .chips span{background:var(--success-soft);color:var(--success-dark)}
+.dossier-skills-miss .chips span{background:transparent;box-shadow:inset 0 0 0 1px var(--line);color:var(--muted)}
+.dossier-contacts{list-style:none;margin:0 0 14px;padding:0;max-width:640px}
+.dossier-contacts li{display:flex;align-items:center;gap:14px;padding:11px 0;border-top:1px solid var(--line-soft)}
+.dossier-contacts li>div{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.dossier-contacts strong{font-size:13px;font-weight:600}
+.dossier-contacts li>div span{font-size:11.5px;color:var(--muted)}
+.dossier-contacts li{flex-wrap:wrap}
+.dossier-contact-ask{flex-basis:100%}
+.dossier-unnamed-ask{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:12px 0 14px;font-size:12.5px;color:var(--muted)}
+.referral-ask{display:grid;gap:12px;max-width:640px;margin-top:6px;padding:14px 0 4px 14px;border-left:1px solid var(--line)}
+.referral-ask label{display:grid;gap:6px;font:10px 'Fragment Mono';letter-spacing:.8px;text-transform:uppercase;color:var(--faint)}
+.referral-ask select,.referral-ask textarea{font:13px/1.6 'Public Sans',sans-serif;letter-spacing:0;text-transform:none;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:10px 12px}
+.referral-ask textarea{resize:vertical;min-height:170px}
+.referral-ask select:focus-visible,.referral-ask textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.referral-ask>.outline-button{justify-self:start;padding:9px 13px}
+.referral-ask-note{flex:1;min-width:220px;font-size:11.5px;line-height:1.5;color:var(--faint)}
+.dossier-provenance{font:10px 'Fragment Mono';letter-spacing:.7px;text-transform:uppercase;color:var(--faint);flex:none}
+.dossier-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+.dossier-actions .primary-button,.dossier-actions .outline-button{padding:10px 14px}
+.dossier-actions button:disabled{opacity:.5;cursor:not-allowed}
+.dossier-track{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;padding:22px 0;border-top:1px solid var(--line-strong);border-bottom:1px solid var(--line-soft)}
+.dossier-track p{margin:0;font-size:13px;color:var(--ink-2)}
+.dossier-posting{padding:18px 0}
+.dossier-posting summary{cursor:pointer;font:10px 'Fragment Mono';letter-spacing:.9px;text-transform:uppercase;color:var(--faint)}
+.dossier-posting summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.dossier-posting p{margin:14px 0 0;font-size:13px;line-height:1.7;color:var(--muted);white-space:pre-wrap;max-width:720px}
+.job-card h2 a{color:inherit}
+.job-card h2 a:hover{color:var(--accent-light)}
+.prep-role{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 20px;padding:11px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);font-size:13px}
+.prep-role-label{font:10px 'Fragment Mono';letter-spacing:.9px;text-transform:uppercase;color:var(--faint)}
+.prep-role a{color:var(--ink);font-weight:600}
+.prep-role .text-button{margin-left:auto}
+@media(max-width:700px){.dossier-entry{grid-template-columns:1fr}.dossier-no{font-size:26px}.dossier-skills{grid-template-columns:1fr;gap:4px}.dossier-contacts li{flex-wrap:wrap}.prep-role .text-button{margin-left:0}}
 .chips{display:flex;flex-wrap:wrap;gap:5px}
 .chips span{font-size:10px;padding:4px 7px;border-radius:5px;background:var(--line-soft);color:var(--muted)}
 .job-actions{display:flex;align-items:center;gap:14px;border-top:1px solid var(--line-soft);padding-top:15px;margin-top:16px}
@@ -589,6 +682,7 @@ a{text-decoration:none;color:inherit}
 .ci-job:hover strong{color:var(--accent-dark)}
 .ci-job strong{display:block;font-size:12px}
 .ci-job span{display:block;font-size:10px;color:var(--faint);margin-top:4px}
+.ci-more{display:flex;justify-content:center;margin:22px 0 8px}
 .ci-empty-small{font-size:12px;color:var(--faint);line-height:1.6;margin:0}
 .ci-inline-loading{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--faint);padding:6px 0}
 @media(max-width:800px){.ci-contact-form{grid-template-columns:1fr}.ci-drawer{width:100%}.ci-card{grid-template-columns:36px minmax(0,1fr) auto;gap:12px}.ci-card-desc{grid-column:2/-1;grid-row:2;-webkit-line-clamp:2;margin-top:6px}.ci-tier{grid-column:3;grid-row:1;justify-self:end}.ci-card-foot{grid-column:2/-1;grid-row:3;justify-content:flex-start;margin-top:8px}.ci-mini-chips{justify-content:flex-start;flex-wrap:wrap}}
@@ -1175,8 +1269,23 @@ body::before{content:'';position:fixed;inset:0;z-index:2000;pointer-events:none;
 .ov-role:hover .ov-fv{color:var(--accent)}
 .ov-sweep-foot{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;padding-top:18px;font:11px 'Fragment Mono',monospace;color:var(--faint)}
 
+/* ── three tiers ────────────────────────────────────────────────────────
+   1. Today's focus — the decision. Largest type, the only amber.
+   2. What arrived (.ov-band, default) — reading matter, a step down in size.
+   3. Reference (.ov-ref) — navigation and counts. Recessed ground, label-sized
+      headings, smaller numerals: there if wanted, never competing with tier 1. */
+.ov-focus + .ov-band{border-top-color:var(--line-strong)}
+.ov-band:not(.ov-focus):not(.ov-ref) .ov-head h2{font-size:21px}
+.ov-ref{background:color-mix(in srgb,var(--paper) 62%,#000);border-top-color:transparent}
+:not(.ov-ref) + .ov-ref{border-top:1px solid var(--line-strong)}
+.ov-ref .ov-inner{padding-block:30px}
+.ov-ref .ov-head{margin-bottom:20px}
+.ov-ref .ov-head h2{font-size:12px;letter-spacing:1.8px;text-transform:uppercase;color:var(--faint)}
+.ov-ref .ov-head .ov-rule{background:var(--line-soft)}
+.ov-ref .ov-gv{font-size:26px}
+.ov-ref:last-child .ov-inner{padding-bottom:56px}
+
 /* ── quick actions: three columns, hairline dividers, no boxes ──────────── */
-.ov-quick .ov-inner{padding-block:34px}
 .ov-qrow{display:grid;grid-template-columns:repeat(3,1fr)}
 .ov-qcol{display:flex;flex-direction:column;gap:8px;padding-inline:32px;border-left:1px solid var(--line-soft)}
 .ov-qcol:first-child{padding-left:0;border-left:0}
@@ -1201,24 +1310,6 @@ body::before{content:'';position:fixed;inset:0;z-index:2000;pointer-events:none;
 .ov-measure i{position:absolute;top:-1px;left:0;height:1px;background:var(--success);transform-origin:left;animation:ov-grow 900ms var(--ease-out) 260ms both}
 .ov-measure b{position:absolute;top:-3px;width:1px;height:5px;background:var(--line)}
 .ov-stand-foot{display:flex;gap:24px;flex-wrap:wrap;margin-top:30px;padding-top:18px;border-top:1px solid var(--line-soft)}
-
-/* ── close your gaps ───────────────────────────────────────────────────────
-   A ranked list, not a chart. services/career.py returns gaps already ordered
-   by how much each one costs the user, but carries no per-skill frequency — so
-   there is no magnitude to plot and an axis would be a drawn guess. The rank
-   is the real signal, so the ordinal carries the weight. Make this a chart the
-   day SkillFocusItem gains a count. */
-.ov-gap{position:relative;display:grid;grid-template-columns:44px 1fr;align-items:baseline;gap:0 20px;padding:16px 0;border-top:1px solid var(--line-soft)}
-.ov-gap:first-child{border-top:0}
-.ov-gap > *{transition:transform var(--t) var(--ease-out),color var(--t-fast) var(--ease-fast)}
-.ov-gap:hover > *{transform:translateX(8px)}
-.ov-gap:hover .ov-name,.ov-gap:hover .ov-n{color:var(--accent)}
-.ov-n{font:14px 'Fragment Mono',monospace;color:var(--ghost);font-variant-numeric:tabular-nums;transition:color var(--t-fast) var(--ease-fast)}
-.ov-gap:first-child .ov-n{color:var(--accent)}
-.ov-gap .ov-name{display:block;font-family:'Big Shoulders Text',sans-serif;font-weight:700;font-size:17px;letter-spacing:.2px;transition:color var(--t-fast) var(--ease-fast)}
-.ov-gap .ov-gd{margin:5px 0 0;font-size:13px;color:var(--muted);max-width:56ch}
-.ov-gaps-foot{display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-top:28px;padding-top:22px;border-top:1px solid var(--line-soft)}
-.ov-gaps-foot p{margin:0;font-size:12.5px;color:var(--faint);max-width:44ch}
 
 /* ── copilot: an edge rail + drawer, off the day sheet ──────────────────── */
 .ov-railbar{position:fixed;top:60px;right:0;bottom:0;width:var(--ov-rail);z-index:40;
@@ -1252,6 +1343,11 @@ body::before{content:'';position:fixed;inset:0;z-index:2000;pointer-events:none;
 .ov-x:hover{color:var(--ink);transform:rotate(90deg)}
 .ov-drawer-body{flex:1;min-height:0;overflow-y:auto;padding:0}
 .ov-drawer-body .cp-chat{border:0;border-radius:0;box-shadow:none;background:transparent}
+/* The drawer is 430px wide whatever the viewport, so the workspace's
+   two-column layout (switched on viewport width) has to be turned off here. */
+.ov-drawer-body .cp-layout{grid-template-columns:minmax(0,1fr);gap:0}
+.ov-drawer-body .cp-rail{position:static;gap:0}
+.ov-drawer-body .cp-rail .panel{border:0;border-top:1px solid var(--line-soft);border-radius:0;box-shadow:none;background:transparent;padding:21px}
 
 @media(max-width:920px){
   :root{--ov-spine:76px}
@@ -1265,7 +1361,6 @@ body::before{content:'';position:fixed;inset:0;z-index:2000;pointer-events:none;
   .ov-qrow,.ov-gauges{grid-template-columns:1fr}
   .ov-qcol,.ov-gauge{padding-inline:0;border-left:0;border-top:1px solid var(--line-soft);padding-block:22px}
   .ov-qcol:first-child,.ov-gauge:first-child{border-top:0;padding-top:0}
-  .ov-gap{grid-template-columns:104px 1fr 48px;gap:12px}
   .ov-masthead .ov-inner{align-items:flex-start}
   .ov-stamp{text-align:left}
   /* a touch device cannot un-hover, so it never gets the dim */

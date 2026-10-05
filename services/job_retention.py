@@ -84,7 +84,7 @@ async def prune_stale_jobs() -> dict[str, Any]:
                     WHERE id IN (
                         SELECT j.id FROM jobs j
                         WHERE j.enrichment_status = 'raw'
-                          AND j.created_at < NOW() - (:days || ' days')::interval
+                          AND j.created_at < NOW() - make_interval(days => :days)
                           AND NOT EXISTS (
                               SELECT 1 FROM job_applications a WHERE a.job_id = j.id
                           )

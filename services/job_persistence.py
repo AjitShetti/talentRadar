@@ -37,6 +37,7 @@ import hashlib
 import logging
 import re
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from domain.entities import Job
@@ -109,6 +110,28 @@ def build_job_kwargs(job: Job) -> dict[str, Any]:
     model, an API, or the network.
     """
     description = (job.description_clean or "")[:MAX_DESCRIPTION_CHARS]
+    kwargs = _structural_kwargs(job, description)
+
+    # Dates the liveness verdict reads. The upsert assigns every key it is
+    # handed, so a date the source did not supply is left out entirely - that
+    # absence is what stops a later, dateless sighting from erasing a publish
+    # date an earlier one recorded. ``first_seen_at`` is never sent for the
+    # same reason: the column default sets it once, on insert.
+    for column, value in (
+        ("posted_at", job.posted_at),
+        ("source_posted_at", job.source_posted_at),
+        ("source_updated_at", job.source_updated_at),
+    ):
+        if value is not None:
+            kwargs[column] = value
+    kwargs["last_seen_at"] = datetime.now(UTC)
+    # Seeing a posting again is evidence it is open, whatever a previous
+    # re-check concluded.
+    kwargs["closed_at"] = None
+    return kwargs
+
+
+def _structural_kwargs(job: Job, description: str) -> dict[str, Any]:
     return {
         "source_url": job.source_url,
         "title": job.title,
@@ -126,7 +149,6 @@ def build_job_kwargs(job: Job) -> dict[str, Any]:
         "skills": job.skills or [],
         "tags": job.tags or [],
         "description_clean": description,
-        "posted_at": job.posted_at,
         # Marks the row as structurally-complete but not LLM-parsed. The
         # enrichment pass and the job-detail endpoint both key off this.
         "enrichment_status": "raw",
@@ -200,6 +222,7 @@ async def persist_live_jobs(jobs: list[Job], *, source_label: str = "live_search
     # 3. Write. One session, one commit.
     embedding_items: list[dict[str, Any]] = []
     try:
+        from services.liveness import record_sighting
         from storage.database import AsyncSessionLocal
         from storage.repository import UnitOfWork
 
@@ -225,6 +248,17 @@ async def persist_live_jobs(jobs: list[Job], *, source_label: str = "live_search
                         summary.inserted += 1
                     else:
                         summary.updated += 1
+
+                    # Remember the role itself, not just this listing of it:
+                    # this is the record that survives retention and notices
+                    # a re-listing. It cannot fail the write above.
+                    await record_sighting(
+                        session,
+                        company_id=company.id,
+                        title=job.title or "",
+                        external_id=external_id,
+                        seen_at=kwargs["last_seen_at"],
+                    )
 
                     embedding_items.append(
                         {

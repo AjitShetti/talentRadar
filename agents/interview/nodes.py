@@ -70,7 +70,9 @@ async def node_generate_question(state: InterviewAgentState) -> InterviewAgentSt
     voice_mode = state.get("voice_mode", False)
     topic      = state.get("topic")
 
-    system_prompt = build_question_prompt(track, difficulty, voice_mode, topic)
+    system_prompt = build_question_prompt(
+        track, difficulty, voice_mode, topic, state.get("role_context")
+    )
     llm = LLMProvider()
     question: str | None = None
 
@@ -147,7 +149,9 @@ async def node_evaluate_answer(state: InterviewAgentState) -> InterviewAgentStat
     updated_history = [*history, {"role": "user", "content": answer}]
 
     # Evaluate
-    system_prompt = build_evaluator_prompt(track, difficulty, voice_mode, topic)
+    system_prompt = build_evaluator_prompt(
+        track, difficulty, voice_mode, topic, state.get("role_context")
+    )
     llm = LLMProvider()
     score_data: dict[str, Any]
 
@@ -235,7 +239,9 @@ async def node_generate_followup(state: InterviewAgentState) -> InterviewAgentSt
     voice_mode     = state.get("voice_mode", False)
     topic          = state.get("topic")
 
-    system_prompt = build_followup_prompt(track, difficulty, voice_mode, topic)
+    system_prompt = build_followup_prompt(
+        track, difficulty, voice_mode, topic, state.get("role_context")
+    )
     llm = LLMProvider()
     followup: str | None = None
 

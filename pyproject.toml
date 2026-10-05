@@ -43,7 +43,11 @@ dependencies = [
     "sse-starlette>=2.0.0,<3.0.0",
 
     # --- SQLAlchemy & database drivers ---
-    "sqlalchemy>=2.0.30,<3.0.0",
+    # The [asyncio] extra pulls in greenlet, which SQLAlchemy 2.1 stopped
+    # installing by default; without it every async engine fails at import.
+    # Capped below 2.1 because that is the line the suite and the deployment
+    # have actually run on - lift the cap in a change that tests 2.1.
+    "sqlalchemy[asyncio]>=2.0.30,<2.1.0",
     "asyncpg>=0.29.0,<1.0.0",           # async PostgreSQL driver
     "psycopg2-binary>=2.9.9,<3.0.0",    # sync driver for Alembic migrations
     "alembic>=1.13.0,<2.0.0",

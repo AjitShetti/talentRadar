@@ -90,8 +90,11 @@ function buildActions(
     })
   }
 
+  // When the briefing already sends the user to the Interview Lab, a second
+  // interview row would spend one of three slots repeating it.
+  const interviewLed = out.some(action => action.href === '/interview')
   const sessions = interviews?.sessions_analyzed ?? 0
-  if (sessions === 0 && out.length < 3) {
+  if (!interviewLed && sessions === 0 && out.length < 3) {
     out.push({
       key: 'first-mock',
       title: 'Run your first mock interview',
@@ -100,7 +103,7 @@ function buildActions(
       cta: 'Start now',
       href: '/interview',
     })
-  } else if (out.length < 3 && interviews?.weakest_dimension) {
+  } else if (!interviewLed && out.length < 3 && interviews?.weakest_dimension) {
     const weak = interviews.weakest_dimension
     out.push({
       key: 'practise',
@@ -119,8 +122,9 @@ function buildActions(
       title: focus?.kind === 'resume_improvements' ? gap.title : `Study ${gap.title}`,
       why: gap.detail,
       tags: [{ label: focus?.kind === 'resume_improvements' ? 'Resume' : 'Biggest gap' }, ...(focus?.target_roles?.length ? [{ label: focus.target_roles[0] }] : [])],
-      cta: 'View gap',
-      href: '#gaps',
+      // The study plan itself is built in the copilot; a resume fix belongs in the studio.
+      cta: focus?.kind === 'resume_improvements' ? 'Open Resume Studio' : 'Build a study plan',
+      href: focus?.kind === 'resume_improvements' ? '/resume-studio' : '/agent',
     })
   }
 
@@ -292,8 +296,9 @@ export default function Dashboard() {
       </section> : null}
 
       {/* ── quick actions ──────────────────────────────────────────────── */}
-      <section className="ov-band ov-quick" aria-label="Quick actions">
+      <section className="ov-band ov-ref ov-quick" aria-label="Quick actions">
         <div className="ov-inner">
+          <div className="ov-head"><h2>Jump to</h2><span className="ov-rule" /></div>
           <div className="ov-qrow">
             <Link className="ov-qcol" href="/interview">
               <div className="ov-qtop"><Mic size={15} /><h3>Practice</h3></div>
@@ -315,7 +320,7 @@ export default function Dashboard() {
       </section>
 
       {/* ── where you stand ───────────────────────────────────────────── */}
-      {data && <section className="ov-band" aria-label="Where you stand">
+      {data && <section className="ov-band ov-ref" aria-label="Where you stand">
         <div className="ov-inner">
           <div className="ov-head"><h2>Where you stand</h2><span className="ov-rule" /></div>
           <div className="ov-gauges">
@@ -345,40 +350,6 @@ export default function Dashboard() {
             <Link className="ov-link" href="/settings">Edit profile <ArrowRight size={12} /></Link>
             {activity.length > 0 && <Link className="ov-link" href="/applications">{activity.length} recent change{activity.length === 1 ? '' : 's'} <ArrowRight size={12} /></Link>}
           </div>
-        </div>
-      </section>}
-
-      {/* ── close your gaps ───────────────────────────────────────────── */}
-      {data && <section className="ov-band" id="gaps">
-        <div className="ov-inner">
-          <div className="ov-head">
-            <h2>Close your gaps</h2>
-            <span className="ov-rule" />
-            {skillsFocus?.target_roles?.length ? <span className="ov-note">Against {skillsFocus.target_roles.join(' · ')}</span> : null}
-          </div>
-          {skillsFocus && skillsFocus.items.length > 0
-            ? <>
-              <div>
-                {skillsFocus.items.map((item, i) => <div className="ov-gap" key={`${item.title}-${i}`}>
-                  <span className="ov-n">{String(i + 1).padStart(2, '0')}</span>
-                  <div>
-                    <strong className="ov-name">{item.title}</strong>
-                    <p className="ov-gd">{item.detail}</p>
-                  </div>
-                </div>)}
-              </div>
-              <div className="ov-gaps-foot">
-                <Link className="ov-btn ov-btn-line" href="/resume-studio">Generate learning plan</Link>
-                {skillsFocus.resume_filename
-                  ? <p>Ranked by how often each one blocked a match. Compared <strong>{skillsFocus.resume_filename}</strong> against your target roles.</p>
-                  : <p>Ranked by how often each one blocked a match.</p>}
-              </div>
-            </>
-            : <p className="muted-copy">
-              {skillsFocus?.status === 'no_resume'
-                ? 'Upload your resume in Profile & Goals and this names the skills these roles expect that you are missing.'
-                : 'Add a target role and upload your resume to see the gaps between you and the roles you want.'}
-            </p>}
         </div>
       </section>}
 

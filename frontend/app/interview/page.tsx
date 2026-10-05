@@ -9,6 +9,7 @@ import AppShell from '@/components/AppShell'
 import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
 import { api, InterviewScore, InterviewState } from '@/lib/api'
+import { track } from '@/lib/analytics'
 import { runTask, useLatest, useMounted, usePersistentState, useTaskRunning } from '@/lib/persistent-state'
 import {
   captionsSupported, filenameFor, isLikelyHallucination, ListenPhase, micSupported, ttsSupported,
@@ -16,6 +17,7 @@ import {
 } from '@/lib/voice'
 
 type Turn = { role: 'interviewer' | 'you'; text: string }
+type PrepRole = { id: string; title: string; company: string }
 
 type Active = {
   id: string
@@ -113,6 +115,10 @@ export default function InterviewPage() {
   const [suggestions, setSuggestions] = useState<Suggestions | null>(null)
   const [difficulty, setDifficulty] = usePersistentState('interview.difficulty', 'mid')
   const [mode, setMode] = usePersistentState<'voice' | 'text'>('interview.mode', 'voice')
+  // Set when the page is opened from a Role Dossier ("Prepare for this role").
+  // The id is all the server needs — it builds the interviewer's view of the
+  // role from its own stored copy; title and company are only for the label.
+  const [role, setRole, roleReady] = usePersistentState<PrepRole | null>('interview.role', null)
   const [active, setActive] = usePersistentState<Active | null>('interview.active', null)
   const [log, setLog] = usePersistentState<Turn[]>('interview.log', [])
   const [answer, setAnswer] = usePersistentState('interview.answer', '')
@@ -304,6 +310,19 @@ export default function InterviewPage() {
     }
   }, [speakerRef, listenerRef, captionsRef, resolveTranscript, appendLog, sendAnswer])
 
+  // Read once from the URL rather than via useSearchParams, which would force
+  // the whole page behind a Suspense boundary for one optional parameter.
+  useEffect(() => {
+    if (!roleReady) return
+    const params = new URLSearchParams(window.location.search)
+    const id = params.get('job')
+    if (!id) return
+    const title = (params.get('role') || '').slice(0, TOPIC_MAX)
+    setRole({ id, title, company: params.get('company') || '' })
+    if (title) setTopic(title)
+    window.history.replaceState(null, '', window.location.pathname)
+  }, [roleReady, setRole, setTopic])
+
   async function start(event?: FormEvent) {
     event?.preventDefault()
     const subject = topic.trim()
@@ -312,7 +331,8 @@ export default function InterviewPage() {
     const voice = mode === 'voice' && voiceReady
     let opening = ''
     try {
-      const session = await runTask(START_TASK, () => api.interview.start(style, subject, difficulty, voice))
+      const session = await runTask(START_TASK, () => api.interview.start(style, subject, difficulty, voice, role?.id))
+      track('prep_started', { for_role: Boolean(role), voice })
       sessionRef.current = { id: session.session_id, state: session.agent_state }
       setActive({
         id: session.session_id, question: session.question,
@@ -373,6 +393,7 @@ export default function InterviewPage() {
     stopEverything()
     try {
       const result = await runTask(END_TASK, () => api.interview.end(active.id, active.state))
+      track('prep_completed', { for_role: Boolean(role) })
       setActive(previous => previous && previous.id === active.id
         ? { ...previous, done: true, closing: result.closing_message, finalScore: result.final_score.total_score }
         : previous)
@@ -411,6 +432,12 @@ export default function InterviewPage() {
 
     {error && <p className="form-error">{error}</p>}
     {notice && <p className="voice-notice">{notice}</p>}
+
+    {role && <p className="prep-role">
+      <span className="prep-role-label">Preparing for</span>
+      <a href={`/roles/${encodeURIComponent(role.id)}`}>{role.title || 'this role'}{role.company ? ` at ${role.company}` : ''}</a>
+      {!active && <button type="button" className="text-button" onClick={() => setRole(null)}>Practise without a role</button>}
+    </p>}
 
     {!active ? <form className="interview-start" onSubmit={start}>
       <label className="topic-field">

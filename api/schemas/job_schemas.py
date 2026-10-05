@@ -7,6 +7,7 @@ Pydantic schemas for job-related API requests and responses.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -95,6 +96,10 @@ class JobResponseSchema(BaseModel):
     created_at: datetime | None = None  # Optional — not available in vector-only results
     embedding_id: str | None = None
     match_score: float | None = Field(None, description="Match score if from search")
+    # Is the posting still open, and on what evidence. ``None`` when we hold
+    # no stored row for it yet. Shape: {state, headline, evidence, open_days};
+    # see domain/liveness.py.
+    liveness: dict[str, Any] | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -123,6 +128,9 @@ class SearchRequestSchema(BaseModel):
     platforms: list[str] | None = Field(
         None, description="Keep only postings listed on these platforms (see JobFilterSchema)"
     )
+    include_closed: bool = Field(
+        False, description="Also return roles the employer has stopped listing"
+    )
 
     @field_validator("platforms")
     @classmethod
@@ -142,4 +150,7 @@ class SearchResponseSchema(BaseModel):
     # less. Shape: {sourced, reason, live_count, indexed_count, sources_stats}.
     sourcing: dict | None = Field(
         None, description="Live-sourcing decision and per-source statistics"
+    )
+    closed_hidden: int = Field(
+        0, description="Roles left out because the employer no longer lists them"
     )

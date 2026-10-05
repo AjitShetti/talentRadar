@@ -378,6 +378,8 @@ achieved portion. An empty gauge keeps its ticks and drops the fill, so "nothing
 a shape rather than only as a zero. This replaces `.metric-card` on the Overview.
 
 ### Gap Chart (`.chart`)
+*Not currently used on the Overview — the gaps section moved to the copilot.*
+
 Skill gaps are a real chart, not a list of bars: one shared axis (0–12) with a faint tick grid,
 labels naming values the chart actually reaches, a 2px amber rule per skill and an emphasized
 endpoint marker. Bars grow from the axis on load (820ms, 80ms apart); endpoints fade in after.
@@ -431,7 +433,20 @@ Order is fixed, and each section answers one question:
 | 3 | Fetched while you were away | What arrived overnight, and why was it kept? |
 | 4 | Quick actions | Where do I go if none of the above? |
 | 5 | Where you stand | How far along am I? |
-| 6 | Close your gaps | What is blocking me, and how do I fix it? |
+
+The five sections sit in three visual tiers, so the page reads as one decision and its supporting
+material rather than five equal blocks:
+
+- **Tier 1 — Today's focus.** Largest heading, the plates, the only amber.
+- **Tier 2 — what arrived** (Fetched while you were away, Also on your radar). A 21px heading on
+  the page ground, separated from tier 1 by a `--line-strong` rule.
+- **Tier 3 — reference** (`.ov-ref`: Quick actions, Where you stand). Recessed darker ground,
+  12px uppercase label headings in `--faint`, smaller numerals. A new section that is navigation
+  or a count belongs here.
+
+Skill gaps are not a section here. The biggest one can surface as a Today's focus action, and
+the list and the study plan built from it live in the copilot ("Close your gaps") — one place
+builds the plan, and the Overview stays short.
 
 The Overview is a plan for the day, not an account report. Counts stay, but they sit below the
 actions — never above them, and never as the page's opening statement.

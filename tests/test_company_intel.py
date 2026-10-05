@@ -79,6 +79,20 @@ class TestCatalogue:
                     f"{record['name']} has a URL in github_org: {org!r}"
                 )
 
+    def test_every_kind_of_employer_is_represented(self, catalogue):
+        # The directory is meant to span a ten-person startup to a 10,000-person
+        # firm, and agencies as well as product companies.
+        tiers = {r["tier"] for r in catalogue}
+        assert tiers == set(TIER_ORDER), f"tiers with no companies: {set(TIER_ORDER) - tiers}"
+        sizes = {r.get("employee_count_range") for r in catalogue}
+        assert {"11-50", "10000+"} <= sizes
+
+    def test_accelerator_alumni_can_be_found_by_search(self, catalogue):
+        # There is no accelerator column; the directory search reads the
+        # description, so that is where the fact has to live.
+        backed = [r for r in catalogue if "Y Combinator" in r["description"]]
+        assert len(backed) >= 10
+
     def test_founded_years_are_plausible(self, catalogue):
         for record in catalogue:
             year = record.get("founded_year")
@@ -143,6 +157,10 @@ class TestTierOrdering:
 
     def test_big_tech_sorts_ahead_of_services(self):
         assert _tier_rank("big_tech") < _tier_rank("services")
+
+    def test_agencies_are_a_tier_of_their_own(self):
+        assert TIER_LABELS["agency"] == "Agency & Studio"
+        assert _tier_rank("startup") < _tier_rank("agency") < _tier_rank("services")
 
     def test_unknown_tier_sorts_last(self):
         assert _tier_rank("something_else") == len(TIER_ORDER)

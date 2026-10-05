@@ -252,9 +252,11 @@ from api.routers import (  # noqa: E402
     interview,
     match,
     profile,
+    public,
     query,
     recommend,
     resumes,
+    roles,
     search,
 )
 
@@ -268,6 +270,8 @@ app.include_router(interview.router, prefix="/api/v1")
 app.include_router(applications.router, prefix="/api/v1")
 app.include_router(profile.router, prefix="/api/v1")
 app.include_router(resumes.router, prefix="/api/v1")
+app.include_router(roles.router, prefix="/api/v1")
+app.include_router(public.router, prefix="/api/v1")
 app.include_router(company_intel.router, prefix="/api/v1")
 app.include_router(career.router, prefix="/api/v1")
 app.include_router(agent.router, prefix="/api/v1")

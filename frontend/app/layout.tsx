@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import ApiWarmup from '@/components/ApiWarmup'
 import './globals.css'
 
 export const metadata: Metadata = { title: 'TalentRadar — Your next move, clearer', description: 'AI-powered career intelligence for modern job seekers.' }
@@ -26,5 +27,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       raster carrying its provenance.
     */}
     {children}
+    <ApiWarmup />
   </body></html>
 }

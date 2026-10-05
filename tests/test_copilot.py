@@ -416,3 +416,32 @@ async def test_location_only_preference_reads_cleanly(monkeypatch: pytest.Monkey
 
     await copilot._remember_preferences("u1", {"location": "Pune", "skills": []})
     assert stored[0]["content"] == "Interested in roles in Pune"
+
+
+# ── a saved role the employer has stopped listing ────────────────────────────
+
+
+def test_closed_saved_role_gets_a_card_naming_the_date():
+    from datetime import UTC, datetime
+
+    card = copilot._closed_role_card(
+        application_id="app-1",
+        role="Backend Engineer",
+        company="Stripe",
+        closed_at=datetime(2026, 10, 2, tzinfo=UTC),
+    )
+    assert card["id"] == "closed_role:app-1"
+    assert card["kind"] == "closed_role"
+    assert "Backend Engineer" in card["title"] and "Stripe" in card["title"]
+    assert "2 Oct 2026" in card["detail"]
+    assert card["meta"]["application_id"] == "app-1"
+
+
+def test_closed_role_card_points_at_the_tracker_and_at_similar_roles():
+    from datetime import UTC, datetime
+
+    card = copilot._closed_role_card(
+        application_id="app-1", role="Backend Engineer", company="Stripe",
+        closed_at=datetime(2026, 10, 2, tzinfo=UTC),
+    )
+    assert [a["href"] for a in card["actions"]] == ["/applications", "/search"]

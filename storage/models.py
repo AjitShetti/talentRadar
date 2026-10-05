@@ -473,6 +473,34 @@ class Job(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    # ---- Liveness evidence --------------------------------------------- #
+    # The facts domain/liveness.py turns into a verdict. All nullable: a fact
+    # we do not hold stays absent rather than being guessed. Migration 013.
+    source_posted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+        comment="Publish time reported by the employer's ATS",
+    )
+    source_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+        comment="Last edit time reported by the employer's ATS",
+    )
+    first_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, server_default=func.now(),
+        comment="When this posting first reached our index",
+    )
+    last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+        comment="Most recent scrape that returned this posting",
+    )
+    last_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True,
+        comment="Most recent re-check that found the posting still served",
+    )
+    closed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+        comment="When a re-check found the source no longer serving it",
+    )
+
     # Extra enrichment payload
     # NOTE: 'metadata' is reserved by SQLAlchemy Declarative API; the Python
     # attribute is 'extra_metadata' but maps to the 'metadata' Postgres column.
@@ -515,6 +543,35 @@ class Job(Base):
 # ---------------------------------------------------------------------------
 # users
 # ---------------------------------------------------------------------------
+
+class RoleSighting(Base):
+    """
+    Running record of one role - a (company, normalised title) pair.
+
+    This is the history that has to outlive retention. ``jobs`` rows are
+    pruned to keep a 0.5 GB database writable, and a re-listed role arrives
+    under a new external id, so neither the row nor its id can remember that
+    the same role has been advertised before. One small row here can.
+    ``services/job_retention.py`` never touches this table.
+    """
+    __tablename__ = "role_sightings"
+
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    title_key: Mapped[str] = mapped_column(String(200), primary_key=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    times_seen: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
+    times_reposted: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    last_external_id: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
 
 class User(Base):
     """
@@ -749,6 +806,18 @@ class InterviewSession(Base):
     adaptive: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # The posting this session prepares for ("Prepare for this role"), and the
+    # bounded description of it handed to the interviewer. The text is stored
+    # rather than rebuilt per turn so every turn sees the same role even if
+    # the job row is later pruned, and so it never has to come back from the
+    # browser. See agents/interview/role_context.py and migration 014.
+    job_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("jobs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    role_context: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Optional link to the job/application this session prepares the user for
     application_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),

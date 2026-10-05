@@ -196,6 +196,11 @@ class Settings(BaseSettings):
     # each hop you claim is one X-Forwarded-For entry a client can forge.
     trusted_proxy_hops: int = Field(default=0, ge=0, le=4)
 
+    # Shared secret a scheduler presents (``X-Cron-Token``) to run maintenance
+    # endpoints such as ``/ingest/reverify``. Unset means no token is accepted
+    # and only an admin can run them.
+    cron_token: str | None = Field(default=None)
+
     # ------------------------------------------------------------------ #
     # Scraping                                                             #
     # ------------------------------------------------------------------ #

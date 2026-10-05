@@ -67,6 +67,13 @@ class InterviewAgentState(TypedDict, total=False):
     difficulty: str
     """Difficulty level chosen by the user: beginner | mid | senior"""
 
+    role_context: str | None
+    """
+    The posting this session prepares for, as bounded plain text built by
+    ``agents.interview.role_context``. None for an ordinary session. Like
+    ``topic`` it is restored from the session row on every turn.
+    """
+
     user_id: str
     """UUID of the authenticated user (string form for JSON serialisation)."""
 

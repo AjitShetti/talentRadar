@@ -43,6 +43,8 @@ export default function CompanyIntelPage() {
   const [openRolesOnly, setOpenRolesOnly] = usePersistentState('companyIntel.openRolesOnly', false)
 
   const [companies, setCompanies] = useState<CompanyCard[]>([])
+  const [total, setTotal] = useState(0)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [facets, setFacets] = useState<CompanyFacets | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -63,11 +65,22 @@ export default function CompanyIntelPage() {
     setLoading(true)
     api.company
       .directory({ city, tier: tier || undefined, industry: industry || undefined, q: debouncedQuery || undefined, hasOpenRoles: openRolesOnly })
-      .then(result => { if (!cancelled) { setCompanies(result.companies); setError('') } })
-      .catch(err => { if (!cancelled) { setCompanies([]); setError(err instanceof Error ? err.message : 'Could not load the company directory.') } })
+      .then(result => { if (!cancelled) { setCompanies(result.companies); setTotal(result.total); setError('') } })
+      .catch(err => { if (!cancelled) { setCompanies([]); setTotal(0); setError(err instanceof Error ? err.message : 'Could not load the company directory.') } })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [city, tier, industry, debouncedQuery, openRolesOnly])
+
+  // The directory arrives a page at a time; the rest is fetched on request so
+  // the first paint does not wait on four hundred cards.
+  const loadMore = () => {
+    setLoadingMore(true)
+    api.company
+      .directory({ city, tier: tier || undefined, industry: industry || undefined, q: debouncedQuery || undefined, hasOpenRoles: openRolesOnly, offset: companies.length })
+      .then(result => { setCompanies(current => [...current, ...result.companies.filter(c => !current.some(have => have.id === c.id))]); setTotal(result.total) })
+      .catch(err => setError(err instanceof Error ? err.message : 'Could not load more companies.'))
+      .finally(() => setLoadingMore(false))
+  }
 
   const cities = facets?.cities?.length ? facets.cities : ['Bengaluru']
 
@@ -76,9 +89,9 @@ export default function CompanyIntelPage() {
       <div>
         <span className="board-kicker">Company intelligence</span>
         <h1>Every tech employer hiring in {city}<span>.</span></h1>
-        <p>Big Tech, global capability centres, unicorns and startups — what they build, the stack they build it on, their open source, and how to reach their talent team.</p>
+        <p>Big Tech, global capability centres, unicorns, startups, agencies and IT services — what they build, the stack they build it on, their open source, and how to reach their talent team.</p>
       </div>
-      {!loading && companies.length > 0 && <div className="tracker-total"><strong><FlapText value={companies.length} /></strong><span>on the board</span></div>}
+      {!loading && companies.length > 0 && <div className="tracker-total"><strong><FlapText value={total || companies.length} /></strong><span>on the board</span></div>}
     </section>
 
     <div className="ci-toolbar">
@@ -141,6 +154,13 @@ export default function CompanyIntelPage() {
                 </div>
               </button>)}
           </div>}
+
+    {!loading && !error && companies.length < total &&
+      <div className="ci-more">
+        <button className="ci-chip" onClick={loadMore} disabled={loadingMore}>
+          {loadingMore ? 'Loading…' : `Show more — ${total - companies.length} of ${total} still to come`}
+        </button>
+      </div>}
 
     {selectedId && <CompanyDrawer
       companyId={selectedId}

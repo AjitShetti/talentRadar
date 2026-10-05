@@ -109,6 +109,34 @@ def _days_since(moment: datetime | None) -> int | None:
     return max((datetime.now(tz=UTC) - moment).days, 0)
 
 
+def _closed_role_card(
+    *, application_id: str, role: str, company: str, closed_at: datetime
+) -> dict[str, Any]:
+    """
+    A saved role the employer has stopped listing.
+
+    Only raised for roles still in "saved": once someone has applied, a
+    posting coming down is ordinary - employers close a listing when they have
+    enough applicants - and says nothing about that application.
+    """
+    return _card(
+        card_id=f"closed_role:{application_id}",
+        kind="closed_role",
+        title=f"{role} at {company} is no longer listed",
+        detail=(
+            f"The employer's careers site stopped listing it on "
+            f"{closed_at.day} {closed_at.strftime('%b %Y')}. Move it out of your "
+            "saved roles so it stops competing for your attention."
+        ),
+        tone="warning",
+        actions=[
+            {"label": "Open tracker", "href": "/applications", "style": "primary"},
+            {"label": "Find similar roles", "href": "/search", "style": "ghost"},
+        ],
+        meta={"application_id": application_id, "company": company},
+    )
+
+
 async def _application_cards(user_id: str) -> list[dict[str, Any]]:
     """
     Cards for applications that have gone quiet.
@@ -124,7 +152,7 @@ async def _application_cards(user_id: str) -> list[dict[str, Any]]:
             return []
 
         result = await session.execute(
-            select(JobApplication, Job.title, Company.name)
+            select(JobApplication, Job.title, Company.name, Job.closed_at)
             .outerjoin(Job, Job.id == JobApplication.job_id)
             .outerjoin(Company, Company.id == Job.company_id)
             .where(JobApplication.user_id == user_uuid)
@@ -135,14 +163,22 @@ async def _application_cards(user_id: str) -> list[dict[str, Any]]:
         cards: list[dict[str, Any]] = []
         stale_saved: list[tuple[JobApplication, str | None]] = []
 
-        for app, job_title, company_name in rows:
+        for app, job_title, company_name, closed_at in rows:
             age = _days_since(app.updated_at)
             if age is None:
                 continue
             role = job_title or "a saved role"
             company = company_name or "this company"
 
-            if app.status == ApplicationStatus.SAVED and age >= SAVED_STALE_AFTER_DAYS:
+            if app.status == ApplicationStatus.SAVED and closed_at is not None:
+                # Said once, on its own, and kept out of the saved backlog:
+                # "tailor a resume and send one today" is wrong advice for a
+                # role that can no longer be applied to.
+                cards.append(_closed_role_card(
+                    application_id=str(app.id), role=role, company=company,
+                    closed_at=closed_at,
+                ))
+            elif app.status == ApplicationStatus.SAVED and age >= SAVED_STALE_AFTER_DAYS:
                 stale_saved.append((app, job_title))
             elif app.status in IN_FLIGHT_STAGES and age >= STALE_AFTER_DAYS:
                 cards.append(_card(

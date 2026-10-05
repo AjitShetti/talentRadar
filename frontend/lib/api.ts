@@ -1,12 +1,24 @@
 'use client'
 
+import { apiIsWaking, markApiAlive } from '@/lib/api-warmup'
 import { clearPersistedState } from '@/lib/persistent-state'
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+const WAKING_MESSAGE = 'The server is still starting up — give it a few seconds and try again.'
 const TOKEN_KEY = 'talentradar_token'
 const EMAIL_KEY = 'talentradar_email'
 
-export type Job = { id: string; title: string; company?: string | null; company_name?: string | null; location_raw?: string | null; is_remote?: boolean; skills?: string[]; source_url?: string | null; platform?: string | null; salary_raw?: string | null; match_score?: number | null; description_clean?: string | null }
+export type Job = { id: string; title: string; company?: string | null; company_name?: string | null; location_raw?: string | null; is_remote?: boolean; skills?: string[]; source_url?: string | null; platform?: string | null; salary_raw?: string | null; match_score?: number | null; description_clean?: string | null; liveness?: Liveness | null }
+// Is the posting still open, and on what evidence — see domain/liveness.py.
+// Absent when we hold no stored row for the role yet.
+export type LivenessState = 'closed' | 'reposted' | 'ageing' | 'verified_open' | 'open_unverified' | 'unknown'
+export type Liveness = { state: LivenessState; headline: string; evidence: string[]; open_days: number | null }
+// The Role Dossier (services/dossier.py). Every section but `role` may be null: each comes from a different part of the system and the page renders whatever arrived.
+export type DossierRole = { id: string; title: string; company_id?: string | null; company?: string | null; location?: string | null; is_remote: boolean; seniority?: string | null; employment_type?: string | null; salary_raw?: string | null; skills: string[]; description: string; source_url?: string | null; platform?: string | null }
+export type DossierFit = { available: false; reason: 'no_resume' | 'no_role_skills' } | { available: true; matched_skills: string[]; missing_skills: string[]; coverage_percentage: number }
+export type DossierWayIn = { company_id?: string | null; careers_url?: string | null; contacts: CompanyContact[] }
+export type DossierReadiness = { sessions: number; last_score: number | null; last_at: string | null; application: { id: string; status: string } | null }
+export type Dossier = { role: DossierRole; liveness: Liveness | null; fit: DossierFit | null; way_in: DossierWayIn | null; readiness: DossierReadiness | null }
 // One of the dashboard's daily top-3 picks for a Profile.target_roles entry —
 // computed by the APScheduler job in api/main.py (services/job_matching.py).
 export type JobMatch = { id: string; title: string; company: string; location: string; is_remote: boolean; skills: string[]; salary_raw?: string | null; source_url?: string | null; posted_at?: string | null; matched_role: string }
@@ -113,7 +125,16 @@ async function request<T>(path: string, options: RequestInit = {}, authenticated
     if (!accessToken) throw new Error('Please sign in to use this feature.')
     headers.set('Authorization', `Bearer ${accessToken}`)
   }
-  const response = await fetch(`${API_URL}${path}`, { ...options, headers })
+  let response: Response
+  try {
+    response = await fetch(`${API_URL}${path}`, { ...options, headers })
+  } catch (err) {
+    // "Failed to fetch" during a cold start reads as a broken app.
+    if (apiIsWaking()) throw new Error(WAKING_MESSAGE)
+    throw err
+  }
+  if ((response.status === 502 || response.status === 503) && apiIsWaking()) throw new Error(WAKING_MESSAGE)
+  if (response.status < 500) markApiAlive()
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as { detail?: unknown; message?: string }
     if (response.status === 401) {
@@ -163,7 +184,7 @@ export const api = {
   },
   dashboard: () => request<Record<string, unknown>>('/api/v1/dashboard/overview', {}, true),
   search: {
-    semantic: (query: string, platforms: string[] = []) => request<{ results: Job[]; total_found: number; summary?: string; sourcing?: Sourcing }>('/api/v1/search/semantic', { method: 'POST', body: JSON.stringify({ query, platforms: platforms.length ? platforms : undefined, limit: 30 }) }),
+    semantic: (query: string, platforms: string[] = [], includeClosed = false) => request<{ results: Job[]; total_found: number; summary?: string; sourcing?: Sourcing; closed_hidden?: number }>('/api/v1/search/semantic', { method: 'POST', body: JSON.stringify({ query, platforms: platforms.length ? platforms : undefined, include_closed: includeClosed || undefined, limit: 30 }) }),
     structured: (query: string, filters: { location?: string; remote?: boolean; experience?: string; platforms?: string[] } = {}) => request<{ jobs: Job[]; total: number }>('/api/v1/search/structured', { method: 'POST', body: JSON.stringify({ query, location: filters.location || undefined, is_remote: filters.remote || undefined, experience: filters.experience || undefined, platforms: filters.platforms?.length ? filters.platforms : undefined, india_only: true, limit: 30 }) }),
   },
   applications: {
@@ -190,9 +211,15 @@ export const api = {
       compile: (document: ResumeDocument) => request<CompiledResume>('/api/v1/resumes/document/compile', { method: 'POST', body: JSON.stringify({ document }) }, true),
     },
   },
+  roles: {
+    dossier: (jobId: string) => request<Dossier>(`/api/v1/roles/${encodeURIComponent(jobId)}/dossier`, {}, true),
+    // Returns a draft for the user to edit and send themselves; generated=false means a template was returned because the model was unavailable.
+    referralAsk: (jobId: string, payload: { recipient_name?: string; recipient_title?: string; relationship?: string }) => request<{ message: string; generated: boolean }>(`/api/v1/roles/${encodeURIComponent(jobId)}/referral-ask`, { method: 'POST', body: JSON.stringify(payload) }, true),
+  },
   interview: {
     // track is the round style (technical | coding | system_design | behavioral); topic is free text.
-    start: (track: string, topic: string, difficulty: string, voice_mode = false) => request<{ session_id: string; question: string; question_index: number; max_questions: number; agent_state: InterviewState }>('/api/v1/interview/sessions/start', { method: 'POST', body: JSON.stringify({ track, topic, difficulty, voice_mode }) }, true),
+    // jobId anchors the session to a posting ("Prepare for this role"): the interviewer is given that role's title, skills and description.
+    start: (track: string, topic: string, difficulty: string, voice_mode = false, jobId?: string | null) => request<{ session_id: string; question: string; question_index: number; max_questions: number; agent_state: InterviewState }>('/api/v1/interview/sessions/start', { method: 'POST', body: JSON.stringify({ track, topic, difficulty, voice_mode, job_id: jobId || undefined }) }, true),
     topics: () => request<{ for_you: string[]; recent: string[]; popular: string[] }>('/api/v1/interview/topics', {}, true),
     answer: (session_id: string, answer: string, agent_state: InterviewState) => request<{ question: string; question_index: number; is_followup: boolean; max_questions: number; session_complete: boolean; agent_state: InterviewState; score: InterviewScore }>('/api/v1/interview/sessions/answer', { method: 'POST', body: JSON.stringify({ session_id, answer, agent_state }) }, true),
     end: (session_id: string, agent_state: InterviewState) => request<{ closing_message: string; final_score: { total_score: number; correctness: number; clarity: number; depth: number; questions_answered: number } }>('/api/v1/interview/sessions/end', { method: 'POST', body: JSON.stringify({ session_id, agent_state }) }, true),
@@ -204,13 +231,14 @@ export const api = {
   },
   career: { weaknesses: () => request<Record<string, unknown>>('/api/v1/career/weaknesses', {}, true), recommend: () => request<LearningPlan>('/api/v1/career/recommend', { method: 'POST', body: JSON.stringify({ persist: true }) }, true) },
   company: {
-    directory: (filters: { city?: string; tier?: string; industry?: string; q?: string; hasOpenRoles?: boolean } = {}) => {
+    directory: (filters: { city?: string; tier?: string; industry?: string; q?: string; hasOpenRoles?: boolean; offset?: number } = {}) => {
       const params = new URLSearchParams()
       if (filters.city) params.set('city', filters.city)
       if (filters.tier) params.set('tier', filters.tier)
       if (filters.industry) params.set('industry', filters.industry)
       if (filters.q) params.set('q', filters.q)
       if (filters.hasOpenRoles) params.set('has_open_roles', 'true')
+      if (filters.offset) params.set('offset', String(filters.offset))
       return request<CompanyDirectory>(`/api/v1/company-intel/?${params.toString()}`, {}, true)
     },
     facets: (city?: string) => request<CompanyFacets>(`/api/v1/company-intel/facets${city ? `?city=${encodeURIComponent(city)}` : ''}`, {}, true),

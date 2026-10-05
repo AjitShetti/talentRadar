@@ -25,8 +25,10 @@ Design decisions
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
+from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
@@ -37,6 +39,7 @@ from agents.interview.nodes import (
     node_evaluate_answer,
     node_generate_question,
 )
+from agents.interview.role_context import build_role_context, topic_for_role
 from agents.interview.state import MAX_QUESTIONS_PER_SESSION, InterviewAgentState
 from agents.interview.topics import POPULAR_TOPICS, spoken_transition, suggest_topics
 from api.auth import get_current_user
@@ -61,7 +64,7 @@ from api.utils.voice_pipeline import STTError, VoicePipeline
 from config.settings import get_settings
 from storage.database import get_db_dep
 from storage.interview_repository import InterviewRepository
-from storage.models import InterviewDifficulty, InterviewSession, InterviewTrack
+from storage.models import InterviewDifficulty, InterviewSession, InterviewTrack, Job
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +147,58 @@ def _persisted_config(session: InterviewSession) -> InterviewAgentState:
         "track": session.track.value,
         "topic": session.topic,
         "difficulty": session.difficulty.value,
+        # Always set, even to None: a general session must not pick up a
+        # role the browser slipped into its copy of the state.
+        "role_context": session.role_context,
     }
+
+
+@dataclass(frozen=True)
+class _Role:
+    """The posting a session prepares for, resolved from the stored job."""
+
+    job_id: uuid.UUID
+    topic: str | None
+    context: str | None
+
+
+async def _role_for_job(db: AsyncSession, job_id: str) -> _Role:
+    """
+    Load a job and build the interviewer's view of it.
+
+    The company's public-repository languages are added when they are cheap
+    to get; GitHub being slow or rate-limited must not delay or fail the
+    start of an interview, so that lookup is bounded and optional.
+    """
+    from sqlalchemy.orm import selectinload
+
+    job = await db.get(Job, uuid.UUID(job_id), options=[selectinload(Job.company)])
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    company = job.company
+    stack: list[str] = []
+    org = getattr(company, "github_org", None)
+    if org:
+        try:
+            from services.github import org_snapshot
+
+            snapshot = await asyncio.wait_for(org_snapshot(org), timeout=3.0)
+            stack = list((snapshot or {}).get("top_languages") or [])
+        except Exception as exc:
+            logger.debug("No GitHub languages for %s: %s", org, exc)
+
+    return _Role(
+        job_id=job.id,
+        topic=topic_for_role(job.title),
+        context=build_role_context(
+            title=job.title,
+            company=getattr(company, "name", None),
+            skills=list(job.skills or []),
+            description=job.description_clean,
+            stack=stack,
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -219,6 +273,12 @@ async def start_session(
 ) -> StartSessionResponse:
     """Start a new interview session and return the first question."""
 
+    # -- Resolve the role being prepared for, if any --------------------- #
+    role = await _role_for_job(db, body.job_id) if body.job_id else None
+    # A topic the candidate typed wins; otherwise the role's title labels the
+    # session so it reads as "Backend Engineer" in history, not "Technical".
+    topic = body.topic or (role.topic if role else None)
+
     # -- Persist the session row ---------------------------------------- #
     repo = InterviewRepository()
     try:
@@ -227,7 +287,9 @@ async def start_session(
             user_id=uuid.UUID(user_id),
             track=InterviewTrack(body.track),
             difficulty=InterviewDifficulty(body.difficulty),
-            topic=body.topic,
+            topic=topic,
+            job_id=role.job_id if role else None,
+            role_context=role.context if role else None,
         )
         await db.commit()
     except Exception as exc:
@@ -241,8 +303,9 @@ async def start_session(
     # -- Build initial state and run node_generate_question -------------- #
     initial_state: InterviewAgentState = {
         "track": body.track,
-        "topic": body.topic,
+        "topic": topic,
         "difficulty": body.difficulty,
+        "role_context": role.context if role else None,
         "user_id": user_id,
         "voice_mode": body.voice_mode,
         "conversation_history": [],
@@ -484,6 +547,7 @@ async def end_session(
             questions_answered=len(scores_list),
         ),
         closing_message=closing,
+        job_id=str(session_row.job_id) if session_row.job_id else None,
     )
 
 
