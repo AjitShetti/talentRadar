@@ -226,3 +226,70 @@ def test_the_public_check_is_on_the_strict_rate_limit():
 
     assert "/api/v1/public/check" in STRICT_PATHS
     assert "/api/auth/login" in STRICT_PATHS
+
+
+# ── India only ───────────────────────────────────────────────────────────────
+#
+# TalentRadar is an India-only board, and the signed-in search already filters
+# to India. The public pages did not: production held ATS rows ingested before
+# that rule existed, and every one of them - "North America", "Europe",
+# "Remote - United States" - was published and listed in the sitemap.
+
+
+def _row(**fields: Any) -> Any:
+    from types import SimpleNamespace
+
+    base = {
+        "source": "greenhouse:stripe", "location_raw": None, "city": None,
+        "country": None, "is_remote": False,
+    }
+    base.update(fields)
+    return SimpleNamespace(**base)
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"location_raw": "Bengaluru, Karnataka, India"},
+        {"location_raw": "Remote - India"},
+        {"city": "Hyderabad"},
+        {"country": "IN"},
+        {"location_raw": "Pune"},
+    ],
+)
+def test_roles_located_in_india_are_publishable(fields: dict[str, Any]):
+    from services.public_roles import is_publishable_role
+
+    assert is_publishable_role(_row(**fields))
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"location_raw": "North America"},
+        {"location_raw": "Europe"},
+        {"location_raw": "Remote - United States", "is_remote": True},
+        {"location_raw": "London"},
+        {"location_raw": "Foster City, CA"},
+        {"country": "US", "city": "San Francisco"},
+    ],
+)
+def test_roles_located_elsewhere_are_not_published(fields: dict[str, Any]):
+    from services.public_roles import is_publishable_role
+
+    assert not is_publishable_role(_row(**fields))
+
+
+@pytest.mark.parametrize("fields", [{}, {"location_raw": "Remote", "is_remote": True}])
+def test_a_role_with_no_stated_location_is_not_published(fields: dict[str, Any]):
+    # Search keeps these rows, because a signed-in user can judge them. A
+    # public page is a claim made to a stranger, so it needs a positive signal.
+    from services.public_roles import is_publishable_role
+
+    assert not is_publishable_role(_row(**fields))
+
+
+def test_an_indian_role_from_a_job_board_is_still_not_published():
+    from services.public_roles import is_publishable_role
+
+    assert not is_publishable_role(_row(source="linkedin", location_raw="Bengaluru"))

@@ -14,6 +14,10 @@ Two rules hold for everything in this module:
   came from an employer's own ATS API (Greenhouse, Lever, Ashby), which those
   employers publish for exactly this purpose. Rows scraped from job boards
   stay inside the signed-in product.
+* **India only.** The product is an India-only board, so a public page needs a
+  location that positively resolves to India. Search keeps rows with no stated
+  location because a signed-in user can judge them; a public page is a claim
+  made to a stranger, and "Remote" with nothing else is not enough for one.
 * **No user data, by construction.** ``public_role`` names every field it
   emits. Nothing is spread in from the ORM row, so a column added to ``jobs``
   later cannot leak onto a public page by default.
@@ -25,6 +29,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from domain.geo import INDIA_COUNTRY_VALUES, is_india
 from domain.liveness import is_verifiable_source, title_key
 from domain.posting_urls import (
     PostingRef,
@@ -53,6 +58,18 @@ def is_publishable_source(source: str | None) -> bool:
     """True for rows that came from an employer's own ATS API."""
     text = source or ""
     return ":" in text and is_verifiable_source(text)
+
+
+def _is_in_india(job: Any) -> bool:
+    """True only when the row carries a positive signal that it is in India."""
+    if getattr(job, "country", None) in INDIA_COUNTRY_VALUES:
+        return True
+    return is_india(getattr(job, "location_raw", None)) or is_india(getattr(job, "city", None))
+
+
+def is_publishable_role(job: Any) -> bool:
+    """The one gate every public read goes through: an employer's own ATS, in India."""
+    return is_publishable_source(getattr(job, "source", None)) and _is_in_india(job)
 
 
 def _iso(value: datetime | None) -> str | None:
@@ -117,7 +134,7 @@ async def get_role(slug: str) -> dict[str, Any] | None:
                 select(Job).where(Job.id == job_id).options(selectinload(Job.company))
             )
         ).scalar_one_or_none()
-        if job is None or not is_publishable_source(job.source):
+        if job is None or not is_publishable_role(job):
             return None
         return await _role_payload(session, job)
 
@@ -144,9 +161,13 @@ async def list_roles(limit: int = 500) -> list[dict[str, Any]]:
                 )
                 .options(selectinload(Job.company))
                 .order_by(Job.last_seen_at.desc().nulls_last())
-                .limit(max(1, min(limit, MAX_LISTED_ROLES)))
+                .limit(MAX_LISTED_ROLES)
             )
         ).scalars()
+        # The India rule is applied here rather than in SQL so that it is the
+        # same function every other public read uses; the row cap above keeps
+        # the over-fetch bounded.
+        wanted = max(1, min(limit, MAX_LISTED_ROLES))
         return [
             {
                 "slug": role_slug(job.title, getattr(job.company, "name", None), job.id),
@@ -155,7 +176,7 @@ async def list_roles(limit: int = 500) -> list[dict[str, Any]]:
                 "location": job.location_raw or job.city,
                 "updated_at": _iso(job.last_seen_at or job.updated_at),
             }
-            for job in jobs
+            for job in [j for j in jobs if is_publishable_role(j)][:wanted]
         ]
 
 
@@ -193,6 +214,10 @@ async def company_roles(slug: str) -> dict[str, Any] | None:
                 )
             ).scalars()
         )
+        jobs = [job for job in jobs if is_publishable_role(job)]
+        if not jobs:
+            # Nothing of this employer's is publishable, so it has no public page.
+            return None
         sightings = await liveness.sightings_for(session, [(j.company_id, j.title) for j in jobs])
         now = datetime.now(UTC)
         roles = [
@@ -225,7 +250,9 @@ async def _indexed_role_for_ref(ref: PostingRef) -> dict[str, Any] | None:
                 .options(selectinload(Job.company))
             )
         ).scalar_one_or_none()
-        if job is None:
+        # A role we hold but would not publish is answered from the employer's
+        # ATS instead, like any posting we have never seen.
+        if job is None or not is_publishable_role(job):
             return None
         # Someone is asking about this posting right now: refresh the evidence
         # before answering rather than repeat a days-old confirmation.
@@ -251,7 +278,7 @@ async def _indexed_role_for_url(url: str) -> dict[str, Any] | None:
                 .limit(1)
             )
         ).scalar_one_or_none()
-        if job is None or not is_publishable_source(job.source):
+        if job is None or not is_publishable_role(job):
             return None
         return await _role_payload(session, job)
 
@@ -320,6 +347,7 @@ __all__ = [
     "check_url",
     "company_roles",
     "get_role",
+    "is_publishable_role",
     "is_publishable_source",
     "list_roles",
     "public_role",
