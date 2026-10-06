@@ -253,8 +253,8 @@ def _row(**fields: Any) -> Any:
         {"location_raw": "Bengaluru, Karnataka, India"},
         {"location_raw": "Remote - India"},
         {"city": "Hyderabad"},
-        {"country": "IN"},
         {"location_raw": "Pune"},
+        {"location_raw": "Pune", "country": "IN"},
     ],
 )
 def test_roles_located_in_india_are_publishable(fields: dict[str, Any]):
@@ -272,6 +272,13 @@ def test_roles_located_in_india_are_publishable(fields: dict[str, Any]):
         {"location_raw": "London"},
         {"location_raw": "Foster City, CA"},
         {"country": "US", "city": "San Francisco"},
+        # The country column cannot be trusted on its own: production held rows
+        # reading "Europe" and "North America" whose country said India, and
+        # the first version of this rule published all of them.
+        {"location_raw": "Europe", "country": "IN"},
+        {"location_raw": "North America", "country": "India"},
+        {"location_raw": "Americas", "country": "IN", "is_remote": True},
+        {"country": "IN"},
     ],
 )
 def test_roles_located_elsewhere_are_not_published(fields: dict[str, Any]):
