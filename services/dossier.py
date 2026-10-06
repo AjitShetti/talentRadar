@@ -27,7 +27,6 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from domain.liveness import VERIFICATION_VALID_FOR, is_verifiable_source
 from domain.platforms import platform_of
 from services import liveness
 from services.base import parse_uuid
@@ -37,7 +36,6 @@ from services.resumes import _extract_skills, get_active_resume
 logger = logging.getLogger(__name__)
 
 # How long an on-demand re-check may hold up the page before it is abandoned.
-ON_DEMAND_RECHECK_SECONDS = 4.0
 MAX_DESCRIPTION_CHARS = 6000
 
 
@@ -67,16 +65,7 @@ async def _load_role(job_id: uuid.UUID) -> dict[str, Any] | None:
         if job is None:
             return None
 
-        now = datetime.now(UTC)
-        if _recheck_is_due(job, now):
-            try:
-                await asyncio.wait_for(
-                    liveness.reverify_job(job), timeout=ON_DEMAND_RECHECK_SECONDS
-                )
-                await session.commit()
-            except Exception as exc:
-                await session.rollback()
-                logger.debug("On-demand re-check skipped: %s", exc)
+        await liveness.refresh_if_due(session, job)
 
         sightings = await liveness.sightings_for(session, [(job.company_id, job.title)])
         sighting = next(iter(sightings.values()), None)
@@ -100,17 +89,6 @@ async def _load_role(job_id: uuid.UUID) -> dict[str, Any] | None:
             "platform": platform.key if platform else None,
             "liveness": liveness.verdict_to_dict(verdict),
         }
-
-
-def _recheck_is_due(job: Any, now: datetime) -> bool:
-    if not is_verifiable_source(job.source or "") or job.closed_at is not None:
-        return False
-    verified = job.last_verified_at
-    if verified is None:
-        return True
-    if verified.tzinfo is None:
-        verified = verified.replace(tzinfo=UTC)
-    return bool(now - verified > VERIFICATION_VALID_FOR)
 
 
 # ── is it for me? ────────────────────────────────────────────────────────────

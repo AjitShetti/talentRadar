@@ -24,11 +24,12 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
 from domain.liveness import (
+    VERIFICATION_VALID_FOR,
     LivenessEvidence,
     LivenessVerdict,
     SightingState,
@@ -37,6 +38,7 @@ from domain.liveness import (
     next_sighting,
     title_key,
 )
+from domain.posting_urls import PostingRef, posting_ref
 from ingestion.scrapers.ats_scraper import ATSScraper, PostingCheck
 
 logger = logging.getLogger(__name__)
@@ -48,13 +50,20 @@ MAX_BATCH_LIMIT = 500
 RECHECK_CONCURRENCY = 5
 
 
+# A closure is looked at again for this long. Postings do come back, and an
+# earlier version of the re-check closed open roles by asking about the wrong
+# id; this is what lets those reopen without anyone editing the database.
+REOPEN_WINDOW = timedelta(days=14)
+ON_DEMAND_RECHECK_SECONDS = 4.0
+
 @dataclass(frozen=True)
 class Candidate:
     """One posting due a re-check."""
 
     job_id: uuid.UUID
     source: str
-    external_id: str
+    external_id: str | None
+    source_url: str | None = None
 
 
 # ── sightings ────────────────────────────────────────────────────────────────
@@ -159,10 +168,9 @@ async def _load_candidates(limit: int) -> list[Candidate]:
         rows = await session.execute(
             text(
                 """
-                SELECT j.id, j.source, j.external_id
+                SELECT j.id, j.source, j.external_id, j.source_url
                 FROM jobs j
-                WHERE j.closed_at IS NULL
-                  AND j.external_id IS NOT NULL
+                WHERE (j.closed_at IS NULL OR j.closed_at > :reopen_after)
                   AND (j.source LIKE 'greenhouse:%'
                        OR j.source LIKE 'lever:%'
                        OR j.source LIKE 'ashby:%')
@@ -172,10 +180,11 @@ async def _load_candidates(limit: int) -> list[Candidate]:
                 LIMIT :limit
                 """
             ),
-            {"limit": limit},
+            {"limit": limit, "reopen_after": datetime.now(UTC) - REOPEN_WINDOW},
         )
         return [
-            Candidate(job_id=row[0], source=row[1], external_id=row[2]) for row in rows.all()
+            Candidate(job_id=row[0], source=row[1], external_id=row[2], source_url=row[3])
+            for row in rows.all()
         ]
 
 
@@ -190,11 +199,16 @@ async def _apply_results(
     async with AsyncSessionLocal() as session:
         if open_ids:
             await session.execute(
-                update(Job).where(Job.id.in_(open_ids)).values(last_verified_at=now)
+                update(Job)
+                .where(Job.id.in_(open_ids))
+                .values(last_verified_at=now, closed_at=None)
             )
         if closed_ids:
             await session.execute(
-                update(Job).where(Job.id.in_(closed_ids)).values(closed_at=now)
+                # Keep the date it was first found gone.
+                update(Job)
+                .where(Job.id.in_(closed_ids), Job.closed_at.is_(None))
+                .values(closed_at=now)
             )
         await session.commit()
 
@@ -214,25 +228,30 @@ async def reverify_batch(limit: int = DEFAULT_BATCH_LIMIT) -> dict[str, int]:
 
     # Each Ashby board is read once, up front, so six postings from one
     # company cost one request rather than six racing ones.
+    #
+    # ``refs`` is what each row is asked about: the id in its posting URL, not
+    # the stored external_id (see ``posting_ref``). A row with no real id is
+    # an error, never a closure.
+    refs = [posting_ref(c.source, c.source_url, c.external_id) for c in candidates]
     ashby_boards: dict[str, set[str] | None] = {}
-    for slug in sorted(
-        {c.source.partition(":")[2] for c in candidates if c.source.startswith("ashby:")}
-    ):
+    for slug in sorted({r.company_slug for r in refs if r is not None and r.ats == "ashby"}):
         ashby_boards[slug] = await ATSScraper.fetch_ashby_open_ids(slug)
 
     gate = asyncio.Semaphore(RECHECK_CONCURRENCY)
 
-    async def check(candidate: Candidate) -> PostingCheck:
+    async def check(ref: PostingRef | None) -> PostingCheck:
+        if ref is None:
+            return PostingCheck.ERROR
         async with gate:
             try:
                 return await ATSScraper.check_posting(
-                    candidate.source, candidate.external_id, ashby_boards=ashby_boards
+                    ref.source, ref.external_id, ashby_boards=ashby_boards
                 )
             except Exception as exc:
-                logger.debug("Re-check of %s raised: %s", candidate.external_id, exc)
+                logger.debug("Re-check of %s raised: %s", ref.external_id, exc)
                 return PostingCheck.ERROR
 
-    results = await asyncio.gather(*(check(c) for c in candidates))
+    results = await asyncio.gather(*(check(r) for r in refs))
 
     open_ids = [c.job_id for c, r in zip(candidates, results, strict=True) if r is PostingCheck.OPEN]
     closed_ids = [
@@ -259,10 +278,13 @@ async def reverify_job(job: Any) -> PostingCheck:
     Re-check one posting now and record the result on the given ORM row.
     The caller owns the session and the commit. Never raises.
     """
-    if not is_verifiable_source(job.source or "") or not job.external_id:
+    ref = posting_ref(
+        job.source, getattr(job, "source_url", None), getattr(job, "external_id", None)
+    )
+    if ref is None:
         return PostingCheck.ERROR
     try:
-        result = await ATSScraper.check_posting(job.source, job.external_id)
+        result = await ATSScraper.check_posting(ref.source, ref.external_id)
     except Exception as exc:
         logger.debug("On-demand re-check raised: %s", exc)
         return PostingCheck.ERROR
@@ -273,6 +295,36 @@ async def reverify_job(job: Any) -> PostingCheck:
     elif result is PostingCheck.CLOSED:
         job.closed_at = now
     return result
+
+
+def recheck_is_due(job: Any, now: datetime) -> bool:
+    """True when a verifiable, open role has no confirmation fresh enough to show."""
+    if not is_verifiable_source(job.source or "") or job.closed_at is not None:
+        return False
+    verified = job.last_verified_at
+    if verified is None:
+        return True
+    if verified.tzinfo is None:
+        verified = verified.replace(tzinfo=UTC)
+    return bool(now - verified > VERIFICATION_VALID_FOR)
+
+
+async def refresh_if_due(session: Any, job: Any) -> None:
+    """
+    Re-check ``job`` now if its last confirmation is stale, and save the result.
+
+    For the moments someone is about to read the verdict - a dossier, a public
+    role page being regenerated. One bounded request; any failure leaves the
+    row as it was. Never raises.
+    """
+    if not recheck_is_due(job, datetime.now(UTC)):
+        return
+    try:
+        await asyncio.wait_for(reverify_job(job), timeout=ON_DEMAND_RECHECK_SECONDS)
+        await session.commit()
+    except Exception as exc:
+        await session.rollback()
+        logger.debug("On-demand re-check skipped: %s", exc)
 
 
 # ── reading it back ──────────────────────────────────────────────────────────

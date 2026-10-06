@@ -34,6 +34,12 @@ _PATTERNS: dict[str, tuple[str, re.Pattern[str]]] = {
     "jobs.ashbyhq.com": ("ashby", re.compile(rf"^/({_SLUG})/({_UUID})(?:/application)?/?$")),
 }
 
+# Stored rows: our own URL hash standing in for a posting id, and the query
+# parameter Greenhouse uses when an employer hosts the posting on its own site.
+_URL_HASH = re.compile(r"^[0-9a-f]{32}$")
+_GH_JID = re.compile(r"(?:^|&)gh_jid=(\d{1,20})(?:&|$)")
+_KNOWN_ATS = frozenset({"greenhouse", "lever", "ashby"})
+
 _SLUG_TAIL = re.compile(rf"(?:^|-)({_UUID})$")
 _NON_SLUG = re.compile(r"[^a-z0-9]+")
 
@@ -71,6 +77,43 @@ def parse_posting_url(url: str) -> PostingRef | None:
     if match is None:
         return None
     return PostingRef(ats=ats, company_slug=match.group(1).lower(), external_id=match.group(2).lower())
+
+
+def posting_ref(
+    source: str | None, source_url: str | None, external_id: str | None
+) -> PostingRef | None:
+    """
+    The posting to ask an ATS about for a row we already hold, or ``None``.
+
+    ``jobs.external_id`` cannot be trusted to be the ATS's own id: the
+    live-scrape path stores an MD5 of the posting URL there. Asking the ATS
+    for a posting by that hash is a 404, and a 404 means "closed" - so the id
+    is read from the posting URL, which does carry it. A row that offers no
+    real id cannot be asked about at all, and the caller must treat that as
+    "unknown", never as "closed".
+    """
+    ats, _, slug = (source or "").partition(":")
+    ats, slug = ats.strip().lower(), slug.strip()
+    if ats not in _KNOWN_ATS or not slug:
+        return None
+
+    ref = parse_posting_url(source_url or "")
+    if ref is not None:
+        # A URL on some other ATS than the row claims proves nothing about it.
+        return ref if ref.ats == ats else None
+
+    if ats == "greenhouse" and source_url and len(source_url) <= MAX_URL_LENGTH:
+        try:
+            match = _GH_JID.search(urlsplit(source_url).query)
+        except ValueError:
+            match = None
+        if match is not None:
+            return PostingRef(ats=ats, company_slug=slug, external_id=match.group(1))
+
+    stored = (external_id or "").strip()
+    if not stored or _URL_HASH.match(stored):
+        return None
+    return PostingRef(ats=ats, company_slug=slug, external_id=stored)
 
 
 def _slugify(text: str | None, limit: int) -> str:

@@ -35,6 +35,7 @@ from domain.posting_urls import (
     PostingRef,
     company_slug,
     parse_posting_url,
+    posting_ref,
     role_slug,
     slug_job_id,
 )
@@ -142,6 +143,10 @@ async def get_role(slug: str) -> dict[str, Any] | None:
         ).scalar_one_or_none()
         if job is None or not is_publishable_role(job):
             return None
+        # This runs when the frontend regenerates the page, a few times a day
+        # per role, not on a visitor's request - so it is the moment to make
+        # sure the verdict the page will carry for hours is a current one.
+        await liveness.refresh_if_due(session, job)
         return await _role_payload(session, job)
 
 
@@ -241,21 +246,43 @@ async def company_roles(slug: str) -> dict[str, Any] | None:
 # ── the check ────────────────────────────────────────────────────────────────
 
 
+def _is_the_posting(job: Any, ref: PostingRef) -> bool:
+    """True when the stored row is the posting ``ref`` names."""
+    held = posting_ref(job.source, job.source_url, job.external_id)
+    return (
+        held is not None
+        and held.ats == ref.ats
+        and held.company_slug.lower() == ref.company_slug.lower()
+        and held.external_id.lower() == ref.external_id.lower()
+    )
+
+
 async def _indexed_role_for_ref(ref: PostingRef) -> dict[str, Any] | None:
-    from sqlalchemy import select
+    from sqlalchemy import func, or_, select
     from sqlalchemy.orm import selectinload
 
     from storage.database import AsyncSessionLocal
     from storage.models import Job
 
     async with AsyncSessionLocal() as session:
-        job = (
+        # ``external_id`` is often a hash of the URL rather than the ATS's id
+        # (see ``posting_ref``), so the id is also looked for in the stored
+        # URL; ``_is_the_posting`` then confirms the match exactly.
+        rows = (
             await session.execute(
                 select(Job)
-                .where(Job.source == ref.source, Job.external_id == ref.external_id)
+                .where(
+                    func.lower(Job.source) == ref.source.lower(),
+                    or_(
+                        Job.external_id == ref.external_id,
+                        Job.source_url.contains(ref.external_id, autoescape=True),
+                    ),
+                )
                 .options(selectinload(Job.company))
+                .limit(20)
             )
-        ).scalar_one_or_none()
+        ).scalars()
+        job = next((row for row in rows if _is_the_posting(row, ref)), None)
         # A role we hold but would not publish is answered from the employer's
         # ATS instead, like any posting we have never seen.
         if job is None or not is_publishable_role(job):
