@@ -304,3 +304,183 @@ def test_retention_age_rule_binds_days_as_a_number():
     source = inspect.getsource(job_retention.prune_stale_jobs)
     assert "|| ' days'" not in source
     assert "make_interval(days => :days)" in source
+
+
+# ── which posting to ask about ───────────────────────────────────────────────
+#
+# The live-scrape path does not keep the ATS's own posting id: it stores an MD5
+# of the posting URL as ``external_id``. Asking Greenhouse for a posting by
+# that hash is a 404, which reads as "closed" - so a re-check marked every
+# such role closed while the employer was still serving it. The URL carries
+# the real id, so that is what a re-check must use.
+
+HASHED = "5f4dcc3b5aa765d61d8327deb882cf99"
+
+
+@pytest.mark.parametrize(
+    ("source", "url", "external_id", "expected"),
+    [
+        ("greenhouse:inmobi", "https://job-boards.greenhouse.io/inmobi/jobs/7393433", HASHED,
+         ("greenhouse:inmobi", "7393433")),
+        ("greenhouse:inmobi", "https://www.inmobi.com/careers?gh_jid=7393433&x=1", HASHED,
+         ("greenhouse:inmobi", "7393433")),
+        ("lever:spotify", "https://jobs.lever.co/spotify/0f1e2d3c-4b5a-6978-8695-a4b3c2d1e0f9", HASHED,
+         ("lever:spotify", "0f1e2d3c-4b5a-6978-8695-a4b3c2d1e0f9")),
+        ("ashby:linear", "https://jobs.ashbyhq.com/linear/0f1e2d3c-4b5a-6978-8695-a4b3c2d1e0f9", HASHED,
+         ("ashby:linear", "0f1e2d3c-4b5a-6978-8695-a4b3c2d1e0f9")),
+        # A row that does hold the real id is still usable without a readable URL.
+        ("greenhouse:stripe", None, "101", ("greenhouse:stripe", "101")),
+    ],
+)
+def test_the_posting_to_ask_about_comes_from_the_url(source, url, external_id, expected):
+    from domain.posting_urls import posting_ref
+
+    ref = posting_ref(source, url, external_id)
+    assert ref is not None
+    assert (ref.source, ref.external_id) == expected
+
+
+@pytest.mark.parametrize(
+    ("source", "url", "external_id"),
+    [
+        ("greenhouse:inmobi", "https://www.inmobi.com/careers/devops", HASHED),
+        ("greenhouse:inmobi", None, HASHED),
+        ("greenhouse:inmobi", None, None),
+        ("linkedin", "https://www.linkedin.com/jobs/view/1", "1"),
+        # A URL for a different ATS than the row claims proves nothing.
+        ("lever:spotify", "https://job-boards.greenhouse.io/spotify/jobs/1", HASHED),
+    ],
+)
+def test_a_row_with_no_real_posting_id_cannot_be_asked_about(source, url, external_id):
+    from domain.posting_urls import posting_ref
+
+    assert posting_ref(source, url, external_id) is None
+
+
+async def test_batch_asks_about_the_id_in_the_url_not_the_stored_hash(monkeypatch, batch):
+    row = liveness.Candidate(
+        job_id=uuid.uuid4(), source="greenhouse:inmobi", external_id=HASHED,
+        source_url="https://job-boards.greenhouse.io/inmobi/jobs/7393433",
+    )
+    batch["candidates"] = [row]
+    real = "https://boards-api.greenhouse.io/v1/boards/inmobi/jobs/7393433"
+    calls = serve(monkeypatch, {real: (200, {"id": 7393433})})
+
+    summary = await liveness.reverify_batch(limit=10)
+
+    assert calls == [real]
+    assert summary == {"checked": 1, "open": 1, "closed": 0, "errors": 0}
+    assert batch["written"]["closed"] == []
+
+
+async def test_batch_never_closes_a_row_it_cannot_identify(monkeypatch, batch):
+    row = liveness.Candidate(
+        job_id=uuid.uuid4(), source="greenhouse:inmobi", external_id=HASHED,
+        source_url="https://www.inmobi.com/careers/devops",
+    )
+    batch["candidates"] = [row]
+    calls = serve(monkeypatch, {})
+
+    summary = await liveness.reverify_batch(limit=10)
+
+    assert calls == []
+    assert summary == {"checked": 1, "open": 0, "closed": 0, "errors": 1}
+    assert batch["written"] == {"open": [], "closed": []}
+
+
+async def test_on_demand_recheck_uses_the_url_and_does_not_close_an_open_role(monkeypatch):
+    from types import SimpleNamespace
+
+    job = SimpleNamespace(
+        source="greenhouse:inmobi", external_id=HASHED, closed_at=None, last_verified_at=None,
+        source_url="https://job-boards.greenhouse.io/inmobi/jobs/7393433",
+    )
+    real = "https://boards-api.greenhouse.io/v1/boards/inmobi/jobs/7393433"
+    serve(monkeypatch, {real: (200, {"id": 7393433})})
+
+    assert await liveness.reverify_job(job) is PostingCheck.OPEN
+    assert job.closed_at is None and job.last_verified_at is not None
+
+
+async def test_on_demand_recheck_leaves_an_unidentifiable_row_alone(monkeypatch):
+    from types import SimpleNamespace
+
+    job = SimpleNamespace(
+        source="greenhouse:inmobi", external_id=HASHED, closed_at=None, last_verified_at=None,
+        source_url=None,
+    )
+    calls = serve(monkeypatch, {})
+
+    assert await liveness.reverify_job(job) is PostingCheck.ERROR
+    assert calls == [] and job.closed_at is None
+
+
+# ── refreshing a verdict when someone is about to read it ────────────────────
+
+
+class _Session:
+    def __init__(self) -> None:
+        self.commits = 0
+        self.rollbacks = 0
+
+    async def commit(self) -> None:
+        self.commits += 1
+
+    async def rollback(self) -> None:
+        self.rollbacks += 1
+
+
+def _stored(**fields: Any) -> Any:
+    from types import SimpleNamespace
+
+    base = {
+        "source": "greenhouse:inmobi", "external_id": HASHED, "closed_at": None,
+        "last_verified_at": None,
+        "source_url": "https://job-boards.greenhouse.io/inmobi/jobs/7393433",
+    }
+    base.update(fields)
+    return SimpleNamespace(**base)
+
+
+async def test_a_never_verified_role_is_checked_before_it_is_shown(monkeypatch):
+    real = "https://boards-api.greenhouse.io/v1/boards/inmobi/jobs/7393433"
+    serve(monkeypatch, {real: (200, {"id": 7393433})})
+    session, job = _Session(), _stored()
+
+    await liveness.refresh_if_due(session, job)
+
+    assert job.last_verified_at is not None
+    assert session.commits == 1
+
+
+async def test_a_recently_verified_role_is_not_checked_again(monkeypatch):
+    calls = serve(monkeypatch, {})
+    session, job = _Session(), _stored(last_verified_at=datetime.now(UTC))
+
+    await liveness.refresh_if_due(session, job)
+
+    assert calls == [] and session.commits == 0
+
+
+async def test_a_failed_refresh_never_breaks_the_page(monkeypatch):
+    async def boom(job: Any) -> PostingCheck:
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(liveness, "reverify_job", boom)
+    session, job = _Session(), _stored()
+
+    await liveness.refresh_if_due(session, job)
+
+    assert session.rollbacks == 1 and job.closed_at is None
+
+
+def test_a_stored_role_is_matched_to_a_pasted_url_by_the_id_in_its_own_url():
+    from domain.posting_urls import parse_posting_url
+    from services.public_roles import _is_the_posting
+
+    ref = parse_posting_url("https://boards.greenhouse.io/inmobi/jobs/7393433")
+    assert ref is not None
+    assert _is_the_posting(_stored(), ref)
+    assert not _is_the_posting(
+        _stored(source_url="https://job-boards.greenhouse.io/inmobi/jobs/73934339"), ref
+    )
