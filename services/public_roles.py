@@ -29,7 +29,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from domain.geo import INDIA_COUNTRY_VALUES, is_india
+from domain.geo import is_india
 from domain.liveness import is_verifiable_source, title_key
 from domain.posting_urls import (
     PostingRef,
@@ -61,10 +61,16 @@ def is_publishable_source(source: str | None) -> bool:
 
 
 def _is_in_india(job: Any) -> bool:
-    """True only when the row carries a positive signal that it is in India."""
-    if getattr(job, "country", None) in INDIA_COUNTRY_VALUES:
-        return True
-    return is_india(getattr(job, "location_raw", None)) or is_india(getattr(job, "city", None))
+    """
+    True only when the row's own location text resolves to India.
+
+    The ``country`` column is deliberately not consulted. Scrapers have
+    defaulted it to India, so production held rows reading "Europe" and
+    "North America" that it called Indian - and a rule that trusted it
+    published every one of them.
+    """
+    stated = getattr(job, "location_raw", None) or getattr(job, "city", None)
+    return is_india(stated)
 
 
 def is_publishable_role(job: Any) -> bool:
