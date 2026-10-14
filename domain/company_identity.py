@@ -31,8 +31,28 @@ SOURCE_PRECEDENCE: tuple[str, ...] = ("curated", "site", "wikidata", "osm", "new
 
 _RANK = {source: rank for rank, source in enumerate(SOURCE_PRECEDENCE)}
 
-#: Public suffixes with two labels that Indian and nearby companies use.
-_TWO_LABEL_SUFFIXES = frozenset({"co.in", "org.in", "net.in", "co.uk", "com.au"})
+#: Public suffixes with two labels that Indian and nearby companies use. The
+#: ``.in`` zones matter most: without them every bank on ``bank.in`` and every
+#: college on ``ac.in`` collapses into one company.
+_TWO_LABEL_SUFFIXES = frozenset(
+    {
+        "co.in",
+        "org.in",
+        "net.in",
+        "firm.in",
+        "gen.in",
+        "ind.in",
+        "bank.in",
+        "ac.in",
+        "edu.in",
+        "res.in",
+        "gov.in",
+        "nic.in",
+        "mil.in",
+        "co.uk",
+        "com.au",
+    }
+)
 
 #: Hosting platforms where the subdomain is the tenant: ``acme.github.io``
 #: is Acme's, not GitHub's.

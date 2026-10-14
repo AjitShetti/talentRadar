@@ -28,6 +28,12 @@ class TestDomain:
             ("razorpay.com", "razorpay.com"),
             ("http://careers.google.com:443/jobs", "google.com"),
             ("blog.zerodha.co.in", "zerodha.co.in"),
+            # Indian second-level zones: each bank and college keeps its own name.
+            ("https://www.canarabank.bank.in", "canarabank.bank.in"),
+            ("jana.bank.in", "jana.bank.in"),
+            ("iisc.ac.in", "iisc.ac.in"),
+            ("www.karnataka.gov.in", "karnataka.gov.in"),
+            ("pes.edu.in", "pes.edu.in"),
             ("https://acme.github.io/", "acme.github.io"),
             ("", None),
             (None, None),
