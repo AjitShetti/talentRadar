@@ -1,0 +1,12 @@
+{
+  "query": "\"Acme Pay\" founder OR co-founder",
+  "results": [
+    {"url": "https://in.linkedin.com/in/asha-rao-123", "title": "Asha Rao - Co-Founder & CEO - Acme Pay | LinkedIn", "content": "Co-Founder & CEO at Acme Pay. Bengaluru.", "score": 0.91},
+    {"url": "https://www.linkedin.com/in/vikram-iyer/", "title": "Vikram Iyer – Founder – Acme Pay | LinkedIn", "content": "Founder, Acme Pay", "score": 0.88},
+    {"url": "https://www.linkedin.com/in/neha-k", "title": "Neha K - Senior Engineer - Acme Pay | LinkedIn", "content": "Engineer at Acme Pay", "score": 0.7},
+    {"url": "https://www.linkedin.com/in/ravi-s", "title": "Ravi S - Founder - Beta Labs | LinkedIn", "content": "Founder of Beta Labs", "score": 0.6},
+    {"url": "https://www.linkedin.com/company/acme-pay", "title": "Acme Pay - Founder-led payments | LinkedIn", "content": "Company page", "score": 0.6},
+    {"url": "https://rocketreach.co/asha-rao-email", "title": "Asha Rao - Co-Founder - Acme Pay | LinkedIn", "content": "Email format", "score": 0.5},
+    {"url": "https://www.crunchbase.com/person/asha-rao", "title": "Asha Rao - Founder - Acme Pay | Crunchbase", "content": "", "score": 0.5}
+  ]
+}
