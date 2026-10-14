@@ -250,6 +250,42 @@ class TestUpsert:
         assert row.linkedin_url == "https://www.linkedin.com/in/asha-rao-123"
         assert row.title == "CEO"
 
+    async def test_oversized_fields_are_bounded_not_raised(self, db_session):
+        """Review #8: a 200-char GitHub name or a 600-char blog stalled the step."""
+        company_id = await self._company(db_session)
+        long_blog = "https://example.com/" + "a" * 600
+        person = PersonCandidate(
+            name="N" * 200,
+            kind="engineer",
+            title="T" * 200,
+            source_url="https://github.com/nnn",
+            source_kind="github",
+            github_url="https://github.com/nnn",
+            x_url="https://x.com/" + "x" * 300,
+            profile_url=long_blog,
+        )
+        assert await upsert_people(db_session, company_id, [person]) == 1
+        await db_session.flush()
+        [row] = await self._rows(db_session, company_id)
+        assert row.name == "N" * 128
+        assert row.title == "T" * 128
+        # A cut URL is a broken link: it is dropped, never truncated.
+        assert row.profile_url is None
+        assert row.x_url is None
+        assert row.github_url == "https://github.com/nnn"
+
+    async def test_a_source_url_too_long_to_store_skips_the_person(self, db_session):
+        company_id = await self._company(db_session)
+        person = PersonCandidate(
+            name="Asha Rao",
+            kind="founder",
+            source_url="https://example.com/" + "a" * 600,
+            source_kind="site",
+        )
+        assert await upsert_people(db_session, company_id, [person]) == 0
+        await db_session.flush()
+        assert await self._rows(db_session, company_id) == []
+
     async def test_a_person_without_a_source_is_never_stored(self, db_session):
         company_id = await self._company(db_session)
         nameless = PersonCandidate(name=" ", kind="founder", source_url="x", source_kind="site")

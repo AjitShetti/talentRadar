@@ -23,7 +23,7 @@ import logging
 import re
 import uuid
 from collections.abc import Iterable
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlsplit
@@ -72,6 +72,30 @@ _NAME_SHAPE = re.compile(r"^[^\d@/|<>]{2,80}$")
 #: source and CEO by another is one row, kept as the stronger kind.
 _PEOPLE_KINDS = ("founder", "leader", "engineer")
 _LINK_FIELDS = ("linkedin_url", "x_url", "github_url", "profile_url")
+
+#: ``company_contacts`` column widths. A public profile can name anything (a
+#: GitHub ``name`` runs to 255): text is cut to fit, a link that does not fit
+#: is dropped, because a cut URL is a broken one.
+_TEXT_MAX = 128
+_URL_MAX = {"linkedin_url": 512, "x_url": 256, "github_url": 256, "profile_url": 512}
+_SOURCE_URL_MAX = 512
+
+
+def _bounded(person: PersonCandidate) -> PersonCandidate | None:
+    """``person`` cut to fit its columns, or ``None`` if its source cannot be stored."""
+    if len(person.source_url) > _SOURCE_URL_MAX:
+        return None
+    links = {
+        field: value if value and len(value) <= _URL_MAX[field] else None
+        for field in _LINK_FIELDS
+        for value in [getattr(person, field)]
+    }
+    return replace(
+        person,
+        name=" ".join(person.name.split())[:_TEXT_MAX].strip(),
+        title=person.title[:_TEXT_MAX] if person.title else None,
+        **links,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -298,8 +322,11 @@ async def upsert_people(
     existing = {(row.name or "").casefold(): row for row in result.scalars()}
 
     inserted = 0
-    for person in people:
-        name = " ".join(person.name.split())
+    for candidate in people:
+        person = _bounded(candidate)
+        if person is None:
+            continue
+        name = person.name
         if not name or not person.source_url.strip() or person.kind not in _PEOPLE_KINDS:
             continue
         row = existing.get(name.casefold())
