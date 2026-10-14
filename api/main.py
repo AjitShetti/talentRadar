@@ -20,6 +20,7 @@ except ImportError:
     AsyncIOScheduler = None  # type: ignore
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
@@ -66,6 +67,7 @@ class ErrorEnvelopeMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         except Exception as exc:
             return _error_response(request, exc)
+
 
 def _safe_dsn(dsn: str) -> str:
     """A DSN with the password removed, for logging."""
@@ -175,6 +177,11 @@ app.add_middleware(
     auth_window=settings.rate_limit_auth_window_seconds,
     trusted_proxy_hops=settings.trusted_proxy_hops,
 )
+
+# Compress anything over 1 KB. The company map is one JSON array of every
+# listed company (~100 bytes a row); gzipped it is a fraction of that,
+# which is what a phone on a slow connection waits for.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 # Convert unhandled exceptions into a JSON 500 *inside* the CORS layer.
 #
@@ -305,37 +312,37 @@ async def api_root():
                 "run_detail": "GET /api/v1/ingest/runs/{run_id}",
             },
             "interview": {
-                "start":       "POST /api/v1/interview/sessions/start",
-                "answer":      "POST /api/v1/interview/sessions/answer",
-                "end":         "POST /api/v1/interview/sessions/end",
-                "history":     "GET  /api/v1/interview/sessions/history",
-                "transcribe":  "POST /api/v1/interview/voice/transcribe",
+                "start": "POST /api/v1/interview/sessions/start",
+                "answer": "POST /api/v1/interview/sessions/answer",
+                "end": "POST /api/v1/interview/sessions/end",
+                "history": "GET  /api/v1/interview/sessions/history",
+                "transcribe": "POST /api/v1/interview/voice/transcribe",
             },
             "profile": {
-                "get":    "GET  /api/v1/profile",
+                "get": "GET  /api/v1/profile",
                 "upsert": "POST /api/v1/profile",
             },
             "resumes": {
                 "analyze": "POST /api/v1/resumes/analyze",
-                "tailor":  "POST /api/v1/resumes/tailor",
+                "tailor": "POST /api/v1/resumes/tailor",
                 "cover_letter": "POST /api/v1/resumes/cover-letter",
-                "gaps":    "POST /api/v1/resumes/gaps",
+                "gaps": "POST /api/v1/resumes/gaps",
             },
             "company_intel": {
                 "directory": "GET /api/v1/company-intel/?city=Bengaluru&tier=...&q=...",
-                "facets":    "GET /api/v1/company-intel/facets?city=Bengaluru",
-                "resolve":   "GET /api/v1/company-intel/resolve?name=...",
-                "by_id":     "GET /api/v1/company-intel/{company_id}",
-                "contacts":  "GET/POST /api/v1/company-intel/{company_id}/contacts",
+                "facets": "GET /api/v1/company-intel/facets?city=Bengaluru",
+                "resolve": "GET /api/v1/company-intel/resolve?name=...",
+                "by_id": "GET /api/v1/company-intel/{company_id}",
+                "contacts": "GET/POST /api/v1/company-intel/{company_id}/contacts",
                 "discover_contacts": "POST /api/v1/company-intel/{company_id}/contacts/discover",
             },
             "career": {
                 "weaknesses": "GET  /api/v1/career/weaknesses",
-                "recommend":  "POST /api/v1/career/recommend",
+                "recommend": "POST /api/v1/career/recommend",
             },
             "agent": {
                 "next_action": "GET  /api/v1/agent/next-action",
-                "memories":    "GET/POST /api/v1/agent/memories",
+                "memories": "GET/POST /api/v1/agent/memories",
             },
             "dashboard": {
                 "overview": "GET /api/v1/dashboard/overview",

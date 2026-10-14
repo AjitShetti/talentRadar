@@ -123,6 +123,31 @@ class TestMapRoute:
         assert again.status_code == 304
         assert again.content == b""
 
+    async def test_a_city_sized_map_is_gzipped(self, auth_client):
+        """Review #7: thousands of rows went over the wire uncompressed."""
+        row = [
+            CID,
+            "Acme",
+            12.97,
+            77.59,
+            "street",
+            "startup",
+            "seed",
+            "fintech",
+            "HSR",
+            "s",
+            0,
+            False,
+        ]
+        payload = {**MAP_PAYLOAD, "rows": [row] * 3000}
+        with patch(f"{READ}.map_rows", AsyncMock(return_value=payload)):
+            response = await auth_client.get(
+                "/api/v1/company-intel/map", headers={"Accept-Encoding": "gzip"}
+            )
+        assert response.status_code == 200
+        assert response.headers.get("content-encoding") == "gzip"
+        assert len(response.json()["rows"]) == 3000
+
 
 class TestForMeRoute:
     async def test_returns_the_company_ids_for_the_caller(self, auth_client):
