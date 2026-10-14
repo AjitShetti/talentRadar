@@ -821,7 +821,10 @@ function LinkRow({ detail }: { detail: CompanyDetail }) {
 }
 
 function About({ detail }: { detail: CompanyDetail }) {
-  const description = detail.description && detail.description !== detail.summary ? detail.description : null
+  // The summary is often the description cut at a word with "…"; showing both repeats it.
+  const head = (detail.summary ?? '').replace(/…$/, '').trim()
+  const repeats = Boolean(head) && (detail.description ?? '').startsWith(head)
+  const description = detail.description && !repeats ? detail.description : null
   if (!description && !detail.culture_summary) return null
   return <div className="cm-about">
     {description && <p>{description}</p>}
