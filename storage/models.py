@@ -27,10 +27,12 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     TypeDecorator,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.ext.compiler import compiles
@@ -206,6 +208,41 @@ class Company(Base):
         StringArray, nullable=True, comment="Indian cities with an engineering office"
     )
 
+    # Company map (migration 015). Which source wrote each field is recorded
+    # in extra_metadata["provenance"]; see domain/company_identity.py.
+    slug: Mapped[str | None] = mapped_column(String(96), nullable=True, unique=True)
+    summary: Mapped[str | None] = mapped_column(
+        String(200), nullable=True, comment="One line: what they sell, to whom"
+    )
+    summary_source: Mapped[str | None] = mapped_column(
+        String(16), nullable=True, comment="curated | site | wikidata | llm"
+    )
+    stage: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    sector: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    area: Mapped[str | None] = mapped_column(
+        String(48), nullable=True, comment="Canonical Bengaluru area (domain/areas.py)"
+    )
+    address: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    pincode: Mapped[str | None] = mapped_column(String(6), nullable=True)
+    lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lng: Mapped[float | None] = mapped_column(Float, nullable=True)
+    geo_precision: Mapped[str | None] = mapped_column(
+        String(8), nullable=True, comment="exact | street | area | city"
+    )
+    geo_source: Mapped[str | None] = mapped_column(
+        String(16), nullable=True,
+        comment="curated | wikidata | osm | nominatim | pincode | area",
+    )
+    wikidata_id: Mapped[str | None] = mapped_column(String(16), nullable=True, unique=True)
+    employee_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    x_url: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    last_funding_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    enriched_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, comment="Last website / Wikidata pass"
+    )
+
     # Enrichment payload (arbitrary extra fields from data providers)
     # NOTE: 'metadata' is reserved by SQLAlchemy Declarative API; the Python
     # attribute is 'extra_metadata' but maps to the 'metadata' Postgres column.
@@ -243,6 +280,11 @@ class Company(Base):
         Index("ix_companies_industry", "industry"),
         Index("ix_companies_hq_country", "hq_country"),
         Index("ix_companies_tier", "tier"),
+        Index("ix_companies_area", "area"),
+        Index("ix_companies_stage", "stage"),
+        Index("ix_companies_sector", "sector"),
+        Index("ix_companies_geo_precision", "geo_precision"),
+        Index("ix_companies_last_funding_at", "last_funding_at"),
     )
 
     def __repr__(self) -> str:
@@ -1419,7 +1461,10 @@ class CompanyContact(Base):
     kind: Mapped[str] = mapped_column(
         String(24), nullable=False, default="careers_inbox",
         server_default="careers_inbox",
-        comment="careers_inbox | careers_page | recruiter | referral | other",
+        comment=(
+            "careers_inbox | careers_page | recruiter | referral | other"
+            " | founder | leader | engineer"
+        ),
     )
     name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     title: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -1432,6 +1477,17 @@ class CompanyContact(Base):
     verified: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false",
         comment="True only when a human confirmed the contact still works",
+    )
+    # People (migration 015): public profile links and the kind of source
+    # the person was read from. A curated person always has source_url.
+    x_url: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    github_url: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    profile_url: Mapped[str | None] = mapped_column(
+        String(512), nullable=True, comment="Personal site"
+    )
+    source_kind: Mapped[str | None] = mapped_column(
+        String(16), nullable=True,
+        comment="curated | wikidata | site | news | github | tavily | user",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -1447,10 +1503,84 @@ class CompanyContact(Base):
 
     __table_args__ = (
         Index("ix_company_contacts_company_user", "company_id", "user_id"),
+        Index(
+            "uq_company_contacts_curated_person",
+            "company_id",
+            "kind",
+            text("lower(name)"),
+            unique=True,
+            postgresql_where=text("user_id IS NULL AND name IS NOT NULL"),
+            sqlite_where=text("user_id IS NULL AND name IS NOT NULL"),
+        ),
     )
 
     def __repr__(self) -> str:
         return f"<CompanyContact company={self.company_id} kind={self.kind!r}>"
+
+
+# ---------------------------------------------------------------------------
+# company_news — startup news from public RSS feeds (migration 015)
+# ---------------------------------------------------------------------------
+
+class CompanyNews(Base):
+    """
+    One article from an Indian startup-news feed, classified.
+
+    ``company_id`` is set only when the subject matched a company by
+    normalised name; it is SET NULL on delete so the article outlives a
+    pruned company. Funding rows feed ``companies.last_funding_at`` and
+    ``stage``. Retention: ``services/job_retention.py``.
+    """
+    __tablename__ = "company_news"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    url: Mapped[str] = mapped_column(String(1024), nullable=False, unique=True)
+    source: Mapped[str] = mapped_column(
+        String(24), nullable=False, comment="inc42 | yourstory | ettech | mint"
+    )
+    title: Mapped[str] = mapped_column(String(400), nullable=False)
+    snippet: Mapped[str | None] = mapped_column(String(600), nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    category: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="other", server_default="other",
+        comment="funding | acquisition | launch | other",
+    )
+    company_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    company_name_raw: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    round: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    amount_text: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    amount_usd: Mapped[float | None] = mapped_column(
+        Numeric(asdecimal=False), nullable=True,
+        comment="Approximate; INR converted at domain.news.INR_PER_USD",
+    )
+    investors: Mapped[list[str] | None] = mapped_column(StringArray, nullable=True)
+    extracted_by: Mapped[str | None] = mapped_column(
+        String(8), nullable=True, comment="rules | llm"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    company: Mapped["Company | None"] = relationship("Company")
+
+    __table_args__ = (
+        Index("ix_company_news_company_id", "company_id"),
+        Index("ix_company_news_published_at", "published_at"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<CompanyNews {self.source} {self.title[:40]!r}>"
 
 
 # ---------------------------------------------------------------------------

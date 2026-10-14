@@ -54,6 +54,10 @@ class ContactSchema(BaseModel):
     linkedin_url: str | None = None
     notes: str | None = None
     source_url: str | None = None
+    x_url: str | None = None
+    github_url: str | None = None
+    profile_url: str | None = None
+    source_kind: str | None = None
     verified: bool = False
     is_curated: bool = False
     created_at: str | None = None
