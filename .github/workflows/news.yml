@@ -1,0 +1,59 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Pull Indian startup news (funding, acquisitions, launches) every 3 hours
+# ─────────────────────────────────────────────────────────────────────────────
+# The company map's "raised recently" filter and the drawer's news come from
+# four public RSS feeds. There is no worker on the free tier, so this
+# workflow is the scheduler: it wakes the API, then asks it to ingest.
+#
+# Needs the CRON_TOKEN repository secret (same as reverify.yml). Without it
+# the run exits cleanly and does nothing.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: news
+
+on:
+  schedule:
+    - cron: "17 */3 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: news
+  cancel-in-progress: false
+
+jobs:
+  news:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      API_BASE: ${{ vars.API_BASE_URL || 'https://talentradar-api.onrender.com' }}
+      CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
+    steps:
+      - name: Skip when no token is configured
+        id: gate
+        run: |
+          if [ -z "$CRON_TOKEN" ]; then
+            echo "::notice::CRON_TOKEN secret is not set; skipping news ingest."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'true'
+        with:
+          sparse-checkout: scripts/keepalive.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Wake the API
+        if: steps.gate.outputs.run == 'true'
+        env:
+          URL: ${{ env.API_BASE }}/health
+          DEADLINE_SECONDS: "480"
+        run: bash scripts/keepalive.sh
+
+      - name: Ingest news
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          curl --fail-with-body --silent --show-error --max-time 300 \
+            -X POST "$API_BASE/api/v1/ingest/news" \
+            -H "X-Cron-Token: $CRON_TOKEN"
