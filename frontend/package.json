@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "map-worker": "node -e \"const fs=require('fs');fs.mkdirSync('public/map/vendor',{recursive:true});for(const f of ['maplibre-gl-worker.mjs','maplibre-gl-shared.mjs'])fs.copyFileSync('node_modules/maplibre-gl/dist/'+f,'public/map/vendor/'+f)\"",
+    "predev": "npm run map-worker",
     "dev": "next dev",
+    "prebuild": "npm run map-worker",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -14,6 +17,7 @@
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "lucide-react": "^0.468.0",
+    "maplibre-gl": "6.11.2",
     "next": "^14.2.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

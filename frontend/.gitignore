@@ -2,3 +2,6 @@
 # Playwright
 test-results/
 playwright-report/
+
+# Copied from node_modules by `npm run map-worker` (predev, prebuild)
+public/map/vendor/

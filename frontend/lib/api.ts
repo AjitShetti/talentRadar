@@ -61,16 +61,39 @@ export type SkillFocusItem = { title: string; detail: string }
 // the skills the target roles ask for and the resume doesn't show, or, when it
 // already covers them, how the resume itself could read better.
 export type SkillsFocus = { status: 'ok' | 'no_target_roles' | 'no_resume'; kind: 'missing_skills' | 'resume_improvements' | null; headline: string; items: SkillFocusItem[]; target_roles: string[]; resume_filename: string | null; resume_updated_at: string | null; analysis: string | null }
-export type CompanyCard = { id: string; name: string; domain?: string | null; website_url?: string | null; logo_url?: string | null; tier?: string | null; tier_label?: string | null; industry?: string | null; description?: string | null; hq_city?: string | null; hq_country?: string | null; office_cities: string[]; employee_count_range?: string | null; founded_year?: number | null; github_org?: string | null; careers_url?: string | null; tech_stack: string[]; open_roles: number }
+export type CompanyCard = { id: string; name: string; domain?: string | null; website_url?: string | null; logo_url?: string | null; tier?: string | null; tier_label?: string | null; industry?: string | null; description?: string | null; hq_city?: string | null; hq_country?: string | null; office_cities: string[]; employee_count_range?: string | null; founded_year?: number | null; github_org?: string | null; careers_url?: string | null; tech_stack: string[]; open_roles: number; summary?: string | null; summary_source?: SummarySource | null; stage?: string | null; sector?: string | null; area?: string | null; geo_precision?: GeoPrecision | null; slug?: string | null }
+// Where a company's one-line summary came from (services/company_map): shown beside it in small type.
+export type SummarySource = 'curated' | 'site' | 'wikidata' | 'llm'
+// How well we know where a company is. `city` means no pin: it appears in the List only.
+export type GeoPrecision = 'exact' | 'street' | 'area' | 'city'
 export type CompanyDirectory = { companies: CompanyCard[]; total: number; offset: number; limit: number; city?: string | null }
-export type CompanyFacets = { city?: string | null; cities: string[]; tiers: Array<{ value: string; label: string; count: number }>; industries: Array<{ value: string; count: number }>; industries_total?: number; total: number }
+export type FacetOption = { value: string; label: string; count: number }
+export type CompanyFacets = { city?: string | null; cities: string[]; tiers: FacetOption[]; industries: Array<{ value: string; count: number }>; industries_total?: number; stages: FacetOption[]; sectors: FacetOption[]; areas: FacetOption[]; sizes: FacetOption[]; total: number }
 export type GithubRepo = { name: string; full_name: string; description: string | null; html_url: string; language: string | null; stars: number; forks: number; topics: string[]; pushed_at: string | null }
 export type GithubOrg = { org: string; name: string; html_url: string; avatar_url: string | null; description: string | null; blog: string | null; location: string | null; public_repos: number; followers: number; top_repos: GithubRepo[]; top_languages: string[] }
-export type CompanyContact = { id: string; kind: string; name?: string | null; title?: string | null; email?: string | null; linkedin_url?: string | null; notes?: string | null; source_url?: string | null; verified: boolean; is_curated: boolean; created_at?: string | null }
+export type CompanyContact = { id: string; kind: string; name?: string | null; title?: string | null; email?: string | null; linkedin_url?: string | null; notes?: string | null; source_url?: string | null; x_url?: string | null; github_url?: string | null; profile_url?: string | null; source_kind?: string | null; verified: boolean; is_curated: boolean; created_at?: string | null }
 export type ContactCandidate = { kind: string; name?: string | null; title?: string | null; email?: string | null; linkedin_url?: string | null; source_url?: string | null; source_title?: string | null; verified: boolean }
 export type ContactDiscovery = { company?: string | null; careers_url?: string | null; candidates: ContactCandidate[]; queries: string[]; available: boolean; message?: string | null }
 export type CompanyRole = { id: string; title: string; location?: string | null; is_remote?: boolean; seniority?: string | null; salary_raw?: string | null; skills: string[]; source_url?: string | null; posted_at?: string | null }
-export type CompanyDetail = CompanyCard & { linkedin_url?: string | null; github?: GithubOrg | null; tech_stack_curated: string[]; tech_stack_from_postings: string[]; culture_summary?: string | null; contacts: CompanyContact[]; jobs: CompanyRole[]; has_profile: boolean }
+// A founder, leader or GitHub org member that a public source named (services/company_map/read.py::people_for). It always has `source_url`, and `verified` stays false. `linkedin_search_url` is a server-built people-search link, present only when no profile link is stored; the server never requests it.
+export type CompanyPerson = CompanyContact & { linkedin_search_url?: string | null }
+export type CompanyPeople = { founders: CompanyPerson[]; leaders: CompanyPerson[]; engineers: CompanyPerson[] }
+// A "Find on LinkedIn" preset. The server builds it (domain/linkedin_links.py); the client neither builds nor requests one.
+export type LinkedInLink = { label: string; url: string }
+export type NewsCategory = 'funding' | 'acquisition' | 'launch' | 'other'
+export type CompanyNewsItem = { id: string; url: string; title: string; source?: string | null; snippet?: string | null; published_at?: string | null; category: NewsCategory; round?: string | null; amount_text?: string | null; amount_usd?: number | null; investors: string[]; company_id?: string | null; company_name?: string | null }
+export type CompanyDetail = CompanyCard & { linkedin_url?: string | null; github?: GithubOrg | null; tech_stack_curated: string[]; tech_stack_from_postings: string[]; culture_summary?: string | null; contacts: CompanyContact[]; jobs: CompanyRole[]; has_profile: boolean; address?: string | null; x_url?: string | null; last_funding_at?: string | null; employee_count?: number | null; is_bigger?: boolean; people: CompanyPeople; linkedin_links: LinkedInLink[]; news: CompanyNewsItem[] }
+// The on-demand founder lookup. `available: false` carries the reason in `message`. A person found is stored, so the caller re-reads the company.
+export type FounderDiscovery = { available: boolean; people: Array<{ name: string; kind: string; source_url: string; source_kind: string; title?: string | null }>; message?: string | null }
+// GET /company-intel/map. Each row is positional, to keep the payload small (services/company_map/read.py::MAP_COLUMNS). `lat`/`lng` are null at `city` precision.
+export type MapRow = [id: string, name: string, lat: number | null, lng: number | null, precision: GeoPrecision, tier: string | null, stage: string | null, sector: string | null, area: string | null, size: string | null, open_roles: number, raised_90d: boolean]
+export type MapPayload = { generated_at: string; city: string; total: number; pinned: number; rows: MapRow[] }
+export type MapCompany = { id: string; name: string; lat: number | null; lng: number | null; precision: GeoPrecision; tier: string | null; stage: string | null; sector: string | null; area: string | null; size: string | null; openRoles: number; raised90d: boolean }
+export function decodeMapRows(rows: MapRow[]): MapCompany[] {
+  return rows.map(([id, name, lat, lng, precision, tier, stage, sector, area, size, openRoles, raised90d]) =>
+    ({ id, name, lat, lng, precision, tier, stage, sector, area, size, openRoles, raised90d }))
+}
+export type CompanyListFilters = { city?: string; tier?: string; industry?: string; q?: string; hasOpenRoles?: boolean; stage?: string; sector?: string; area?: string; size?: string; raisedWithinDays?: number; limit?: number; offset?: number }
 export type NewContact = { kind?: string; name?: string | null; title?: string | null; email?: string | null; linkedin_url?: string | null; notes?: string | null; source_url?: string | null; verified?: boolean }
 // A dated commitment on the tracker — the only thing on the overview the user
 // cannot reschedule by ignoring it, so it leads the page.
@@ -231,20 +254,32 @@ export const api = {
   },
   career: { weaknesses: () => request<Record<string, unknown>>('/api/v1/career/weaknesses', {}, true), recommend: () => request<LearningPlan>('/api/v1/career/recommend', { method: 'POST', body: JSON.stringify({ persist: true }) }, true) },
   company: {
-    directory: (filters: { city?: string; tier?: string; industry?: string; q?: string; hasOpenRoles?: boolean; offset?: number } = {}) => {
+    directory: (filters: CompanyListFilters = {}) => {
       const params = new URLSearchParams()
       if (filters.city) params.set('city', filters.city)
       if (filters.tier) params.set('tier', filters.tier)
       if (filters.industry) params.set('industry', filters.industry)
       if (filters.q) params.set('q', filters.q)
       if (filters.hasOpenRoles) params.set('has_open_roles', 'true')
+      if (filters.stage) params.set('stage', filters.stage)
+      if (filters.sector) params.set('sector', filters.sector)
+      if (filters.area) params.set('area', filters.area)
+      if (filters.size) params.set('size', filters.size)
+      if (filters.raisedWithinDays) params.set('raised_within_days', String(filters.raisedWithinDays))
+      if (filters.limit) params.set('limit', String(filters.limit))
       if (filters.offset) params.set('offset', String(filters.offset))
       return request<CompanyDirectory>(`/api/v1/company-intel/?${params.toString()}`, {}, true)
     },
+    // Every listed company in the city as positional rows. The same for every user, so the server caches it for an hour.
+    map: (city = 'Bengaluru') => request<MapPayload>(`/api/v1/company-intel/map?city=${encodeURIComponent(city)}`, {}, true),
+    // Ids of companies with an open role matching the user's target role. Empty without one; the map works without it.
+    mapForMe: () => request<{ hiring_for_you: string[] }>('/api/v1/company-intel/map/for-me', {}, true),
+    news: (limit = 10, category?: NewsCategory) => request<CompanyNewsItem[]>(`/api/v1/company-intel/news?limit=${limit}${category ? `&category=${category}` : ''}`, {}, true),
     facets: (city?: string) => request<CompanyFacets>(`/api/v1/company-intel/facets${city ? `?city=${encodeURIComponent(city)}` : ''}`, {}, true),
     detail: (id: string) => request<CompanyDetail>(`/api/v1/company-intel/${encodeURIComponent(id)}`, {}, true),
     search: (name: string) => request<Record<string, unknown>>(`/api/v1/company-intel/resolve?name=${encodeURIComponent(name)}`, {}, true),
     discoverContacts: (id: string) => request<ContactDiscovery>(`/api/v1/company-intel/${encodeURIComponent(id)}/contacts/discover`, { method: 'POST' }, true),
+    discoverFounders: (id: string) => request<FounderDiscovery>(`/api/v1/company-intel/${encodeURIComponent(id)}/people/discover`, { method: 'POST' }, true),
     addContact: (id: string, payload: NewContact) => request<CompanyContact>(`/api/v1/company-intel/${encodeURIComponent(id)}/contacts`, { method: 'POST', body: JSON.stringify(payload) }, true),
     removeContact: (id: string, contactId: string) => request<void>(`/api/v1/company-intel/${encodeURIComponent(id)}/contacts/${encodeURIComponent(contactId)}`, { method: 'DELETE' }, true),
   },
