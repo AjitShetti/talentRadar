@@ -85,16 +85,18 @@ def _bounded(person: PersonCandidate) -> PersonCandidate | None:
     """``person`` cut to fit its columns, or ``None`` if its source cannot be stored."""
     if len(person.source_url) > _SOURCE_URL_MAX:
         return None
-    links = {
-        field: value if value and len(value) <= _URL_MAX[field] else None
-        for field in _LINK_FIELDS
-        for value in [getattr(person, field)]
-    }
+
+    def link(field: str, value: str | None) -> str | None:
+        return value if value and len(value) <= _URL_MAX[field] else None
+
     return replace(
         person,
         name=" ".join(person.name.split())[:_TEXT_MAX].strip(),
         title=person.title[:_TEXT_MAX] if person.title else None,
-        **links,
+        linkedin_url=link("linkedin_url", person.linkedin_url),
+        x_url=link("x_url", person.x_url),
+        github_url=link("github_url", person.github_url),
+        profile_url=link("profile_url", person.profile_url),
     )
 
 
