@@ -184,7 +184,10 @@ async def test_llm_summary_returns_one_line() -> None:
     assert result == "Sells online payment tools to Indian businesses."
     kwargs = chat.call_args_list[0].kwargs
     assert kwargs["temperature"] == 0.2
-    assert kwargs["max_tokens"] == 120
+    # gpt-oss spends its reasoning from max_tokens before writing the reply:
+    # 120 left nothing for the answer (review #3).
+    assert kwargs["reasoning_effort"] == "low"
+    assert kwargs["max_tokens"] >= 600
     from config.settings import get_settings
 
     assert kwargs["model"] == get_settings().groq_fast_model
@@ -197,6 +200,15 @@ async def test_llm_summary_returns_one_line() -> None:
         "",
         "   ",
         "x" * 161,
+        # Refusals and non-answers are not summaries (review #4).
+        "Nothing.",
+        "None",
+        "N/A",
+        "The text does not say what the company sells.",
+        "I cannot tell what this company sells from the text.",
+        "Unknown",
+        "Payments.",
+        " ".join(["word"] * 26),
     ],
 )
 async def test_llm_summary_rejects_bad_answers(answer: str) -> None:
@@ -238,3 +250,19 @@ async def test_injection_in_site_text_stays_inside_the_fence() -> None:
     assert start < position < end
     assert "PWNED" in user[start:end]
     assert "Indian fintech company" in user[start:end]
+
+
+async def test_llm_subject_leaves_room_for_reasoning() -> None:
+    """Review #3: max_tokens=20 was spent on reasoning before any name was written."""
+    from services.company_map import news_ingest
+
+    chat = AsyncMock(return_value="Ledgerline")
+    with (
+        patch("services.llm._chat", chat),
+        patch("services.cache_backend.CacheBackend.incr", AsyncMock(return_value=1)),
+    ):
+        name = await news_ingest._llm_subject("Bengaluru fintech Ledgerline raises $4M")
+    assert name == "Ledgerline"
+    kwargs = chat.call_args_list[0].kwargs
+    assert kwargs["reasoning_effort"] == "low"
+    assert kwargs["max_tokens"] >= 600

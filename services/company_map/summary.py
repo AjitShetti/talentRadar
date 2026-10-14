@@ -36,6 +36,21 @@ MAX_SUMMARY_CHARS = 140
 MIN_SUMMARY_CHARS = 25
 MAX_LLM_ANSWER_CHARS = 160
 
+#: An answer outside this many words is a fragment or an essay, not a summary.
+MIN_LLM_ANSWER_WORDS = 4
+MAX_LLM_ANSWER_WORDS = 25
+
+#: Reasoning tokens are spent from ``max_tokens`` before any of the reply is
+#: written; this leaves room for both at ``reasoning_effort="low"``.
+LLM_MAX_TOKENS = 800
+
+#: How a model says it has nothing to summarise.
+_REFUSAL = re.compile(
+    r"^(?:none|nothing|n/?a|unknown)\b|\b(?:does not|doesn't|do not|cannot|can't|unable to|"
+    r"not (?:enough|clear|possible|specified|mentioned))\b",
+    re.IGNORECASE,
+)
+
 _OPEN = "<<<SITE>>>"
 _CLOSE = "<<<END SITE>>>"
 
@@ -198,7 +213,10 @@ def _accept_answer(answer: str | None) -> str | None:
     if not text or "\n" in text or "\r" in text or len(text) > MAX_LLM_ANSWER_CHARS:
         return None
     text = _strip_quotes(text)
-    return text or None
+    words = len(text.split())
+    if not MIN_LLM_ANSWER_WORDS <= words <= MAX_LLM_ANSWER_WORDS or _REFUSAL.search(text):
+        return None
+    return text
 
 
 async def llm_summary(name: str, site: SiteFacts | None, wikidata_desc: str | None) -> str | None:
@@ -207,7 +225,8 @@ async def llm_summary(name: str, site: SiteFacts | None, wikidata_desc: str | No
 
     Returns ``None`` - without calling the model - when there is no source
     text or the day's budget is spent, and ``None`` for an answer that is
-    empty, spans lines or runs over 160 chars. Never raises.
+    empty, spans lines, runs over 160 chars, is under 4 or over 25 words, or
+    reads as a refusal. Never raises.
     """
     if not has_source_text(site, wikidata_desc):
         return None
@@ -223,7 +242,8 @@ async def llm_summary(name: str, site: SiteFacts | None, wikidata_desc: str | No
             _build_prompt(name, site, wikidata_desc),
             model=get_settings().groq_fast_model,
             temperature=0.2,
-            max_tokens=120,
+            max_tokens=LLM_MAX_TOKENS,
+            reasoning_effort="low",
         )
     except Exception as exc:
         logger.warning("Company summary LLM call failed for %r: %s", name, exc)

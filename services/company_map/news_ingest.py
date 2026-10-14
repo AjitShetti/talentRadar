@@ -79,7 +79,9 @@ async def _llm_subject(title: str) -> str | None:
             f"<<<TITLE>>>\n{_flat(title, 300)}\n<<<END TITLE>>>",
             model=get_settings().groq_fast_model,
             temperature=0.0,
-            max_tokens=20,
+            # Reasoning is spent from this budget before the name is written.
+            max_tokens=600,
+            reasoning_effort="low",
         )
     except Exception as exc:
         logger.info("News subject LLM call failed: %s", exc)
