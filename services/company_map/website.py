@@ -14,14 +14,25 @@ same client), fetches the homepage with a 5 s budget and a 300 KB body cap,
 accepts only ``text/html``, and reads at most one ``/contact*`` page when the
 homepage printed no address. It never raises: a disallowed, failing, slow or
 non-HTML site is ``None``, and the caller treats that as "no site text".
+
+The URL comes from Wikidata and OpenStreetMap, which anyone can edit, so every
+request — robots.txt, the homepage, each redirect hop, the contact page — is
+checked first: http(s) on the default port, no userinfo, a public hostname
+(never an IP literal, ``localhost``, ``.local`` or ``.internal``) that
+resolves only to public addresses, and never a profile site such as LinkedIn
+(``normalize_domain`` refuses those). Redirects are followed by hand, at most
+``MAX_REDIRECTS``, and each hop is held to its own host's robots.txt, read once
+per host per call. Anything refused makes the read ``None``.
 """
 
 from __future__ import annotations
 
 import asyncio
 import dataclasses
+import ipaddress
 import logging
 import re
+import socket
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from urllib.parse import urljoin, urlsplit, urlunsplit
@@ -30,6 +41,7 @@ from urllib.robotparser import RobotFileParser
 import httpx
 from bs4 import BeautifulSoup, Comment, Tag
 
+from domain.company_identity import normalize_domain
 from services.company_map.types import PersonCandidate, SiteFacts
 
 logger = logging.getLogger(__name__)
@@ -38,6 +50,14 @@ USER_AGENT = "TalentRadar/1.0 (+https://github.com/AjitShetti/talentRadar)"
 TIMEOUT_SECONDS = 5.0
 MAX_BODY_BYTES = 300 * 1024
 MAX_ROBOTS_BYTES = 64 * 1024
+MAX_REDIRECTS = 3
+
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+# Names that only mean something inside a private network.
+_LOCAL_SUFFIXES = (".localhost", ".local", ".internal", ".localdomain", ".lan", ".arpa")
+# LinkedIn's own short-link and asset domains, which ``normalize_domain`` does
+# not treat as profile sites. LinkedIn is never requested by the server.
+_REFUSED_DOMAINS = frozenset({"lnkd.in", "licdn.com"})
 
 TEXT_LIMIT = 4_000
 ADDRESS_LIMIT = 300
@@ -456,6 +476,67 @@ class _Fetched:
     status: int
     url: str
     body: str
+    location: str | None = None  # absolute; set only on a redirect, which has no body
+
+
+def _is_ip_literal(host: str) -> bool:
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return True
+
+
+def _is_public_address(address: str) -> bool:
+    """True only for a globally routable unicast address."""
+    try:
+        ip: ipaddress.IPv4Address | ipaddress.IPv6Address = ipaddress.ip_address(
+            address.split("%", 1)[0]
+        )
+    except ValueError:
+        return False
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return ip.is_global and not (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
+
+
+def _target(url: str) -> tuple[str, int] | None:
+    """The ``(host, port)`` ``url`` would connect to, or ``None`` if it must not.
+
+    Parsed with ``httpx.URL`` — the parser that builds the request — so the
+    check and the connection cannot disagree about the host.
+    """
+    try:
+        parsed = httpx.URL(url)
+        host = parsed.raw_host.decode("ascii").strip("[]").rstrip(".").lower()
+    except (httpx.InvalidURL, UnicodeError, ValueError):
+        return None
+    port = _DEFAULT_PORTS.get(parsed.scheme)
+    # httpx reports a default port as None, so any port at all is a custom one.
+    if port is None or parsed.port is not None or parsed.userinfo:
+        return None
+    if not host or _is_ip_literal(host):
+        return None
+    if host == "localhost" or host.endswith(_LOCAL_SUFFIXES):
+        return None
+    domain = normalize_domain(host)
+    if domain is None or domain in _REFUSED_DOMAINS:  # not a public hostname, or a profile site
+        return None
+    return host, port
+
+
+async def _resolve(host: str, port: int) -> list[str]:
+    """Every address ``host`` resolves to; the lookup runs in the loop's executor."""
+    loop = asyncio.get_running_loop()
+    infos = await loop.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    return [str(info[4][0]) for info in infos]
 
 
 def _content_type(response: httpx.Response) -> str:
@@ -481,15 +562,27 @@ async def _fetch(
     max_bytes: int,
     read_if: Callable[[httpx.Response], bool],
 ) -> _Fetched:
-    """GET ``url``; read at most ``max_bytes`` of the body, and only if ``read_if``."""
+    """One GET of ``url``, redirects not followed.
+
+    A redirect comes back with its absolute ``location`` and no body; otherwise
+    at most ``max_bytes`` of the body are read, and only if ``read_if``.
+    """
     async with asyncio.timeout(TIMEOUT_SECONDS):
         async with client.stream(
             "GET",
             url,
             headers={"User-Agent": USER_AGENT},
             timeout=TIMEOUT_SECONDS,
-            follow_redirects=True,
+            follow_redirects=False,
         ) as response:
+            if response.is_redirect:
+                location = response.url.join(response.headers["location"])
+                return _Fetched(
+                    status=response.status_code,
+                    url=str(response.url),
+                    body="",
+                    location=str(location),
+                )
             if not read_if(response):
                 return _Fetched(status=response.status_code, url=str(response.url), body="")
             body = bytearray()
@@ -504,50 +597,108 @@ async def _fetch(
             )
 
 
-async def _robots(client: httpx.AsyncClient, url: str) -> RobotFileParser | None:
-    """The site's rules; allow-all when robots.txt is a 404; ``None`` otherwise."""
-    parts = urlsplit(url)
-    robots_url = urlunsplit((parts.scheme, parts.netloc, "/robots.txt", "", ""))
-    fetched = await _fetch(
-        client, robots_url, max_bytes=MAX_ROBOTS_BYTES, read_if=lambda r: r.is_success
-    )
-    if fetched.status == 404:
-        lines: list[str] = []  # no robots.txt: no rules, everything allowed
-    elif 200 <= fetched.status < 300:
-        lines = fetched.body.splitlines()
-    else:
-        return None  # 401/403/5xx: we cannot tell, so we do not fetch
-    parser = RobotFileParser(robots_url)
-    parser.parse(lines)  # also marks the rules as read, which can_fetch requires
-    return parser
+class _Visit:
+    """One ``read_site`` call: which hosts it may reach, and their robots.txt."""
+
+    def __init__(self, client: httpx.AsyncClient) -> None:
+        self._client = client
+        self._public: dict[str, bool] = {}
+        self._robots: dict[str, RobotFileParser | None] = {}
+
+    async def _is_public(self, host: str, port: int) -> bool:
+        """``host`` resolves, and only to public addresses. Looked up once per host."""
+        if host not in self._public:
+            try:
+                async with asyncio.timeout(TIMEOUT_SECONDS):
+                    addresses = await _resolve(host, port)
+            except (OSError, TimeoutError, UnicodeError):
+                addresses = []
+            self._public[host] = bool(addresses) and all(map(_is_public_address, addresses))
+        return self._public[host]
+
+    async def _rules(self, host: str, url: str) -> RobotFileParser | None:
+        """``host``'s robots.txt, read once per host per call."""
+        if host not in self._robots:
+            self._robots[host] = await self._read_robots(url)
+        return self._robots[host]
+
+    async def _read_robots(self, url: str) -> RobotFileParser | None:
+        """The site's rules; allow-all when robots.txt is a 404; ``None`` otherwise."""
+        parts = urlsplit(url)
+        robots_url = urlunsplit((parts.scheme, parts.netloc, "/robots.txt", "", ""))
+        fetched = await self.get(
+            robots_url,
+            max_bytes=MAX_ROBOTS_BYTES,
+            read_if=lambda r: r.is_success,
+            obey_robots=False,
+        )
+        if fetched is None:
+            return None  # redirected somewhere we will not go
+        if fetched.status == 404:
+            lines: list[str] = []  # no robots.txt: no rules, everything allowed
+        elif 200 <= fetched.status < 300:
+            lines = fetched.body.splitlines()
+        else:
+            return None  # 401/403/5xx or a redirect loop: we cannot tell, so we do not fetch
+        parser = RobotFileParser(robots_url)
+        parser.parse(lines)  # also marks the rules as read, which can_fetch requires
+        return parser
+
+    async def _may_request(self, url: str, *, obey_robots: bool) -> bool:
+        target = _target(url)
+        if target is None or not await self._is_public(*target):
+            return False
+        if not obey_robots:
+            return True  # robots.txt itself
+        rules = await self._rules(target[0], url)
+        return rules is not None and rules.can_fetch(USER_AGENT, url)
+
+    async def get(
+        self,
+        url: str,
+        *,
+        max_bytes: int,
+        read_if: Callable[[httpx.Response], bool],
+        obey_robots: bool = True,
+    ) -> _Fetched | None:
+        """GET ``url``, following at most ``MAX_REDIRECTS`` redirects by hand.
+
+        Every hop is checked before it is requested; ``None`` when one is
+        refused or the chain is longer than ``MAX_REDIRECTS``.
+        """
+        for _ in range(MAX_REDIRECTS + 1):
+            if not await self._may_request(url, obey_robots=obey_robots):
+                return None
+            fetched = await _fetch(self._client, url, max_bytes=max_bytes, read_if=read_if)
+            if fetched.location is None:
+                return fetched
+            url = fetched.location
+        return None
 
 
-async def _page(client: httpx.AsyncClient, url: str) -> SiteFacts | None:
-    fetched = await _fetch(client, url, max_bytes=MAX_BODY_BYTES, read_if=_is_html)
-    if not fetched.body:
+async def _page(visit: _Visit, url: str) -> SiteFacts | None:
+    fetched = await visit.get(url, max_bytes=MAX_BODY_BYTES, read_if=_is_html)
+    if fetched is None or not fetched.body:
         return None
     return extract_site_facts(fetched.body, fetched.url)
 
 
 async def _read_site(client: httpx.AsyncClient, url: str) -> SiteFacts | None:
-    parts = urlsplit(url)
-    if parts.scheme not in ("http", "https") or not parts.hostname:
-        return None
-    rules = await _robots(client, url)
-    if rules is None or not rules.can_fetch(USER_AGENT, url):
-        return None
-    facts = await _page(client, url)
+    visit = _Visit(client)
+    facts = await _page(visit, url)
     if facts is None or facts.address is not None:
         return facts
 
+    # Links are resolved against the page's final URL, so the contact page is
+    # held to the host the homepage actually came from, and that host's rules.
     contact = next(
         (link for link in facts.links if urlsplit(link).path.lower().startswith("/contact")),
         None,
     )
-    if contact is None or not rules.can_fetch(USER_AGENT, contact):
+    if contact is None:
         return facts
     try:
-        contact_facts = await _page(client, contact)
+        contact_facts = await _page(visit, contact)
     except Exception as exc:  # the homepage alone is still a result
         logger.info("company site contact page %s unreadable: %s", contact, type(exc).__name__)
         return facts

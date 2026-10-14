@@ -14,9 +14,11 @@ from pathlib import Path
 import httpx
 import pytest
 
+from services.company_map import website
 from services.company_map.types import SiteFacts
 from services.company_map.website import (
     MAX_BODY_BYTES,
+    MAX_REDIRECTS,
     USER_AGENT,
     extract_site_facts,
     read_site,
@@ -259,6 +261,25 @@ def _html(body: str | bytes) -> httpx.Response:
     return httpx.Response(200, headers={"content-type": "text/html; charset=utf-8"}, content=body)
 
 
+def _redirect(location: str, status: int = 301) -> httpx.Response:
+    return httpx.Response(status, headers={"location": location})
+
+
+_PUBLIC_IP = "93.184.216.34"
+
+
+@pytest.fixture(autouse=True)
+def _public_dns(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[str]]:
+    """Every host resolves to a public address unless a test says otherwise."""
+    answers: dict[str, list[str]] = {}
+
+    async def resolve(host: str, port: int) -> list[str]:
+        return answers.get(host, [_PUBLIC_IP])
+
+    monkeypatch.setattr(website, "_resolve", resolve, raising=False)
+    return answers
+
+
 async def test_read_site_returns_none_when_robots_disallows_root() -> None:
     seen: list[str] = []
 
@@ -418,3 +439,279 @@ async def test_read_site_body_over_300kb_is_truncated_not_fully_read() -> None:
     assert facts.address is None  # the tail past the cap was never read
     assert sent <= MAX_BODY_BYTES + 2 * len(chunk)
     assert sent < total_chunks * len(chunk)
+
+
+# ── read_site: redirects and refused hosts ──────────────────────────────────
+
+
+async def test_redirect_to_another_host_obeys_that_hosts_robots() -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        if request.url.host == "acme.in":
+            if request.url.path == "/robots.txt":
+                return httpx.Response(404)
+            return _redirect("https://acme-global.com/")
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text="User-agent: *\nDisallow: /\n")
+        return _html(_HOME)
+
+    async with _client(handler) as client:
+        assert await read_site(client, "https://acme.in/") is None
+    assert seen == [
+        "https://acme.in/robots.txt",
+        "https://acme.in/",
+        "https://acme-global.com/robots.txt",
+    ]
+
+
+async def test_redirect_to_linkedin_is_refused_before_any_linkedin_request() -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        if request.url.host == "acme.in":
+            return _redirect("https://www.linkedin.com/company/x")
+        return _html(_HOME)
+
+    async with _client(handler) as client:
+        assert await read_site(client, "https://acme.in/") is None
+    assert seen == ["https://acme.in/robots.txt", "https://acme.in/"]
+
+
+async def test_robots_redirect_to_linkedin_is_refused() -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        if request.url.host == "acme.in":
+            return _redirect("https://www.linkedin.com/robots.txt")
+        return httpx.Response(404)
+
+    async with _client(handler) as client:
+        assert await read_site(client, "https://acme.in/") is None
+    assert seen == ["https://acme.in/robots.txt"]
+
+
+async def test_contact_page_redirect_to_linkedin_keeps_the_homepage_only() -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        if request.url.path == "/contact":
+            return _redirect("https://in.linkedin.com/company/acme")
+        return _html(_HOME)
+
+    async with _client(handler) as client:
+        facts = await read_site(client, "https://acme.in/")
+    assert facts is not None and facts.description == "Acme home."
+    assert facts.address is None
+    assert seen == ["https://acme.in/robots.txt", "https://acme.in/", "https://acme.in/contact"]
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.linkedin.com",
+        "https://linkedin.com/company/acme",
+        "https://lnkd.in/abc123",
+        "https://sites.google.com/view/acme",
+        "https://twitter.com/acme",
+        "https://github.com/acme",
+        "https://www.crunchbase.com/organization/acme",
+        "http://127.0.0.1/",
+        "http://10.0.0.5/",
+        "http://169.254.169.254/",
+        "http://[::1]/",
+        "http://192.168.1.1/",
+        "http://224.0.0.1/",
+        "http://localhost/",
+        "http://intranet.local/",
+        "http://metadata.google.internal/",
+        "http://example.com:8080/",
+        "https://example.com:8443/",
+        "ftp://example.com/",
+        "http://user@example.com/",
+    ],
+)
+async def test_refused_urls_make_no_request_at_all(url: str) -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return _html(_HOME)
+
+    async with _client(handler) as client:
+        assert await read_site(client, url) is None
+    assert seen == []
+
+
+async def test_host_resolving_to_a_private_address_is_refused(
+    _public_dns: dict[str, list[str]],
+) -> None:
+    _public_dns["sneaky.in"] = ["10.1.2.3"]
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return _html(_HOME)
+
+    async with _client(handler) as client:
+        assert await read_site(client, "https://sneaky.in/") is None
+    assert seen == []
+
+
+async def test_redirect_to_a_host_resolving_privately_is_refused(
+    _public_dns: dict[str, list[str]],
+) -> None:
+    _public_dns["internal.acme.in"] = ["169.254.169.254"]
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        return _redirect("http://internal.acme.in/latest/meta-data/")
+
+    async with _client(handler) as client:
+        assert await read_site(client, "https://acme.in/") is None
+    assert seen == ["https://acme.in/robots.txt", "https://acme.in/"]
+
+
+async def test_redirect_to_an_ip_literal_is_refused() -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        return _redirect("http://169.254.169.254/latest/meta-data/")
+
+    async with _client(handler) as client:
+        assert await read_site(client, "https://acme.in/") is None
+    assert seen == ["https://acme.in/robots.txt", "https://acme.in/"]
+
+
+async def test_more_than_max_redirects_is_none() -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.path)
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        hop = int(request.url.path.strip("/") or 0)
+        return _redirect(f"/{hop + 1}", status=302)
+
+    async with _client(handler) as client:
+        assert await read_site(client, "https://acme.in/") is None
+    assert MAX_REDIRECTS == 3
+    assert seen == ["/robots.txt", "/", "/1", "/2", "/3"]
+
+
+async def test_exactly_max_redirects_is_followed() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        hop = int(request.url.path.strip("/") or 0)
+        if hop < MAX_REDIRECTS:
+            return _redirect(f"/{hop + 1}", status=302)
+        return _html(_FOOTER)
+
+    async with _client(handler) as client:
+        facts = await read_site(client, "https://acme.in/")
+    assert facts is not None and facts.pincode == "560034"
+
+
+async def test_redirect_hop_disallowed_by_robots_is_not_requested() -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.path)
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text="User-agent: *\nDisallow: /private\n")
+        if request.url.path == "/":
+            return _redirect("/private/home")
+        return _html(_HOME)
+
+    async with _client(handler) as client:
+        assert await read_site(client, "https://acme.in/") is None
+    assert seen == ["/robots.txt", "/"]
+
+
+async def test_http_to_https_redirect_reads_the_site_and_its_contact_page() -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        if request.url.scheme == "http":
+            return _redirect(str(request.url.copy_with(scheme="https")))
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text="User-agent: *\nAllow: /\n")
+        if request.url.path == "/contact":
+            return _html(_CONTACT)
+        return _html(_HOME)
+
+    async with _client(handler) as client:
+        facts = await read_site(client, "http://acme.in/")
+
+    assert facts is not None and facts.pincode == "560025"
+    assert seen == [
+        "http://acme.in/robots.txt",
+        "https://acme.in/robots.txt",
+        "http://acme.in/",
+        "https://acme.in/",
+        "https://acme.in/contact",
+    ]
+
+
+async def test_www_redirect_uses_the_final_hosts_robots_for_the_contact_page() -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        if request.url.host == "acme.in":
+            if request.url.path == "/robots.txt":
+                return httpx.Response(404)  # the bare host allows everything
+            return _redirect("https://www.acme.in/")
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text="User-agent: *\nDisallow: /contact\n")
+        if request.url.path == "/contact":
+            return _html(_CONTACT)
+        return _html(_HOME)
+
+    async with _client(handler) as client:
+        facts = await read_site(client, "https://acme.in/")
+
+    assert facts is not None and facts.description == "Acme home."
+    assert facts.address is None
+    assert seen == [
+        "https://acme.in/robots.txt",
+        "https://acme.in/",
+        "https://www.acme.in/robots.txt",
+        "https://www.acme.in/",
+    ]
+
+
+async def test_robots_is_fetched_once_per_host() -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.path)
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        if request.url.path == "/":
+            return _redirect("/home")
+        if request.url.path == "/contact":
+            return _html(_CONTACT)
+        return _html(_HOME)
+
+    async with _client(handler) as client:
+        facts = await read_site(client, "https://acme.in/")
+
+    assert facts is not None and facts.pincode == "560025"
+    assert seen == ["/robots.txt", "/", "/home", "/contact"]
