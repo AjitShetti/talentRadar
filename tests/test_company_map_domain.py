@@ -29,6 +29,7 @@ from domain.company_taxonomy import (
     stage_from_round,
     tier_for_import,
 )
+from domain.linkedin_links import PRESETS, company_people_links, person_search_link
 
 CATALOGUE = Path(__file__).resolve().parent.parent / "data" / "companies" / "bengaluru.json"
 
@@ -164,3 +165,68 @@ class TestTaxonomy:
     def test_vocabularies_have_labels(self):
         assert STAGES["series_c_plus"] == "Series C+"
         assert SECTORS["it_services"] == "IT services"
+
+
+class TestLinkedInLinks:
+    """Deep links built at read time. The server never requests any of them."""
+
+    def test_company_page_gives_its_people_tab_filtered(self):
+        links = company_people_links("Razorpay", "https://www.linkedin.com/company/razorpay/", None)
+        assert links[0] == {
+            "label": "Founders",
+            "url": "https://www.linkedin.com/company/razorpay/people/?keywords=founder",
+        }
+
+    def test_company_page_url_is_rebuilt_not_echoed(self):
+        # Query strings, locale subdomains and missing slashes land on one shape.
+        links = company_people_links("Acme", "http://in.linkedin.com/company/acme-labs?trk=x", None)
+        assert links[0]["url"] == (
+            "https://www.linkedin.com/company/acme-labs/people/?keywords=founder"
+        )
+
+    def test_without_a_company_page_it_searches_people(self):
+        links = company_people_links("Acme & Co", None, None)
+        assert links[1] == {
+            "label": "Engineering leaders",
+            "url": "https://www.linkedin.com/search/results/people/"
+            "?keywords=Acme%20%26%20Co%20engineering%20manager",
+        }
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            "javascript:alert(1)",
+            "https://www.linkedin.com/in/someone",
+            "https://evil.example/company/acme",
+            "https://linkedin.com.evil.example/company/acme",
+            "",
+        ],
+    )
+    def test_anything_but_a_linkedin_company_page_falls_back_to_search(self, bad):
+        links = company_people_links("Acme", bad, None)
+        assert all(
+            link["url"].startswith("https://www.linkedin.com/search/results/people/?keywords=")
+            for link in links
+        )
+
+    def test_presets_in_order_without_a_target_role(self):
+        links = company_people_links("Acme", None, None)
+        assert [link["label"] for link in links] == [label for label, _ in PRESETS]
+
+    def test_a_target_role_adds_a_fourth_preset(self):
+        links = company_people_links(
+            "Acme", "https://www.linkedin.com/company/acme", "  Backend   Engineer "
+        )
+        assert len(links) == len(PRESETS) + 1
+        assert links[-1] == {
+            "label": "Backend Engineer",
+            "url": "https://www.linkedin.com/company/acme/people/?keywords=Backend%20Engineer",
+        }
+
+    def test_a_blank_target_role_adds_nothing(self):
+        assert len(company_people_links("Acme", None, "   ")) == len(PRESETS)
+
+    def test_person_search_link_quotes_the_name(self):
+        assert person_search_link("Asha Rao", "Acme") == (
+            "https://www.linkedin.com/search/results/people/?keywords=%22Asha%20Rao%22%20Acme"
+        )

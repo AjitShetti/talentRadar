@@ -33,6 +33,13 @@ class CompanyCardSchema(BaseModel):
     careers_url: str | None = None
     tech_stack: list[str] = Field(default_factory=list)
     open_roles: int = 0
+    summary: str | None = None
+    summary_source: str | None = None
+    stage: str | None = None
+    sector: str | None = None
+    area: str | None = None
+    geo_precision: str | None = None
+    slug: str | None = None
 
 
 class CompanyDirectorySchema(BaseModel):
@@ -115,3 +122,53 @@ class ContactDiscoverySchema(BaseModel):
     queries: list[str] = Field(default_factory=list)
     available: bool = True
     message: str | None = None
+
+
+class PersonCandidateSchema(BaseModel):
+    """A person a public source names, with that source. Never verified here."""
+
+    model_config = ConfigDict(extra="allow")
+
+    name: str
+    kind: str
+    source_url: str
+    source_kind: str
+    title: str | None = None
+    linkedin_url: str | None = None
+    x_url: str | None = None
+    github_url: str | None = None
+    profile_url: str | None = None
+
+
+class FounderDiscoverySchema(BaseModel):
+    """Result of the on-demand founder lookup for one company."""
+
+    available: bool
+    people: list[PersonCandidateSchema] = Field(default_factory=list)
+    message: str | None = None
+
+
+class HiringForYouSchema(BaseModel):
+    """Company ids with an open Bengaluru role matching the user's target role."""
+
+    hiring_for_you: list[str] = Field(default_factory=list)
+
+
+class NewsItemSchema(BaseModel):
+    """One stored startup-news item, as the news strip and drawer show it."""
+
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    url: str
+    title: str
+    source: str | None = None
+    snippet: str | None = None
+    published_at: str | None = None
+    category: str = "other"
+    round: str | None = None
+    amount_text: str | None = None
+    amount_usd: float | None = None
+    investors: list[str] = Field(default_factory=list)
+    company_id: str | None = None
+    company_name: str | None = None

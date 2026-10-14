@@ -4,27 +4,35 @@ services/companies.py
 Deterministic tools for Company Intelligence.
 
     list_companies()   — the browsable directory: filter by city/tier/industry,
-                         with open-role counts folded in
+                         stage/sector/area/size and recent funding, with
+                         open-role counts folded in
     directory_facets() — the filter options that directory currently supports
     get_company()      — company record + open jobs + aggregate salary data
     company_intel()    — full intelligence report (what they do, tech stack,
                          open source, hiring trends, salaries) for one company
 
-The directory filters on ``office_cities``, not ``hq_city``: Google is
-headquartered in Mountain View but hires in Bengaluru, and the question the
-page answers is "who is hiring here", not "who is registered here".
+Which companies are shown is one rule, shared with the map
+(``services.company_map.read.listed_clause``): a company with a summary or a
+description that is in the city — an office there (``office_cities``: Google
+is headquartered in Mountain View but hires in Bengaluru), a canonical
+Bengaluru area, or its headquarters.
 """
 
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from domain.company_taxonomy import SECTORS, SIZES, STAGES, is_bigger_company, size_bucket
+from domain.linkedin_links import company_people_links
 from services.base import parse_uuid
+from services.company_map import read as company_map_read
+from services.company_map.read import listed_clause, raised_within, target_roles
 from storage.database import AsyncSessionLocal
 from storage.models import Company, CompanyProfile, Job, JobStatus
 from storage.repository import UnitOfWork
@@ -37,6 +45,11 @@ logger = logging.getLogger(__name__)
 
 # Ordering for the directory: the tiers people scan for first come first.
 TIER_ORDER = ["big_tech", "unicorn", "gcc", "scaleup", "startup", "agency", "services"]
+
+# Every type a company can carry. ``vc`` comes from imports only (the curated
+# catalogue has no investors), so it is filterable and labelled but sorts with
+# the unranked rows after IT services.
+ALL_TIERS = [*TIER_ORDER, "vc"]
 
 # Industry facet tuning. The catalogue carries a descriptive industry string
 # per company (good on a card, bad as a filter), so the dropdown only offers the
@@ -52,7 +65,11 @@ TIER_LABELS = {
     "startup": "Startup",
     "agency": "Agency & Studio",
     "services": "IT Services",
+    "vc": "Venture Capital",
 }
+
+#: Directory facets that filter on a company-map field, in display order.
+_MAP_FACETS = ("stage", "sector", "area", "size")
 
 
 def _tier_rank(tier: str | None) -> int:
@@ -60,16 +77,53 @@ def _tier_rank(tier: str | None) -> int:
     return TIER_ORDER.index(tier) if tier in TIER_ORDER else len(TIER_ORDER)
 
 
-def _city_filter(city: str) -> ColumnElement[bool]:
+def _map_filters(
+    *,
+    stage: str | None,
+    sector: str | None,
+    area: str | None,
+    raised_within_days: int | None,
+) -> list[ColumnElement[bool]]:
     """
-    Portable "has an office in <city>" predicate.
+    SQL predicates for the company-map filters. Size is not among them: it is
+    a bucket of ``employee_count`` or the lower bound of
+    ``employee_count_range``, so it is applied in Python (:func:`_facet_value`).
+    """
+    clauses: list[ColumnElement[bool]] = []
+    if stage:
+        clauses.append(Company.stage == stage)
+    if sector:
+        clauses.append(Company.sector == sector)
+    if area:
+        clauses.append(Company.area == area)
+    if raised_within_days:
+        since = datetime.now(UTC) - timedelta(days=raised_within_days)
+        clauses.append(Company.last_funding_at >= since)
+    return clauses
 
-    ``office_cities`` is a Postgres text[] that degrades to JSON on SQLite in
-    tests, so ``ARRAY.contains`` is not available on both. ``array_to_string``
-    has a SQLite shim in storage/models.py and city names are distinctive
-    enough that a substring match does not collide.
-    """
-    return func.array_to_string(Company.office_cities, " ").ilike(f"%{city}%")
+
+def _facet_value(company: Company, facet: str) -> str | None:
+    if facet == "size":
+        return size_bucket(company.employee_count, company.employee_count_range)
+    value = getattr(company, facet)
+    return value if isinstance(value, str) else None
+
+
+def _passes(
+    company: Company,
+    filters: dict[str, Any],
+    raised_within_days: int | None,
+    now: datetime,
+    *,
+    skip: str | None = None,
+) -> bool:
+    """The Python twin of :func:`_map_filters` plus size, for facet counts."""
+    for facet, wanted in filters.items():
+        if facet != skip and wanted and _facet_value(company, facet) != wanted:
+            return False
+    return not raised_within_days or raised_within(
+        company.last_funding_at, raised_within_days, now
+    )
 
 
 async def _open_role_counts(
@@ -107,6 +161,13 @@ def _card(company: Company, tech_stack: list[str], open_roles: int) -> dict[str,
         "careers_url": company.careers_url,
         "tech_stack": tech_stack[:8],
         "open_roles": open_roles,
+        "summary": company.summary,
+        "summary_source": company.summary_source,
+        "stage": company.stage,
+        "sector": company.sector,
+        "area": company.area,
+        "geo_precision": company.geo_precision,
+        "slug": company.slug,
     }
 
 
@@ -117,22 +178,31 @@ async def list_companies(
     industry: str | None = None,
     q: str | None = None,
     has_open_roles: bool = False,
+    stage: str | None = None,
+    sector: str | None = None,
+    area: str | None = None,
+    size: str | None = None,
+    raised_within_days: int | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> dict[str, Any]:
     """
     The Company Intel directory.
 
-    Only companies carrying a curated ``description`` are listed — the
+    Only listed companies are shown (``listed_clause``): ones that say what
+    they do (a summary or a curated description) and are in ``city``. The
     ``companies`` table also accumulates thin rows created as a side effect of
-    job ingestion (a name and nothing else), and those would be dead cards.
-    Seed the catalogue (``python scripts/seed_companies.py``) to populate it.
+    job ingestion and news (a name and nothing else), and those would be dead
+    cards. Seed the catalogue (``python scripts/seed_companies.py``) to
+    populate it.
     """
     session = AsyncSessionLocal()
     try:
-        stmt = select(Company).where(Company.description.is_not(None))
-        if city:
-            stmt = stmt.where(_city_filter(city))
+        stmt = select(Company).where(listed_clause(city))
+        for clause in _map_filters(
+            stage=stage, sector=sector, area=area, raised_within_days=raised_within_days
+        ):
+            stmt = stmt.where(clause)
         if tier:
             stmt = stmt.where(Company.tier == tier)
         if industry:
@@ -147,11 +217,14 @@ async def list_companies(
                     Company.name.ilike(pattern),
                     Company.industry.ilike(pattern),
                     Company.description.ilike(pattern),
+                    Company.summary.ilike(pattern),
                     cast(Company.domain, String).ilike(pattern),
                 )
             )
 
         companies = list((await session.execute(stmt)).scalars().all())
+        if size:
+            companies = [c for c in companies if _facet_value(c, "size") == size]
         counts = await _open_role_counts(session, [c.id for c in companies])
 
         # Tech stack comes from the seeded profile; fall back to whatever the
@@ -189,20 +262,55 @@ async def list_companies(
         await session.close()
 
 
-async def directory_facets(city: str | None = "Bengaluru") -> dict[str, Any]:
-    """Filter options for the directory, counted against what is actually there."""
+def _counted(
+    vocabulary: dict[str, str], counts: dict[str, int]
+) -> list[dict[str, Any]]:
+    """``[{value, label, count}]`` in vocabulary order, empty values left out."""
+    return [
+        {"value": value, "label": label, "count": counts[value]}
+        for value, label in vocabulary.items()
+        if counts.get(value)
+    ]
+
+
+async def directory_facets(
+    city: str | None = "Bengaluru",
+    *,
+    stage: str | None = None,
+    sector: str | None = None,
+    area: str | None = None,
+    size: str | None = None,
+    raised_within_days: int | None = None,
+) -> dict[str, Any]:
+    """
+    Filter options for the directory, counted against what is actually there.
+
+    Each company-map facet (stage, sector, area, size) is counted with every
+    *other* filter applied, so picking a stage does not collapse the stage
+    dropdown to the one value picked. Tiers, industries and ``total`` are
+    counted with all of them applied.
+    """
     session = AsyncSessionLocal()
     try:
-        base = select(Company).where(Company.description.is_not(None))
-        if city:
-            base = base.where(_city_filter(city))
-        companies = list((await session.execute(base)).scalars().all())
+        base = select(Company).where(listed_clause(city))
+        listed = list((await session.execute(base)).scalars().all())
 
-        cities = select(Company.office_cities).where(Company.description.is_not(None))
+        cities = select(Company.office_cities).where(listed_clause(None))
         all_cities: set[str] = set()
         for row in (await session.execute(cities)).scalars().all():
             all_cities.update(row or [])
         await session.commit()
+
+        now = datetime.now(UTC)
+        filters = {"stage": stage, "sector": sector, "area": area, "size": size}
+        companies = [c for c in listed if _passes(c, filters, raised_within_days, now)]
+
+        map_counts: dict[str, dict[str, int]] = {facet: {} for facet in _MAP_FACETS}
+        for company in listed:
+            for facet in _MAP_FACETS:
+                value = _facet_value(company, facet)
+                if value and _passes(company, filters, raised_within_days, now, skip=facet):
+                    map_counts[facet][value] = map_counts[facet].get(value, 0) + 1
 
         tiers: dict[str, int] = {}
         industries: dict[str, int] = {}
@@ -213,11 +321,20 @@ async def directory_facets(city: str | None = "Bengaluru") -> dict[str, Any]:
                 industries[company.industry] = industries.get(company.industry, 0) + 1
 
         return {
+            "stages": _counted(STAGES, map_counts["stage"]),
+            "sectors": _counted(SECTORS, map_counts["sector"]),
+            "sizes": _counted(SIZES, map_counts["size"]),
+            "areas": [
+                {"value": name, "label": name, "count": count}
+                for name, count in sorted(
+                    map_counts["area"].items(), key=lambda kv: (-kv[1], kv[0])
+                )
+            ],
             "city": city,
             "cities": sorted(all_cities),
             "tiers": [
                 {"value": t, "label": TIER_LABELS.get(t, t), "count": tiers[t]}
-                for t in TIER_ORDER
+                for t in ALL_TIERS
                 if t in tiers
             ],
             # Only industries shared by at least two companies are offered as
@@ -323,11 +440,16 @@ async def company_intel(
     *,
     with_github: bool = True,
     job_limit: int = 25,
+    user_id: str | None = None,
 ) -> dict[str, Any] | None:
     """
     Everything the Company Intel side panel shows for one company:
-    what they do, the technologies they work on, their public GitHub, and the
-    roles TalentRadar currently has open for them.
+    what they do, the technologies they work on, their public GitHub, the
+    roles TalentRadar currently has open for them, its people and its news.
+
+    ``people`` and ``news`` are stored rows only; ``linkedin_links`` are deep
+    links built here and never requested. With a ``user_id`` the links gain a
+    preset for that user's first target role.
 
     ``tech_stack`` merges the curated catalogue list with skills actually named
     in that company's live postings — the catalogue says what they build with,
@@ -364,7 +486,12 @@ async def company_intel(
             Job.salary_min.is_not(None),
         )
         salary_row = (await session.execute(salary_stmt)).one()
+        uid = parse_uuid(user_id) if user_id else None
+        roles = await target_roles(session, uid) if uid else []
         await session.commit()
+
+        people = await company_map_read.people_for(company.id, company_name=company.name)
+        news = await company_map_read.news_for(company.id, limit=5)
 
         # Curated stack first (it is ordered deliberately), then anything the
         # live postings add, de-duplicated case-insensitively.
@@ -423,6 +550,26 @@ async def company_intel(
             "source": profile.source if profile else "computed",
             "has_profile": profile is not None,
             "open_roles": len(jobs),
+            "summary": company.summary,
+            "summary_source": company.summary_source,
+            "area": company.area,
+            "address": company.address,
+            "geo_precision": company.geo_precision,
+            "stage": company.stage,
+            "sector": company.sector,
+            "x_url": company.x_url,
+            "last_funding_at": (
+                company.last_funding_at.isoformat() if company.last_funding_at else None
+            ),
+            "employee_count": company.employee_count,
+            "is_bigger": is_bigger_company(
+                company.tier, company.employee_count, company.employee_count_range
+            ),
+            "people": people,
+            "linkedin_links": company_people_links(
+                company.name, company.linkedin_url, roles[0] if roles else None
+            ),
+            "news": news,
             "jobs": [
                 {
                     "id": str(j.id),

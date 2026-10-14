@@ -20,6 +20,11 @@ Two rules, in order:
 
 Never deleted: any job with an application attached, and anything already
 LLM-enriched, which cost quota to produce.
+
+``company_news`` is pruned in the same pass: a non-funding item after
+``NEWS_RETENTION_DAYS``, a funding item after ``FUNDING_NEWS_RETENTION_DAYS``
+(phase 2's funding radar reads them for longer). An item's age is its
+publish date, or when we stored it if the feed gave none.
 """
 
 from __future__ import annotations
@@ -42,6 +47,12 @@ STORAGE_HIGH_WATER_BYTES = 400 * 1024 * 1024
 #: to matter to a request on a shared-CPU instance.
 MAX_DELETIONS_PER_RUN = 5000
 
+#: News that is not about funding is kept this long.
+NEWS_RETENTION_DAYS = 180
+
+#: Funding news is kept two years.
+FUNDING_NEWS_RETENTION_DAYS = 730
+
 
 async def database_size_bytes(session: Any) -> int:
     """Current database size, or 0 if the backend cannot report it (e.g. SQLite)."""
@@ -50,6 +61,50 @@ async def database_size_bytes(session: Any) -> int:
         return int(result.scalar() or 0)
     except Exception as exc:
         logger.debug("Could not read database size: %s", exc)
+        return 0
+
+
+async def prune_company_news(session: Any) -> int:
+    """
+    Delete expired ``company_news`` rows; returns how many went.
+
+    Its own step with its own rollback: a database that predates migration 015
+    has no such table, and that must not stop the job prune around it.
+
+    Each day count is a direct ``make_interval`` argument so asyncpg binds it
+    as an integer; inside a ``CASE`` both would be inferred as text.
+    """
+    try:
+        result = await session.execute(
+            text(
+                """
+                DELETE FROM company_news
+                WHERE id IN (
+                    SELECT n.id FROM company_news n
+                    WHERE (
+                        n.category = 'funding'
+                        AND COALESCE(n.published_at, n.created_at)
+                            < NOW() - make_interval(days => :funding_days)
+                    ) OR (
+                        n.category <> 'funding'
+                        AND COALESCE(n.published_at, n.created_at)
+                            < NOW() - make_interval(days => :news_days)
+                    )
+                    LIMIT :cap
+                )
+                """
+            ),
+            {
+                "news_days": NEWS_RETENTION_DAYS,
+                "funding_days": FUNDING_NEWS_RETENTION_DAYS,
+                "cap": MAX_DELETIONS_PER_RUN,
+            },
+        )
+        await session.commit()
+        return int(result.rowcount or 0)
+    except Exception as exc:
+        logger.warning("News retention step failed: %s", exc)
+        await session.rollback()
         return 0
 
 
@@ -63,6 +118,7 @@ async def prune_stale_jobs() -> dict[str, Any]:
     summary: dict[str, Any] = {
         "deleted_by_age": 0,
         "deleted_by_pressure": 0,
+        "deleted_news": 0,
         "size_before": 0,
         "size_after": 0,
         "ran": False,
@@ -96,6 +152,10 @@ async def prune_stale_jobs() -> dict[str, Any]:
             )
             summary["deleted_by_age"] = aged.rowcount or 0
             await session.commit()
+
+            # News ages out on its own clock, before the size check so the
+            # space it frees counts.
+            summary["deleted_news"] = await prune_company_news(session)
 
             # Rule 2: pressure.
             size = await database_size_bytes(session)
@@ -136,6 +196,6 @@ async def prune_stale_jobs() -> dict[str, Any]:
         return summary
 
     total = summary["deleted_by_age"] + summary["deleted_by_pressure"]
-    if total:
+    if total or summary["deleted_news"]:
         logger.info("Retention: removed %d stale job(s) — %s", total, summary)
     return summary
