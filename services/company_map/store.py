@@ -6,6 +6,12 @@ Where importer output meets ``companies``.
 * :func:`find_existing` decides identity: domain, then Wikidata id, then an
   exact normalised name, and the name only when neither side carries a
   conflicting domain. A name never merges two rows.
+* Job ingestion keys an employer on ``<slug>.talentradar.internal``
+  (:data:`PLACEHOLDER_SUFFIX`). That placeholder is not an identity: a real
+  domain replaces it, and it never makes a name ambiguous.
+* A record with no domain and no Wikidata id (a news headline) creates a row
+  only when no row shares its name, so the same raise reported by four
+  outlets cannot make four companies.
 * :func:`upsert_company` writes what a source may write
   (``domain.company_identity.merge_fields``) and records provenance in
   ``metadata.provenance``.
@@ -71,6 +77,32 @@ def _escape_like(text: str) -> str:
     return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+#: Job ingestion's placeholder domain (``ingestion/pipeline.py``,
+#: ``services/job_persistence.py``).
+PLACEHOLDER_SUFFIX = ".talentradar.internal"
+
+
+def real_domain(domain: str | None) -> str | None:
+    """``domain`` unless it is empty or job ingestion's placeholder."""
+    return None if not domain or domain.endswith(PLACEHOLDER_SUFFIX) else domain
+
+
+async def _same_name(session: AsyncSession, name: str) -> list[Company]:
+    """Every row whose normalised name equals ``name``'s."""
+    wanted = normalize_name(name)
+    if not wanted:
+        return []
+    first_word = wanted.split()[0]
+    candidates = (
+        await session.execute(
+            select(Company).where(
+                func.lower(Company.name).like(f"{_escape_like(first_word)}%", escape="\\")
+            )
+        )
+    ).scalars()
+    return [c for c in candidates if normalize_name(c.name) == wanted]
+
+
 async def find_existing(
     session: AsyncSession, *, domain: str | None, wikidata_id: str | None, name: str
 ) -> Company | None:
@@ -84,26 +116,32 @@ async def find_existing(
         if found:
             return found
 
-    wanted = normalize_name(name)
-    if not wanted:
-        return None
-    first_word = wanted.split()[0]
-    candidates = (
-        await session.execute(
-            select(Company).where(
-                func.lower(Company.name).like(f"{_escape_like(first_word)}%", escape="\\")
-            )
-        )
-    ).scalars()
     matches = [
         c
-        for c in candidates
-        if normalize_name(c.name) == wanted
-        and (not domain or not c.domain or c.domain == domain)
+        for c in await _same_name(session, name)
+        if (not domain or not real_domain(c.domain) or c.domain == domain)
         and (not wikidata_id or not c.wikidata_id or c.wikidata_id == wikidata_id)
     ]
-    # Two rows with the same name: attaching to either would be a guess.
-    return matches[0] if len(matches) == 1 else None
+    if len(matches) == 1:
+        return matches[0]
+    # A jobs placeholder beside the employer's real row is one employer seen
+    # twice, not two employers: the row with the real domain is the one.
+    with_domain = [c for c in matches if real_domain(c.domain)]
+    if len(with_domain) == 1:
+        return with_domain[0]
+    # Two real rows with the same name: attaching to either would be a guess.
+    return None
+
+
+async def company_for_posting(session: AsyncSession, name: str) -> Company | None:
+    """
+    The row a scraped posting's employer name belongs to, before job ingestion
+    falls back to creating its placeholder row.
+
+    Once an importer has given a jobs row its real domain, the placeholder no
+    longer exists; without this the next posting would create it again.
+    """
+    return await find_existing(session, domain=None, wikidata_id=None, name=name)
 
 
 async def _unique_slug(session: AsyncSession, name: str) -> str:
@@ -174,12 +212,19 @@ async def upsert_company_ex(
     if company is None:
         if not create:
             return None, False
+        if not domain and not imported.wikidata_id and await _same_name(session, imported.name):
+            # The name is taken and this record cannot say which row it means.
+            return None, False
         company = Company(
             name=imported.name.strip()[:256], slug=await _unique_slug(session, imported.name)
         )
         session.add(company)
 
-    if domain and not company.domain and await _free(session, Company.domain, domain, company):
+    if (
+        domain
+        and not real_domain(company.domain)
+        and await _free(session, Company.domain, domain, company)
+    ):
         company.domain = domain
     if (
         imported.wikidata_id

@@ -8,6 +8,7 @@ unknown funded companies, and never a fabricated date.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -18,6 +19,7 @@ from sqlalchemy import func, select, text
 from domain.news import classify, extract_funding
 from services.company_map import news_ingest
 from services.company_map.news_feeds import parse_feed
+from services.company_map.types import FeedItem
 from services.source_health import SourceHealthService
 from storage.database import AsyncSessionLocal, Base, engine
 from storage.models import Company, CompanyNews
@@ -52,6 +54,10 @@ def _first_funded() -> tuple[str, object]:
             if subject and item.published_at:
                 return subject, item
     raise AssertionError("fixture has no dated funding item with a subject")
+
+
+def _stats() -> dict[str, int]:
+    return dict.fromkeys(("fetched", "new", "funding", "linked", "created", "people", "llm"), 0)
 
 
 async def _count(model) -> int:
@@ -123,3 +129,39 @@ async def test_a_dead_feed_is_reported_not_raised():
         result = await news_ingest.ingest_news()
     assert "inc42" in str(result["errors"])
     assert result["new"] == 0
+
+
+async def test_the_same_raise_from_four_outlets_never_duplicates_the_company():
+    # Review #1: a jobs row plus a listed row for one employer, then the same
+    # raise reported four times. Funding lands on the listed row; no new rows.
+    async with AsyncSessionLocal() as session:
+        session.add_all(
+            [
+                Company(name="Ledgerline", domain="ledgerline.talentradar.internal"),
+                Company(name="Ledgerline", domain="ledgerline.in", slug="ledgerline"),
+            ]
+        )
+        await session.commit()
+    items = [
+        FeedItem(
+            url=f"https://{outlet}.example/ledgerline",
+            source=outlet,
+            title="Ledgerline raises $18 Mn in Series B",
+            snippet="",
+            published_at=datetime(2026, 10, 12, tzinfo=UTC),
+        )
+        for outlet in ("inc42", "yourstory", "ettech", "mint")
+    ]
+    async with AsyncSessionLocal() as session:
+        for item in items:
+            await news_ingest._store_item(session, item, _stats())
+        await session.commit()
+
+    async with AsyncSessionLocal() as session:
+        rows = list(
+            (await session.execute(select(Company).where(Company.name == "Ledgerline"))).scalars()
+        )
+    assert len(rows) == 2
+    listed = next(c for c in rows if c.domain == "ledgerline.in")
+    assert listed.stage == "series_b"
+    assert listed.last_funding_at is not None

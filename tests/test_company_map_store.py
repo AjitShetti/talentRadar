@@ -232,3 +232,59 @@ async def test_due_geocode_skips_a_recent_attempt(db_session):
 async def test_unknown_step_has_no_rows(db_session):
     with pytest.raises(ValueError):
         await due(db_session, "nonsense", 10)
+
+
+# ── Rows made by job ingestion (review #1, #2) ───────────────────────────────
+# Job ingestion keys an employer on ``<slug>.talentradar.internal``. That is a
+# placeholder, not an identity: it must never stop a real record attaching,
+# and it must never make a name look ambiguous enough to create a duplicate.
+
+
+async def test_import_attaches_to_a_jobs_row_and_gives_it_the_real_domain(db_session):
+    jobs_row = Company(name="Razorpay", domain="razorpay.talentradar.internal")
+    db_session.add(jobs_row)
+    await db_session.flush()
+
+    company = await upsert_company(db_session, _imported(), "wikidata")
+
+    assert company is jobs_row
+    assert company.domain == "razorpay.com"
+    assert await _count(db_session, name="Razorpay") == 1
+
+
+async def test_ambiguous_name_prefers_the_one_row_with_a_real_domain(db_session):
+    jobs_row = Company(name="Acme", domain="acme.talentradar.internal")
+    real_row = Company(name="Acme Pvt Ltd", domain="acme.com")
+    db_session.add_all([jobs_row, real_row])
+    await db_session.flush()
+
+    found = await find_existing(db_session, domain=None, wikidata_id=None, name="Acme")
+
+    assert found is real_row
+
+
+async def test_a_record_with_no_identity_never_duplicates_a_taken_name(db_session):
+    # Two employers called Acme with different real domains: a news item
+    # naming "Acme" cannot say which one, so it creates nothing.
+    db_session.add_all(
+        [Company(name="Acme", domain="acme.com"), Company(name="Acme", domain="acme.in")]
+    )
+    await db_session.flush()
+
+    company = await upsert_company(
+        db_session, ImportedCompany(name="Acme", domain=None, website_url=None), "news"
+    )
+
+    assert company is None
+    assert await _count(db_session, name="Acme") == 2
+
+
+async def test_posting_company_resolves_to_the_listed_row_by_name(db_session):
+    from services.company_map.store import company_for_posting
+
+    listed = Company(name="Razorpay", domain="razorpay.com")
+    db_session.add(listed)
+    await db_session.flush()
+
+    assert await company_for_posting(db_session, "Razorpay Pvt. Ltd.") is listed
+    assert await company_for_posting(db_session, "Someone Else") is None

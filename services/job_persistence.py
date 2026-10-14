@@ -38,10 +38,14 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from domain.entities import Job
 from ingestion.validation import validate_job_url
+
+if TYPE_CHECKING:
+    from storage.models import Company
+    from storage.repository import UnitOfWork
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +100,29 @@ def _company_domain(company_name: str) -> str:
     """Deterministic pseudo-domain key, matching ingestion/pipeline.py."""
     slug = re.sub(r"[^\w]", "-", company_name.lower()).strip("-")
     return f"{slug}.talentradar.internal"
+
+
+async def posting_company(uow: UnitOfWork, company_name: str) -> Company:
+    """
+    The ``companies`` row a scraped posting belongs to.
+
+    Its placeholder row if one exists; otherwise the one row the company map
+    lists under the same normalised name (an importer may have given the
+    placeholder row its real domain); otherwise a new placeholder row. Without
+    the middle step every posting for a listed employer made a second row,
+    and the map showed that employer with no open roles.
+    """
+    from services.company_map.store import company_for_posting
+
+    placeholder = _company_domain(company_name)
+    found = await uow.companies.get_by_domain(placeholder)
+    if found is None:
+        found = await company_for_posting(uow.companies.session, company_name)
+    if found is None:
+        found, _created = await uow.companies.upsert_by_domain(
+            domain=placeholder, defaults={"name": company_name}
+        )
+    return found
 
 
 def _seen_key(url: str) -> str:
@@ -175,7 +202,9 @@ def embedding_text(job: Job) -> str:
     return " | ".join(p for p in parts if p).strip()
 
 
-async def persist_live_jobs(jobs: list[Job], *, source_label: str = "live_search") -> PersistSummary:
+async def persist_live_jobs(
+    jobs: list[Job], *, source_label: str = "live_search"
+) -> PersistSummary:
     """
     Write live-scraped jobs to Postgres and embed them.
 
@@ -230,10 +259,7 @@ async def persist_live_jobs(jobs: list[Job], *, source_label: str = "live_search
             for job in fresh:
                 try:
                     company_name = (job.extra_metadata or {}).get("company_name") or "Company"
-                    company, _ = await uow.companies.upsert_by_domain(
-                        domain=_company_domain(company_name),
-                        defaults={"name": company_name},
-                    )
+                    company = await posting_company(uow, company_name)
 
                     external_id = job.external_id or _stable_external_id(job)
                     kwargs = build_job_kwargs(job)
@@ -319,7 +345,9 @@ async def _embed_quietly(items: list[dict[str, Any]]) -> None:
 
         store = get_vector_store()
         if store is None:
-            logger.debug("No vector store configured; %d jobs stay relationally searchable", len(items))
+            logger.debug(
+                "No vector store configured; %d jobs stay relationally searchable", len(items)
+            )
             return
 
         embedded = await store.aadd_batch(items)
