@@ -5,6 +5,7 @@ Record real source responses so the contract tests can replay them offline.
 
     python scripts/capture_fixtures.py                  # every source
     python scripts/capture_fixtures.py --source foundit # just one
+    python scripts/capture_fixtures.py --company-map    # company-map importers
 
 Rather than guessing each scraper's request URLs, this wraps
 ``ScraplingManager.fetch_html_or_json`` and records every call the scraper
@@ -130,10 +131,57 @@ async def main_async(args: argparse.Namespace) -> int:
     return 0 if written else 1
 
 
+COMPANY_MAP_DIR = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "company_map"
+_WIKIDATA_KEEP = 40  # companies
+_OVERPASS_KEEP = 80  # elements
+
+
+async def capture_company_map() -> int:
+    """
+    Re-record the company-map importer fixtures: Wikidata, Overpass and the
+    four news feeds, trimmed so they stay small. The people fixtures
+    (GitHub, Tavily) are synthetic by design and are not recorded: real
+    responses would put real individuals' details in the repository.
+    """
+    import re
+
+    import httpx
+
+    from services.company_map import osm, wikidata
+    from services.company_map.news_feeds import FEEDS, fetch_feed
+
+    COMPANY_MAP_DIR.mkdir(parents=True, exist_ok=True)
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        payload = await wikidata.fetch(client)
+        rows = payload.get("results", {}).get("bindings", [])
+        keep = list(dict.fromkeys(r["item"]["value"] for r in rows if "item" in r))[:_WIKIDATA_KEEP]
+        payload["results"]["bindings"] = [r for r in rows if r.get("item", {}).get("value") in keep]
+        (COMPANY_MAP_DIR / "wikidata.json").write_text(json.dumps(payload, indent=1), encoding="utf-8")
+        print(f"  wikidata  {len(keep)} companies")
+
+        overpass = await osm.fetch(client)
+        overpass["elements"] = overpass.get("elements", [])[:_OVERPASS_KEEP]
+        (COMPANY_MAP_DIR / "overpass.json").write_text(json.dumps(overpass, indent=1), encoding="utf-8")
+        print(f"  overpass  {len(overpass['elements'])} elements")
+
+        for source in FEEDS:
+            xml = await fetch_feed(client, source)
+            # Full article bodies are copyrighted and large; the parser never reads them.
+            xml = re.sub(rb"<content:encoded>.*?</content:encoded>", b"", xml, flags=re.S)
+            (COMPANY_MAP_DIR / f"rss_{source}.xml").write_bytes(xml)
+            print(f"  rss_{source:9} {len(xml) // 1024} KB")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Record live source responses as test fixtures.")
     parser.add_argument("--source", action="append", help="Capture only this source (repeatable)")
+    parser.add_argument(
+        "--company-map", action="store_true", help="Record the company-map importer fixtures"
+    )
     args = parser.parse_args()
+    if args.company_map:
+        return asyncio.run(capture_company_map())
     return asyncio.run(main_async(args))
 
 

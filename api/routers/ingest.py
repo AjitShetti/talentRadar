@@ -12,7 +12,7 @@ Provides:
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -226,3 +226,34 @@ async def reverify_postings(limit: int = Query(default=150, ge=1, le=500)) -> di
 
     return await liveness.reverify_batch(limit=limit)
 
+
+RefreshStep = Literal["wikidata", "osm", "sites", "geocode", "summaries", "github"]
+
+
+@router.post("/company-map/refresh", dependencies=[Depends(require_cron_or_admin)])
+async def refresh_company_map(
+    step: RefreshStep, limit: int = Query(default=50, ge=1, le=5000)
+) -> dict[str, int | str]:
+    """
+    Run one bounded company-map refresh step.
+
+    Called by ``.github/workflows/company-map.yml`` - there is no worker.
+    ``run_step`` caps ``limit`` per step (Nominatim's 1 req/s, the daily
+    summary budget) and never raises: a failed step comes back as
+    ``{"error": ...}`` and the rows keep their last good data.
+    """
+    from services.company_map import refresh
+
+    return await refresh.run_step(step, limit)
+
+
+@router.post("/news", dependencies=[Depends(require_cron_or_admin)])
+async def ingest_startup_news() -> dict[str, int | str]:
+    """
+    Fetch the startup-news feeds and let funding move the company map.
+
+    Called every 3 h by ``.github/workflows/news.yml``. Never raises.
+    """
+    from services.company_map import news_ingest
+
+    return await news_ingest.ingest_news()
