@@ -459,7 +459,8 @@ class _Fetched:
 
 
 def _content_type(response: httpx.Response) -> str:
-    return response.headers.get("content-type", "").split(";")[0].strip().lower()
+    value = str(response.headers.get("content-type", ""))
+    return value.split(";")[0].strip().lower()
 
 
 def _is_html(response: httpx.Response) -> bool:
