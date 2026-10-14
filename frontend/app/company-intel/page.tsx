@@ -1,267 +1,985 @@
 'use client'
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
+import { FormEvent, ReactNode, RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Building2, Calendar, ExternalLink, Github, Globe, Linkedin, Loader2, Mail,
-  Plus, Search, Sparkles, Star, Trash2, Users, X,
+  Briefcase, Building2, Calendar, ChevronUp, ExternalLink, Github, Globe, Info, Linkedin, List, Loader2,
+  Mail, Map as MapIcon, Newspaper, Plus, Search, SlidersHorizontal, Sparkles, Star, Trash2, Users, X,
 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
+import CompanyMap from '@/components/CompanyMap'
 import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
 import {
-  api, CompanyCard, CompanyContact, CompanyDetail, CompanyFacets, ContactCandidate, NewContact,
+  api, CompanyCard, CompanyContact, CompanyDetail, CompanyListFilters, CompanyNewsItem, CompanyPerson,
+  ContactCandidate, decodeMapRows, GeoPrecision, MapCompany, NewContact, SummarySource,
 } from '@/lib/api'
 import { usePersistentState } from '@/lib/persistent-state'
+import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 
-/** Initials shown when a company has no logo on file. */
+const CITY = 'Bengaluru'
+/** Width of the docked drawer, as in `.ci-drawer`. */
+const DRAWER_WIDTH = 540
+/** At least this wide and the drawer docks beside the map; narrower and it overlays it. */
+const DOCK_QUERY = '(min-width: 1000px)'
+const NARROW_QUERY = '(max-width: 699px)'
+const RAISED_DAYS = 90
+
+// ── Vocabularies ─────────────────────────────────────────────────────────────
+// Mirrors domain/company_taxonomy.py and services/companies.py::TIER_LABELS.
+// The map rows carry codes only, so the labels live here; the list and the
+// drawer use the API's own labels.
+const TIERS: Record<string, string> = {
+  big_tech: 'Big Tech', unicorn: 'Unicorn', gcc: 'Global Capability Centre', scaleup: 'Scale-up',
+  startup: 'Startup', agency: 'Agency & Studio', services: 'IT Services', vc: 'Venture Capital',
+}
+const STAGES: Record<string, string> = {
+  bootstrapped: 'Bootstrapped', pre_seed: 'Pre-seed', seed: 'Seed', series_a: 'Series A', series_b: 'Series B',
+  series_c_plus: 'Series C+', public: 'Public', acquired: 'Acquired',
+}
+const SECTORS: Record<string, string> = {
+  ai: 'AI', saas: 'SaaS', fintech: 'Fintech', consumer: 'Consumer', d2c: 'D2C', deeptech: 'Deeptech', edtech: 'Edtech',
+  healthtech: 'Healthtech', logistics: 'Logistics & mobility', gaming: 'Gaming', devtools: 'Developer tools',
+  it_services: 'IT services', other: 'Other',
+}
+const SIZES: Record<string, string> = { '1-50': '1–50', '51-200': '51–200', '201-1000': '201–1,000', '1000+': '1,000+' }
+const SUMMARY_SOURCE: Record<SummarySource, string> = {
+  curated: 'curated', site: 'from their website', wikidata: 'from Wikidata', llm: 'AI summary',
+}
+const PEOPLE_KINDS = new Set(['founder', 'leader', 'engineer'])
+/** Stands in for the unpinned ids when that filter is off, so the list does not refetch when the map rows arrive. */
+const NO_IDS: ReadonlySet<string> = new Set()
+
+type SelectKey = 'type' | 'area' | 'stage' | 'sector' | 'size'
+const SELECTS: ReadonlyArray<{ key: SelectKey; label: string; all: string; field: 'tier' | 'area' | 'stage' | 'sector' | 'size'; names: Record<string, string> | null }> = [
+  { key: 'type', label: 'Type', all: 'All types', field: 'tier', names: TIERS },
+  { key: 'area', label: 'Area', all: 'All areas', field: 'area', names: null },
+  { key: 'stage', label: 'Stage', all: 'Any stage', field: 'stage', names: STAGES },
+  { key: 'sector', label: 'Sector', all: 'All sectors', field: 'sector', names: SECTORS },
+  { key: 'size', label: 'Size', all: 'Any size', field: 'size', names: SIZES },
+]
+
+type Filters = { q: string; type: string; area: string; stage: string; sector: string; size: string; hiring: boolean; raised: boolean; unpinned: boolean }
+type Option = { value: string; label: string; count: number }
+type View = 'map' | 'list'
+
+// ── Small helpers ────────────────────────────────────────────────────────────
 function initials(name: string) {
   const words = name.replace(/[^\w\s]/g, ' ').split(/\s+/).filter(Boolean)
   return ((words[0]?.[0] || '') + (words[1]?.[0] || '')).toUpperCase() || name.slice(0, 2).toUpperCase()
 }
 
+const fmt = (n: number) => n.toLocaleString('en-IN')
+
+function fmtDate(iso: string | null | undefined): string | null {
+  if (!iso) return null
+  const date = new Date(iso)
+  return Number.isNaN(date.getTime()) ? null : date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+function ago(iso: string | null | undefined): string | null {
+  if (!iso) return null
+  const then = new Date(iso).getTime()
+  if (Number.isNaN(then)) return null
+  const hours = Math.max(0, Math.round((Date.now() - then) / 3_600_000))
+  if (hours < 1) return 'just now'
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.round(hours / 24)
+  return days < 60 ? `${days}d ago` : fmtDate(iso)
+}
+
+function hostOf(href: string): string {
+  try { return new URL(href).hostname.replace(/^www\./, '') } catch { return href }
+}
+
+function useMedia(query: string): boolean {
+  const [matches, setMatches] = useState(false)
+  useEffect(() => {
+    const list = window.matchMedia(query)
+    const update = () => setMatches(list.matches)
+    update()
+    list.addEventListener('change', update)
+    return () => list.removeEventListener('change', update)
+  }, [query])
+  return matches
+}
+
+/** The name of a company's tier, for a map row (which carries the code only). */
+const tierName = (tier: string | null) => (tier ? TIERS[tier] || tier : 'Unclassified')
+
+/** A link to a page outside the app. Anything that is not http(s) renders as plain text. */
+function ExtLink({ href, className, label, children }: { href: string | null | undefined; className?: string; label?: string; children: ReactNode }) {
+  const safe = externalHref(href)
+  if (!safe) return <span className={className}>{children}</span>
+  return <a href={safe} className={className} aria-label={label} {...EXTERNAL_LINK_PROPS}>{children}</a>
+}
+
 function Logo({ company }: { company: { name: string; logo_url?: string | null } }) {
-  return <span className="ci-logo">{company.logo_url
-    ? <img src={company.logo_url} alt="" />
+  const src = externalHref(company.logo_url)
+  return <span className="ci-logo">{src
+    // eslint-disable-next-line @next/next/no-img-element
+    ? <img src={src} alt="" />
     : initials(company.name)}</span>
 }
 
 function TierBadge({ tier, label }: { tier?: string | null; label?: string | null }) {
   if (!tier) return null
-  return <span className="ci-tier" data-tier={tier}>{label || tier.replace('_', ' ')}</span>
+  return <span className="ci-tier" data-tier={tier}>{label || TIERS[tier] || tier.replace('_', ' ')}</span>
 }
 
-const CONTACT_KINDS = [
-  ['recruiter', 'Recruiter'], ['referral', 'Referral'], ['careers_inbox', 'Careers inbox'],
-  ['careers_page', 'Careers page'], ['other', 'Other'],
-] as const
+/** Dot for a precise location, ring for an approximate one, dashed ring for none. */
+function PrecisionGlyph({ precision }: { precision: GeoPrecision | null | undefined }) {
+  if (!precision || precision === 'city') {
+    return <svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="3.4" className="cm-glyph-none" /></svg>
+  }
+  return precision === 'area'
+    ? <svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="3.4" className="cm-glyph-ring" /></svg>
+    : <svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="3.6" className="cm-glyph-dot" /></svg>
+}
 
-export default function CompanyIntelPage() {
-  const [city, setCity] = usePersistentState('companyIntel.city', 'Bengaluru')
-  const [tier, setTier] = usePersistentState('companyIntel.tier', '')
-  const [industry, setIndustry] = usePersistentState('companyIntel.industry', '')
-  const [query, setQuery] = usePersistentState('companyIntel.query', '')
-  const [openRolesOnly, setOpenRolesOnly] = usePersistentState('companyIntel.openRolesOnly', false)
+const PRECISION_SHORT: Record<GeoPrecision, string> = { exact: 'Exact', street: 'Street', area: 'Approximate', city: 'Not pinned' }
 
-  const [companies, setCompanies] = useState<CompanyCard[]>([])
-  const [total, setTotal] = useState(0)
-  const [loadingMore, setLoadingMore] = useState(false)
-  const [facets, setFacets] = useState<CompanyFacets | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [selectedId, setSelectedId] = usePersistentState<string | null>('companyIntel.selectedId', null)
+function precisionNote(precision: GeoPrecision | null | undefined, area: string | null | undefined): string {
+  switch (precision) {
+    case 'exact': return 'Exact location'
+    case 'street': return 'Street-level — geocoded from their address'
+    case 'area': return `Approximate — area only. The pin is offset within ${area || 'the area'}`
+    default: return 'Not pinned — no address or area on record. List only'
+  }
+}
 
-  // The search box types faster than the API answers, so debounce the term the
-  // request actually uses rather than firing on every keystroke.
-  const [debouncedQuery, setDebouncedQuery] = useState(query)
+// ── Filtering ────────────────────────────────────────────────────────────────
+function rowMatches(row: MapCompany, f: Filters, skip?: SelectKey): boolean {
+  if (skip !== 'type' && f.type && row.tier !== f.type) return false
+  if (skip !== 'area' && f.area && row.area !== f.area) return false
+  if (skip !== 'stage' && f.stage && row.stage !== f.stage) return false
+  if (skip !== 'sector' && f.sector && row.sector !== f.sector) return false
+  if (skip !== 'size' && f.size && row.size !== f.size) return false
+  if (f.hiring && row.openRoles <= 0) return false
+  if (f.raised && !row.raised90d) return false
+  if (f.unpinned && row.lat != null) return false
+  const q = f.q.trim().toLowerCase()
+  if (q) {
+    const hay = [row.name, row.area, row.sector && SECTORS[row.sector], row.stage && STAGES[row.stage], tierName(row.tier)]
+      .filter(Boolean).join(' ').toLowerCase()
+    if (!q.split(/\s+/).every(token => hay.includes(token))) return false
+  }
+  return true
+}
+
+/** The options of one select, counted with every other filter applied. */
+function optionsFor(rows: MapCompany[], filters: Filters, spec: (typeof SELECTS)[number]): Option[] {
+  const counts = new Map<string, number>()
+  for (const row of rows) {
+    const value = row[spec.field]
+    if (value && rowMatches(row, filters, spec.key)) counts.set(value, (counts.get(value) || 0) + 1)
+  }
+  const selected = filters[spec.key]
+  if (selected && !counts.has(selected)) counts.set(selected, 0)
+  const names = spec.names
+  if (names) {
+    return Object.keys(names).filter(value => counts.has(value)).map(value => ({ value, label: names[value], count: counts.get(value) || 0 }))
+  }
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([value, count]) => ({ value, label: value, count }))
+}
+
+// ── Dialog behaviour ─────────────────────────────────────────────────────────
+const FOCUSABLE = 'a[href],button:not([disabled]),select:not([disabled]),input:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
+
+/**
+ * Focus moves into the dialog when it opens and back to what opened it when it
+ * closes. Escape closes it. A modal dialog also keeps Tab inside itself.
+ */
+function useDialog(ref: RefObject<HTMLElement>, onClose: () => void, options: { modal: boolean; closeOnEscape: boolean }) {
+  const { modal, closeOnEscape } = options
+  const closeRef = useRef(onClose)
+  useEffect(() => { closeRef.current = onClose })
+
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedQuery(query), 250)
-    return () => clearTimeout(timer)
-  }, [query])
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const root = ref.current
+    const first = root?.querySelector<HTMLElement>('[data-autofocus]') ?? root
+    first?.focus({ preventScroll: true })
+    return () => { if (opener?.isConnected) opener.focus({ preventScroll: true }) }
+  }, [ref])
 
-  useEffect(() => { api.company.facets(city).then(setFacets).catch(() => setFacets(null)) }, [city])
+  useEffect(() => {
+    if (!closeOnEscape) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented) closeRef.current() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [closeOnEscape])
+
+  return useCallback((e: React.KeyboardEvent) => {
+    if (!modal || e.key !== 'Tab' || !ref.current) return
+    const items = Array.from(ref.current.querySelectorAll<HTMLElement>(FOCUSABLE))
+    if (!items.length) return
+    const firstItem = items[0]
+    const lastItem = items[items.length - 1]
+    if (e.shiftKey && (document.activeElement === firstItem || document.activeElement === ref.current)) { e.preventDefault(); lastItem.focus() }
+    else if (!e.shiftKey && document.activeElement === lastItem) { e.preventDefault(); firstItem.focus() }
+  }, [modal, ref])
+}
+
+// ── The page ─────────────────────────────────────────────────────────────────
+export default function CompanyIntelPage() {
+  const [q, setQ] = usePersistentState('companyIntel.query', '')
+  const [type, setType] = usePersistentState('companyIntel.tier', '')
+  const [area, setArea] = usePersistentState('companyIntel.area', '')
+  const [stage, setStage] = usePersistentState('companyIntel.stage', '')
+  const [sector, setSector] = usePersistentState('companyIntel.sector', '')
+  const [size, setSize] = usePersistentState('companyIntel.size', '')
+  const [hiring, setHiring] = usePersistentState('companyIntel.openRolesOnly', false)
+  const [raised, setRaised] = usePersistentState('companyIntel.raised', false)
+  const [storedView, setStoredView, viewHydrated] = usePersistentState<View | null>('companyIntel.view', null, 'local')
+  const [newsOpenStored, setNewsOpen] = usePersistentState<boolean | null>('companyIntel.newsOpen', null)
+  const [unpinned, setUnpinned] = useState(false)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [sheetOpen, setSheetOpen] = useState(false)
+
+  const [rows, setRows] = useState<MapCompany[]>([])
+  const [counts, setCounts] = useState({ total: 0, pinned: 0 })
+  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [error, setError] = useState('')
+  const [hiringIds, setHiringIds] = useState<ReadonlySet<string>>(() => new Set())
+  const [news, setNews] = useState<CompanyNewsItem[]>([])
+  const [mapDown, setMapDown] = useState('')
+  const [listTotal, setListTotal] = useState<number | null>(null)
+
+  const narrow = useMedia(NARROW_QUERY)
+  const canDock = useMedia(DOCK_QUERY)
+
+  // The search box types faster than the filters need to run.
+  const [debouncedQuery, setDebouncedQuery] = useState(q)
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(q), 250)
+    return () => clearTimeout(timer)
+  }, [q])
+
+  // Three reads and nothing else: the map rows, the user's hiring set, the news.
+  // The second and third are extras; the page works without either.
+  useEffect(() => {
+    let cancelled = false
+    api.company.map(CITY)
+      .then(payload => {
+        if (cancelled) return
+        setRows(decodeMapRows(payload.rows))
+        setCounts({ total: payload.total, pinned: payload.pinned })
+        setLoadState('ready')
+      })
+      .catch(err => {
+        if (cancelled) return
+        setError(err instanceof Error ? err.message : 'Could not load the company map.')
+        setLoadState('error')
+      })
+    api.company.mapForMe().then(r => { if (!cancelled) setHiringIds(new Set(r.hiring_for_you)) }).catch(() => undefined)
+    api.company.news(5).then(items => { if (!cancelled) setNews(items) }).catch(() => undefined)
+    return () => { cancelled = true }
+  }, [])
+
+  const filters = useMemo<Filters>(
+    () => ({ q: debouncedQuery, type, area, stage, sector, size, hiring, raised, unpinned }),
+    [debouncedQuery, type, area, stage, sector, size, hiring, raised, unpinned],
+  )
+  const setters: Record<SelectKey, (value: string) => void> = { type: setType, area: setArea, stage: setStage, sector: setSector, size: setSize }
+
+  const rowsById = useMemo(() => new Map(rows.map(r => [r.id, r])), [rows])
+  const visible = useMemo(() => rows.filter(r => rowMatches(r, filters)), [rows, filters])
+  const options = useMemo(
+    () => Object.fromEntries(SELECTS.map(spec => [spec.key, optionsFor(rows, filters, spec)])) as Record<SelectKey, Option[]>,
+    [rows, filters],
+  )
+  const unpinnedIds = useMemo(() => new Set(rows.filter(r => r.lat == null).map(r => r.id)), [rows])
+  const visibleUnpinned = useMemo(() => visible.filter(r => r.lat == null).length, [visible])
+  const raisedCount = useMemo(() => rows.filter(r => r.raised90d).length, [rows])
+
+  // Which view: the user's choice if they made one, else the map unless fewer
+  // than half the employers could be pinned (spec §1), and always the list
+  // when the map cannot be drawn.
+  const sparse = loadState === 'ready' && (counts.total === 0 || counts.pinned * 2 < counts.total)
+  const view: View = mapDown || loadState === 'error' ? 'list' : (storedView ?? (sparse ? 'list' : 'map'))
+  const autoList = view === 'list' && !mapDown && loadState === 'ready' && storedView === null && sparse
+  const mapActive = view === 'map' && viewHydrated && loadState === 'ready'
+  const docked = view === 'map' && canDock && !mapDown
+  const newsOpen = newsOpenStored ?? !narrow
+
+  const chooseView = (next: View) => {
+    if (next === 'map' && mapDown) return
+    setStoredView(next)
+    if (next === 'map') setUnpinned(false)
+  }
+  const seeUnpinned = () => { setUnpinned(true); setStoredView('list') }
+
+  const clearAll = () => {
+    setQ(''); setType(''); setArea(''); setStage(''); setSector(''); setSize(''); setHiring(false); setRaised(false); setUnpinned(false)
+  }
+  const activeCount = (['type', 'area', 'stage', 'sector', 'size'] as const).filter(k => filters[k]).length
+    + (hiring ? 1 : 0) + (raised ? 1 : 0) + (unpinned ? 1 : 0)
+  const shown = view === 'list' ? listTotal : visible.length
+
+  const openNews = (item: CompanyNewsItem) => { if (item.company_id) setSelectedId(item.company_id) }
+  const closeDrawer = useCallback(() => setSelectedId(null), [])
+
+  const selectedRow = selectedId ? rowsById.get(selectedId) ?? null : null
+
+  const readout: Array<[string, number | null]> = [
+    ['employers', loadState === 'ready' ? counts.total : null],
+    ['on the map', loadState === 'ready' ? counts.pinned : null],
+    [`raised in ${RAISED_DAYS} days`, loadState === 'ready' ? raisedCount : null],
+  ]
+
+  const drawer = selectedId && <CompanyDrawer
+    companyId={selectedId}
+    fallbackName={selectedRow?.name}
+    hiringForYou={hiringIds.has(selectedId)}
+    docked={docked}
+    closeOnEscape={!sheetOpen}
+    onClose={closeDrawer}
+  />
+
+  return <RequireAuth><AppShell bleed>
+    <div className="cm-root">
+      <div className={`cm-page ${view === 'map' ? 'is-map' : 'is-list'}`} data-view={view}>
+        <div className="cm-top">
+          <div className="cm-inner">
+            <section className="page-heading cm-heading">
+              <div className="cm-title">
+                <span className="board-kicker">Company Intel — {CITY}</span>
+                <h1>Every tech employer in {CITY}, on one map<span>.</span></h1>
+              </div>
+              <dl className="cm-readout" aria-label={`${CITY} employers`}>
+                {readout.map(([label, value]) =>
+                  <div key={label}>
+                    <dt>{label}</dt>
+                    <dd>{value === null ? <span className="cm-dash">—</span> : <FlapText value={fmt(value)} />}</dd>
+                  </div>)}
+              </dl>
+            </section>
+
+            <div className="ci-toolbar cm-toolbar">
+              <div className="ci-searchbar">
+                <Search size={19} />
+                <input
+                  type="search"
+                  value={q}
+                  onChange={e => setQ(e.target.value)}
+                  placeholder={view === 'map' ? 'Search by name, area, sector or type — e.g. fintech, Koramangala' : 'Search by name, industry or what they do — e.g. payments, Rust, Razorpay'}
+                  aria-label="Search companies"
+                />
+                {SELECTS.map(spec =>
+                  <select
+                    key={spec.key}
+                    value={filters[spec.key]}
+                    data-set={filters[spec.key] ? 'true' : 'false'}
+                    onChange={e => setters[spec.key](e.target.value)}
+                    aria-label={spec.label}
+                  >
+                    <option value="">{spec.all}</option>
+                    {options[spec.key].map(o => <option key={o.value} value={o.value}>{o.label} ({o.count})</option>)}
+                  </select>)}
+                <button type="button" className="cm-filter-btn" onClick={() => setSheetOpen(true)} aria-haspopup="dialog">
+                  <SlidersHorizontal size={13} />Filters{activeCount > 0 && <b>{activeCount}</b>}
+                </button>
+              </div>
+
+              <div className="ci-chips">
+                <button type="button" className={`ci-chip ci-chip-toggle cm-toggle ${hiring ? 'active' : ''}`} aria-pressed={hiring} onClick={() => setHiring(!hiring)}>
+                  <Sparkles size={12} />Hiring now
+                </button>
+                <button type="button" className={`ci-chip ci-chip-toggle cm-toggle ${raised ? 'active' : ''}`} aria-pressed={raised} onClick={() => setRaised(!raised)}>
+                  Raised ≤ {RAISED_DAYS} days
+                </button>
+                {SELECTS.filter(spec => filters[spec.key]).map(spec =>
+                  <button type="button" key={spec.key} className="ci-chip cm-applied" onClick={() => setters[spec.key]('')} aria-label={`Clear ${spec.label}: ${spec.names?.[filters[spec.key]] || filters[spec.key]}`}>
+                    {spec.names?.[filters[spec.key]] || filters[spec.key]}<X size={11} />
+                  </button>)}
+                {unpinned && <button type="button" className="ci-chip cm-applied" onClick={() => setUnpinned(false)} aria-label="Clear Not pinned">Not pinned<X size={11} /></button>}
+                {narrow && hiring && <button type="button" className="ci-chip cm-applied" onClick={() => setHiring(false)} aria-label="Clear Hiring now">Hiring now<X size={11} /></button>}
+                {narrow && raised && <button type="button" className="ci-chip cm-applied" onClick={() => setRaised(false)} aria-label="Clear Raised">Raised ≤ {RAISED_DAYS} days<X size={11} /></button>}
+                {activeCount > 0 && <button type="button" className="cm-clear" onClick={clearAll}>Clear all</button>}
+
+                <span className="ci-count cm-count" role="status">
+                  {shown === null ? <span className="cm-dash">—</span> : <FlapText value={fmt(shown)} />} shown
+                </span>
+                <div className="cm-view" role="group" aria-label="View" data-testid="view-switch">
+                  <button type="button" aria-pressed={view === 'map'} aria-disabled={Boolean(mapDown)} title={mapDown ? 'Map unavailable' : undefined} onClick={() => chooseView('map')}>
+                    <MapIcon size={13} />Map
+                  </button>
+                  <i aria-hidden="true" />
+                  <button type="button" aria-pressed={view === 'list'} onClick={() => chooseView('list')}>
+                    <List size={13} />List
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {mapDown && <div className="cm-inner"><p className="cm-fallback" role="status"><Info size={15} /><span>Map unavailable — showing the list.</span><small>{mapDown}</small></p></div>}
+        {autoList && <div className="cm-inner"><p className="cm-fallback" role="status"><Info size={15} /><span>Fewer than half of these employers have a location yet, so the page opens on the list.</span></p></div>}
+        {error && <div className="cm-inner"><p className="form-error cm-error">{error}</p></div>}
+
+        {!mapDown && <section className="cm-stage" hidden={view !== 'map'} data-testid="company-map-stage" data-drawer={docked && selectedId ? 'open' : 'closed'}>
+          <div className={`cm-stage-inner ${docked && selectedId ? 'has-drawer' : ''}`}>
+            <CompanyMap
+              rows={visible}
+              litIds={hiringIds}
+              selectedId={selectedId}
+              selected={selectedRow}
+              active={mapActive}
+              rightInset={docked && selectedId ? DRAWER_WIDTH : 0}
+              onSelect={setSelectedId}
+              onUnavailable={setMapDown}
+            />
+            {visibleUnpinned > 0 && <button type="button" className="ci-chip cm-float cm-unpinned" data-testid="unpinned-chip" onClick={seeUnpinned}>
+              <strong>{fmt(visibleUnpinned)}</strong> not pinned — see List
+            </button>}
+            {news.length > 0 && <NewsStrip items={news} open={newsOpen} onToggle={() => setNewsOpen(!newsOpen)} onOpen={openNews} />}
+            {docked && drawer}
+          </div>
+        </section>}
+
+        {view === 'list' && <div className="cm-inner cm-list">
+          <DirectoryList
+            filters={filters}
+            unpinnedIds={filters.unpinned ? unpinnedIds : NO_IDS}
+            unpinnedCount={Math.max(0, counts.total - counts.pinned)}
+            selectedId={selectedId}
+            onPick={setSelectedId}
+            onToggleUnpinned={() => setUnpinned(!unpinned)}
+            onTotal={setListTotal}
+            anyFilter={activeCount > 0 || Boolean(filters.q)}
+            loadingRows={loadState === 'loading'}
+          />
+        </div>}
+      </div>
+
+      {!docked && selectedId && <>
+        <button type="button" className="ci-backdrop cm-over" onClick={closeDrawer} aria-label="Close company details" />
+        {drawer}
+      </>}
+      {sheetOpen && narrow && <FilterSheet
+        filters={filters}
+        options={options}
+        count={view === 'list' ? listTotal : visible.length}
+        setters={setters}
+        onHiring={setHiring}
+        onRaised={setRaised}
+        onClear={clearAll}
+        onClose={() => setSheetOpen(false)}
+      />}
+    </div>
+  </AppShell></RequireAuth>
+}
+
+// ── News strip ───────────────────────────────────────────────────────────────
+function NewsStrip({ items, open, onToggle, onOpen }: {
+  items: CompanyNewsItem[]
+  open: boolean
+  onToggle: () => void
+  onOpen: (item: CompanyNewsItem) => void
+}) {
+  const meta = (item: CompanyNewsItem) => <span className="cm-meta">
+    {item.category === 'funding' && <span className="cm-tag">Funding</span>}
+    <span>{[item.source, ago(item.published_at)].filter(Boolean).join(' · ')}</span>
+  </span>
+  return <div className={`cm-float cm-news ${open ? 'is-open' : ''}`} data-testid="news-strip">
+    <button type="button" className="cm-news-head" onClick={onToggle} aria-expanded={open} aria-controls="cm-news-list">
+      <Newspaper size={14} /><strong>Latest</strong><em>{items.length}</em><ChevronUp size={14} className="cm-chev" />
+    </button>
+    <ol id="cm-news-list" hidden={!open}>
+      {items.map(item =>
+        <li key={item.id}>
+          {item.company_id
+            ? <button type="button" className="cm-news-item" onClick={() => onOpen(item)}>
+                <b>{item.title}</b>{meta(item)}
+              </button>
+            : <ExtLink href={item.url} className="cm-news-item">
+                <b>{item.title}<ExternalLink size={10} className="cm-ext" /></b>{meta(item)}
+              </ExtLink>}
+        </li>)}
+    </ol>
+  </div>
+}
+
+// ── Filter sheet (below 700px) ───────────────────────────────────────────────
+function FilterSheet({ filters, options, count, setters, onHiring, onRaised, onClear, onClose }: {
+  filters: Filters
+  options: Record<SelectKey, Option[]>
+  count: number | null
+  setters: Record<SelectKey, (value: string) => void>
+  onHiring: (value: boolean) => void
+  onRaised: (value: boolean) => void
+  onClear: () => void
+  onClose: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const onKeyDown = useDialog(ref, onClose, { modal: true, closeOnEscape: true })
+  return <>
+    <button type="button" className="cm-sheet-backdrop" onClick={onClose} aria-label="Close filters" />
+    <div ref={ref} className="cm-sheet" role="dialog" aria-modal="true" aria-labelledby="cm-sheet-title" tabIndex={-1} onKeyDown={onKeyDown}>
+      <span className="cm-sheet-grip" aria-hidden="true" />
+      <div className="cm-sheet-head">
+        <h2 id="cm-sheet-title">Filters</h2>
+        <button type="button" className="ci-close" onClick={onClose} aria-label="Close filters" data-autofocus><X size={18} /></button>
+      </div>
+      {SELECTS.map(spec =>
+        <label key={spec.key}>
+          <span>{spec.label}</span>
+          <select value={filters[spec.key]} onChange={e => setters[spec.key](e.target.value)}>
+            <option value="">{spec.all}</option>
+            {options[spec.key].map(o => <option key={o.value} value={o.value}>{o.label} ({o.count})</option>)}
+          </select>
+        </label>)}
+      <div className="cm-sheet-toggles">
+        <button type="button" className={`ci-chip ci-chip-toggle cm-toggle ${filters.hiring ? 'active' : ''}`} aria-pressed={filters.hiring} onClick={() => onHiring(!filters.hiring)}>
+          <Sparkles size={12} />Hiring now
+        </button>
+        <button type="button" className={`ci-chip ci-chip-toggle cm-toggle ${filters.raised ? 'active' : ''}`} aria-pressed={filters.raised} onClick={() => onRaised(!filters.raised)}>
+          Raised ≤ {RAISED_DAYS} days
+        </button>
+      </div>
+      <div className="cm-sheet-foot">
+        <button type="button" className="cm-clear" onClick={onClear}>Clear all</button>
+        <button type="button" className="primary-button" onClick={onClose}>
+          {count === null ? 'Show companies' : `Show ${fmt(count)} ${count === 1 ? 'company' : 'companies'}`}
+        </button>
+      </div>
+    </div>
+  </>
+}
+
+// ── List view ────────────────────────────────────────────────────────────────
+function DirectoryList({ filters, unpinnedIds, unpinnedCount, selectedId, onPick, onToggleUnpinned, onTotal, anyFilter, loadingRows }: {
+  filters: Filters
+  unpinnedIds: ReadonlySet<string>
+  unpinnedCount: number
+  selectedId: string | null
+  onPick: (id: string) => void
+  onToggleUnpinned: () => void
+  onTotal: (total: number | null) => void
+  anyFilter: boolean
+  loadingRows: boolean
+}) {
+  const [cards, setCards] = useState<CompanyCard[]>([])
+  const [total, setTotal] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [error, setError] = useState('')
+
+  // The server runs the list's filters (it can search what a company does).
+  // "Not pinned" is the one thing only the map rows know, so that filter reads
+  // every page and keeps the cards whose id has no position.
+  const query = useMemo<CompanyListFilters>(() => ({
+    city: CITY,
+    tier: filters.type || undefined,
+    q: filters.q.trim() || undefined,
+    stage: filters.stage || undefined,
+    sector: filters.sector || undefined,
+    area: filters.area || undefined,
+    size: filters.size || undefined,
+    hasOpenRoles: filters.hiring,
+    raisedWithinDays: filters.raised ? RAISED_DAYS : undefined,
+  }), [filters.type, filters.q, filters.stage, filters.sector, filters.area, filters.size, filters.hiring, filters.raised])
+  const onlyUnpinned = filters.unpinned
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    api.company
-      .directory({ city, tier: tier || undefined, industry: industry || undefined, q: debouncedQuery || undefined, hasOpenRoles: openRolesOnly })
-      .then(result => { if (!cancelled) { setCompanies(result.companies); setTotal(result.total); setError('') } })
-      .catch(err => { if (!cancelled) { setCompanies([]); setTotal(0); setError(err instanceof Error ? err.message : 'Could not load the company directory.') } })
+    const run = async (): Promise<{ cards: CompanyCard[]; total: number }> => {
+      if (!onlyUnpinned) {
+        const result = await api.company.directory(query)
+        return { cards: result.companies, total: result.total }
+      }
+      const all: CompanyCard[] = []
+      for (let page = 0; page < 8; page += 1) {
+        const result = await api.company.directory({ ...query, limit: 200, offset: all.length })
+        all.push(...result.companies)
+        if (!result.companies.length || all.length >= result.total) break
+      }
+      const only = all.filter(c => unpinnedIds.has(c.id))
+      return { cards: only, total: only.length }
+    }
+    run()
+      .then(result => { if (!cancelled) { setCards(result.cards); setTotal(result.total); setError('') } })
+      .catch(err => { if (!cancelled) { setCards([]); setTotal(0); setError(err instanceof Error ? err.message : 'Could not load the company directory.') } })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [city, tier, industry, debouncedQuery, openRolesOnly])
+  }, [query, onlyUnpinned, unpinnedIds])
+
+  useEffect(() => { onTotal(loading ? null : total) }, [loading, total, onTotal])
+  useEffect(() => () => onTotal(null), [onTotal])
 
   // The directory arrives a page at a time; the rest is fetched on request so
-  // the first paint does not wait on four hundred cards.
+  // the first paint does not wait on every card.
   const loadMore = () => {
     setLoadingMore(true)
-    api.company
-      .directory({ city, tier: tier || undefined, industry: industry || undefined, q: debouncedQuery || undefined, hasOpenRoles: openRolesOnly, offset: companies.length })
-      .then(result => { setCompanies(current => [...current, ...result.companies.filter(c => !current.some(have => have.id === c.id))]); setTotal(result.total) })
+    api.company.directory({ ...query, offset: cards.length })
+      .then(result => { setCards(current => [...current, ...result.companies.filter(c => !current.some(have => have.id === c.id))]); setTotal(result.total) })
       .catch(err => setError(err instanceof Error ? err.message : 'Could not load more companies.'))
       .finally(() => setLoadingMore(false))
   }
 
-  const cities = facets?.cities?.length ? facets.cities : ['Bengaluru']
+  return <>
+    {unpinnedCount > 0 && !loadingRows && <div className="cm-unpinned-note">
+      <span className="cm-note-text">
+        <PrecisionGlyph precision="city" />
+        <span><strong><FlapText value={fmt(unpinnedCount)} /></strong> not pinned — no address or area on record yet, so they are in the list only.</span>
+      </span>
+      <button type="button" className={`ci-chip ci-chip-toggle cm-toggle ${onlyUnpinned ? 'active' : ''}`} aria-pressed={onlyUnpinned} onClick={onToggleUnpinned}>
+        {onlyUnpinned ? 'Showing only these' : 'Show only these'}
+      </button>
+    </div>}
 
-  return <RequireAuth><AppShell>
-    <section className="page-heading">
-      <div>
-        <span className="board-kicker">Company intelligence</span>
-        <h1>Every tech employer hiring in {city}<span>.</span></h1>
-        <p>Big Tech, global capability centres, unicorns, startups, agencies and IT services — what they build, the stack they build it on, their open source, and how to reach their talent team.</p>
-      </div>
-      {!loading && companies.length > 0 && <div className="tracker-total"><strong><FlapText value={total || companies.length} /></strong><span>on the board</span></div>}
-    </section>
+    {error && <p className="form-error cm-error">{error}</p>}
 
-    <div className="ci-toolbar">
-      <div className="ci-searchbar">
-        <Search size={19} />
-        <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search by name, industry or what they do — e.g. payments, Rust, Razorpay" />
-        <select value={city} onChange={e => { setCity(e.target.value); setIndustry('') }} aria-label="City">
-          {cities.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <select value={industry} onChange={e => setIndustry(e.target.value)} aria-label="Industry">
-          <option value="">All industries</option>
-          {(facets?.industries || []).map(i => <option key={i.value} value={i.value}>{i.value} ({i.count})</option>)}
-        </select>
-      </div>
-
-      <div className="ci-chips">
-        <button className={`ci-chip ${tier ? '' : 'active'}`} onClick={() => setTier('')}>All</button>
-        {(facets?.tiers || []).map(t =>
-          <button key={t.value} className={`ci-chip ${tier === t.value ? 'active' : ''}`} onClick={() => setTier(tier === t.value ? '' : t.value)}>
-            {t.label}<b>{t.count}</b>
-          </button>)}
-        <button className={`ci-chip ci-chip-toggle ${openRolesOnly ? 'active' : ''}`} onClick={() => setOpenRolesOnly(!openRolesOnly)}>
-          <Sparkles size={12} />Open roles only
-        </button>
-        {industry && <button className="ci-chip active" onClick={() => setIndustry('')}>{industry}<X size={11} /></button>}
-      </div>
-    </div>
-
-    {error && <p className="form-error">{error}</p>}
-
-    {loading && companies.length === 0
-      ? <div className="loading-state"><Loader2 size={18} className="spin" />Loading the directory…</div>
-      : companies.length === 0
+    {loading && cards.length === 0
+      ? <div className="ci-grid cm-skeleton" aria-busy="true" aria-label="Loading the directory">
+          {Array.from({ length: 8 }, (_, i) =>
+            <div key={i} className="cm-skel-row"><span className="cm-skel cm-skel-logo" /><span className="cm-skel cm-skel-name" /><span className="cm-skel cm-skel-desc" /><span className="cm-skel cm-skel-meta" /></div>)}
+        </div>
+      : cards.length === 0
         ? <div className="empty-state">
             <Building2 size={24} />
             <h2>No companies match those filters.</h2>
-            <p>Clear the filters, or seed the catalogue with <code>python scripts/seed_companies.py</code> if this is a fresh database.</p>
+            <p>{anyFilter ? `Clear a filter to see more of ${CITY}.` : <>Seed the catalogue with <code>python scripts/seed_companies.py</code> if this is a fresh database.</>}</p>
           </div>
-        : <div className="ci-grid">
-            {companies.map(company =>
-              <button
-                key={company.id}
-                className={`ci-card ${selectedId === company.id ? 'selected' : ''}`}
-                onClick={() => setSelectedId(company.id)}
-              >
-                <div className="ci-card-head">
-                  <Logo company={company} />
-                  <div className="ci-card-title">
-                    <strong>{company.name}</strong>
-                    <span>{company.industry || company.hq_city || '—'}</span>
-                  </div>
-                  <TierBadge tier={company.tier} label={company.tier_label} />
-                </div>
-                <p className="ci-card-desc">{company.description}</p>
-                <div className="ci-card-foot">
-                  <div className="ci-mini-chips">
-                    {company.tech_stack.slice(0, 3).map(tech => <span key={tech}>{tech}</span>)}
-                  </div>
-                  {company.open_roles > 0 && <span className="ci-roles">{company.open_roles} open</span>}
-                </div>
-              </button>)}
-          </div>}
+        : <>
+            <div className="cm-list-head" aria-hidden="true">
+              <span>Company</span><span>What they do</span><span>Area</span><span>Stage · sector</span><span>Type</span><span>Roles</span>
+            </div>
+            <div className="ci-grid">
+              {cards.map(company => <CompanyRow key={company.id} company={company} selected={selectedId === company.id} onPick={onPick} />)}
+            </div>
+          </>}
 
-    {!loading && !error && companies.length < total &&
+    {!loading && !error && !onlyUnpinned && cards.length < total &&
       <div className="ci-more">
-        <button className="ci-chip" onClick={loadMore} disabled={loadingMore}>
-          {loadingMore ? 'Loading…' : `Show more — ${total - companies.length} of ${total} still to come`}
+        <button type="button" className="ci-chip" onClick={loadMore} disabled={loadingMore}>
+          {loadingMore ? 'Loading…' : `Show more — ${fmt(total - cards.length)} of ${fmt(total)} still to come`}
         </button>
       </div>}
-
-    {selectedId && <CompanyDrawer
-      companyId={selectedId}
-      onClose={() => setSelectedId(null)}
-      onPickIndustry={value => { setIndustry(value); setSelectedId(null) }}
-    />}
-  </AppShell></RequireAuth>
+  </>
 }
 
-function CompanyDrawer({ companyId, onClose, onPickIndustry }: {
+function CompanyRow({ company, selected, onPick }: { company: CompanyCard; selected: boolean; onPick: (id: string) => void }) {
+  const precision: GeoPrecision = company.geo_precision || 'city'
+  const stageName = company.stage ? STAGES[company.stage] || company.stage : null
+  const sectorName = company.sector ? SECTORS[company.sector] || company.sector : null
+  return <button type="button" className={`ci-card ${selected ? 'selected' : ''}`} aria-pressed={selected} onClick={() => onPick(company.id)}>
+    <div className="ci-card-head">
+      <Logo company={company} />
+      <div className="ci-card-title">
+        <strong>{company.name}</strong>
+        <span>{[sectorName || company.industry || company.hq_city, stageName].filter(Boolean).join(' · ') || '—'}</span>
+      </div>
+      <TierBadge tier={company.tier} label={company.tier_label} />
+    </div>
+    <p className="ci-card-desc">{company.summary || company.description || 'No summary yet.'}</p>
+    <div className="cm-cell-area">
+      <span><PrecisionGlyph precision={precision} />{company.area || (precision === 'city' ? CITY : company.hq_city) || CITY}</span>
+      <small>{PRECISION_SHORT[precision]}</small>
+    </div>
+    <div className="cm-cell-codes"><span>{stageName || '—'}</span><span>{sectorName || '—'}</span></div>
+    <div className="ci-card-foot">
+      <div className="ci-mini-chips">
+        {company.tech_stack.slice(0, 2).map(tech => <span key={tech}>{tech}</span>)}
+      </div>
+      {company.open_roles > 0 && <span className="ci-roles">{company.open_roles} open</span>}
+    </div>
+  </button>
+}
+
+// ── Drawer ───────────────────────────────────────────────────────────────────
+function CompanyDrawer({ companyId, fallbackName, hiringForYou, docked, closeOnEscape, onClose }: {
   companyId: string
+  fallbackName?: string
+  hiringForYou: boolean
+  docked: boolean
+  closeOnEscape: boolean
   onClose: () => void
-  onPickIndustry: (industry: string) => void
 }) {
   const [detail, setDetail] = useState<CompanyDetail | null>(null)
   const [error, setError] = useState('')
+  const rootRef = useRef<HTMLElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const onKeyDown = useDialog(rootRef, onClose, { modal: !docked, closeOnEscape })
 
   useEffect(() => {
     let cancelled = false
     setDetail(null); setError('')
+    bodyRef.current?.scrollTo({ top: 0 })
     api.company.detail(companyId)
       .then(result => { if (!cancelled) setDetail(result) })
       .catch(err => { if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load this company.') })
     return () => { cancelled = true }
   }, [companyId])
 
-  // Escape closes the drawer, and the body must not scroll behind it.
+  // An overlay drawer owns the screen, so the page behind it must not scroll.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', onKey)
+    if (docked) return
     const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = previous }
-  }, [onClose])
+    return () => { document.body.style.overflow = previous }
+  }, [docked])
 
   const setContacts = useCallback((contacts: CompanyContact[]) => {
     setDetail(current => (current ? { ...current, contacts } : current))
   }, [])
+  const reload = useCallback(() => {
+    api.company.detail(companyId)
+      .then(result => setDetail(current => (current && current.id === result.id ? result : current)))
+      .catch(() => undefined)
+  }, [companyId])
 
-  return <>
-    <button className="ci-backdrop" onClick={onClose} aria-label="Close company details" />
-    <aside className="ci-drawer" role="dialog" aria-modal="true" aria-label={detail?.name || 'Company details'}>
-      <header className="ci-drawer-head">
-        {detail ? <Logo company={detail} /> : <span className="ci-logo"><Building2 size={18} /></span>}
-        <div className="ci-drawer-title">
-          <h2>{detail?.name || 'Loading…'}</h2>
-          <div className="ci-sub">
-            <TierBadge tier={detail?.tier} label={detail?.tier_label} />
-            {detail?.industry && <button className="purple-link" onClick={() => onPickIndustry(detail.industry!)} style={{ background: 'transparent', fontSize: 11, padding: 0 }}>{detail.industry}</button>}
-          </div>
-        </div>
-        <button className="ci-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
-      </header>
-
-      <div className="ci-drawer-body">
-        {error && <p className="form-error" style={{ marginTop: 18 }}>{error}</p>}
-        {!detail && !error && <div className="loading-state"><Loader2 size={18} className="spin" />Loading…</div>}
-
-        {detail && <>
-          <Facts detail={detail} />
-          <LinkRow detail={detail} />
-
-          <section className="ci-section">
-            <h3><Building2 size={13} />What they do</h3>
-            <p>{detail.description || 'No description on file for this company yet.'}</p>
-            {detail.culture_summary && <p style={{ marginTop: 12 }}>{detail.culture_summary}</p>}
-          </section>
-
-          <TechSection detail={detail} />
-          <GithubSection detail={detail} />
-          <ContactsSection detail={detail} onContactsChange={setContacts} />
-          <RolesSection detail={detail} />
-        </>}
+  const name = detail?.name || fallbackName || 'Loading…'
+  return <aside
+    ref={rootRef}
+    className={`ci-drawer ${docked ? 'is-docked' : 'cm-over'}`}
+    role="dialog"
+    aria-modal={!docked}
+    aria-labelledby="cm-drawer-title"
+    tabIndex={-1}
+    data-testid="company-drawer"
+    onKeyDown={onKeyDown}
+  >
+    <header className="ci-drawer-head">
+      {detail ? <Logo company={detail} /> : <span className="ci-logo">{fallbackName ? initials(fallbackName) : <Building2 size={18} />}</span>}
+      <div className="ci-drawer-title">
+        <h2 id="cm-drawer-title">{name}</h2>
+        {detail && <DrawerSummary detail={detail} hiringForYou={hiringForYou} />}
       </div>
-    </aside>
+      <button type="button" className="ci-close" onClick={onClose} aria-label="Close" data-autofocus><X size={18} /></button>
+    </header>
+
+    <div className="ci-drawer-body" ref={bodyRef}>
+      {error && <p className="form-error" style={{ marginTop: 18 }}>{error}</p>}
+      {!detail && !error && <div className="cm-drawer-loading" aria-busy="true"><Loader2 size={16} className="spin" />Loading…</div>}
+
+      {detail && <>
+        <Facts detail={detail} />
+        <LinkRow detail={detail} />
+        <About detail={detail} />
+        <RolesSection detail={detail} />
+        <PeopleSection detail={detail} onFounders={reload} />
+        <NewsSection detail={detail} />
+        <TechSection detail={detail} />
+        <GithubSection detail={detail} />
+        <ContactsSection detail={detail} onContactsChange={setContacts} />
+      </>}
+    </div>
+  </aside>
+}
+
+function DrawerSummary({ detail, hiringForYou }: { detail: CompanyDetail; hiringForYou: boolean }) {
+  const precision = detail.geo_precision || 'city'
+  const place = [detail.area, detail.address].filter(Boolean).join(' · ') || CITY
+  return <>
+    <div className="cm-codes">
+      <TierBadge tier={detail.tier} label={detail.tier_label} />
+      {detail.stage && <span className="ci-tier">{STAGES[detail.stage] || detail.stage}</span>}
+      {detail.sector && <span className="ci-tier">{SECTORS[detail.sector] || detail.sector}</span>}
+      {hiringForYou && <span className="cm-yours"><i aria-hidden="true" />Hiring for your role</span>}
+    </div>
+    <p className="cm-summary">
+      {detail.summary || 'No summary yet.'}
+      {detail.summary && detail.summary_source && <span className="cm-prov">{SUMMARY_SOURCE[detail.summary_source] || detail.summary_source}</span>}
+    </p>
+    <div className="cm-place">
+      <PrecisionGlyph precision={precision} />
+      <span>{place}</span>
+      <small>{precisionNote(precision, detail.area)}</small>
+    </div>
   </>
 }
 
 function Facts({ detail }: { detail: CompanyDetail }) {
-  const offices = detail.office_cities.length ? detail.office_cities.join(', ') : null
+  const headcount = detail.employee_count ? `${fmt(detail.employee_count)}` : detail.employee_count_range
   return <div className="ci-facts">
     <div className="ci-fact"><span>Headquarters</span><strong>{[detail.hq_city, detail.hq_country].filter(Boolean).join(', ') || '—'}</strong></div>
-    <div className="ci-fact"><span>Headcount</span><strong>{detail.employee_count_range || '—'}</strong></div>
+    <div className="ci-fact"><span>Headcount</span><strong>{headcount || '—'}</strong></div>
     <div className="ci-fact"><span>Founded</span><strong>{detail.founded_year || '—'}</strong></div>
-    <div className="ci-fact"><span>India offices</span><strong>{offices || '—'}</strong></div>
+    <div className="ci-fact"><span>Last raised</span><strong>{fmtDate(detail.last_funding_at) || '—'}</strong></div>
   </div>
 }
 
 function LinkRow({ detail }: { detail: CompanyDetail }) {
-  const links: Array<[string, string | null | undefined, JSX.Element]> = [
+  const links: Array<[string, string | null | undefined, JSX.Element | null]> = [
     ['Website', detail.website_url, <Globe size={13} key="w" />],
     ['Careers', detail.careers_url, <ExternalLink size={13} key="c" />],
     ['LinkedIn', detail.linkedin_url, <Linkedin size={13} key="l" />],
     ['GitHub', detail.github?.html_url, <Github size={13} key="g" />],
+    ['X', detail.x_url, null],
   ]
-  const shown = links.filter(([, href]) => href)
+  const shown = links.filter(([, href]) => externalHref(href))
   if (!shown.length) return null
   return <div className="ci-links">
-    {shown.map(([label, href, icon]) =>
-      <a key={label} className="ci-link" href={href!} target="_blank" rel="noreferrer noopener">{icon}{label}</a>)}
+    {shown.map(([label, href, icon]) => <ExtLink key={label} className="ci-link" href={href}>{icon}{label}</ExtLink>)}
   </div>
+}
+
+function About({ detail }: { detail: CompanyDetail }) {
+  const description = detail.description && detail.description !== detail.summary ? detail.description : null
+  if (!description && !detail.culture_summary) return null
+  return <div className="cm-about">
+    {description && <p>{description}</p>}
+    {detail.culture_summary && <p>{detail.culture_summary}</p>}
+  </div>
+}
+
+function RolesSection({ detail }: { detail: CompanyDetail }) {
+  const careers = externalHref(detail.careers_url)
+  return <section className="ci-section">
+    <h3><Briefcase size={13} />Open roles on TalentRadar</h3>
+    {detail.jobs.length === 0
+      ? <p className="ci-empty-small">
+          No live postings ingested for {detail.name} yet. Their careers page is the fastest route
+          {careers ? <> — <ExtLink className="purple-link" href={careers}>open it</ExtLink>.</> : '.'}
+        </p>
+      : detail.jobs.map(job => {
+          const posting = externalHref(job.source_url)
+          return <div key={job.id} className="cm-job">
+            <Link className="ci-job" href={`/roles/${encodeURIComponent(job.id)}`}>
+              <strong>{job.title}</strong>
+              <span>
+                {[job.location, job.is_remote ? 'Remote' : null, job.seniority, job.salary_raw]
+                  .filter(Boolean).join(' · ') || 'Details on the posting'}
+              </span>
+            </Link>
+            {posting && <a className="cm-job-ext" href={posting} aria-label={`Open the ${job.title} posting on the employer's site`} {...EXTERNAL_LINK_PROPS}><ExternalLink size={13} /></a>}
+          </div>
+        })}
+    {detail.jobs.length > 0 && careers &&
+      <div className="ci-links"><ExtLink className="ci-link" href={careers}><Calendar size={13} />All roles on their careers page</ExtLink></div>}
+  </section>
+}
+
+function PersonRow({ person }: { person: CompanyPerson }) {
+  const linkedin = externalHref(person.linkedin_url)
+  const search = linkedin ? null : externalHref(person.linkedin_search_url)
+  const source = externalHref(person.source_url)
+  const links: ReactNode[] = []
+  if (linkedin) links.push(<ExtLink key="li" href={linkedin}><Linkedin size={12} />LinkedIn</ExtLink>)
+  else if (search) links.push(<ExtLink key="ls" href={search}><Linkedin size={12} />Search LinkedIn<ExternalLink size={10} /></ExtLink>)
+  if (externalHref(person.x_url)) links.push(<ExtLink key="x" href={person.x_url}>X</ExtLink>)
+  if (externalHref(person.github_url)) links.push(<ExtLink key="gh" href={person.github_url}><Github size={12} />GitHub</ExtLink>)
+  if (externalHref(person.profile_url)) links.push(<ExtLink key="site" href={person.profile_url}><Globe size={12} />Site</ExtLink>)
+  const name = person.name || 'Unnamed'
+  return <div className="cm-person">
+    <span className="ci-contact-icon">{initials(name)}</span>
+    <div>
+      <strong>{name}{person.title && <span> · {person.title}</span>}</strong>
+      {links.length > 0 && <div className="cm-plinks">{links}</div>}
+      <small>
+        {source ? <>Source: <ExtLink href={source}>{hostOf(source)}</ExtLink></> : 'Source on file'}
+        <span className={`ci-badge ${person.verified ? 'verified' : 'unverified'}`}>{person.verified ? 'verified' : 'unverified'}</span>
+      </small>
+    </div>
+  </div>
+}
+
+function PeopleSection({ detail, onFounders }: { detail: CompanyDetail; onFounders: () => void }) {
+  const { founders, leaders, engineers } = detail.people
+  const [searching, setSearching] = useState(false)
+  const [searched, setSearched] = useState(false)
+  const [message, setMessage] = useState('')
+  useEffect(() => { setSearching(false); setSearched(false); setMessage('') }, [detail.id])
+
+  const findFounders = async () => {
+    setSearching(true); setMessage('')
+    try {
+      const result = await api.company.discoverFounders(detail.id)
+      setMessage(result.message || (result.available ? '' : 'Founder search is not available right now.'))
+      setSearched(result.available)
+      if (result.available && result.people.length) onFounders()
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'The founder search failed.')
+    } finally { setSearching(false) }
+  }
+
+  const bigger = Boolean(detail.is_bigger)
+  const headcount = detail.employee_count ? `${fmt(detail.employee_count)} people` : detail.employee_count_range
+
+  const foundersBlock = <div key="founders">
+    <div className="cm-sub"><span className="ci-stack-label">Founders</span>{founders.length > 0 && <em>{founders.length} on record</em>}</div>
+    {founders.length > 0
+      ? founders.map(p => <PersonRow key={p.id} person={p} />)
+      : <div className="cm-empty">
+          <p>No founders on record{searched ? ' yet' : ''}.</p>
+          <button type="button" className="outline-button" onClick={findFounders} disabled={searching || searched}>
+            {searching ? <Loader2 size={13} className="spin" /> : <Search size={13} />}
+            {searching ? 'Searching…' : searched ? 'Searched' : 'Find founders'}
+          </button>
+        </div>}
+    {message && <p className="cm-note" role="status">{message}</p>}
+  </div>
+
+  const leadersBlock = <div key="leaders">
+    <div className="cm-sub"><span className="ci-stack-label">Leadership</span></div>
+    {leaders.length > 0
+      ? leaders.map(p => <PersonRow key={p.id} person={p} />)
+      : <div className="cm-empty"><p>No leaders on record yet.</p></div>}
+  </div>
+
+  const githubBlock = <div key="github">
+    <div className="cm-sub"><span className="ci-stack-label">On GitHub</span>{engineers.length > 0 && detail.github_org && <em>public members of @{detail.github_org}</em>}</div>
+    {engineers.length > 0
+      ? engineers.map(p => {
+          const handle = (p.github_url || '').replace(/\/+$/, '').split('/').pop() || ''
+          return <div key={p.id} className="cm-gh-row">
+            <span>{p.name}</span>
+            {handle && <ExtLink href={p.github_url}>@{handle}</ExtLink>}
+          </div>
+        })
+      : <div className="cm-empty"><p>{detail.github_org ? 'Not read yet — the weekly GitHub pass fills this.' : 'No public GitHub organisation on file.'}</p></div>}
+  </div>
+
+  const links = detail.linkedin_links
+  const linkedinBlock = <div key="linkedin">
+    <div className="cm-sub"><span className="ci-stack-label">Find on LinkedIn</span><em>opens in your own session</em></div>
+    {links.length > 0
+      ? <div className="ci-links cm-presets">
+          {links.map((link, i) =>
+            <ExtLink key={link.label} className="ci-link" href={link.url}>
+              <Linkedin size={13} />{link.label}{i >= 3 && <em className="cm-yours-text">your role</em>}
+            </ExtLink>)}
+        </div>
+      : <div className="cm-empty"><p>No LinkedIn searches available for this company.</p></div>}
+    <p className="cm-li-note">Nothing here is fetched from LinkedIn. Each person links to the page that named them.</p>
+  </div>
+
+  // A bigger company is read by its headcount and leadership, and reached
+  // through LinkedIn searches; a startup is read by its founders (spec §4.5).
+  return <section className="ci-section" data-testid="drawer-people">
+    <h3><Users size={13} />People</h3>
+    {bigger
+      ? <>
+          <div className="cm-sub"><span className="ci-stack-label">Headcount</span><em>{headcount || 'not on record'}</em></div>
+          {leadersBlock}{linkedinBlock}{githubBlock}{foundersBlock}
+        </>
+      : <>{foundersBlock}{leadersBlock}{githubBlock}{linkedinBlock}</>}
+  </section>
+}
+
+function NewsSection({ detail }: { detail: CompanyDetail }) {
+  return <section className="ci-section">
+    <h3><Newspaper size={13} />News</h3>
+    {detail.news.length === 0
+      ? <p className="ci-empty-small">No news on record for {detail.name}.</p>
+      : detail.news.map(item => {
+          const line = [item.round, item.amount_text, item.investors.length ? item.investors.slice(0, 3).join(', ') : null].filter(Boolean).join(' · ')
+          return <ExtLink key={item.id} className="ci-job cm-news-row" href={item.url}>
+            <strong>{item.title}</strong>
+            <div className="cm-meta">
+              {item.category === 'funding' && <span className="cm-tag">Funding</span>}
+              <span>{[item.source, fmtDate(item.published_at)].filter(Boolean).join(' · ')}</span>
+            </div>
+            {line && <div className="cm-round">{line}</div>}
+          </ExtLink>
+        })}
+  </section>
 }
 
 function TechSection({ detail }: { detail: CompanyDetail }) {
@@ -291,16 +1009,19 @@ function GithubSection({ detail }: { detail: CompanyDetail }) {
             : 'No public GitHub organisation on file for this company.'}
         </p>
       : <div className="ci-gh">
-          <a className="ci-gh-head" href={gh.html_url} target="_blank" rel="noreferrer noopener">
-            {gh.avatar_url && <img src={gh.avatar_url} alt="" />}
+          <ExtLink className="ci-gh-head" href={gh.html_url}>
+            {externalHref(gh.avatar_url) && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={externalHref(gh.avatar_url) || ''} alt="" />
+            )}
             <div>
               <strong>{gh.name}</strong>
               <span>@{gh.org} · {gh.public_repos} repos · {gh.followers.toLocaleString()} followers</span>
             </div>
             <ExternalLink size={14} color="var(--faint)" />
-          </a>
+          </ExtLink>
           {gh.top_repos.map(repo =>
-            <a key={repo.full_name} className="ci-repo" href={repo.html_url} target="_blank" rel="noreferrer noopener">
+            <ExtLink key={repo.full_name} className="ci-repo" href={repo.html_url}>
               <span className="ci-repo-top">
                 <strong>{repo.name}</strong>
                 <span className="ci-repo-meta">
@@ -309,7 +1030,7 @@ function GithubSection({ detail }: { detail: CompanyDetail }) {
                 </span>
               </span>
               {repo.description && <p>{repo.description}</p>}
-            </a>)}
+            </ExtLink>)}
         </div>}
   </section>
 }
@@ -326,6 +1047,10 @@ function ContactsSection({ detail, onContactsChange }: {
   const [formError, setFormError] = useState('')
 
   useEffect(() => { setCandidates(null); setLookupMessage(''); setShowForm(false); setFormError('') }, [detail.id])
+
+  // Founders, leaders and GitHub members are shown under People; this section
+  // keeps to the talent team and the user's own contacts.
+  const contacts = detail.contacts.filter(c => !PEOPLE_KINDS.has(c.kind))
 
   const add = async (payload: NewContact) => {
     setBusy(true); setFormError('')
@@ -369,9 +1094,9 @@ function ContactsSection({ detail, onContactsChange }: {
       the lookup or add one you already have.
     </p>
 
-    {detail.contacts.length === 0 && <p className="ci-empty-small">No contacts stored yet for {detail.name}.</p>}
+    {contacts.length === 0 && <p className="ci-empty-small">No contacts stored yet for {detail.name}.</p>}
 
-    {detail.contacts.map(contact =>
+    {contacts.map(contact =>
       <div key={contact.id} className="ci-contact">
         <span className="ci-contact-icon">{contact.email ? <Mail size={14} /> : <Globe size={14} />}</span>
         <div className="ci-contact-body">
@@ -381,25 +1106,25 @@ function ContactsSection({ detail, onContactsChange }: {
             <span className={`ci-badge ${contact.verified ? 'verified' : 'unverified'}`}>{contact.verified ? 'verified' : 'unverified'}</span>
           </strong>
           {contact.email && <a href={`mailto:${contact.email}`}>{contact.email}</a>}
-          {contact.linkedin_url && <a href={contact.linkedin_url} target="_blank" rel="noreferrer noopener">{contact.linkedin_url}</a>}
+          {contact.linkedin_url && <ExtLink href={contact.linkedin_url}>{contact.linkedin_url}</ExtLink>}
           {!contact.email && !contact.linkedin_url && contact.source_url &&
-            <a href={contact.source_url} target="_blank" rel="noreferrer noopener">{contact.source_url}</a>}
+            <ExtLink href={contact.source_url}>{contact.source_url}</ExtLink>}
           {contact.notes && <small>{contact.notes}</small>}
           {contact.source_url && (contact.email || contact.linkedin_url) &&
-            <small>Source: <a href={contact.source_url} target="_blank" rel="noreferrer noopener">{contact.source_url}</a></small>}
+            <small>Source: <ExtLink href={contact.source_url}>{contact.source_url}</ExtLink></small>}
         </div>
         {!contact.is_curated &&
-          <button className="ci-close" onClick={() => remove(contact.id)} aria-label="Remove contact"><Trash2 size={14} /></button>}
+          <button type="button" className="ci-close" onClick={() => remove(contact.id)} aria-label="Remove contact"><Trash2 size={14} /></button>}
       </div>)}
 
     {formError && <p className="form-error" style={{ marginTop: 12 }}>{formError}</p>}
 
     <div className="ci-contact-actions">
-      <button className="outline-button" onClick={runLookup} disabled={searching}>
+      <button type="button" className="outline-button" onClick={runLookup} disabled={searching}>
         {searching ? <Loader2 size={13} className="spin" /> : <Search size={13} />}
         {searching ? 'Searching the web…' : 'Find contacts on the web'}
       </button>
-      <button className="outline-button" onClick={() => setShowForm(!showForm)}>
+      <button type="button" className="outline-button" onClick={() => setShowForm(!showForm)}>
         <Plus size={13} />{showForm ? 'Cancel' : 'Add a contact'}
       </button>
     </div>
@@ -413,10 +1138,10 @@ function ContactsSection({ detail, onContactsChange }: {
           <a href={`mailto:${candidate.email}`}>{candidate.email}</a>
           <small>
             {candidate.kind === 'careers_inbox' ? 'Shared careers inbox' : 'Address on the company domain'} · found on{' '}
-            <a href={candidate.source_url || '#'} target="_blank" rel="noreferrer noopener">{candidate.source_title || candidate.source_url}</a>
+            <ExtLink href={candidate.source_url}>{candidate.source_title || candidate.source_url}</ExtLink>
           </small>
         </div>
-        <button disabled={busy} onClick={() => add({ kind: candidate.kind, email: candidate.email, source_url: candidate.source_url, verified: false })}>Save</button>
+        <button type="button" disabled={busy} onClick={() => add({ kind: candidate.kind, email: candidate.email, source_url: candidate.source_url, verified: false })}>Save</button>
       </div>)}
 
     {showForm && <ContactForm busy={busy} onSubmit={add} />}
@@ -434,6 +1159,11 @@ function ContactForm({ busy, onSubmit }: { busy: boolean; onSubmit: (payload: Ne
     onSubmit({ ...form, verified: true })
   }
 
+  const CONTACT_KINDS = [
+    ['recruiter', 'Recruiter'], ['referral', 'Referral'], ['careers_inbox', 'Careers inbox'],
+    ['careers_page', 'Careers page'], ['other', 'Other'],
+  ] as const
+
   return <form className="ci-contact-form" onSubmit={submit}>
     <input placeholder="Name (optional)" value={form.name || ''} onChange={set('name')} />
     <input placeholder="Title, e.g. Talent Partner" value={form.title || ''} onChange={set('title')} />
@@ -449,25 +1179,4 @@ function ContactForm({ busy, onSubmit }: { busy: boolean; onSubmit: (payload: Ne
       <span className="ci-empty-small">Saved only to your account.</span>
     </div>
   </form>
-}
-
-function RolesSection({ detail }: { detail: CompanyDetail }) {
-  return <section className="ci-section">
-    <h3><Users size={13} />Open roles on TalentRadar</h3>
-    {detail.jobs.length === 0
-      ? <p className="ci-empty-small">
-          No live postings ingested for {detail.name} yet. Their careers page is the fastest route
-          {detail.careers_url ? <> — <a className="purple-link" href={detail.careers_url} target="_blank" rel="noreferrer noopener">open it</a>.</> : '.'}
-        </p>
-      : detail.jobs.map(job =>
-          <a key={job.id} className="ci-job" href={job.source_url || '#'} target="_blank" rel="noreferrer noopener">
-            <strong>{job.title}</strong>
-            <span>
-              {[job.location, job.is_remote ? 'Remote' : null, job.seniority, job.salary_raw]
-                .filter(Boolean).join(' · ') || 'Details on the posting'}
-            </span>
-          </a>)}
-    {detail.jobs.length > 0 && detail.careers_url &&
-      <div className="ci-links"><a className="ci-link" href={detail.careers_url} target="_blank" rel="noreferrer noopener"><Calendar size={13} />All roles on their careers page</a></div>}
-  </section>
 }
