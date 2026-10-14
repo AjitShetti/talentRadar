@@ -4,7 +4,8 @@ tests/test_company_map_geocode.py
 Where a company is, from Nominatim or from an area name, and how much of
 that position to believe. No network: payloads are hand-written in the shape
 Nominatim's ``format=jsonv2`` returns (lat/lon as strings), plus one recorded
-postcode response, and HTTP goes through ``httpx.MockTransport``.
+postcode response and one hand-written address response in the recorded shape,
+and HTTP goes through ``httpx.MockTransport``.
 """
 
 from __future__ import annotations
@@ -31,8 +32,10 @@ def _hit(
     category: str = "place",
     type_: str = "house",
     name: str = "",
+    place_rank: int | None = None,
+    addresstype: str | None = None,
 ) -> dict[str, Any]:
-    return {
+    hit: dict[str, Any] = {
         "lat": str(lat),
         "lon": str(lon),
         "category": category,
@@ -40,6 +43,20 @@ def _hit(
         "name": name,
         "display_name": f"{name}, Bengaluru, Karnataka, India",
     }
+    if place_rank is not None:
+        hit["place_rank"] = place_rank
+    if addresstype is not None:
+        hit["addresstype"] = addresstype
+    return hit
+
+
+def _address_fixture() -> list[dict[str, Any]]:
+    # Hand-written in the shape of a real format=jsonv2 answer to
+    # "Koramangala, Bengaluru 560034": the suburb node, then a road in it.
+    payload: list[dict[str, Any]] = json.loads(
+        (FIXTURES / "nominatim_address_koramangala.json").read_text("utf-8")
+    )
+    return payload
 
 
 # ---------------------------------------------------------------- parse_nominatim
@@ -61,7 +78,8 @@ def test_outside_hit_is_skipped_for_a_later_inside_one() -> None:
 
 
 def test_address_mode_gives_street_precision() -> None:
-    hit = parse_nominatim([_hit(12.9352, 77.6245, type_="residential")], mode="address")
+    road = _hit(12.9352, 77.6245, type_="residential", place_rank=26, addresstype="road")
+    hit = parse_nominatim([road], mode="address")
     assert hit == GeoHit(
         lat=12.9352, lng=77.6245, precision="street", source="nominatim", area="Koramangala"
     )
@@ -69,10 +87,92 @@ def test_address_mode_gives_street_precision() -> None:
 
 def test_address_mode_far_from_any_area_has_no_area() -> None:
     # Inside the bbox but nowhere near a known neighbourhood.
-    hit = parse_nominatim([_hit(12.82, 77.42)], mode="address")
+    hit = parse_nominatim([_hit(12.82, 77.42, place_rank=28)], mode="address")
     assert hit is not None
     assert hit.precision == "street"
     assert hit.area is None
+
+
+def test_address_mode_suburb_hit_is_area_precision_at_the_centroid() -> None:
+    # A short footer address resolves to the suburb node: that places the
+    # company in a neighbourhood, not on a street — no solid pin.
+    suburb = _address_fixture()[0]
+    assert suburb["addresstype"] == "suburb"
+    hit = parse_nominatim([suburb], mode="address")
+    assert hit is not None
+    assert hit.precision == "area"
+    assert hit.source == "nominatim"
+    assert hit.area == "Koramangala"
+    # The area's centroid itself, like a PIN code; jitter is the caller's job.
+    assert (hit.lat, hit.lng) == centroid("Koramangala")
+
+
+def test_address_mode_first_usable_hit_wins_so_the_fixture_is_area() -> None:
+    hit = parse_nominatim(_address_fixture(), mode="address")
+    assert hit is not None
+    assert hit.precision == "area"
+
+
+def test_address_mode_road_hit_from_the_fixture_is_street() -> None:
+    road = _address_fixture()[1]
+    assert road["addresstype"] == "road"
+    hit = parse_nominatim([road], mode="address")
+    assert hit == GeoHit(
+        lat=12.9371146,
+        lng=77.6266203,
+        precision="street",
+        source="nominatim",
+        area="Koramangala",
+    )
+
+
+@pytest.mark.parametrize("rank", [26, 27, 28, 30])
+def test_address_mode_street_or_finer_rank_is_street(rank: int) -> None:
+    hit = parse_nominatim([_hit(12.9352, 77.6245, place_rank=rank)], mode="address")
+    assert hit is not None
+    assert hit.precision == "street"
+    assert (hit.lat, hit.lng) == (12.9352, 77.6245)
+
+
+@pytest.mark.parametrize("rank", [17, 19, 20, 21, 25])
+def test_address_mode_below_street_rank_is_area(rank: int) -> None:
+    hit = parse_nominatim([_hit(12.9352, 77.6245, place_rank=rank)], mode="address")
+    assert hit is not None
+    assert hit.precision == "area"
+    assert hit.area == "Koramangala"
+
+
+def test_address_mode_missing_place_rank_is_area() -> None:
+    # An old fixture or an unexpected response: believe the lesser claim.
+    hit = parse_nominatim([_hit(12.9352, 77.6245)], mode="address")
+    assert hit is not None
+    assert hit.precision == "area"
+    assert (hit.lat, hit.lng) == centroid("Koramangala")
+
+
+@pytest.mark.parametrize("rank", ["n/a", None, True])
+def test_address_mode_unreadable_place_rank_is_area(rank: Any) -> None:
+    raw = _hit(12.9352, 77.6245)
+    raw["place_rank"] = rank
+    hit = parse_nominatim([raw], mode="address")
+    assert hit is not None
+    assert hit.precision == "area"
+
+
+def test_address_mode_city_level_hit_is_not_a_pin() -> None:
+    # "Bengaluru" alone (rank 16) says nothing an area pin could honestly claim.
+    city = _hit(12.9767, 77.5901, category="boundary", place_rank=16, addresstype="city")
+    assert parse_nominatim([city], mode="address") is None
+
+
+def test_address_mode_area_hit_with_no_known_area_nearby_is_none() -> None:
+    # A suburb outside the taxonomy: no centroid to stand in, so no pin.
+    assert parse_nominatim([_hit(12.82, 77.42, place_rank=19)], mode="address") is None
+
+
+def test_address_mode_suburb_outside_bbox_is_rejected() -> None:
+    mumbai = _hit(19.0760, 72.8777, place_rank=19, addresstype="suburb")
+    assert parse_nominatim([mumbai], mode="address") is None
 
 
 def test_empty_or_malformed_payload_is_none() -> None:
@@ -160,7 +260,7 @@ async def test_geocode_sends_an_identifying_bounded_request_and_sleeps(
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request)
-        return httpx.Response(200, json=[_hit(12.9352, 77.6245)])
+        return httpx.Response(200, json=[_hit(12.9352, 77.6245, place_rank=26)])
 
     async with _client(handler) as client:
         hit = await geocode(client, address="80 Feet Road, Koramangala, Bengaluru")
@@ -181,6 +281,19 @@ async def test_geocode_sends_an_identifying_bounded_request_and_sleeps(
     assert params["limit"] == "5"
     assert params["viewbox"] == "77.4,13.15,77.8,12.8"
     assert sleeps == [1.0]
+
+
+async def test_geocode_address_answered_by_a_suburb_is_area(sleeps: list[float]) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["format"] == "jsonv2"
+        return httpx.Response(200, json=_address_fixture())
+
+    async with _client(handler) as client:
+        hit = await geocode(client, address="Koramangala, Bengaluru 560034")
+
+    assert hit is not None
+    assert hit.precision == "area"
+    assert hit.area == "Koramangala"
 
 
 async def test_geocode_uses_only_the_first_input_given(sleeps: list[float]) -> None:
