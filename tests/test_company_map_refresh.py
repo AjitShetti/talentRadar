@@ -160,3 +160,22 @@ async def test_geocode_falls_back_to_the_area_centroid():
     [company] = await _companies()
     assert company.geo_precision == "area"
     assert company.lat is not None
+
+
+async def test_an_area_level_address_hit_is_nudged_off_the_centroid():
+    """Review #6: a suburb-level address hit is the area's centroid, like a PIN code's."""
+    from domain.areas import centroid, jitter
+    from services.company_map.types import GeoHit
+
+    await _add(name="Suburb Co", domain="suburb.example", address="Koramangala, Bengaluru")
+    middle = centroid("Koramangala")
+    assert middle is not None
+    lat, lng = middle
+    hit = GeoHit(lat=lat, lng=lng, precision="area", source="nominatim", area="Koramangala")
+    with patch.object(refresh, "geocode", AsyncMock(return_value=hit)):
+        await run_step("geocode", 10)
+
+    [company] = await _companies()
+    assert company.geo_precision == "area"
+    assert (company.lat, company.lng) == pytest.approx(jitter(str(company.id), lat, lng))
+    assert (company.lat, company.lng) != pytest.approx((lat, lng))

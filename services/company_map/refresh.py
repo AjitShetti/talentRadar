@@ -178,13 +178,13 @@ async def _locate(client: httpx.AsyncClient, company: Company) -> GeoHit | None:
         hit = await geocode(client, address=company.address)
     if hit is None and company.pincode:
         hit = await geocode(client, postcode=company.pincode)
-        if hit is not None and hit.precision == "area":
-            # A PIN code names an area, not a building: nudge off the centroid
-            # so the companies sharing it do not stack on one pixel.
-            lat, lng = jitter(str(company.id), hit.lat, hit.lng)
-            hit = GeoHit(lat=lat, lng=lng, precision="area", source=hit.source, area=hit.area)
     if hit is None and not company.address and not company.pincode:
         hit = await geocode(client, name=company.name)
+    if hit is not None and hit.precision == "area":
+        # A suburb-level address or a PIN code names an area, not a building:
+        # nudge off the centroid so the companies sharing it do not stack.
+        lat, lng = jitter(str(company.id), hit.lat, hit.lng)
+        hit = GeoHit(lat=lat, lng=lng, precision="area", source=hit.source, area=hit.area)
     area_hint = company.area or area_for_text(company.address)
     return resolve_location(str(company.id), known=hit, area_hint=area_hint)
 
