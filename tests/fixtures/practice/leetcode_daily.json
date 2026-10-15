@@ -1,0 +1,22 @@
+{
+  "data": {
+    "activeDailyCodingChallengeQuestion": {
+      "date": "2026-10-15",
+      "link": "/problems/subarrays-distinct-element-sum-of-squares-i/",
+      "question": {
+        "titleSlug": "subarrays-distinct-element-sum-of-squares-i",
+        "title": "Subarrays Distinct Element Sum of Squares I",
+        "difficulty": "Easy",
+        "isPaidOnly": false,
+        "acRate": 85.71873664720125,
+        "questionFrontendId": "2913",
+        "topicTags": [
+          {"slug": "array", "name": "Array"},
+          {"slug": "hash-table", "name": "Hash Table"},
+          {"slug": "binary-indexed-tree", "name": "Binary Indexed Tree"},
+          {"slug": "segment-tree", "name": "Segment Tree"}
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "data": {
+    "problemsetQuestionListV2": {
+      "questions": [
+        {
+          "titleSlug": "two-sum",
+          "title": "Two Sum",
+          "difficulty": "EASY",
+          "paidOnly": false,
+          "questionFrontendId": "1",
+          "topicTags": [{"slug": "array"}, {"slug": "hash-table"}]
+        }
+      ]
+    }
+  }
+}
