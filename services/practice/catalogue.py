@@ -12,9 +12,10 @@ A row keeps five fields (id, slug, title, difficulty, topic slugs). Statements, 
 hints, acceptance rates and paid-only questions are never kept: the :class:`Question`
 type has nowhere to put them.
 
-:func:`load_catalogue` reads the file once per process. A missing or malformed file loads
-as ``()``, logged once; the daily practice page then says the list is not loaded yet and
-nothing else breaks.
+:func:`load_catalogue` reads the file once per process. A missing, unreadable or
+structurally wrong file loads as ``()``, logged once; the daily practice page then says
+the list is not loaded yet and nothing else breaks. A single bad row is skipped and
+counted in the log, never allowed to hide the rest.
 """
 
 from __future__ import annotations
@@ -34,6 +35,8 @@ CATALOGUE_PATH = Path(__file__).resolve().parents[2] / "data" / "practice" / "le
 
 #: A catalogue row is ``[id, slug, title, difficulty, [topic slugs]]``.
 ROW_FIELDS = 5
+#: The names under which saved responses say a question is paid-only.
+PAID_FLAGS = ("isPaidOnly", "paidOnly")
 
 
 # ---------------------------------------------------------------------------
@@ -48,9 +51,10 @@ def parse_saved_responses(payloads: Sequence[Any]) -> list[Question]:
     challenge), so this does not follow any one of them: it walks each payload and takes
     every object that has a string ``titleSlug``. Such an object is not searched any
     further, so a question's related questions are never collected as if they were
-    listed. A row is dropped when it is paid-only (``isPaidOnly`` or ``paidOnly``) or
-    lacks a slug, a title, a numeric ``questionFrontendId`` or a known difficulty. The
-    same slug in several payloads counts once.
+    listed. A row is kept only when it says outright that it is free (``isPaidOnly`` or
+    ``paidOnly`` is present and ``False``; see :func:`_is_known_free`) and has a slug, a
+    title, a numeric ``questionFrontendId`` and a known difficulty. The same slug in
+    several payloads counts once.
     """
     found: dict[str, Question] = {}
     for payload in payloads:
@@ -74,8 +78,20 @@ def _question_nodes(value: object) -> Iterator[dict[str, Any]]:
             yield from _question_nodes(child)
 
 
+def _is_known_free(item: dict[str, Any]) -> bool:
+    """True only when the node itself says it is not paid-only.
+
+    Fails closed: the flag (``isPaidOnly`` in the problem list, ``paidOnly`` in its V2
+    form) must be present and be the boolean ``False``. A node with no flag, a null, or
+    any other value might be a paid question, so it is not listed. If a node carries both
+    names, both must say ``False``.
+    """
+    flags = [item[name] for name in PAID_FLAGS if name in item]
+    return bool(flags) and all(flag is False for flag in flags)
+
+
 def _question_from_node(item: dict[str, Any]) -> Question | None:
-    if item.get("isPaidOnly") or item.get("paidOnly"):
+    if not _is_known_free(item):
         return None
     slug = str(item["titleSlug"]).strip()
     title = item.get("title")
@@ -130,11 +146,12 @@ def _topic_slugs(tags: object) -> tuple[str, ...]:
 
 @lru_cache(maxsize=4)
 def load_catalogue(path: Path = CATALOGUE_PATH) -> tuple[Question, ...]:
-    """The catalogue in file order; ``()`` when the file is missing or malformed.
+    """The catalogue in file order.
 
-    Cached per path, so a problem is logged once. A row that fails validation discards
-    the whole file: the builder writes every row itself, so a bad one means the file was
-    edited or cut short, and half a catalogue would skew the pick without saying so.
+    ``()`` when the file is missing, unreadable, not JSON, or has no ``questions`` list.
+    A row of the wrong shape is skipped on its own, so one typo never hides the other
+    ~3,000 questions; the skipped count is logged. Cached per path, so a problem is
+    logged once.
     """
     try:
         document = json.loads(path.read_text(encoding="utf-8"))
@@ -144,11 +161,20 @@ def load_catalogue(path: Path = CATALOGUE_PATH) -> tuple[Question, ...]:
     except (OSError, ValueError) as exc:
         logger.warning("practice catalogue %s cannot be read: %s", path, exc)
         return ()
-    try:
-        return _questions_from_document(document)
-    except ValueError as exc:
-        logger.warning("practice catalogue %s is malformed: %s", path, exc)
+    rows = document.get("questions") if isinstance(document, dict) else None
+    if not isinstance(rows, list):
+        logger.warning("practice catalogue %s is malformed: no 'questions' list", path)
         return ()
+    parsed = (_question_from_row(row) for row in rows)
+    questions = tuple(question for question in parsed if question is not None)
+    if len(questions) < len(rows):
+        logger.warning(
+            "practice catalogue %s: skipped %d malformed row(s) of %d",
+            path,
+            len(rows) - len(questions),
+            len(rows),
+        )
+    return questions
 
 
 def catalogue_by_slug() -> dict[str, Question]:
@@ -156,16 +182,10 @@ def catalogue_by_slug() -> dict[str, Question]:
     return {question.slug: question for question in load_catalogue()}
 
 
-def _questions_from_document(document: object) -> tuple[Question, ...]:
-    rows = document.get("questions") if isinstance(document, dict) else None
-    if not isinstance(rows, list):
-        raise ValueError("expected an object with a 'questions' list")
-    return tuple(_question_from_row(index, row) for index, row in enumerate(rows))
-
-
-def _question_from_row(index: int, row: object) -> Question:
+def _question_from_row(row: object) -> Question | None:
+    """One catalogue row as a question, or ``None`` when any of its fields is the wrong kind."""
     if not isinstance(row, list) or len(row) != ROW_FIELDS:
-        raise ValueError(f"row {index} is not a list of {ROW_FIELDS} fields")
+        return None
     question_id, slug, title, difficulty, topics = row
     known = _difficulty(difficulty)
     if (
@@ -178,5 +198,5 @@ def _question_from_row(index: int, row: object) -> Question:
         or not isinstance(topics, list)
         or not all(isinstance(topic, str) for topic in topics)
     ):
-        raise ValueError(f"row {index} has a field of the wrong kind")
+        return None
     return Question(id=question_id, slug=slug, title=title, difficulty=known, topics=tuple(topics))

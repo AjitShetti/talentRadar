@@ -12,8 +12,10 @@ scroll the whole list, then in DevTools -> Network select each ``graphql`` reque
 page made for the problem list and save its response. This script never requests
 leetcode.com (robots.txt disallows it), and neither does the server or CI.
 
-Only free questions are kept, and only five fields of each: id, slug, title, difficulty
-and topic slugs. Statements, hints, acceptance rates and paid-only questions are dropped.
+Only free questions are kept (a question must say ``isPaidOnly: false``, or ``paidOnly:
+false`` in the V2 form; one with no flag is dropped), and only five fields of each: id,
+slug, title, difficulty and topic slugs. Statements, hints, acceptance rates and
+paid-only questions are dropped.
 The file holds positional rows, sorted by id:
 
     {"generated_at": "<iso>", "source": "...",
@@ -81,7 +83,11 @@ def main(argv: list[str] | None = None) -> int:
 
     questions = parse_saved_responses(payloads)
     if not questions:
-        print("no free questions found in the saved files; nothing written", file=sys.stderr)
+        print(
+            "no free questions found in the saved files; nothing written "
+            "(a question counts as free only when it carries isPaidOnly: false)",
+            file=sys.stderr,
+        )
         return 1
 
     generated_at = datetime.now(UTC).isoformat(timespec="seconds")

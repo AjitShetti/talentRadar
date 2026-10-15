@@ -129,6 +129,38 @@ def test_is_paid_only_row_is_dropped() -> None:
     assert [q.slug for q in questions] == ["free-one"]
 
 
+def without_flag(slug: str) -> dict[str, Any]:
+    flagless = node(slug)
+    del flagless["isPaidOnly"]
+    return flagless
+
+
+@pytest.mark.parametrize(
+    "unknown",
+    [
+        pytest.param(without_flag("unflagged"), id="no-flag"),
+        pytest.param(node("unflagged", isPaidOnly=None), id="null"),
+        pytest.param(node("unflagged", isPaidOnly=0), id="zero"),
+        pytest.param(node("unflagged", isPaidOnly="false"), id="string"),
+        pytest.param(node("unflagged", isPaidOnly=False, paidOnly=True), id="flags-disagree"),
+        pytest.param(node("unflagged", isPaidOnly=False, paidOnly=None), id="second-flag-null"),
+    ],
+)
+def test_row_not_known_to_be_free_is_dropped(unknown: dict[str, Any]) -> None:
+    questions = parse_saved_responses([wrap(node("free-one", questionFrontendId="1"), unknown)])
+
+    assert [q.slug for q in questions] == ["free-one"]
+
+
+def test_row_flagged_free_by_either_name_is_kept() -> None:
+    by_is_paid_only = node("by-is-paid-only", questionFrontendId="1")
+    by_paid_only = without_flag("by-paid-only") | {"paidOnly": False, "questionFrontendId": "2"}
+
+    questions = parse_saved_responses([wrap(by_is_paid_only, by_paid_only)])
+
+    assert [q.slug for q in questions] == ["by-is-paid-only", "by-paid-only"]
+
+
 def test_daily_fixture_parses_to_one_question() -> None:
     questions = parse_saved_responses([load_fixture("leetcode_daily.json")])
 
@@ -328,6 +360,18 @@ def test_build_script_keeps_the_existing_file_when_nothing_free_was_found(tmp_pa
     assert out.read_text(encoding="utf-8") == "previous catalogue"
 
 
+def test_build_script_says_why_flagless_questions_were_not_kept(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    out = tmp_path / "leetcode_free.json"
+    unflagged = write_payload(tmp_path / "unflagged.json", wrap(without_flag("unflagged-one")))
+
+    assert main([str(unflagged), "--out", str(out)]) == 1
+
+    assert "isPaidOnly" in capsys.readouterr().err
+    assert not out.exists()
+
+
 def test_build_script_rejects_an_unreadable_saved_file(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -364,15 +408,6 @@ def test_missing_file_loads_as_empty(tmp_path: Path) -> None:
         pytest.param("[]", id="list-at-top"),
         pytest.param('{"questions": "many"}', id="questions-not-a-list"),
         pytest.param('{"generated_at": "x"}', id="no-questions"),
-        pytest.param('{"questions": [[1, "two-sum", "Two Sum", "easy"]]}', id="short-row"),
-        pytest.param('{"questions": [[1, "a", "A", "easy", ["array"], 9]]}', id="long-row"),
-        pytest.param('{"questions": [[1, "a", "A", "trivial", ["array"]]]}', id="bad-difficulty"),
-        pytest.param('{"questions": [["1", "a", "A", "easy", ["array"]]]}', id="string-id"),
-        pytest.param('{"questions": [[true, "a", "A", "easy", ["array"]]]}', id="boolean-id"),
-        pytest.param('{"questions": [[1, "", "A", "easy", ["array"]]]}', id="empty-slug"),
-        pytest.param('{"questions": [[1, "a", "A", "easy", "array"]]}', id="topics-not-a-list"),
-        pytest.param('{"questions": [[1, "a", "A", "easy", [3]]]}', id="topic-not-a-string"),
-        pytest.param('{"questions": ["row"]}', id="row-not-a-list"),
     ],
 )
 def test_malformed_file_loads_as_empty(tmp_path: Path, body: str) -> None:
@@ -382,12 +417,80 @@ def test_malformed_file_loads_as_empty(tmp_path: Path, body: str) -> None:
     assert load_catalogue(path) == ()
 
 
-def test_a_bad_row_discards_the_whole_file(tmp_path: Path) -> None:
-    path = tmp_path / "leetcode_free.json"
-    rows = [[1, "a", "A", "easy", ["array"]], [2, "b", "B", "nope", ["array"]]]
+GOOD_ROW_BEFORE: list[Any] = [1, "before", "Before", "easy", ["array"]]
+GOOD_ROW_AFTER: list[Any] = [3, "after", "After", "hard", ["tree"]]
+QUESTIONS_AROUND_A_BAD_ROW = (
+    Question(1, "before", "Before", "easy", ("array",)),
+    Question(3, "after", "After", "hard", ("tree",)),
+)
+
+
+def write_rows(path: Path, rows: list[Any]) -> Path:
     path.write_text(json.dumps({"questions": rows}), encoding="utf-8")
+    return path
+
+
+def catalogue_warnings(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [r.getMessage() for r in caplog.records if r.name == catalogue.logger.name]
+
+
+@pytest.mark.parametrize(
+    "bad_row",
+    [
+        pytest.param([2, "two-sum", "Two Sum", "easy"], id="short-row"),
+        pytest.param([2, "b", "B", "easy", ["array"], 9], id="long-row"),
+        pytest.param([2, "b", "B", "trivial", ["array"]], id="bad-difficulty"),
+        pytest.param(["2", "b", "B", "easy", ["array"]], id="string-id"),
+        pytest.param([True, "b", "B", "easy", ["array"]], id="boolean-id"),
+        pytest.param([2, "", "B", "easy", ["array"]], id="empty-slug"),
+        pytest.param([2, "b", 7, "easy", ["array"]], id="title-not-a-string"),
+        pytest.param([2, "b", "B", "easy", "array"], id="topics-not-a-list"),
+        pytest.param([2, "b", "B", "easy", [3]], id="topic-not-a-string"),
+        pytest.param("row", id="row-not-a-list"),
+    ],
+)
+def test_bad_row_is_skipped_and_its_neighbours_load(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, bad_row: Any
+) -> None:
+    path = write_rows(tmp_path / "leetcode_free.json", [GOOD_ROW_BEFORE, bad_row, GOOD_ROW_AFTER])
+
+    with caplog.at_level(logging.WARNING, logger=catalogue.logger.name):
+        loaded = load_catalogue(path)
+
+    assert loaded == QUESTIONS_AROUND_A_BAD_ROW
+    assert len(catalogue_warnings(caplog)) == 1
+
+
+def test_skipped_rows_are_counted_in_one_warning(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    rows = [GOOD_ROW_BEFORE, [2, "b", "B", "nope", []], "row", GOOD_ROW_AFTER]
+    path = write_rows(tmp_path / "leetcode_free.json", rows)
+
+    with caplog.at_level(logging.WARNING, logger=catalogue.logger.name):
+        loaded = load_catalogue(path)
+        load_catalogue(path)
+
+    assert loaded == QUESTIONS_AROUND_A_BAD_ROW
+    warnings = catalogue_warnings(caplog)
+    assert len(warnings) == 1
+    assert "skipped 2 malformed row(s) of 4" in warnings[0]
+
+
+def test_file_of_only_bad_rows_loads_as_empty(tmp_path: Path) -> None:
+    path = write_rows(tmp_path / "leetcode_free.json", ["row", [1, "a"]])
 
     assert load_catalogue(path) == ()
+
+
+def test_clean_file_logs_nothing(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    path = write_rows(tmp_path / "leetcode_free.json", [GOOD_ROW_BEFORE, GOOD_ROW_AFTER])
+
+    with caplog.at_level(logging.DEBUG, logger=catalogue.logger.name):
+        loaded = load_catalogue(path)
+
+    assert loaded == QUESTIONS_AROUND_A_BAD_ROW
+    assert catalogue_warnings(caplog) == []
 
 
 def test_problem_with_the_file_is_logged_once(
