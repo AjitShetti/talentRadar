@@ -16,6 +16,11 @@ here is fetched at runtime.
 A company known only by its area is drawn at that area's centroid, nudged by
 :func:`jitter` so a hundred HSR startups do not stack on one pixel. The map
 marks those pins as approximate; see ``geo_precision`` on ``companies``.
+
+A company known only to be in Bengaluru (precision ``city``) is drawn by
+:func:`approximate_point`: a deterministic spot in a ring round the city
+centre, clear of the MG Road cluster, marked "location unknown". It is
+computed when the map is read and never stored.
 """
 
 from __future__ import annotations
@@ -27,6 +32,13 @@ from dataclasses import dataclass
 
 #: (south, west, north, east) — Bengaluru Urban with its tech corridors.
 BENGALURU_BBOX: tuple[float, float, float, float] = (12.80, 77.40, 13.15, 77.80)
+
+#: The middle of the city: the MG Road metro node (see the "MG Road" area).
+BENGALURU_CENTRE: tuple[float, float] = (12.97553, 77.60679)
+
+#: The ring :func:`approximate_point` draws in, in km from :data:`BENGALURU_CENTRE`.
+APPROXIMATE_MIN_KM = 2.5
+APPROXIMATE_MAX_KM = 6.0
 
 _EARTH_KM = 6371.0
 _M_PER_DEG_LAT = 111_320.0
@@ -240,3 +252,28 @@ def jitter(key: str, lat: float, lng: float) -> tuple[float, float]:
     dlat = metres * math.cos(bearing) / _M_PER_DEG_LAT
     dlng = metres * math.sin(bearing) / (_M_PER_DEG_LAT * math.cos(math.radians(lat)))
     return round(lat + dlat, 6), round(lng + dlng, 6)
+
+
+def approximate_point(key: str) -> tuple[float, float]:
+    """
+    Where to draw a company that is known only to be in Bengaluru.
+
+    A point in the ring :data:`APPROXIMATE_MIN_KM` to :data:`APPROXIMATE_MAX_KM`
+    from :data:`BENGALURU_CENTRE`, fixed by ``key`` (the company id) so it does
+    not wander between loads. The distance is drawn so points are even over the
+    ring's *area*, not bunched on its inner edge, and the ring keeps them off
+    the real MG Road cluster. Rounded to 4 decimals (~11 m): the position is
+    a guess anyway, and fewer digits keep the map payload small.
+
+    The result lies inside :data:`BENGALURU_BBOX` for any key, by construction
+    (6 km from the centre is well inside a box 39 km tall).
+    """
+    digest = hashlib.sha256(f"approximate:{key}".encode()).digest()
+    bearing = math.radians(int.from_bytes(digest[:4], "big") / 2**32 * 360)
+    fraction = int.from_bytes(digest[4:8], "big") / 2**32
+    low, high = APPROXIMATE_MIN_KM**2, APPROXIMATE_MAX_KM**2
+    metres = math.sqrt(low + fraction * (high - low)) * 1000
+    lat, lng = BENGALURU_CENTRE
+    dlat = metres * math.cos(bearing) / _M_PER_DEG_LAT
+    dlng = metres * math.sin(bearing) / (_M_PER_DEG_LAT * math.cos(math.radians(lat)))
+    return round(lat + dlat, 4), round(lng + dlng, 4)

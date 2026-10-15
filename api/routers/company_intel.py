@@ -182,7 +182,10 @@ async def company_map(
     """
     Every listed company in `city` as one positional row:
     `[id, name, lat, lng, precision, tier, stage, sector, area, size,
-    open_roles, raised_90d]`. `lat`/`lng` are null at `city` precision.
+    open_roles, raised_90d]`, inside `{generated_at, city, total, pinned,
+    approximate, rows}`. A `city` row carries a computed `lat`/`lng` in a ring
+    round the city centre (`approximate` counts them): the frontend marks it
+    "location unknown".
 
     The same for every user, so it is cached server-side for an hour and
     carries an ETag; a matching `If-None-Match` gets a bodiless 304.

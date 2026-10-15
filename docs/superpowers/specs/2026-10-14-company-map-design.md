@@ -25,7 +25,8 @@ sources, and a stream of funding news.
 The ledger strip states what the system actually holds, for example
 "1,240 employers · 870 on the map · 41 raised in 90 days". DESIGN.md asks for
 this in place of a bare metric. The page always opens on Map (Ajit, 2026-10-15);
-unpinned companies are one chip away, in List.
+companies with no known location are drawn as approximate rings, marked
+"location unknown" (decision 2026-10-15, §4.3).
 
 ## 2. Goals, non-goals, anti-goals
 
@@ -250,10 +251,15 @@ company sites, which would leak users' IPs to them.
 4. A Nominatim name search bounded to Bengaluru, accepted only for class
    office/company/building with name similarity ≥ 0.9 → `exact`.
 5. A known area (curated, or found in text) → centroid + jitter → `area`.
-6. Otherwise → `city`: List only. The map shows "N not pinned".
+6. Otherwise → `city`. Decision 2026-10-15, overriding "listed but not pinned":
+   the map draws it as an approximate ring in an annulus 2.5–6 km around the
+   Bengaluru centre, marked "location unknown". The point is computed at read
+   time from the company id (nothing is stored), so a real address found later
+   replaces it, and `geo_precision` stays `city`.
 
 Rendering follows precision. `exact` and `street` get a solid pin. `area`
-gets a hollow ring with the tooltip "Approximate — area only".
+gets a hollow ring with the tooltip "Approximate — area only". `city` gets the
+same ring, in the annulus, with the tooltip "Location unknown".
 
 ### 4.4 One-line summary
 
@@ -335,7 +341,7 @@ Everything is under `/api/v1/company-intel` and authenticated, as today.
 
 | Endpoint | Change |
 |---|---|
-| `GET /map?city=Bengaluru` | **new.** `{generated_at, total, pinned, rows}`. Each row is positional, to stay small: `[id, name, lat, lng, precision, tier, stage, sector, area, size, open_roles, raised_90d]`. Listed companies only; `lat`/`lng` null when `city` precision. Cached in `CacheBackend` for 1 h per city, with an ETag. |
+| `GET /map?city=Bengaluru` | **new.** `{generated_at, city, total, pinned, approximate, rows}`. Each row is positional, to stay small: `[id, name, lat, lng, precision, tier, stage, sector, area, size, open_roles, raised_90d]`. Listed companies only. `pinned` counts street/exact/area rows, `approximate` counts `city` rows; a `city` row carries a computed lat/lng in the 2.5–6 km annulus (§4.3). Cached in `CacheBackend` for 1 h per city, with an ETag. |
 | `GET /map/for-me` | **new.** `{hiring_for_you: [company_id]}`: companies with an open Bengaluru role whose title contains the profile's target-role keywords, using the same normalisation as search. Empty without a target role. Separate so `/map` stays cacheable across users. |
 | `GET /` (List) | `+ stage, sector, area, size, raised_within_days` filters |
 | `GET /facets` | `+ stages, sectors, areas, sizes`, with counts |
@@ -408,7 +414,8 @@ The route stays `/company-intel`. The nav label stays **Company Intel**
   - **Filtering**: all filters run client-side on the loaded rows, as on the
     reference site, with no refetch.
   - **Initial view**: fit to the Bengaluru bbox.
-  - **Unpinned companies**: a chip, "128 not pinned — see List".
+  - **Unknown location**: companies with `city` precision are drawn as the
+    same hollow ring in the annulus, with the chip "128 location unknown".
   - **Attribution**: "© OpenStreetMap contributors · OpenFreeMap".
 - **News strip**: a collapsible bottom-left panel, "Latest", with 5 items and
   a "Funding" tag. A linked item opens the company drawer. An unlinked one

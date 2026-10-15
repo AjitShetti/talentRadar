@@ -10,11 +10,16 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
 from domain.areas import (
+    APPROXIMATE_MAX_KM,
+    APPROXIMATE_MIN_KM,
     BENGALURU_AREAS,
+    BENGALURU_CENTRE,
+    approximate_point,
     area_for_point,
     area_for_text,
     in_bengaluru,
@@ -88,6 +93,51 @@ class TestAreas:
         assert first != jitter("company-xyz", 12.9, 77.6)
         distance_m = _km((12.9, 77.6), first) * 1000
         assert 150 <= distance_m <= 450
+
+
+class TestApproximatePoint:
+    """Where a company with no address is drawn: a ring round the city centre."""
+
+    KEYS: ClassVar[list[str]] = [f"company-{n}" for n in range(500)]
+
+    def test_is_deterministic_per_key(self):
+        assert approximate_point("company-abc") == approximate_point("company-abc")
+
+    def test_different_keys_get_different_points(self):
+        points = {approximate_point(key) for key in self.KEYS}
+        assert len(points) == len(self.KEYS)
+
+    def test_every_point_is_in_the_annulus_and_the_bbox(self):
+        assert (APPROXIMATE_MIN_KM, APPROXIMATE_MAX_KM) == (2.5, 6.0)
+        for key in self.KEYS:
+            point = approximate_point(key)
+            assert in_bengaluru(*point), key
+            # rounded to ~11 m, so allow a hair either side of the ring
+            assert (
+                APPROXIMATE_MIN_KM - 0.02
+                <= _km(BENGALURU_CENTRE, point)
+                <= (APPROXIMATE_MAX_KM + 0.02)
+            ), key
+
+    def test_points_go_all_the_way_round(self):
+        north = sum(approximate_point(key)[0] > BENGALURU_CENTRE[0] for key in self.KEYS)
+        east = sum(approximate_point(key)[1] > BENGALURU_CENTRE[1] for key in self.KEYS)
+        assert 150 < north < 350
+        assert 150 < east < 350
+
+    def test_points_are_spread_across_the_ring_not_bunched_at_its_inner_edge(self):
+        distances = sorted(_km(BENGALURU_CENTRE, approximate_point(key)) for key in self.KEYS)
+        # Uniform over the annulus' area: the median sits near sqrt of the mean of r^2.
+        median = distances[len(distances) // 2]
+        assert 4.2 < median < 4.9
+
+    def test_the_ring_clears_the_mg_road_cluster(self):
+        mg_road = _centroid("MG Road")
+        assert _km(BENGALURU_CENTRE, mg_road) < 0.5
+        assert all(_km(mg_road, approximate_point(key)) > 2.0 for key in self.KEYS)
+
+    def test_the_centre_is_in_the_bbox(self):
+        assert in_bengaluru(*BENGALURU_CENTRE)
 
 
 class TestTaxonomy:

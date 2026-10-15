@@ -23,6 +23,7 @@ import pytest_asyncio
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from domain.areas import in_bengaluru
 from services.cache_backend import CacheBackend
 from storage.database import Base
 from storage.models import (
@@ -37,12 +38,20 @@ from storage.models import (
 
 READ = "services.company_map.read"
 
+
+def _km(a: tuple[float, float], b: tuple[float, float]) -> float:
+    from domain.areas import _km as haversine
+
+    return haversine(a[0], a[1], b[0], b[1])
+
+
 CID = str(uuid.uuid4())
 MAP_PAYLOAD: dict[str, Any] = {
     "generated_at": "2026-10-14T00:00:00+00:00",
     "city": "Bengaluru",
     "total": 2,
     "pinned": 1,
+    "approximate": 1,
     "rows": [
         [
             CID,
@@ -58,7 +67,20 @@ MAP_PAYLOAD: dict[str, Any] = {
             3,
             True,
         ],
-        [str(uuid.uuid4()), "Beta", None, None, "city", None, None, None, None, None, 0, False],
+        [
+            str(uuid.uuid4()),
+            "Beta",
+            12.9801,
+            77.5712,
+            "city",
+            None,
+            None,
+            None,
+            None,
+            None,
+            0,
+            False,
+        ],
     ],
 }
 NEWS = [
@@ -100,7 +122,7 @@ class TestMapRoute:
             response = await auth_client.get("/api/v1/company-intel/map?city=Bengaluru")
         assert response.status_code == 200
         body = response.json()
-        assert {"generated_at", "total", "pinned", "rows"} <= body.keys()
+        assert {"generated_at", "city", "total", "pinned", "approximate", "rows"} <= body.keys()
         assert all(len(row) == 12 for row in body["rows"])
         assert body["rows"][0][:2] == [CID, "Acme"]
         assert run.await_args.kwargs == {"city": "Bengaluru"}
@@ -490,6 +512,7 @@ class TestMapRows:
         assert ids == {seeded["acme"], seeded["beta"], seeded["gamma"], seeded["epsilon"]}
         assert payload["total"] == 4
         assert payload["pinned"] == 1
+        assert payload["approximate"] == 3
 
     async def test_a_non_tech_row_with_a_summary_is_not_on_the_map(self, seeded):
         from services.company_map.read import map_rows
@@ -516,14 +539,152 @@ class TestMapRows:
             2,
             True,
         ]
-        assert rows[seeded["beta"]][2:5] == [None, None, "city"]
+        assert rows[seeded["beta"]][4] == "city"  # still honest about what we know
         assert rows[seeded["beta"]][10:] == [1, False]
 
-    async def test_a_pin_outside_bengaluru_is_not_drawn(self, seeded):
+    async def test_a_city_row_is_drawn_in_the_ring_round_the_centre(self, seeded):
+        from domain.areas import APPROXIMATE_MAX_KM, APPROXIMATE_MIN_KM, BENGALURU_CENTRE
         from services.company_map.read import map_rows
 
         rows = {row[0]: row for row in (await map_rows())["rows"]}
-        assert rows[seeded["epsilon"]][2:5] == [None, None, "city"]
+        for key in ("beta", "gamma"):
+            _id, _name, lat, lng, precision, *_rest = rows[seeded[key]]
+            assert precision == "city"
+            assert in_bengaluru(lat, lng)
+            distance = _km(BENGALURU_CENTRE, (lat, lng))
+            assert APPROXIMATE_MIN_KM - 0.02 <= distance <= APPROXIMATE_MAX_KM + 0.02
+
+    async def test_a_city_rows_point_is_stable_and_not_shared(self, seeded):
+        from services.company_map.read import map_rows
+
+        first = {row[0]: row[2:4] for row in (await map_rows())["rows"]}
+        await CacheBackend.reset()
+        CacheBackend._initialised = True
+        CacheBackend._client = None
+        again = {row[0]: row[2:4] for row in (await map_rows())["rows"]}
+        assert again == first  # recomputed, not cached: the same company id, the same point
+        assert first[seeded["beta"]] != first[seeded["gamma"]]
+
+    async def test_a_row_with_a_real_point_is_unchanged(self, seeded):
+        from services.company_map.read import map_rows
+
+        rows = {row[0]: row for row in (await map_rows())["rows"]}
+        assert rows[seeded["acme"]][2:5] == [12.93574, 77.62408, "exact"]
+
+    async def test_a_pin_outside_bengaluru_is_still_city_and_so_approximate(self, seeded):
+        from services.company_map.read import map_rows
+
+        rows = {row[0]: row for row in (await map_rows())["rows"]}
+        lat, lng, precision = rows[seeded["epsilon"]][2:5]
+        assert precision == "city"
+        assert in_bengaluru(lat, lng)  # the stored Mumbai point is never drawn
+        assert (lat, lng) != (19.07, 72.87)
+
+    async def test_nothing_about_the_approximate_point_reaches_the_database(self, seeded, db):
+        from services.company_map.read import map_rows
+
+        await map_rows()
+        async with db() as session:
+            beta = await session.get(Company, uuid.UUID(seeded["beta"]))
+        assert beta is not None
+        assert (beta.lat, beta.lng, beta.geo_precision) == (None, None, None)
+
+    async def test_a_real_address_found_later_replaces_the_ring_point(self, seeded, db):
+        from services.company_map.read import map_rows
+
+        before = {row[0]: row for row in (await map_rows())["rows"]}[seeded["beta"]]
+        async with db() as session:
+            beta = await session.get(Company, uuid.UUID(seeded["beta"]))
+            assert beta is not None
+            beta.lat, beta.lng, beta.geo_precision = 12.9116, 77.6389, "street"
+            await session.commit()
+        await CacheBackend.reset()
+        CacheBackend._initialised = True
+        CacheBackend._client = None
+        after = {row[0]: row for row in (await map_rows())["rows"]}[seeded["beta"]]
+        assert before[4] == "city"
+        assert after[2:5] == [12.9116, 77.6389, "street"]
+
+    async def test_counts_follow_precision_not_coordinates(self, seeded, db):
+        from services.company_map.read import map_rows
+
+        async with db() as session:
+            beta = await session.get(Company, uuid.UUID(seeded["beta"]))
+            assert beta is not None
+            beta.lat, beta.lng, beta.geo_precision = 12.9116, 77.6389, "area"
+            await session.commit()
+        payload = await map_rows()
+        assert (payload["pinned"], payload["approximate"]) == (2, 2)
+        assert payload["pinned"] + payload["approximate"] == payload["total"]
+
+    async def test_the_drawer_of_a_city_row_still_says_city_with_no_address(
+        self, seeded, monkeypatch
+    ):
+        from services import companies
+        from services.company_map import read
+
+        monkeypatch.setattr(companies, "AsyncSessionLocal", read.AsyncSessionLocal)
+        drawer = await companies.company_intel(seeded["beta"], with_github=False)
+
+        assert drawer is not None
+        assert drawer["geo_precision"] in (None, "city")  # the frontend reads "no value" as city
+        assert drawer["address"] is None
+        assert "lat" not in drawer and "lng" not in drawer  # the ring point is the map's alone
+
+    async def test_a_3000_row_city_map_stays_under_100_kb_gzipped(self, db):
+        """
+        The budget (spec section 1) with every row at city precision, i.e. every
+        row carrying a computed point. Ids are random UUIDs and cost ~57 KB on
+        their own at this size, so the names are brand-like (three syllables and
+        a suffix, ~20 bits each) rather than uniform random letters (~50 bits),
+        which no company list resembles.
+        """
+        import gzip
+        import json
+        import random
+
+        from services.company_map.read import map_rows
+
+        rng = random.Random(7)
+        syllables = [c + v for c in "bdfghklmnprstvz" for v in "aeiou"][:48]
+        suffixes = ["", "", "", " Labs", " Tech", "ly", " AI", " Systems"]
+        async with db() as session:
+            session.add_all(
+                _company(
+                    "".join(rng.choice(syllables) for _ in range(3)).title() + rng.choice(suffixes),
+                    domain=f"c{n}.example",
+                    summary="Does something.",
+                    office_cities=["Bengaluru"],
+                )
+                for n in range(3000)
+            )
+            await session.commit()
+        payload = await map_rows()
+        assert payload["total"] == payload["approximate"] == 3000
+
+        def gzipped(body: dict[str, object]) -> int:
+            raw = json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+            return len(gzip.compress(raw))
+
+        def with_points(points: list[tuple[float | None, float | None]]) -> dict[str, object]:
+            rows = [
+                [*row[:2], lat, lng, *row[4:]]
+                for row, (lat, lng) in zip(payload["rows"], points, strict=True)
+            ]
+            return {**payload, "rows": rows}
+
+        none: list[tuple[float | None, float | None]] = [(None, None)] * 3000
+        real = [
+            (round(rng.uniform(12.85, 13.10), 5), round(rng.uniform(77.50, 77.75), 5))
+            for _ in range(3000)
+        ]
+        # Budget: 100 KiB. Nothing else the row carries is as costly as its id.
+        assert gzipped(payload) <= 100 * 1024
+        # What the approximate points themselves cost, whatever the names are...
+        assert gzipped(payload) - gzipped(with_points(none)) <= 20 * 1024
+        # ...and a map of approximate rows is no heavier than the same map with
+        # real 5-decimal points, the case the budget was always sized for.
+        assert gzipped(payload) <= gzipped(with_points(real))
 
     async def test_is_cached_per_city(self, seeded, db):
         from services.company_map.read import map_rows
@@ -541,6 +702,7 @@ class TestMapRows:
         payload = await map_rows("Atlantis")
         assert payload["rows"] == []
         assert payload["total"] == 0
+        assert (payload["pinned"], payload["approximate"]) == (0, 0)
 
 
 class TestHiringForYou:
