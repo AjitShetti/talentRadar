@@ -46,6 +46,20 @@ async def test_refresh_with_the_token_runs_the_step(api_client, cron_token):
     assert run.await_args.args == ("geocode", 40)
 
 
+@pytest.mark.parametrize(
+    ("step", "limit"), [("yc", 2000), ("github_orgs", 60), ("wikidata", 2000), ("github", 30)]
+)
+async def test_refresh_accepts_every_scheduled_step(api_client, cron_token, step, limit):
+    counts = {"step": step, "seen": 1, "created": 1, "updated": 0, "skipped": 0}
+    with patch(RUN_STEP, AsyncMock(return_value=counts)) as run:
+        response = await api_client.post(
+            f"{REFRESH}?step={step}&limit={limit}", headers={"X-Cron-Token": cron_token}
+        )
+    assert response.status_code == 200
+    assert response.json() == counts
+    assert run.await_args.args == (step, limit)
+
+
 async def test_refresh_rejects_an_unknown_step(api_client, cron_token):
     with patch(RUN_STEP, AsyncMock(return_value={})) as run:
         response = await api_client.post(

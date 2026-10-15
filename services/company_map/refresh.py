@@ -8,6 +8,13 @@ The scheduled work behind the company map, one bounded step per call.
 both call :func:`run_step`. A step:
 
 * ``wikidata`` / ``osm`` — import Bengaluru companies and merge them in.
+* ``yc`` — Bengaluru companies from Y Combinator's public directory (a
+  community mirror; one request).
+* ``github_orgs`` — Bengaluru organisations on GitHub: the next ``limit``
+  results of a cursor-driven search, each looked up once (an organisation
+  checked in the last 30 days is not looked up again) and kept only if it is a
+  real company. The cursor lives in the cache, so a cold cache restarts the
+  walk, which costs requests but loses nothing.
 * ``sites`` — read up to ``limit`` company homepages (robots.txt respected,
   each site at most once per 30 days): address, PIN, people, and a summary
   when the site or Wikidata already says what the company does.
@@ -25,17 +32,21 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import UTC, datetime
+from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from domain.areas import area_for_text, jitter
 from domain.company_identity import merge_fields
-from services.company_map import osm, wikidata
+from services.cache_backend import CacheBackend
+from services.company_map import github_orgs, osm, wikidata, yc
 from services.company_map.geocode import geocode, resolve_location
 from services.company_map.people import github_members, upsert_people
+from services.company_map.sourced import SourcedCompany
 from services.company_map.store import apply_location, due, mark_tried, upsert_company_ex
 from services.company_map.summary import choose_summary, has_source_text, llm_summary
 from services.company_map.types import GeoHit, ImportedCompany, SiteFacts
@@ -45,18 +56,28 @@ from storage.models import Company
 
 logger = logging.getLogger(__name__)
 
-STEPS = ("wikidata", "osm", "sites", "geocode", "summaries", "github")
+STEPS = ("wikidata", "osm", "yc", "github_orgs", "sites", "geocode", "summaries", "github")
 
 #: Hard ceilings whatever the caller asks for: Nominatim's policy, the daily
 #: summary budget, and what one request can finish.
 MAX_LIMIT = {
     "wikidata": 5000,
     "osm": 5000,
+    "yc": 5000,
+    "github_orgs": 100,
     "sites": 100,
     "geocode": 40,
     "summaries": 60,
     "github": 50,
 }
+
+#: Where the GitHub search walk stands (a ``github_orgs.Cursor``), and for how long.
+GITHUB_ORGS_CURSOR = "tr:company-map:github-orgs:cursor"
+_CURSOR_TTL_SECONDS = 120 * 24 * 3600
+#: An organisation is not looked up again for this long.
+GITHUB_ORG_REFRESH = timedelta(days=30)
+#: Consecutive failed lookups that end a run: GitHub or the network is down.
+_MAX_LOOKUP_FAILURES = 5
 
 SITE_CONCURRENCY = 4
 _SITE_TEXT_KEEP = 1500
@@ -91,20 +112,42 @@ def _set_summary(company: Company, summary: str, source: str) -> None:
     company.summary_source = source
 
 
+def _merge_source_metadata(company: Company, imported: ImportedCompany) -> None:
+    """Keep the facts only the source states (a YC batch, a follower count) on the row."""
+    if isinstance(imported, SourcedCompany) and imported.source_metadata:
+        metadata = _metadata(company)
+        metadata.update(imported.source_metadata)
+        company.extra_metadata = metadata
+
+
+async def _upsert(
+    session: AsyncSession, imported: ImportedCompany, source: str
+) -> tuple[Company | None, bool]:
+    company, created = await upsert_company_ex(session, imported, source)
+    if company is not None:
+        _merge_source_metadata(company, imported)
+    return company, created
+
+
 async def _import(
-    session: AsyncSession, companies: list[ImportedCompany], source: str
+    session: AsyncSession,
+    companies: Sequence[ImportedCompany],
+    source: str,
+    *,
+    skipped: int = 0,
 ) -> dict[str, int]:
     created = updated = 0
     for i, imported in enumerate(companies, start=1):
-        company, was_created = await upsert_company_ex(session, imported, source)
+        company, was_created = await _upsert(session, imported, source)
         if company is None:
+            skipped += 1
             continue
         created += was_created
         updated += not was_created
         if i % _COMMIT_EVERY == 0:
             await session.commit()
     await session.commit()
-    return {"seen": len(companies), "created": created, "updated": updated}
+    return {"seen": len(companies), "created": created, "updated": updated, "skipped": skipped}
 
 
 async def _step_import(session: AsyncSession, step: str, limit: int) -> dict[str, int]:
@@ -112,6 +155,101 @@ async def _step_import(session: AsyncSession, step: str, limit: int) -> dict[str
     async with httpx.AsyncClient() as client:
         payload = await module.fetch(client)
     return await _import(session, module.parse(payload)[:limit], step)
+
+
+async def _step_yc(session: AsyncSession, limit: int) -> dict[str, int]:
+    async with httpx.AsyncClient() as client:
+        payload = await yc.fetch(client)
+    companies, unusable = yc.scan(payload)
+    return await _import(session, companies[:limit], "yc", skipped=unusable)
+
+
+def _stamped_within(company: Company, key: str, window: timedelta) -> bool:
+    """True when the row's metadata holds an ISO timestamp under ``key`` newer than ``window``."""
+    stamp = (company.extra_metadata or {}).get(key)
+    if not isinstance(stamp, str):
+        return False
+    try:
+        when = datetime.fromisoformat(stamp)
+    except ValueError:
+        return False
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    return datetime.now(UTC) - when < window
+
+
+async def _recently_checked(session: AsyncSession, logins: list[str]) -> set[str]:
+    """The lowercased logins whose organisation this step looked up in the last 30 days."""
+    if not logins:
+        return set()
+    rows = await session.execute(
+        select(Company).where(func.lower(Company.github_org).in_([x.lower() for x in logins]))
+    )
+    return {
+        (company.github_org or "").lower()
+        for company in rows.scalars()
+        if _stamped_within(company, "github_org_checked_at", GITHUB_ORG_REFRESH)
+    }
+
+
+async def _step_github_orgs(session: AsyncSession, limit: int) -> dict[str, int | str]:
+    start = github_orgs.Cursor.decode(await CacheBackend.get_json(GITHUB_ORGS_CURSOR))
+    seen = lookups = created = updated = skipped = failures = 0
+    stopped: str | None = None
+    position = start
+    async with httpx.AsyncClient() as client:
+        walk = await github_orgs.fetch_candidates(client, start, limit)
+        resting = await _recently_checked(session, [c.login for c in walk.candidates])
+        for candidate in walk.candidates:
+            company: Company | None = None
+            was_created = False
+            if candidate.login.lower() not in resting:
+                try:
+                    org = await github_orgs.fetch_org(client, candidate.login)
+                except github_orgs.RateLimited:
+                    stopped = "rate_limited"
+                    break
+                except httpx.HTTPError as exc:
+                    logger.info("GitHub org %s unavailable: %s", candidate.login, exc)
+                    failures += 1
+                    if failures >= _MAX_LOOKUP_FAILURES:
+                        stopped = "errors"
+                        break
+                else:
+                    failures = 0
+                    lookups += 1
+                    imported = github_orgs.parse_org(org)
+                    if imported is not None:
+                        company, was_created = await _upsert(session, imported, "github_org")
+            if company is None:
+                skipped += 1
+            else:
+                mark_tried(company, "github_org_checked_at")
+                created += was_created
+                updated += not was_created
+                if (created + updated) % _COMMIT_EVERY == 0:
+                    await session.commit()
+            seen += 1
+            position = candidate.next
+        else:
+            # Every candidate is done, so the walk moves on to where it ended
+            # (or to the start of a new cycle) unless the search itself was cut off.
+            if not walk.rate_limited:
+                position = walk.cursor
+    if walk.rate_limited and stopped is None:
+        stopped = "rate_limited"
+    await session.commit()
+    await CacheBackend.set_json(GITHUB_ORGS_CURSOR, position.encode(), _CURSOR_TTL_SECONDS)
+    counts: dict[str, int | str] = {
+        "seen": seen,
+        "lookups": lookups,
+        "created": created,
+        "updated": updated,
+        "skipped": skipped,
+    }
+    if stopped:
+        counts["stopped"] = stopped
+    return counts
 
 
 def _apply_site(company: Company, facts: SiteFacts | None) -> None:
@@ -247,8 +385,13 @@ async def run_step(step: str, limit: int) -> dict[str, int | str]:
     bounded = max(1, min(limit, MAX_LIMIT[step]))
     try:
         async with AsyncSessionLocal() as session:
+            counts: Mapping[str, int | str]
             if step in ("wikidata", "osm"):
                 counts = await _step_import(session, step, bounded)
+            elif step == "yc":
+                counts = await _step_yc(session, bounded)
+            elif step == "github_orgs":
+                counts = await _step_github_orgs(session, bounded)
             elif step == "sites":
                 counts = await _step_sites(session, bounded)
             elif step == "geocode":

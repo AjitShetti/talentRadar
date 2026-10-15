@@ -56,7 +56,16 @@ def _overpass() -> dict[str, Any]:
 async def test_unknown_step_is_an_error_not_an_exception():
     result = await run_step("nonsense", 10)
     assert "error" in result
-    assert set(STEPS) == {"wikidata", "osm", "sites", "geocode", "summaries", "github"}
+    assert set(STEPS) == {
+        "wikidata",
+        "osm",
+        "yc",
+        "github_orgs",
+        "sites",
+        "geocode",
+        "summaries",
+        "github",
+    }
 
 
 async def test_refresh_step_twice_changes_nothing():

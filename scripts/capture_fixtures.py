@@ -26,10 +26,13 @@ import gzip
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ingestion.scrapling_manager import ScraplingManager
 from ingestion.sources.registry import LiveSource, live_source_registry
+
+if TYPE_CHECKING:
+    import httpx
 
 FIXTURE_DIR = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "sources"
 
@@ -134,14 +137,69 @@ async def main_async(args: argparse.Namespace) -> int:
 COMPANY_MAP_DIR = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "company_map"
 _WIKIDATA_KEEP = 40  # companies
 _OVERPASS_KEEP = 80  # elements
+#: The YC entries the tests pin: every case the parser has a rule for (active,
+#: inactive, acquired, listed, no website, a Play Store "website", a tracking
+#: query, several offices, other cities). A slug that has left the directory is
+#: reported, not silently replaced.
+_YC_KEEP_SLUGS = (
+    "razorpay", "meesho", "markupwand", "drivezy", "scribe", "supr-daily", "chutney-inc",
+    "recordbook", "onefin", "100x", "statiq", "dockup", "circuithub", "craze", "medplum",
+)  # fmt: skip
+_YC_DESCRIPTION_KEEP = 400  # characters of long_description
+_GITHUB_SEARCH_KEEP = 14  # search results
+#: Organisations the tests pin: a real company, one with no website and no
+#: repository, one in several cities, one whose link has no scheme.
+_GITHUB_ORGS = ("SigNoz", "swiggy-private", "hotstar", "Auquan")
+
+
+def _write_fixture(name: str, data: object) -> None:
+    text = json.dumps(data, indent=1, ensure_ascii=False) + "\n"
+    (COMPANY_MAP_DIR / name).write_text(text, encoding="utf-8", newline="\n")
+
+
+async def capture_yc(client: httpx.AsyncClient) -> None:
+    """Record ``yc.json``: the pinned entries of the directory, descriptions cut short."""
+    from services.company_map import yc
+
+    directory = await yc.fetch(client)
+    by_slug = {entry.get("slug"): entry for entry in directory}
+    missing = [slug for slug in _YC_KEEP_SLUGS if slug not in by_slug]
+    kept = [by_slug[slug] for slug in _YC_KEEP_SLUGS if slug in by_slug]
+    for entry in kept:
+        entry["long_description"] = (entry.get("long_description") or "")[:_YC_DESCRIPTION_KEEP]
+    _write_fixture("yc.json", kept)
+    note = f" (gone from the directory: {missing})" if missing else ""
+    print(f"  yc        {len(kept)} companies{note}")
+
+
+async def capture_github_orgs(client: httpx.AsyncClient) -> None:
+    """Record ``github_org_search.json`` and ``github_orgs.json`` (contact email blanked)."""
+    from services.company_map import github_orgs
+
+    page = await github_orgs.search_page(client, github_orgs.LOCATIONS[0], 1)
+    page["items"] = page.get("items", [])[:_GITHUB_SEARCH_KEEP]
+    _write_fixture("github_org_search.json", page)
+    print(f"  github    {len(page['items'])} search results")
+
+    organisations: dict[str, object] = {}
+    for login in _GITHUB_ORGS:
+        org = await github_orgs.fetch_org(client, login)
+        if org is not None:
+            org["email"] = None
+            organisations[login] = org
+    _write_fixture("github_orgs.json", organisations)
+    print(f"  github    {len(organisations)} organisations")
 
 
 async def capture_company_map() -> int:
     """
-    Re-record the company-map importer fixtures: Wikidata, Overpass and the
-    four news feeds, trimmed so they stay small. The people fixtures
-    (GitHub, Tavily) are synthetic by design and are not recorded: real
-    responses would put real individuals' details in the repository.
+    Re-record the company-map importer fixtures: Wikidata, Overpass, the
+    Y Combinator directory, one GitHub organisation search and four
+    organisation records, and the four news feeds, trimmed so they stay small.
+    The people fixtures (GitHub members, Tavily) are synthetic by design and
+    are not recorded: real responses would put real individuals' details in
+    the repository. The GitHub organisation records are organisations, and
+    their contact email is blanked.
     """
     import re
 
@@ -163,6 +221,9 @@ async def capture_company_map() -> int:
         overpass["elements"] = overpass.get("elements", [])[:_OVERPASS_KEEP]
         (COMPANY_MAP_DIR / "overpass.json").write_text(json.dumps(overpass, indent=1), encoding="utf-8")
         print(f"  overpass  {len(overpass['elements'])} elements")
+
+        await capture_yc(client)
+        await capture_github_orgs(client)
 
         for source in FEEDS:
             xml = await fetch_feed(client, source)

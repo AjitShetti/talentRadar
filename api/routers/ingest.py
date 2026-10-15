@@ -227,7 +227,9 @@ async def reverify_postings(limit: int = Query(default=150, ge=1, le=500)) -> di
     return await liveness.reverify_batch(limit=limit)
 
 
-RefreshStep = Literal["wikidata", "osm", "sites", "geocode", "summaries", "github"]
+RefreshStep = Literal[
+    "wikidata", "osm", "yc", "github_orgs", "sites", "geocode", "summaries", "github"
+]
 
 
 @router.post("/company-map/refresh", dependencies=[Depends(require_cron_or_admin)])
