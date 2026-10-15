@@ -12,7 +12,7 @@ Tables
 """
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum as PyEnum
 from typing import Any
 
@@ -28,6 +28,7 @@ from sqlalchemy import (
     Index,
     Integer,
     Numeric,
+    SmallInteger,
     String,
     Text,
     TypeDecorator,
@@ -1846,3 +1847,312 @@ class JobEmbedding(Base):
 
     def __repr__(self) -> str:
         return f"<JobEmbedding id={self.id}>"
+
+
+# ---------------------------------------------------------------------------
+# outreach (migration 017)
+# ---------------------------------------------------------------------------
+
+class OutreachThread(Base):
+    """
+    One user's conversation with one company: who they plan to reach, who they
+    have reached and what happened.
+
+    Private to ``user_id``. ``company_id`` is NULL for a company the user typed
+    that we hold no row for (a user's typing must not create rows in the shared
+    ``companies`` table) and for a company later removed, so ``company_name``
+    and ``job_title`` are snapshots that keep the thread readable on their own.
+    A company is opened at most once per user (the partial unique index).
+
+    ``people`` and ``touches`` are deleted by the database (``ON DELETE
+    CASCADE``), which is why they are ``passive_deletes`` and ``lazy="raise"``:
+    callers that need them ``selectinload`` them explicitly.
+    """
+    __tablename__ = "outreach_threads"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    company_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="NULL = a typed company we hold no row for, or one later removed",
+    )
+    company_name: Mapped[str] = mapped_column(
+        String(256), nullable=False, comment="Snapshot, so the thread outlives its company"
+    )
+    job_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("jobs.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="A posting attached as context",
+    )
+    job_title: Mapped[str | None] = mapped_column(
+        String(256), nullable=True, comment="Snapshot; jobs are pruned after 45 days"
+    )
+    application_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("job_applications.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Link to the Applications tracker",
+    )
+    source: Mapped[str] = mapped_column(
+        String(12), nullable=False,
+        comment="suggestion | drawer | list | typed | overview",
+    )
+    note: Mapped[str | None] = mapped_column(
+        String(500), nullable=True, comment="The user's 'why this company'"
+    )
+    next_step: Mapped[str | None] = mapped_column(
+        String(140), nullable=True, comment="After a reply, e.g. 'Call on Thursday'"
+    )
+    next_step_at: Mapped[date | None] = mapped_column(
+        Date, nullable=True, comment="The day that step is due, in IST"
+    )
+    closed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, comment="Set when the user closes the thread"
+    )
+    outcome: Mapped[str | None] = mapped_column(
+        String(16), nullable=True,
+        comment="referred | interviewing | offer | not_now | not_a_fit | other",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    people: Mapped[list["OutreachPerson"]] = relationship(
+        "OutreachPerson", cascade="all, delete-orphan", passive_deletes=True, lazy="raise"
+    )
+    touches: Mapped[list["OutreachTouch"]] = relationship(
+        "OutreachTouch", cascade="all, delete-orphan", passive_deletes=True, lazy="raise"
+    )
+
+    __table_args__ = (
+        Index("ix_outreach_threads_user", "user_id"),
+        Index(
+            "uq_outreach_threads_user_company",
+            "user_id",
+            "company_id",
+            unique=True,
+            postgresql_where=text("company_id IS NOT NULL"),
+            sqlite_where=text("company_id IS NOT NULL"),
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return f"<OutreachThread id={self.id} user={self.user_id}>"
+
+
+class OutreachPerson(Base):
+    """
+    A person in a thread, with their own follow-up clock.
+
+    In a thread with a company, every person is a ``company_contacts`` row
+    first, so a person always has a source; that row is the truth for links and
+    email, and ``name``/``title`` only keep the person readable if it goes
+    away. A name-only thread has no contact rows, so ``email`` and
+    ``linkedin_url`` hold what the user typed and are used for nothing else.
+    ``cold`` is derived from the clock at read time and is never stored.
+    """
+    __tablename__ = "outreach_people"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    thread_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("outreach_threads.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    contact_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("company_contacts.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="A curated person or the user's own saved contact",
+    )
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    title: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    kind: Mapped[str] = mapped_column(
+        String(24), nullable=False, comment="The contact's kind"
+    )
+    state: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="planned", server_default="planned",
+        comment="planned | waiting | replied | dropped",
+    )
+    first_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_outbound_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    follow_ups_sent: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=0, server_default="0"
+    )
+    next_follow_up_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+        comment="Recomputed on every touch; the user can snooze it",
+    )
+    replied_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    email: Mapped[str | None] = mapped_column(
+        String(256), nullable=True, comment="Only for a person with no contact row"
+    )
+    linkedin_url: Mapped[str | None] = mapped_column(
+        String(512), nullable=True, comment="Only for a person with no contact row"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index(
+            "uq_outreach_people_thread_contact",
+            "thread_id",
+            "contact_id",
+            unique=True,
+            postgresql_where=text("contact_id IS NOT NULL"),
+            sqlite_where=text("contact_id IS NOT NULL"),
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return f"<OutreachPerson id={self.id} thread={self.thread_id} state={self.state!r}>"
+
+
+class OutreachTouch(Base):
+    """
+    One thing that happened: a message the user sent, or a reply they got.
+
+    Nothing here is sent by the app; a touch is the user recording what they
+    did. ``kind`` is set by the service from the follow-up clock, never by the
+    client. ``user_id`` is denormalised for the per-day count.
+    """
+    __tablename__ = "outreach_touches"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    thread_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("outreach_threads.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    person_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("outreach_people.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="NULL for a thread-level touch (a GitHub comment)",
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    channel: Mapped[str] = mapped_column(
+        String(10), nullable=False,
+        comment="linkedin | email | x | github | call | event | other",
+    )
+    direction: Mapped[str] = mapped_column(String(3), nullable=False, comment="out | in")
+    kind: Mapped[str] = mapped_column(
+        String(10), nullable=False, comment="first | follow_up | reply | other"
+    )
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    body: Mapped[str | None] = mapped_column(
+        String(2000), nullable=True,
+        comment="A copy of the sent message, only when the user asks to keep one",
+    )
+    happened_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False,
+        comment="Backdated up to 30 days by the user, never in the future",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_outreach_touches_user_happened", "user_id", "happened_at"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<OutreachTouch id={self.id} thread={self.thread_id} {self.direction}>"
+
+
+class OssIssueSnapshot(Base):
+    """
+    A company's open good-first-issues on GitHub, as of ``fetched_at``.
+
+    Public data about the company, so it is shared across users. Only the
+    scheduled step writes it (a page load never calls GitHub); when a fetch
+    fails the row records the status and keeps the previous ``issues``.
+    """
+    __tablename__ = "oss_issue_snapshots"
+
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    org: Mapped[str] = mapped_column(
+        String(128), nullable=False, comment="The github_org this was read for"
+    )
+    status: Mapped[str] = mapped_column(
+        String(12), nullable=False, comment="ok | not_found | rate_limited | error"
+    )
+    total_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+        comment="GitHub's total for the query",
+    )
+    issues: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]",
+        comment="At most 5 of {repo, number, title, url, labels, updated_at, comments}",
+    )
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    def __repr__(self) -> str:
+        return f"<OssIssueSnapshot company={self.company_id} status={self.status!r}>"
+
+
+class OutreachSettings(Base):
+    """A user's outreach preferences. No row means the defaults."""
+    __tablename__ = "outreach_settings"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    daily_target: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=3, server_default="3",
+        comment="0-10 people to reach a day; 0 turns the suggestion nudge off",
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    def __repr__(self) -> str:
+        return f"<OutreachSettings user={self.user_id} daily_target={self.daily_target}>"
