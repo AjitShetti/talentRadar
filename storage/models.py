@@ -1622,8 +1622,10 @@ class Event(Base):
         nullable=False,
         comment="Luma evt-…; GDG slug; Eventbrite numeric id; for user, the row id",
     )
-    url: Mapped[str] = mapped_column(
-        String(1024), nullable=False, comment="The public event page (https only)"
+    url: Mapped[str | None] = mapped_column(
+        String(1024),
+        nullable=True,
+        comment="The public event page (https only); NULL for a manual event with no link",
     )
     title: Mapped[str] = mapped_column(String(300), nullable=False)
     snippet: Mapped[str | None] = mapped_column(

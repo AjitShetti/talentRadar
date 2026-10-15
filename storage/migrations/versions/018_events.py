@@ -15,8 +15,8 @@ ones:
 * ``events`` holds one row per event. ``(source, external_id)`` is the identity
   a re-read updates. ``listed`` and ``reasons`` are the relevance verdict,
   ``duplicate_of`` points a cross-source duplicate at its primary, and
-  ``owner_user_id`` is set only for an event a user added by hand. Times are
-  ``timestamptz``.
+  ``owner_user_id`` is set only for an event a user added by hand, and ``url``
+  is NULL for a manual event that has no link. Times are ``timestamptz``.
 * ``event_companies`` links an event to the companies on the map. Its primary
   key leads with ``event_id``, so a lookup by ``company_id`` has its own index.
 * ``event_saves`` is one user's save or "going" on one event, unique on
@@ -57,7 +57,7 @@ def upgrade() -> None:
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             source VARCHAR(16) NOT NULL,
             external_id VARCHAR(160) NOT NULL,
-            url VARCHAR(1024) NOT NULL,
+            url VARCHAR(1024),
             title VARCHAR(300) NOT NULL,
             snippet VARCHAR(600),
             starts_at TIMESTAMPTZ NOT NULL,

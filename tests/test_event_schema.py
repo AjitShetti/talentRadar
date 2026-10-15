@@ -2,15 +2,16 @@
 tests/test_event_schema.py
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 Migration 018 and the four event models (spec §5.1-5.4): the columns, the
-foreign-key actions, the indexes that keep every child foreign key findable,
-the migration chain, and the cascades. The cascades run on SQLite with
-``PRAGMA foreign_keys=ON`` so the database itself, not the ORM, does the
-deleting.
+foreign-key actions (checked in both the ORM and the migration's SQL), the
+indexes that keep every child foreign key findable, the migration chain, and
+the cascades. The cascades run on SQLite with ``PRAGMA foreign_keys=ON`` so
+the database itself, not the ORM, does the deleting.
 """
 
 from __future__ import annotations
 
 import importlib.util
+import re
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
@@ -42,6 +43,21 @@ MIGRATION = (
 )
 
 EVENT_TABLES = ("events", "event_companies", "event_saves", "event_contacts")
+
+# Every foreign key of the four tables, with its ON DELETE action. The ORM test
+# and the migration test both check against this one table, so the two cannot
+# drift apart: a change to either side has to change this table too.
+FOREIGN_KEY_ACTIONS: tuple[tuple[str, str, str, str | None], ...] = (
+    ("events", "duplicate_of", "events.id", "SET NULL"),
+    ("events", "owner_user_id", "users.id", "CASCADE"),
+    ("event_companies", "event_id", "events.id", "CASCADE"),
+    ("event_companies", "company_id", "companies.id", "CASCADE"),
+    ("event_saves", "user_id", "users.id", "CASCADE"),
+    ("event_saves", "event_id", "events.id", "CASCADE"),
+    ("event_contacts", "user_id", "users.id", "CASCADE"),
+    ("event_contacts", "event_id", "events.id", "CASCADE"),
+    ("event_contacts", "company_id", "companies.id", "SET NULL"),
+)
 
 
 def _load_migration() -> ModuleType:
@@ -165,32 +181,33 @@ def test_required_and_optional_columns() -> None:
     assert EventContact.__table__.c.company_id.nullable
 
 
+def test_event_url_is_optional() -> None:
+    # A manual event may have no link (spec §7: POST /events/manual, url optional).
+    assert Event.__table__.c.url.nullable
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Foreign keys: the target and the ON DELETE action (spec §5.1-5.4)
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize(
-    ("table", "column", "target", "ondelete"),
-    [
-        ("events", "duplicate_of", "events.id", "SET NULL"),
-        ("events", "owner_user_id", "users.id", "CASCADE"),
-        ("event_companies", "event_id", "events.id", "CASCADE"),
-        ("event_companies", "company_id", "companies.id", "CASCADE"),
-        ("event_saves", "user_id", "users.id", "CASCADE"),
-        ("event_saves", "event_id", "events.id", "CASCADE"),
-        ("event_contacts", "user_id", "users.id", "CASCADE"),
-        ("event_contacts", "event_id", "events.id", "CASCADE"),
-        ("event_contacts", "company_id", "companies.id", "SET NULL"),
-    ],
-)
+@pytest.mark.parametrize(("table", "column", "target", "ondelete"), FOREIGN_KEY_ACTIONS)
 def test_foreign_key_targets_and_actions(
-    table: str, column: str, target: str, ondelete: str
+    table: str, column: str, target: str, ondelete: str | None
 ) -> None:
     foreign_keys = list(Base.metadata.tables[table].c[column].foreign_keys)
     assert len(foreign_keys) == 1
     assert foreign_keys[0].target_fullname == target
     assert foreign_keys[0].ondelete == ondelete
+
+
+def test_orm_foreign_keys_are_exactly_the_table() -> None:
+    found = {
+        (name, fk.parent.name, fk.target_fullname, fk.ondelete)
+        for name in EVENT_TABLES
+        for fk in Base.metadata.tables[name].foreign_keys
+    }
+    assert found == set(FOREIGN_KEY_ACTIONS)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -248,7 +265,7 @@ def test_every_child_foreign_key_is_led_by_an_index(table_name: str) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Migration 018: the chain, IF NOT EXISTS, and the downgrade order
+# Migration 018: the chain, IF NOT EXISTS, the downgrade order, and the SQL
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -268,22 +285,25 @@ class _RecordingOp:
         self.statements.append(" ".join(sql.split()))
 
 
-def test_migration_018_upgrade_creates_each_table_if_not_exists(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def _upgrade_statements(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     module = _load_migration()
     recorder = _RecordingOp()
     monkeypatch.setattr(module, "op", recorder)
-
     module.upgrade()
+    return recorder.statements
 
-    creates = [s for s in recorder.statements if s.startswith("CREATE")]
+
+def test_migration_018_upgrade_creates_each_table_if_not_exists(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    statements = _upgrade_statements(monkeypatch)
+    creates = [s for s in statements if s.startswith("CREATE")]
     assert creates
     assert all("IF NOT EXISTS" in statement for statement in creates)
     for table in EVENT_TABLES:
         assert any(
             statement.startswith(f"CREATE TABLE IF NOT EXISTS {table} (")
-            for statement in recorder.statements
+            for statement in statements
         ), table
 
 
@@ -302,6 +322,37 @@ def test_migration_018_downgrade_drops_children_before_parents(
         if statement.startswith("DROP TABLE")
     ]
     assert dropped == ["event_contacts", "event_saves", "event_companies", "events"]
+
+
+def test_migration_018_event_url_is_optional(monkeypatch: pytest.MonkeyPatch) -> None:
+    statements = _upgrade_statements(monkeypatch)
+    events_sql = next(s for s in statements if s.startswith("CREATE TABLE IF NOT EXISTS events ("))
+    assert "url VARCHAR(1024), " in events_sql
+    assert "url VARCHAR(1024) NOT NULL" not in events_sql
+
+
+_REFERENCES = re.compile(
+    r"(\w+) UUID[^,]*? REFERENCES (\w+)\((\w+)\)(?: ON DELETE (CASCADE|SET NULL))?"
+)
+
+
+def _migration_foreign_keys(statements: list[str]) -> set[tuple[str, str, str, str | None]]:
+    """Every column REFERENCES clause in the recorded CREATE TABLE statements."""
+    found: set[tuple[str, str, str, str | None]] = set()
+    for statement in statements:
+        created = re.match(r"CREATE TABLE IF NOT EXISTS (\w+) \(", statement)
+        if created is None:
+            continue
+        for column, target_table, target_column, ondelete in _REFERENCES.findall(statement):
+            found.add(
+                (created.group(1), column, f"{target_table}.{target_column}", ondelete or None)
+            )
+    return found
+
+
+def test_migration_on_delete_clauses_match_the_orm(monkeypatch: pytest.MonkeyPatch) -> None:
+    in_migration = _migration_foreign_keys(_upgrade_statements(monkeypatch))
+    assert in_migration == set(FOREIGN_KEY_ACTIONS)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -352,6 +403,22 @@ def _event(title: str = "Fictional Rust Meetup") -> Event:
     )
 
 
+def _manual_event(owner_id: uuid.UUID) -> Event:
+    """A private event a user added by hand: no link, visible only to its owner."""
+    event_id = uuid.uuid4()
+    return Event(
+        id=event_id,
+        source="user",
+        external_id=str(event_id),
+        url=None,
+        title="Fictional dinner with the Zeta team",
+        starts_at=datetime(2026, 10, 22, 19, 0, tzinfo=UTC),
+        is_online=False,
+        listed=False,
+        owner_user_id=owner_id,
+    )
+
+
 def _company() -> Company:
     return Company(
         id=uuid.uuid4(),
@@ -375,13 +442,13 @@ async def test_foreign_keys_are_enforced_by_the_test_engine(fk_session: AsyncSes
 
 
 async def test_one_save_per_user_per_event(fk_session: AsyncSession) -> None:
-    user, event = _user(), _event()
-    fk_session.add_all([user, event])
+    user, ev = _user(), _event()
+    fk_session.add_all([user, ev])
     await fk_session.commit()
     fk_session.add_all(
         [
-            EventSave(id=uuid.uuid4(), user_id=user.id, event_id=event.id, status="saved"),
-            EventSave(id=uuid.uuid4(), user_id=user.id, event_id=event.id, status="going"),
+            EventSave(id=uuid.uuid4(), user_id=user.id, event_id=ev.id, status="saved"),
+            EventSave(id=uuid.uuid4(), user_id=user.id, event_id=ev.id, status="going"),
         ]
     )
     with pytest.raises(IntegrityError):
@@ -389,19 +456,77 @@ async def test_one_save_per_user_per_event(fk_session: AsyncSession) -> None:
     await fk_session.rollback()
 
 
-async def test_deleting_a_user_cascades_their_saves_and_contacts(
-    fk_session: AsyncSession,
-) -> None:
-    user, event = _user(), _event()
-    fk_session.add_all([user, event])
+async def test_a_manual_event_without_a_link_inserts(fk_session: AsyncSession) -> None:
+    owner = _user()
+    fk_session.add(owner)
+    await fk_session.commit()
+    manual = _manual_event(owner.id)
+    fk_session.add(manual)
+    await fk_session.commit()
+
+    stored = (await fk_session.execute(select(Event).where(Event.id == manual.id))).scalar_one()
+    assert stored.url is None
+    assert stored.owner_user_id == owner.id
+
+
+async def test_deleting_the_owner_deletes_their_private_event(fk_session: AsyncSession) -> None:
+    owner, other = _user(), _user()
+    shared = _event()
+    fk_session.add_all([owner, other, shared])
+    await fk_session.commit()
+    private = _manual_event(owner.id)
+    fk_session.add(private)
     await fk_session.commit()
     fk_session.add_all(
         [
-            EventSave(id=uuid.uuid4(), user_id=user.id, event_id=event.id, status="going"),
+            EventSave(id=uuid.uuid4(), user_id=owner.id, event_id=private.id, status="going"),
+            EventSave(id=uuid.uuid4(), user_id=other.id, event_id=shared.id, status="saved"),
+        ]
+    )
+    await fk_session.commit()
+
+    await fk_session.execute(delete(User).where(User.id == owner.id))
+    await fk_session.commit()
+
+    # Privacy: the owner's private event is gone with them, and nobody else's row is touched.
+    remaining = (await fk_session.execute(select(Event))).scalars().all()
+    assert [e.id for e in remaining] == [shared.id]
+    saves = (await fk_session.execute(select(EventSave))).scalars().all()
+    assert [s.user_id for s in saves] == [other.id]
+
+
+async def test_deleting_a_primary_clears_its_duplicates_link(fk_session: AsyncSession) -> None:
+    primary = _event(title="Swift Bengaluru x Okta")
+    duplicate = _event(title="Swift Bengaluru Meetup at Okta")
+    duplicate.source = "eventbrite"
+    duplicate.listed = False
+    duplicate.duplicate_of = primary.id
+    fk_session.add(primary)
+    await fk_session.commit()
+    fk_session.add(duplicate)
+    await fk_session.commit()
+
+    await fk_session.execute(delete(Event).where(Event.id == primary.id))
+    await fk_session.commit()
+
+    # The duplicate row is kept; refresh so the held object is not read from the identity map.
+    await fk_session.refresh(duplicate)
+    assert duplicate.duplicate_of is None
+
+
+async def test_deleting_a_user_cascades_their_saves_and_contacts(
+    fk_session: AsyncSession,
+) -> None:
+    user, ev = _user(), _event()
+    fk_session.add_all([user, ev])
+    await fk_session.commit()
+    fk_session.add_all(
+        [
+            EventSave(id=uuid.uuid4(), user_id=user.id, event_id=ev.id, status="going"),
             EventContact(
                 id=uuid.uuid4(),
                 user_id=user.id,
-                event_id=event.id,
+                event_id=ev.id,
                 name="Ravi Example",
                 note="Met by the demo table",
             ),
@@ -415,30 +540,30 @@ async def test_deleting_a_user_cascades_their_saves_and_contacts(
     assert (await fk_session.execute(select(EventSave))).scalars().all() == []
     assert (await fk_session.execute(select(EventContact))).scalars().all() == []
     # The event is shared, not the user's: it survives their deletion.
-    assert [e.id for e in (await fk_session.execute(select(Event))).scalars().all()] == [event.id]
+    assert [e.id for e in (await fk_session.execute(select(Event))).scalars().all()] == [ev.id]
 
 
 async def test_deleting_an_event_cascades_its_links_saves_and_contacts(
     fk_session: AsyncSession,
 ) -> None:
-    user, event, company = _user(), _event(), _company()
-    fk_session.add_all([user, event, company])
+    user, ev, company = _user(), _event(), _company()
+    fk_session.add_all([user, ev, company])
     await fk_session.commit()
     fk_session.add_all(
         [
             EventCompany(
-                event_id=event.id,
+                event_id=ev.id,
                 company_id=company.id,
                 role="host",
                 matched_on="host_name",
             ),
-            EventSave(id=uuid.uuid4(), user_id=user.id, event_id=event.id, status="saved"),
-            EventContact(id=uuid.uuid4(), user_id=user.id, event_id=event.id, name="Asha Example"),
+            EventSave(id=uuid.uuid4(), user_id=user.id, event_id=ev.id, status="saved"),
+            EventContact(id=uuid.uuid4(), user_id=user.id, event_id=ev.id, name="Asha Example"),
         ]
     )
     await fk_session.commit()
 
-    await fk_session.execute(delete(Event).where(Event.id == event.id))
+    await fk_session.execute(delete(Event).where(Event.id == ev.id))
     await fk_session.commit()
 
     assert (await fk_session.execute(select(EventCompany))).scalars().all() == []
@@ -453,15 +578,15 @@ async def test_deleting_an_event_cascades_its_links_saves_and_contacts(
 async def test_deleting_a_company_keeps_the_contact_and_clears_the_link(
     fk_session: AsyncSession,
 ) -> None:
-    user, event, company = _user(), _event(), _company()
-    fk_session.add_all([user, event, company])
+    user, ev, company = _user(), _event(), _company()
+    fk_session.add_all([user, ev, company])
     await fk_session.commit()
     contact_id = uuid.uuid4()
     fk_session.add(
         EventContact(
             id=contact_id,
             user_id=user.id,
-            event_id=event.id,
+            event_id=ev.id,
             name="Meera Example",
             company_name="Acme Fictional Labs",
             company_id=company.id,
