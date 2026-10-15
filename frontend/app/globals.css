@@ -52,7 +52,8 @@ a{text-decoration:none;color:inherit}
 
 /* ── App shell: a solid instrument panel, not a floating glass bar ───────── */
 .app-shell{display:flex;flex-direction:column;min-height:100vh}
-.topnav{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:28px;height:60px;padding:0 32px;background:var(--paper);border-bottom:1px solid var(--line-strong);transform:translateY(0);transition:transform .25s cubic-bezier(.4,0,.2,1)}
+:root{--nav-h:60px}
+.topnav{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:28px;height:var(--nav-h);padding:0 32px;background:var(--paper);border-bottom:1px solid var(--line-strong);transform:translateY(0);transition:transform .25s cubic-bezier(.4,0,.2,1)}
 .topnav-hidden{transform:translateY(-100%)}
 @media (prefers-reduced-motion: reduce){.topnav{transition:none}}
 .brand{display:flex;align-items:center;gap:9px;font-family:'Big Shoulders Text';font-size:17px;font-weight:700;letter-spacing:.2px;text-transform:uppercase;flex-shrink:0}
@@ -189,7 +190,7 @@ a{text-decoration:none;color:inherit}
 .skill-tags b{font-size:10px;color:var(--accent-light);font-weight:500}
 .focus-panel .text-button{color:var(--accent-light)}
 @media(max-width:1050px){.content-wrap{padding:35px 25px}.bottom-grid{grid-template-columns:1fr 1fr}.metric-grid{flex-direction:column}.metric-card{padding:22px 0;border-left:0!important}.metric-card+.metric-card{border-left:0;border-top:1px solid var(--line-soft)}.dashboard-grid{grid-template-columns:1fr}.dashboard-grid>.panel+.panel{border-left:0;padding-left:0}.bottom-grid{grid-template-columns:1fr}}
-@media(max-width:700px){.topnav{height:58px}.content-wrap{padding:28px 16px}.board-header{display:block}.board-header h1{font-size:26px}.primary-button{margin-top:20px;width:100%;justify-content:center}.insight-banner{align-items:flex-start;flex-wrap:wrap}.banner-action{margin-left:47px}.dashboard-grid,.bottom-grid{display:block}.panel{padding-top:24px}.bottom-grid .panel{min-height:0}.role-time{display:none}.top-actions{gap:12px}}
+@media(max-width:700px){:root{--nav-h:58px}.content-wrap{padding:28px 16px}.board-header{display:block}.board-header h1{font-size:26px}.primary-button{margin-top:20px;width:100%;justify-content:center}.insight-banner{align-items:flex-start;flex-wrap:wrap}.banner-action{margin-left:47px}.dashboard-grid,.bottom-grid{display:block}.panel{padding-top:24px}.bottom-grid .panel{min-height:0}.role-time{display:none}.top-actions{gap:12px}}
 
 /* ── Generic page shell: every route is a board ───────────────────────────── */
 .page-wrap{max-width:1260px;margin:0 auto;padding:43px 42px 50px}
@@ -1391,55 +1392,96 @@ body::before{content:'';position:fixed;inset:0;z-index:2000;pointer-events:none;
 /* The bleed shell loses its gutters at 800px to the generic .page-wrap rule; this page owns its own. */
 .page-wrap-bleed:has(>.cm-root){padding:0}
 .cm-root{min-width:0}
-.cm-root :is(a,button,select,summary):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.cm-page{display:flex;flex-direction:column;min-width:0}
-/* The map fills what is left of the viewport under the nav, so the page itself
-   never scrolls behind it (the drawer and the news list scroll on their own). */
-.cm-page.is-map{height:calc(100vh - 60px);height:calc(100dvh - 60px);min-height:560px}
-.cm-inner{width:100%;max-width:1260px;margin:0 auto;padding:0 42px}
-.cm-top{flex:none;padding-top:28px}
+.cm-root :is(a,button,select,summary,input):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* --cm-statsw is the widest the stats plate may be; --cm-rail is how much of the
+   right-hand side the plate and the zoom controls take, which the control panel
+   leaves clear so the two never overlap. --cm-drawer is what the docked drawer covers. */
+.cm-page{position:relative;display:flex;flex-direction:column;min-width:0;--cm-gap:14px;--cm-drawer:0px;--cm-statsw:340px;--cm-rail:var(--cm-statsw)}
+@media(min-width:1280px){.cm-page{--cm-statsw:520px}}
+@media(max-width:999px){.cm-page{--cm-statsw:280px}}
+.cm-page[data-drawer="open"]{--cm-drawer:540px;--cm-statsw:340px}
+/* With the drawer docked, the map beside it is too narrow to hold the plate and the
+   panel on one line below 1440px, so the plate steps aside and the zoom controls alone slide over. */
+@media(max-width:1439px){.cm-page[data-drawer="open"]{--cm-rail:32px}.cm-page[data-drawer="open"] .cm-stats{display:none}}
+.cm-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
 
-/* Ledger strip: the title on the left, what the system holds on the right. */
-.cm-heading{display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:16px 40px;margin-bottom:0;padding-bottom:18px}
-.cm-title{min-width:0}
-.cm-heading .board-kicker{margin:0 0 8px}
-.cm-heading h1{margin:0;font:700 32px/1.1 'Big Shoulders Text',sans-serif;letter-spacing:-.4px}
-.cm-readout{display:flex;margin:0;padding:0}
-.cm-readout>div{display:flex;flex-direction:column-reverse;gap:6px;padding:0 24px;border-left:1px solid var(--line-soft)}
-.cm-readout>div:first-child{padding-left:0;border-left:0}
-.cm-readout>div:last-child{padding-right:0}
-.cm-readout dd{margin:0;font:700 24px/1 'Fragment Mono',monospace;letter-spacing:-.4px;color:var(--ink);font-variant-numeric:tabular-nums}
-.cm-readout dt{font:600 10px 'Big Shoulders Text',sans-serif;letter-spacing:.9px;text-transform:uppercase;color:var(--faint)}
+/* The map fills what is left of the viewport under the nav (--nav-h, set with the
+   nav itself), so the page never scrolls behind it. The controls float over it. */
+.cm-page.is-map{height:calc(100vh - var(--nav-h));height:calc(100dvh - var(--nav-h));min-height:480px;overflow:hidden}
+.cm-inner{width:100%;max-width:1260px;margin:0 auto;padding:0 42px}
 .cm-dash{color:var(--ghost)}
 
-/* Toolbar */
-.cm-toolbar{margin-top:18px}
-.cm-toolbar .ci-searchbar{flex-wrap:wrap;row-gap:4px;transition:border-color var(--t-fast) var(--ease-fast),box-shadow var(--t-fast) var(--ease-fast)}
-.cm-toolbar .ci-searchbar:focus-within{border-color:var(--accent-border);box-shadow:0 0 0 3px rgba(255,176,32,.1),0 6px 18px rgba(0,0,0,.3)}
-.cm-toolbar .ci-searchbar input{flex:1 1 160px}
-.cm-toolbar .ci-searchbar select{flex:0 1 auto;max-width:150px;min-width:0;color:var(--muted);border-radius:0;transition:color var(--t-fast) var(--ease-fast)}
-.cm-toolbar .ci-searchbar select[data-set="true"],.cm-toolbar .ci-searchbar select:hover{color:var(--ink)}
-.cm-root select option{background:var(--surface);color:var(--ink)}
-.cm-root .ci-searchbar select:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:5px}
-.cm-toolbar .ci-chips{padding:12px 2px;gap:6px;min-width:0}
-.cm-page.is-map .cm-toolbar .ci-chips{border-bottom:0}
-.cm-root .ci-chip{transition:border-color var(--t-fast) var(--ease-fast),color var(--t-fast) var(--ease-fast),background var(--t-fast) var(--ease-fast),transform var(--t-fast) var(--ease-out)}
-.cm-root .ci-chip:active{transform:translateY(1px)}
-.cm-applied{color:var(--ink-2);background:var(--line-soft)}
-.cm-applied svg{opacity:.7}
-.cm-clear{background:transparent;color:var(--faint);font-size:11px;padding:6px 6px;border-radius:5px;transition:color var(--t-fast) var(--ease-fast)}
-.cm-clear:hover{color:var(--ink)}
-.cm-count{margin-left:auto;display:inline-flex;align-items:center;gap:6px}
-.cm-filter-btn{display:none}
-.cm-view{margin-left:8px;display:flex;align-items:center;gap:2px}
-.cm-view button{position:relative;display:flex;align-items:center;gap:6px;background:transparent;color:var(--muted);padding:8px 10px;border-radius:4px;font:600 11px 'Big Shoulders Text',sans-serif;text-transform:uppercase;letter-spacing:.5px;transition:color var(--t-fast) var(--ease-fast)}
+/* The band holds the control panel (and, in the list, the stats plate). On the map
+   it floats top-left; in the list it is an ordinary row above the results. */
+.cm-page.is-map .cm-band{position:absolute;z-index:6;top:var(--cm-gap);left:var(--cm-gap);width:min(640px,calc(100% - 2 * var(--cm-gap) - var(--cm-drawer) - var(--cm-rail) - 12px));pointer-events:none}
+.cm-page.is-map .cm-band>*{pointer-events:auto}
+.cm-page.is-list .cm-band{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:14px 32px;padding-top:22px;padding-bottom:8px}
+
+/* The control panel: one calm instrument. Row 1 is search, Filters, Map | List,
+   divided by hairlines; row 2 is the toggles and whatever is switched on. */
+.cm-panel{position:relative;min-width:0;background:var(--cm-float-bg);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border:1px solid var(--line);border-radius:9px;box-shadow:inset 0 1px 0 rgba(255,255,255,.03),0 10px 24px rgba(0,0,0,.35)}
+.cm-page.is-list .cm-panel{flex:0 1 640px;background:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none}
+.cm-row{display:flex;align-items:center;min-width:0}
+.cm-row-main{align-items:stretch;min-height:44px}
+.cm-search{position:relative;flex:1 1 120px;min-width:0;display:flex;align-items:center;gap:9px;padding-left:13px;color:var(--muted);border-radius:9px 0 0 0;transition:box-shadow var(--t-fast) var(--ease-fast)}
+.cm-search svg{flex-shrink:0;transition:color var(--t-fast) var(--ease-fast)}
+.cm-search input{flex:1;min-width:0;border:0;outline:0;background:transparent;color:var(--ink);font:13px 'Public Sans',sans-serif;padding:12px 8px 12px 0}
+.cm-search input::placeholder{color:var(--faint)}
+.cm-root .cm-search input:focus-visible{outline:0}
+.cm-search:focus-within{box-shadow:inset 0 -2px 0 var(--accent)}
+.cm-search:focus-within svg{color:var(--accent)}
+.cm-filters{flex:none;display:flex;border-left:1px solid var(--line-soft)}
+.cm-filter-btn{display:flex;align-items:center;gap:6px;padding:0 13px;background:transparent;color:var(--ink-2);font:600 11px 'Big Shoulders Text',sans-serif;letter-spacing:.9px;text-transform:uppercase;white-space:nowrap;transition:color var(--t-fast) var(--ease-fast),background var(--t-fast) var(--ease-fast)}
+.cm-filter-btn:hover,.cm-filter-btn[aria-expanded="true"]{color:var(--ink);background:var(--line-soft)}
+.cm-filter-btn:active{background:var(--line)}
+.cm-filter-btn b{font:400 10px 'Fragment Mono',monospace;letter-spacing:0;color:var(--accent-light);background:var(--accent-soft);border-radius:999px;padding:1px 6px;font-variant-numeric:tabular-nums}
+.cm-filter-btn .cm-chev{color:var(--faint);transition:transform var(--t) var(--ease-out)}
+.cm-filter-btn[aria-expanded="true"] .cm-chev{transform:rotate(180deg)}
+.cm-root .cm-filter-btn:focus-visible{outline-offset:-2px}
+.cm-view{flex:none;display:flex;align-items:stretch;gap:2px;padding:0 4px;border-left:1px solid var(--line-soft)}
+.cm-view button{position:relative;display:flex;align-items:center;gap:6px;background:transparent;color:var(--muted);padding:0 10px;border-radius:4px;font:600 11px 'Big Shoulders Text',sans-serif;text-transform:uppercase;letter-spacing:.9px;transition:color var(--t-fast) var(--ease-fast)}
 .cm-view button::after{content:'';position:absolute;left:10px;right:10px;bottom:0;height:2px;background:var(--accent);transform:scaleX(0);transform-origin:left;transition:transform var(--t) var(--ease-out)}
 .cm-view button:hover{color:var(--ink)}
 .cm-view button[aria-pressed="true"]{color:var(--ink)}
 .cm-view button[aria-pressed="true"] svg{color:var(--accent)}
 .cm-view button[aria-pressed="true"]::after{transform:scaleX(1)}
 .cm-view button[aria-disabled="true"]{color:var(--ghost);cursor:not-allowed}
-.cm-view i{width:1px;height:14px;background:var(--line)}
+.cm-root .cm-view button:focus-visible{outline-offset:-2px}
+.cm-view i{align-self:center;width:1px;height:14px;background:var(--line)}
+.cm-row-sub{flex-wrap:wrap;gap:6px;padding:8px 11px 9px;border-top:1px solid var(--line-soft)}
+.cm-root select option{background:var(--surface);color:var(--ink)}
+.cm-root .ci-chip{transition:border-color var(--t-fast) var(--ease-fast),color var(--t-fast) var(--ease-fast),background var(--t-fast) var(--ease-fast),transform var(--t-fast) var(--ease-out)}
+.cm-root .ci-chip:active{transform:translateY(1px)}
+.cm-row-sub .ci-chip{padding:5px 11px}
+.cm-applied{color:var(--ink-2);background:var(--line-soft)}
+.cm-applied svg{opacity:.7}
+.cm-clear{background:transparent;color:var(--faint);font-size:11px;padding:6px 6px;border-radius:5px;transition:color var(--t-fast) var(--ease-fast)}
+.cm-clear:hover{color:var(--ink)}
+.cm-count{margin-left:auto;display:inline-flex;align-items:center;gap:6px}
+
+/* The Filters popover: opaque, because a blur inside a blurred panel shows nothing. */
+.cm-pop{position:absolute;z-index:20;left:0;right:0;top:calc(100% + 6px);padding:14px 14px 12px;background:var(--surface-2);border:1px solid var(--line-strong);border-radius:9px;box-shadow:inset 0 1px 0 rgba(255,255,255,.03),0 16px 36px rgba(0,0,0,.5);animation:cm-pop-in var(--t) var(--ease-out) both}
+@keyframes cm-pop-in{from{opacity:0;transform:translateY(-6px)}}
+.cm-pop-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px 14px}
+.cm-field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.cm-field span{font:600 10px 'Big Shoulders Text',sans-serif;letter-spacing:.9px;text-transform:uppercase;color:var(--faint)}
+.cm-field select{width:100%;min-width:0;border:1px solid var(--line);border-radius:7px;padding:8px 9px;background:var(--surface);color:var(--muted);font:12px 'Public Sans',sans-serif;cursor:pointer;transition:border-color var(--t-fast) var(--ease-fast),color var(--t-fast) var(--ease-fast)}
+.cm-field select:hover,.cm-field select[data-set="true"]{color:var(--ink);border-color:var(--line-strong)}
+.cm-pop-foot{display:flex;align-items:center;gap:10px;margin-top:14px;padding-top:11px;border-top:1px solid var(--line-soft)}
+.cm-pop-foot .ci-count{margin-right:auto;display:inline-flex;gap:6px}
+.cm-done{background:transparent;border:1px solid var(--line);border-radius:7px;padding:7px 14px;color:var(--ink-2);font:600 11px 'Big Shoulders Text',sans-serif;letter-spacing:.9px;text-transform:uppercase;transition:border-color var(--t-fast) var(--ease-fast),color var(--t-fast) var(--ease-fast)}
+.cm-done:hover{border-color:var(--accent-border);color:var(--ink)}
+.cm-done:active{transform:translateY(1px)}
+
+/* The stats plate: what the system holds, set small. On the map it rides the
+   right-hand rail; in the list it is plain text at the right of the band. */
+.cm-stats{width:max-content;max-width:var(--cm-statsw);padding:9px 12px 10px;text-align:right;background:var(--cm-float-bg);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:9px;box-shadow:inset 0 1px 0 rgba(255,255,255,.03),0 10px 24px rgba(0,0,0,.35)}
+.cm-page.is-list .cm-stats{margin-left:auto;padding:4px 0 0;background:transparent;-webkit-backdrop-filter:none;backdrop-filter:none;border:0;box-shadow:none}
+.cm-stats-label{display:block;margin-bottom:5px;font:600 10px 'Big Shoulders Text',sans-serif;letter-spacing:.9px;text-transform:uppercase;color:var(--faint)}
+.cm-stats-line{margin:0;font:400 11px/1.6 'Public Sans',sans-serif;color:var(--muted)}
+.cm-stat{white-space:nowrap}
+.cm-stat b{display:inline-flex;font:400 12px 'Fragment Mono',monospace;color:var(--ink);font-variant-numeric:tabular-nums}
+.cm-stats-line i{margin:0 7px;font-style:normal;color:var(--faint)}
 
 /* Notes under the toolbar */
 .cm-fallback{display:flex;align-items:center;gap:9px;margin:0;padding:13px 2px;border-top:1px solid var(--line-soft);font-size:12.5px;color:var(--ink-2)}
@@ -1447,9 +1489,9 @@ body::before{content:'';position:fixed;inset:0;z-index:2000;pointer-events:none;
 .cm-fallback small{margin-left:auto;font:9.5px 'Fragment Mono',monospace;letter-spacing:.3px;color:var(--faint)}
 .cm-error{margin:12px 0 0}
 
-/* The map band: full bleed, ruled top and bottom, no box. Hairline paper shows
-   for the instant before the first tiles draw. */
-.cm-stage{position:relative;flex:1 1 auto;min-height:0;overflow:hidden;border-top:1px solid var(--line-strong);border-bottom:1px solid var(--line-strong);background-color:var(--paper);background-image:linear-gradient(var(--line-soft) 1px,transparent 1px),linear-gradient(90deg,var(--line-soft) 1px,transparent 1px);background-size:56px 56px}
+/* The map: the whole page area. Hairline paper shows for the instant before the first tiles draw. */
+.cm-stage{position:relative;flex:1 1 auto;min-height:0;overflow:hidden;background-color:var(--paper);background-image:linear-gradient(var(--line-soft) 1px,transparent 1px),linear-gradient(90deg,var(--line-soft) 1px,transparent 1px);background-size:56px 56px}
+.cm-page.is-map .cm-stage{position:absolute;inset:0}
 .cm-stage[hidden]{display:none}
 .cm-stage-inner{position:absolute;inset:0}
 .cm-map-root{position:absolute;inset:0}
@@ -1460,9 +1502,13 @@ body::before{content:'';position:fixed;inset:0;z-index:2000;pointer-events:none;
 
 /* Controls that float over the map keep a frame, a blur and the ambient lift. */
 .cm-float{position:absolute;z-index:3;background:var(--cm-float-bg);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:7px;box-shadow:inset 0 1px 0 rgba(255,255,255,.03),0 10px 24px rgba(0,0,0,.35)}
-.cm-unpinned{top:14px;left:14px;width:auto;padding:7px 12px;color:var(--ink-2)}
+.cm-unpinned{width:auto;padding:7px 12px;color:var(--ink-2)}
 .cm-unpinned strong{font:400 11px 'Fragment Mono',monospace;color:var(--ink);font-variant-numeric:tabular-nums}
-.cm-zoom{top:14px;right:14px;display:flex;flex-direction:column;overflow:hidden;transition:transform var(--t-travel) var(--ease-out)}
+/* Stats plate, zoom controls and the unlocated chip share one column, so they stack instead of colliding. */
+.cm-rail{position:absolute;z-index:3;top:var(--cm-gap);right:var(--cm-gap);display:flex;flex-direction:column;align-items:flex-end;gap:10px;pointer-events:none;transition:transform var(--t-travel) var(--ease-out)}
+.cm-rail>*{pointer-events:auto}
+.cm-rail .cm-float{position:static}
+.cm-zoom{display:flex;flex-direction:column;overflow:hidden}
 .cm-zoom button{display:grid;place-items:center;width:32px;height:32px;background:transparent;color:var(--ink-2);border-top:1px solid var(--line-soft);transition:background var(--t-fast) var(--ease-fast),color var(--t-fast) var(--ease-fast)}
 .cm-zoom button:first-child{border-top:0}
 .cm-zoom button:hover{background:var(--line-soft);color:var(--ink)}
@@ -1472,16 +1518,19 @@ body::before{content:'';position:fixed;inset:0;z-index:2000;pointer-events:none;
 .cm-legend span{display:flex;align-items:center;gap:8px;white-space:nowrap}
 .cm-key-dot{fill:var(--ink-2)}
 .cm-key-ring{fill:none;stroke:var(--ink-2);stroke-width:1.6}
+.cm-key-approx{fill:none;stroke:var(--faint);stroke-width:1.1;opacity:.6}
 .cm-key-lit{fill:var(--accent)}
 .cm-key-cluster{fill:var(--ink-4);stroke:var(--line-strong)}
 .cm-attrib{position:absolute;z-index:3;right:8px;bottom:6px;padding:2px 6px;border-radius:2px;background:var(--cm-veil);font:9px 'Fragment Mono',monospace;color:var(--faint);white-space:nowrap;transition:transform var(--t-travel) var(--ease-out)}
 .cm-attrib a{text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:2px;transition:color var(--t-fast) var(--ease-fast)}
 .cm-attrib a:hover{color:var(--ink)}
-.has-drawer .cm-zoom,.has-drawer .cm-attrib{transform:translateX(-540px)}
+.has-drawer .cm-rail,.has-drawer .cm-attrib{transform:translateX(-540px)}
 .has-drawer .cm-legend{display:none}
 
 /* Pins are drawn by the map; these are the parts the DOM draws. */
 .cm-cluster{display:grid;place-items:center;width:var(--d,34px);height:var(--d,34px);padding:0;border-radius:50%;background:var(--ink-4);border:1px solid var(--line-strong);box-shadow:0 0 0 4px var(--cm-halo);color:var(--ink-2);font:400 11px 'Fragment Mono',monospace;font-variant-numeric:tabular-nums;cursor:pointer;transition:background var(--t-fast) var(--ease-fast),border-color var(--t-fast) var(--ease-fast),color var(--t-fast) var(--ease-fast)}
+.cm-cluster.is-approx{background:transparent;border:1px dashed var(--faint);box-shadow:none;color:var(--faint)}
+.cm-cluster.is-approx:hover{background:var(--line-soft);border-color:var(--ink-2);color:var(--ink)}
 .cm-cluster:hover{background:var(--ink-5);border-color:var(--ink-2);color:var(--ink)}
 .cm-cluster:active span{transform:translateY(1px)}
 .cm-cluster:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
@@ -1491,7 +1540,7 @@ body::before{content:'';position:fixed;inset:0;z-index:2000;pointer-events:none;
 .cm-tip small{display:block;margin-top:2px;font:9.5px 'Fragment Mono',monospace;letter-spacing:.2px;color:var(--faint)}
 .cm-glyph-dot{fill:var(--ink-2)}
 .cm-glyph-ring{fill:none;stroke:var(--ink-2);stroke-width:1.5}
-.cm-glyph-none{fill:none;stroke:var(--faint);stroke-width:1.2;stroke-dasharray:2 1.6}
+.cm-glyph-none{fill:none;stroke:var(--faint);stroke-width:1.1;opacity:.7}
 
 /* News strip, bottom-left. */
 .cm-news{left:14px;bottom:30px;width:min(360px,calc(100% - 28px));overflow:hidden}
@@ -1641,30 +1690,29 @@ body::before{content:'';position:fixed;inset:0;z-index:2000;pointer-events:none;
   .cm-list .ci-mini-chips{justify-content:flex-start;flex-wrap:wrap}
   .cm-unpinned-note .ci-chip{margin-left:0}
 }
-/* Below 700px the map takes the height under the strip, the filters move into
-   a sheet, and the drawer is full width. */
-@media(max-width:700px){
-  .cm-page.is-map{height:calc(100vh - 58px);height:calc(100dvh - 58px);min-height:480px}
-  .cm-top{padding-top:16px}
-  .cm-heading{padding-bottom:14px;gap:10px 20px}
-  .cm-heading h1{display:none}
-  .cm-heading .board-kicker{margin:0;font-size:11px}
-  .cm-readout>div{padding:0 12px;gap:4px}
-  .cm-readout dd{font-size:17px}
-  .cm-readout dt{font-size:9px}
-  .cm-toolbar{margin-top:12px}
-  .cm-toolbar .ci-searchbar{flex-wrap:nowrap;padding:5px 6px 5px 11px}
-  .cm-toolbar .ci-searchbar select{display:none}
-  .cm-filter-btn{display:flex;align-items:center;gap:6px;flex-shrink:0;background:var(--surface-2);border:1px solid var(--line);border-radius:7px;color:var(--ink-2);padding:7px 10px;font:600 11px 'Big Shoulders Text',sans-serif;letter-spacing:.5px;text-transform:uppercase;transition:border-color var(--t-fast) var(--ease-fast),color var(--t-fast) var(--ease-fast)}
-  .cm-filter-btn:hover{border-color:var(--accent-border);color:var(--ink)}
-  .cm-filter-btn b{font:400 10px 'Fragment Mono',monospace;color:var(--accent-dark)}
-  .cm-toolbar .ci-chips{padding:8px 0}
-  .cm-toolbar .ci-chips .cm-toggle{display:none}
-  .cm-view button{padding:8px 7px}
-  .cm-stage{border-bottom:0}
+/* Below 700px (the page's own NARROW_QUERY) the map is the whole screen under the
+   nav, search floats on top with the stats as a one-line strip under it, the
+   filters move into a sheet, the news is a pill and the drawer is full width. */
+@media(max-width:699px){
+  .cm-page.is-map{min-height:420px}
+  .cm-page.is-map .cm-band{top:10px;left:10px;right:10px;width:auto;display:flex;flex-direction:column;gap:6px}
+  .cm-page.is-list .cm-band{flex-direction:column;align-items:stretch;flex-wrap:nowrap;gap:8px;padding-top:14px;padding-bottom:4px}
+  .cm-page.is-list .cm-panel{flex:none}
+  .cm-row-main{min-height:42px}
+  .cm-search{padding-left:11px}
+  .cm-filters .cm-filter-btn{padding:0 10px}
+  .cm-view{padding:0 2px}
+  .cm-view button{padding:0 9px}
+  .cm-view button::after{left:9px;right:9px}
+  .cm-row-sub{padding:7px 9px 8px}
+  .cm-row-sub .cm-toggle{display:none}
+  .cm-stats.is-strip{width:auto;max-width:none;padding:6px 10px;text-align:left;border-radius:7px;background:var(--cm-veil);box-shadow:none;overflow-x:auto;scrollbar-width:none;-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 20px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 20px),transparent)}
+  .cm-stats.is-strip::-webkit-scrollbar{display:none}
+  .cm-page.is-list .cm-stats.is-strip{margin-left:0;padding:2px 0 0;border-radius:0;background:transparent}
+  .cm-stats.is-strip .cm-stats-line{white-space:nowrap;font-size:10.5px}
+  .cm-stats.is-strip .cm-stat b{font-size:11px}
   .cm-legend{display:none}
-  .cm-unpinned{top:10px;left:10px;padding:5px 10px}
-  .cm-zoom{top:10px;right:10px}
+  .cm-rail{top:auto;bottom:26px;right:10px}
   .cm-news{left:10px;bottom:26px;width:auto;max-width:calc(100% - 20px)}
   .cm-news.is-open{right:10px}
   .cm-attrib{right:4px;bottom:3px;font-size:8px}
@@ -1672,7 +1720,12 @@ body::before{content:'';position:fixed;inset:0;z-index:2000;pointer-events:none;
   .ci-drawer-head{padding:16px}
   .ci-drawer-body{padding:0 16px 28px}
 }
+/* Room for the search field: the view switch drops its words to icons. */
+@media(max-width:479px){
+  .cm-view-label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
+  .cm-view button{padding:0 11px}
+}
 @media(prefers-reduced-motion:reduce){
-  .ci-drawer.is-docked,.ci-drawer.cm-over,.cm-sheet,.cm-sheet-backdrop,.cm-skel{animation:none}
-  .cm-zoom,.cm-attrib,.cm-news-head .cm-chev,.cm-view button::after,.cm-root .ci-chip{transition:none}
+  .ci-drawer.is-docked,.ci-drawer.cm-over,.cm-sheet,.cm-sheet-backdrop,.cm-skel,.cm-pop{animation:none}
+  .cm-rail,.cm-attrib,.cm-news-head .cm-chev,.cm-filter-btn .cm-chev,.cm-view button::after,.cm-root .ci-chip,.cm-search{transition:none}
 }

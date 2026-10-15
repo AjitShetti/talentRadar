@@ -1,9 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { FormEvent, ReactNode, RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, FormEvent, ReactNode, RefObject, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import {
-  Briefcase, Building2, Calendar, ChevronUp, ExternalLink, Github, Globe, Info, Linkedin, List, Loader2,
+  Briefcase, Building2, Calendar, ChevronDown, ChevronUp, ExternalLink, Github, Globe, Info, Linkedin, List, Loader2,
   Mail, Map as MapIcon, Newspaper, Plus, Search, SlidersHorizontal, Sparkles, Star, Trash2, Users, X,
 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
@@ -12,7 +12,7 @@ import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
 import {
   api, CompanyCard, CompanyContact, CompanyDetail, CompanyListFilters, CompanyNewsItem, CompanyPerson,
-  ContactCandidate, decodeMapRows, GeoPrecision, MapCompany, NewContact, SummarySource,
+  ContactCandidate, decodeMapRows, GeoPrecision, isPinned, MapCompany, NewContact, SummarySource,
 } from '@/lib/api'
 import { usePersistentState } from '@/lib/persistent-state'
 import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
@@ -125,24 +125,24 @@ function TierBadge({ tier, label }: { tier?: string | null; label?: string | nul
   return <span className="ci-tier" data-tier={tier}>{label || TIERS[tier] || tier.replace('_', ' ')}</span>
 }
 
-/** Dot for a precise location, ring for an approximate one, dashed ring for none. */
+/** Dot for a precise location, ring for an area, a faint small ring for none on record (the map's own marks). */
 function PrecisionGlyph({ precision }: { precision: GeoPrecision | null | undefined }) {
   if (!precision || precision === 'city') {
-    return <svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="3.4" className="cm-glyph-none" /></svg>
+    return <svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="2.8" className="cm-glyph-none" /></svg>
   }
   return precision === 'area'
     ? <svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="3.4" className="cm-glyph-ring" /></svg>
     : <svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="3.6" className="cm-glyph-dot" /></svg>
 }
 
-const PRECISION_SHORT: Record<GeoPrecision, string> = { exact: 'Exact', street: 'Street', area: 'Approximate', city: 'Not pinned' }
+const PRECISION_SHORT: Record<GeoPrecision, string> = { exact: 'Exact', street: 'Street', area: 'Approximate', city: 'Location unknown' }
 
 function precisionNote(precision: GeoPrecision | null | undefined, area: string | null | undefined): string {
   switch (precision) {
     case 'exact': return 'Exact location'
     case 'street': return 'Street-level — geocoded from their address'
     case 'area': return `Approximate — area only. The pin is offset within ${area || 'the area'}`
-    default: return 'Not pinned — no address or area on record. List only'
+    default: return 'Location not on record — shown near the city centre'
   }
 }
 
@@ -155,7 +155,7 @@ function rowMatches(row: MapCompany, f: Filters, skip?: SelectKey): boolean {
   if (skip !== 'size' && f.size && row.size !== f.size) return false
   if (f.hiring && row.openRoles <= 0) return false
   if (f.raised && !row.raised90d) return false
-  if (f.unpinned && row.lat != null) return false
+  if (f.unpinned && isPinned(row)) return false
   const q = f.q.trim().toLowerCase()
   if (q) {
     const hay = [row.name, row.area, row.sector && SECTORS[row.sector], row.stage && STAGES[row.stage], tierName(row.tier)]
@@ -238,7 +238,7 @@ export default function CompanyIntelPage() {
   const [sheetOpen, setSheetOpen] = useState(false)
 
   const [rows, setRows] = useState<MapCompany[]>([])
-  const [counts, setCounts] = useState({ total: 0, pinned: 0 })
+  const [counts, setCounts] = useState({ total: 0, pinned: 0, approximate: 0 })
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading')
   const [error, setError] = useState('')
   const [hiringIds, setHiringIds] = useState<ReadonlySet<string>>(() => new Set())
@@ -264,7 +264,8 @@ export default function CompanyIntelPage() {
       .then(payload => {
         if (cancelled) return
         setRows(decodeMapRows(payload.rows))
-        setCounts({ total: payload.total, pinned: payload.pinned })
+        // `approximate` is absent on an API that predates approximate pins.
+        setCounts({ total: payload.total, pinned: payload.pinned, approximate: payload.approximate ?? 0 })
         setLoadState('ready')
       })
       .catch(err => {
@@ -289,11 +290,12 @@ export default function CompanyIntelPage() {
     () => Object.fromEntries(SELECTS.map(spec => [spec.key, optionsFor(rows, filters, spec)])) as Record<SelectKey, Option[]>,
     [rows, filters],
   )
+  // Only rows with no coordinates at all. An approximate row is on the map.
   const visibleUnpinned = useMemo(() => visible.filter(r => r.lat == null).length, [visible])
   const raisedCount = useMemo(() => rows.filter(r => r.raised90d).length, [rows])
 
   // Which view: the user's choice if they made one, else the map; always the
-  // list when the map cannot be drawn. Unpinned employers are one chip away.
+  // list when the map cannot be drawn. Unlocated employers are one chip away.
   const view: View = mapDown || loadState === 'error' ? 'list' : (storedView ?? 'map')
   const mapActive = view === 'map' && viewHydrated && loadState === 'ready'
   const docked = view === 'map' && canDock && !mapDown
@@ -311,18 +313,23 @@ export default function CompanyIntelPage() {
   }
   const activeCount = (['type', 'area', 'stage', 'sector', 'size'] as const).filter(k => filters[k]).length
     + (hiring ? 1 : 0) + (raised ? 1 : 0) + (unpinned ? 1 : 0)
+  const anyFilter = activeCount > 0 || Boolean(filters.q)
   const shown = view === 'list' ? listTotal : visible.length
 
   const openNews = (item: CompanyNewsItem) => { if (item.company_id) setSelectedId(item.company_id) }
   const closeDrawer = useCallback(() => setSelectedId(null), [])
 
   const selectedRow = selectedId ? rowsById.get(selectedId) ?? null : null
+  const drawerOpen = docked && Boolean(selectedId)
 
-  const readout: Array<[string, number | null]> = [
-    ['employers', loadState === 'ready' ? counts.total : null],
-    ['on the map', loadState === 'ready' ? counts.pinned : null],
-    [`raised in ${RAISED_DAYS} days`, loadState === 'ready' ? raisedCount : null],
-  ]
+  const ready = loadState === 'ready'
+  const stats = (strip: boolean) => <StatsPlate
+    strip={strip}
+    total={ready ? counts.total : null}
+    pinned={ready ? counts.pinned : null}
+    raised={ready ? raisedCount : null}
+    approximate={ready ? counts.approximate : 0}
+  />
 
   const drawer = selectedId && <CompanyDrawer
     companyId={selectedId}
@@ -335,100 +342,55 @@ export default function CompanyIntelPage() {
 
   return <RequireAuth><AppShell bleed>
     <div className="cm-root">
-      <div className={`cm-page ${view === 'map' ? 'is-map' : 'is-list'}`} data-view={view}>
-        <div className="cm-top">
-          <div className="cm-inner">
-            <section className="page-heading cm-heading">
-              <div className="cm-title">
-                <span className="board-kicker">Company Intel — {CITY}</span>
-                <h1>Every employer in {CITY}, on one map<span>.</span></h1>
-              </div>
-              <dl className="cm-readout" aria-label={`${CITY} employers`}>
-                {readout.map(([label, value]) =>
-                  <div key={label}>
-                    <dt>{label}</dt>
-                    <dd>{value === null ? <span className="cm-dash">—</span> : <FlapText value={fmt(value)} />}</dd>
-                  </div>)}
-              </dl>
-            </section>
+      <div className={`cm-page ${view === 'map' ? 'is-map' : 'is-list'}`} data-view={view} data-drawer={drawerOpen ? 'open' : 'closed'}>
+        <h1 className="cm-sr">Every employer in {CITY}, on one map.</h1>
 
-            <div className="ci-toolbar cm-toolbar">
-              <div className="ci-searchbar">
-                <Search size={19} />
-                <input
-                  type="search"
-                  value={q}
-                  onChange={e => setQ(e.target.value)}
-                  placeholder={view === 'map' ? 'Search by name, area, sector or type — e.g. fintech, Koramangala' : 'Search by name, industry or what they do — e.g. payments, Rust, Razorpay'}
-                  aria-label="Search companies"
-                />
-                {SELECTS.map(spec =>
-                  <select
-                    key={spec.key}
-                    value={filters[spec.key]}
-                    data-set={filters[spec.key] ? 'true' : 'false'}
-                    onChange={e => setters[spec.key](e.target.value)}
-                    aria-label={spec.label}
-                  >
-                    <option value="">{spec.all}</option>
-                    {options[spec.key].map(o => <option key={o.value} value={o.value}>{o.label} ({o.count})</option>)}
-                  </select>)}
-                <button type="button" className="cm-filter-btn" onClick={() => setSheetOpen(true)} aria-haspopup="dialog">
-                  <SlidersHorizontal size={13} />Filters{activeCount > 0 && <b>{activeCount}</b>}
-                </button>
-              </div>
-
-              <div className="ci-chips">
-                <button type="button" className={`ci-chip ci-chip-toggle cm-toggle ${hiring ? 'active' : ''}`} aria-pressed={hiring} onClick={() => setHiring(!hiring)}>
-                  <Sparkles size={12} />Hiring now
-                </button>
-                <button type="button" className={`ci-chip ci-chip-toggle cm-toggle ${raised ? 'active' : ''}`} aria-pressed={raised} onClick={() => setRaised(!raised)}>
-                  Raised ≤ {RAISED_DAYS} days
-                </button>
-                {SELECTS.filter(spec => filters[spec.key]).map(spec =>
-                  <button type="button" key={spec.key} className="ci-chip cm-applied" onClick={() => setters[spec.key]('')} aria-label={`Clear ${spec.label}: ${spec.names?.[filters[spec.key]] || filters[spec.key]}`}>
-                    {spec.names?.[filters[spec.key]] || filters[spec.key]}<X size={11} />
-                  </button>)}
-                {unpinned && <button type="button" className="ci-chip cm-applied" onClick={() => setUnpinned(false)} aria-label="Clear Not pinned">Not pinned<X size={11} /></button>}
-                {narrow && hiring && <button type="button" className="ci-chip cm-applied" onClick={() => setHiring(false)} aria-label="Clear Hiring now">Hiring now<X size={11} /></button>}
-                {narrow && raised && <button type="button" className="ci-chip cm-applied" onClick={() => setRaised(false)} aria-label="Clear Raised">Raised ≤ {RAISED_DAYS} days<X size={11} /></button>}
-                {activeCount > 0 && <button type="button" className="cm-clear" onClick={clearAll}>Clear all</button>}
-
-                <span className="ci-count cm-count" role="status">
-                  {shown === null ? <span className="cm-dash">—</span> : <FlapText value={fmt(shown)} />} shown
-                </span>
-                <div className="cm-view" role="group" aria-label="View" data-testid="view-switch">
-                  <button type="button" aria-pressed={view === 'map'} aria-disabled={Boolean(mapDown)} title={mapDown ? 'Map unavailable' : undefined} onClick={() => chooseView('map')}>
-                    <MapIcon size={13} />Map
-                  </button>
-                  <i aria-hidden="true" />
-                  <button type="button" aria-pressed={view === 'list'} onClick={() => chooseView('list')}>
-                    <List size={13} />List
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+        {/* One control panel in both views: it floats over the map, and sits in
+            the page flow above the list. It is never remounted, so a keyboard
+            user who switches views keeps their place. */}
+        <div className={`cm-band ${view === 'list' ? 'cm-inner' : ''}`}>
+          <ControlPanel
+            view={view}
+            narrow={narrow}
+            mapDown={Boolean(mapDown)}
+            q={q}
+            onQuery={setQ}
+            filters={filters}
+            options={options}
+            setters={setters}
+            onHiring={setHiring}
+            onRaised={setRaised}
+            onUnpinned={setUnpinned}
+            activeCount={activeCount}
+            anyFilter={anyFilter}
+            shown={shown}
+            onClear={clearAll}
+            onView={chooseView}
+            sheetOpen={sheetOpen}
+            onOpenSheet={() => setSheetOpen(true)}
+          />
+          {(narrow || view === 'list') && stats(narrow)}
         </div>
 
         {mapDown && <div className="cm-inner"><p className="cm-fallback" role="status"><Info size={15} /><span>Map unavailable — showing the list.</span><small>{mapDown}</small></p></div>}
         {error && <div className="cm-inner"><p className="form-error cm-error">{error}</p></div>}
 
-        {!mapDown && <section className="cm-stage" hidden={view !== 'map'} data-testid="company-map-stage" data-drawer={docked && selectedId ? 'open' : 'closed'}>
-          <div className={`cm-stage-inner ${docked && selectedId ? 'has-drawer' : ''}`}>
+        {!mapDown && <section className="cm-stage" hidden={view !== 'map'} data-testid="company-map-stage" data-drawer={drawerOpen ? 'open' : 'closed'}>
+          <div className={`cm-stage-inner ${drawerOpen ? 'has-drawer' : ''}`}>
             <CompanyMap
               rows={visible}
               litIds={hiringIds}
               selectedId={selectedId}
               selected={selectedRow}
               active={mapActive}
-              rightInset={docked && selectedId ? DRAWER_WIDTH : 0}
+              rightInset={drawerOpen ? DRAWER_WIDTH : 0}
               onSelect={setSelectedId}
+              railTop={!narrow && stats(false)}
+              railBottom={visibleUnpinned > 0 && <button type="button" className="ci-chip cm-float cm-unpinned" data-testid="unpinned-chip" onClick={seeUnpinned}>
+                <strong>{fmt(visibleUnpinned)}</strong> not pinned — see List
+              </button>}
               onUnavailable={setMapDown}
             />
-            {visibleUnpinned > 0 && <button type="button" className="ci-chip cm-float cm-unpinned" data-testid="unpinned-chip" onClick={seeUnpinned}>
-              <strong>{fmt(visibleUnpinned)}</strong> not pinned — see List
-            </button>}
             {news.length > 0 && <NewsStrip items={news} open={newsOpen} onToggle={() => setNewsOpen(!newsOpen)} onOpen={openNews} />}
             {docked && drawer}
           </div>
@@ -442,7 +404,7 @@ export default function CompanyIntelPage() {
             onPick={setSelectedId}
             onToggleUnpinned={() => setUnpinned(!unpinned)}
             onTotal={setListTotal}
-            anyFilter={activeCount > 0 || Boolean(filters.q)}
+            anyFilter={anyFilter}
             loadingRows={loadState === 'loading'}
           />
         </div>}
@@ -464,6 +426,209 @@ export default function CompanyIntelPage() {
       />}
     </div>
   </AppShell></RequireAuth>
+}
+
+// ── Stats plate ──────────────────────────────────────────────────────────────
+/** What the system holds: employers, how many are on the map, how many raised lately. Counts of the whole city, not of the filters. */
+function StatsPlate({ strip, total, pinned, raised, approximate }: {
+  strip: boolean
+  total: number | null
+  pinned: number | null
+  raised: number | null
+  approximate: number
+}) {
+  const items: Array<[string, number | null]> = [
+    ['employers', total],
+    ['on the map', pinned],
+    [`raised in ${RAISED_DAYS} days`, raised],
+  ]
+  if (approximate > 0) items.push(['location unknown', approximate])
+  return <section className={`cm-stats ${strip ? 'is-strip' : ''}`} aria-label={`${CITY} employers`} data-testid="stats-plate">
+    {!strip && <span className="cm-stats-label">Company Intel — {CITY}</span>}
+    <p className="cm-stats-line">
+      {items.map(([label, value], i) =>
+        <Fragment key={label}>
+          {i > 0 && <i aria-hidden="true">·</i>}
+          <span className="cm-stat"><b>{value === null ? <span className="cm-dash">—</span> : <FlapText value={fmt(value)} />}</b> {label}</span>
+        </Fragment>)}
+    </p>
+  </section>
+}
+
+// ── Control panel ────────────────────────────────────────────────────────────
+type PanelProps = {
+  view: View
+  narrow: boolean
+  mapDown: boolean
+  q: string
+  onQuery: (value: string) => void
+  filters: Filters
+  options: Record<SelectKey, Option[]>
+  setters: Record<SelectKey, (value: string) => void>
+  onHiring: (value: boolean) => void
+  onRaised: (value: boolean) => void
+  onUnpinned: (value: boolean) => void
+  activeCount: number
+  anyFilter: boolean
+  shown: number | null
+  onClear: () => void
+  onView: (view: View) => void
+  sheetOpen: boolean
+  onOpenSheet: () => void
+}
+
+/**
+ * Search, the five filters behind one button, the two toggles, and the Map | List
+ * switch. Two rows tall however many filters are on: the selects live in a
+ * popover (below 700px, in the sheet).
+ */
+function ControlPanel(p: PanelProps) {
+  const { view, narrow, filters, setters } = p
+  const [open, setOpen] = useState(false)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const popRef = useRef<HTMLDivElement>(null)
+  const popId = useId()
+  const popOpen = open && !narrow
+
+  // The popover is a disclosure, not a modal: focus stays on the button and Tab
+  // walks straight into it (it follows the button in the DOM). Esc closes it and
+  // returns to the button; so does a click anywhere else, unless that click put
+  // focus somewhere real. Escape is taken in the capture phase so the same
+  // keypress does not also close the company drawer behind it.
+  useEffect(() => {
+    if (!popOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      e.stopPropagation()
+      setOpen(false)
+      buttonRef.current?.focus()
+    }
+    const onPointer = (e: PointerEvent) => {
+      const target = e.target
+      if (!(target instanceof Node)) return
+      if (popRef.current?.contains(target) || buttonRef.current?.contains(target)) return
+      setOpen(false)
+      // A click on another control takes focus there; a click on the map or on
+      // bare page (the map canvas is focusable, but it is not a control) hands
+      // focus back to the Filters button rather than losing it.
+      const element = target instanceof Element ? target : target.parentElement
+      const control = element?.closest('input,select,textarea,button,a[href],summary')
+      if (!control) setTimeout(() => buttonRef.current?.focus({ preventScroll: true }), 0)
+    }
+    document.addEventListener('keydown', onKey, true)
+    document.addEventListener('pointerdown', onPointer, true)
+    return () => {
+      document.removeEventListener('keydown', onKey, true)
+      document.removeEventListener('pointerdown', onPointer, true)
+    }
+  }, [popOpen])
+
+  const placeholder = narrow
+    ? 'Search companies'
+    : view === 'map' ? 'Search name, area, sector or type' : 'Search name, industry or what they do'
+  const showSub = !narrow || p.activeCount > 0
+  const toggleFilters = () => { if (narrow) p.onOpenSheet(); else setOpen(o => !o) }
+
+  return <div className="cm-panel" role="search" aria-label="Find companies" data-testid="control-panel">
+    <div className="cm-row cm-row-main">
+      <div className="cm-search">
+        <Search size={16} aria-hidden="true" />
+        <input
+          type="search"
+          value={p.q}
+          onChange={e => p.onQuery(e.target.value)}
+          placeholder={placeholder}
+          aria-label="Search companies"
+        />
+      </div>
+      <div className="cm-filters">
+        <button
+          ref={buttonRef}
+          type="button"
+          className={`cm-filter-btn ${p.activeCount > 0 ? 'has-active' : ''}`}
+          onClick={toggleFilters}
+          aria-haspopup="dialog"
+          aria-expanded={narrow ? p.sheetOpen : popOpen}
+          aria-controls={popOpen ? popId : undefined}
+          aria-label={p.activeCount > 0 ? `Filters, ${p.activeCount} active` : 'Filters'}
+        >
+          <SlidersHorizontal size={13} aria-hidden="true" />Filters{p.activeCount > 0 && <b aria-hidden="true">{p.activeCount}</b>}
+          {!narrow && <ChevronDown size={12} className="cm-chev" aria-hidden="true" />}
+        </button>
+        {popOpen && <FiltersPopover
+          id={popId}
+          popRef={popRef}
+          filters={filters}
+          options={p.options}
+          setters={setters}
+          shown={p.shown}
+          activeCount={p.activeCount}
+          onClear={p.onClear}
+          onClose={() => { setOpen(false); buttonRef.current?.focus() }}
+        />}
+      </div>
+      <div className="cm-view" role="group" aria-label="View" data-testid="view-switch">
+        <button type="button" aria-pressed={view === 'map'} aria-disabled={p.mapDown} title={p.mapDown ? 'Map unavailable' : undefined} onClick={() => p.onView('map')}>
+          <MapIcon size={13} aria-hidden="true" /><span className="cm-view-label">Map</span>
+        </button>
+        <i aria-hidden="true" />
+        <button type="button" aria-pressed={view === 'list'} onClick={() => p.onView('list')}>
+          <List size={13} aria-hidden="true" /><span className="cm-view-label">List</span>
+        </button>
+      </div>
+    </div>
+
+    {showSub && <div className="cm-row cm-row-sub">
+      <button type="button" className={`ci-chip ci-chip-toggle cm-toggle ${filters.hiring ? 'active' : ''}`} aria-pressed={filters.hiring} onClick={() => p.onHiring(!filters.hiring)}>
+        <Sparkles size={12} />Hiring now
+      </button>
+      <button type="button" className={`ci-chip ci-chip-toggle cm-toggle ${filters.raised ? 'active' : ''}`} aria-pressed={filters.raised} onClick={() => p.onRaised(!filters.raised)}>
+        Raised ≤ {RAISED_DAYS} days
+      </button>
+      {SELECTS.filter(spec => filters[spec.key]).map(spec =>
+        <button type="button" key={spec.key} className="ci-chip cm-applied" onClick={() => setters[spec.key]('')} aria-label={`Clear ${spec.label}: ${spec.names?.[filters[spec.key]] || filters[spec.key]}`}>
+          {spec.names?.[filters[spec.key]] || filters[spec.key]}<X size={11} />
+        </button>)}
+      {filters.unpinned && <button type="button" className="ci-chip cm-applied" onClick={() => p.onUnpinned(false)} aria-label="Clear Location unknown">Location unknown<X size={11} /></button>}
+      {narrow && filters.hiring && <button type="button" className="ci-chip cm-applied" onClick={() => p.onHiring(false)} aria-label="Clear Hiring now">Hiring now<X size={11} /></button>}
+      {narrow && filters.raised && <button type="button" className="ci-chip cm-applied" onClick={() => p.onRaised(false)} aria-label="Clear Raised">Raised ≤ {RAISED_DAYS} days<X size={11} /></button>}
+      {p.activeCount > 0 && <button type="button" className="cm-clear" onClick={p.onClear}>Clear all</button>}
+      {p.anyFilter && <span className="ci-count cm-count" role="status">
+        {p.shown === null ? <span className="cm-dash">—</span> : <FlapText value={fmt(p.shown)} />} shown
+      </span>}
+    </div>}
+  </div>
+}
+
+function FiltersPopover({ id, popRef, filters, options, setters, shown, activeCount, onClear, onClose }: {
+  id: string
+  popRef: RefObject<HTMLDivElement>
+  filters: Filters
+  options: Record<SelectKey, Option[]>
+  setters: Record<SelectKey, (value: string) => void>
+  shown: number | null
+  activeCount: number
+  onClear: () => void
+  onClose: () => void
+}) {
+  return <div ref={popRef} id={id} className="cm-pop" role="dialog" aria-label="Filters" data-testid="filters-popover">
+    <div className="cm-pop-grid">
+      {SELECTS.map(spec =>
+        <label key={spec.key} className="cm-field">
+          <span>{spec.label}</span>
+          <select value={filters[spec.key]} data-set={filters[spec.key] ? 'true' : 'false'} onChange={e => setters[spec.key](e.target.value)}>
+            <option value="">{spec.all}</option>
+            {options[spec.key].map(o => <option key={o.value} value={o.value}>{o.label} ({o.count})</option>)}
+          </select>
+        </label>)}
+    </div>
+    <div className="cm-pop-foot">
+      <span className="ci-count">{shown === null ? <span className="cm-dash">—</span> : <FlapText value={fmt(shown)} />} shown</span>
+      {activeCount > 0 && <button type="button" className="cm-clear" onClick={onClear}>Clear all</button>}
+      <button type="button" className="cm-done" onClick={onClose}>Done</button>
+    </div>
+  </div>
 }
 
 // ── News strip ───────────────────────────────────────────────────────────────
@@ -603,7 +768,7 @@ function DirectoryList({ filters, unpinnedCount, selectedId, onPick, onToggleUnp
     {unpinnedCount > 0 && !loadingRows && <div className="cm-unpinned-note">
       <span className="cm-note-text">
         <PrecisionGlyph precision="city" />
-        <span><strong><FlapText value={fmt(unpinnedCount)} /></strong> not pinned — no address or area on record yet, so they are in the list only.</span>
+        <span><strong><FlapText value={fmt(unpinnedCount)} /></strong> with no address or area on record yet — the map shows them near the city centre.</span>
       </span>
       <button type="button" className={`ci-chip ci-chip-toggle cm-toggle ${onlyUnpinned ? 'active' : ''}`} aria-pressed={onlyUnpinned} onClick={onToggleUnpinned}>
         {onlyUnpinned ? 'Showing only these' : 'Show only these'}
