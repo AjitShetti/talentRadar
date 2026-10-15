@@ -126,6 +126,16 @@ def _wikidata_description(company: Company) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def _directory_description(company: Company) -> tuple[str, str] | None:
+    """A YC or GitHub one-liner as ``(text, source)``, YC first."""
+    metadata = company.extra_metadata or {}
+    for key, source in (("yc_description", "yc"), ("github_org_description", "github_org")):
+        value = metadata.get(key)
+        if isinstance(value, str) and value.strip():
+            return value, source
+    return None
+
+
 def _set_summary(company: Company, summary: str, source: str) -> None:
     company.summary = summary[:200]
     company.summary_source = source
@@ -145,6 +155,16 @@ async def _upsert(
     company, created = await upsert_company_ex(session, imported, source)
     if company is not None:
         _merge_source_metadata(company, imported)
+        if not company.summary and (directory := _directory_description(company)):
+            chosen = choose_summary(
+                curated=company.description,
+                site=None,
+                wikidata=_wikidata_description(company),
+                name=company.name,
+                directory=directory,
+            )
+            if chosen:
+                _set_summary(company, *chosen)
     return company, created
 
 
@@ -300,6 +320,7 @@ def _apply_site(company: Company, facts: SiteFacts | None) -> None:
             site=facts.description,
             wikidata=_wikidata_description(company),
             name=company.name,
+            directory=_directory_description(company),
         )
         if chosen:
             _set_summary(company, *chosen)
@@ -372,6 +393,7 @@ async def _step_summaries(session: AsyncSession, limit: int) -> dict[str, int]:
             site=site.description if site else None,
             wikidata=wikidata_desc,
             name=company.name,
+            directory=_directory_description(company),
         )
         if chosen:
             _set_summary(company, *chosen)

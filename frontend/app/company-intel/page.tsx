@@ -44,7 +44,7 @@ const SECTORS: Record<string, string> = {
 }
 const SIZES: Record<string, string> = { '1-50': '1–50', '51-200': '51–200', '201-1000': '201–1,000', '1000+': '1,000+' }
 const SUMMARY_SOURCE: Record<SummarySource, string> = {
-  curated: 'curated', site: 'from their website', wikidata: 'from Wikidata', llm: 'AI summary',
+  curated: 'curated', site: 'from their website', wikidata: 'from Wikidata', yc: 'from Y Combinator', github_org: 'from GitHub', llm: 'AI summary',
 }
 const PEOPLE_KINDS = new Set(['founder', 'leader', 'engineer'])
 

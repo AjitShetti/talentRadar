@@ -63,7 +63,7 @@ export type SkillFocusItem = { title: string; detail: string }
 export type SkillsFocus = { status: 'ok' | 'no_target_roles' | 'no_resume'; kind: 'missing_skills' | 'resume_improvements' | null; headline: string; items: SkillFocusItem[]; target_roles: string[]; resume_filename: string | null; resume_updated_at: string | null; analysis: string | null }
 export type CompanyCard = { id: string; name: string; domain?: string | null; website_url?: string | null; logo_url?: string | null; tier?: string | null; tier_label?: string | null; industry?: string | null; description?: string | null; hq_city?: string | null; hq_country?: string | null; office_cities: string[]; employee_count_range?: string | null; founded_year?: number | null; github_org?: string | null; careers_url?: string | null; tech_stack: string[]; open_roles: number; summary?: string | null; summary_source?: SummarySource | null; stage?: string | null; sector?: string | null; area?: string | null; geo_precision?: GeoPrecision | null; slug?: string | null }
 // Where a company's one-line summary came from (services/company_map): shown beside it in small type.
-export type SummarySource = 'curated' | 'site' | 'wikidata' | 'llm'
+export type SummarySource = 'curated' | 'site' | 'wikidata' | 'yc' | 'github_org' | 'llm'
 // How well we know where a company is. `city` means no pin: it appears in the List only.
 export type GeoPrecision = 'exact' | 'street' | 'area' | 'city'
 export type CompanyDirectory = { companies: CompanyCard[]; total: number; offset: number; limit: number; city?: string | null }

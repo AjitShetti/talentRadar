@@ -32,7 +32,16 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 #: ``metadata`` keys holding a source's one-line description of the company.
-_DESCRIPTION_KEYS = ("wikidata_description", "osm_description", "news_description")
+_DESCRIPTION_KEYS = (
+    "wikidata_description",
+    "osm_description",
+    "news_description",
+    "yc_description",
+    "github_org_description",
+)
+#: Sources that only list technology companies: a field any of them set makes
+#: the row tech whatever text it has.
+_TECH_SOURCES = frozenset({"yc", "github_org"})
 _INDUSTRY_KEYS = ("wikidata_industries", "osm_industries")
 
 
@@ -43,6 +52,11 @@ def has_curated_tier(company: Company) -> bool:
     provenance = (company.extra_metadata or {}).get("provenance")
     source = provenance.get("tier") if isinstance(provenance, dict) else None
     return source in (None, "curated")
+
+
+def _from_tech_source(company: Company) -> bool:
+    provenance = (company.extra_metadata or {}).get("provenance")
+    return isinstance(provenance, dict) and not _TECH_SOURCES.isdisjoint(provenance.values())
 
 
 def _texts(company: Company) -> list[str]:
@@ -67,7 +81,7 @@ def _labels(company: Company) -> list[str]:
 
 def classify(company: Company) -> bool:
     """The verdict for ``company`` from what is stored on it right now."""
-    if has_curated_tier(company):
+    if has_curated_tier(company) or _from_tech_source(company):
         return True
     return is_tech(
         name=company.name,

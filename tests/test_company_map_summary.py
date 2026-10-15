@@ -266,3 +266,19 @@ async def test_llm_subject_leaves_room_for_reasoning() -> None:
     kwargs = chat.call_args_list[0].kwargs
     assert kwargs["reasoning_effort"] == "low"
     assert kwargs["max_tokens"] >= 600
+
+
+def test_choose_falls_back_to_a_directory_one_liner_after_wikidata() -> None:
+    # A YC or GitHub one-liner is the company describing itself, so it is a
+    # sourced summary like Wikidata's, tried last and labelled by its source.
+    line = "Payments infrastructure for Indian businesses"
+    assert choose_summary(
+        curated=None, site=None, wikidata=None, directory=(line, "yc"), name="Razorpay"
+    ) == (line, "yc")
+    assert choose_summary(
+        curated=None, site=None, wikidata=_WIKI, directory=(line, "yc"), name="Razorpay"
+    ) == (_WIKI, "wikidata")
+    assert (
+        choose_summary(curated=None, site=None, wikidata=None, directory=None, name="Razorpay")
+        is None
+    )

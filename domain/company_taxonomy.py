@@ -233,7 +233,9 @@ _STRONG_TECH = _words(
     r"employer of record|educational company|education company|learning company|"
     r"computing|computer|automation|"
     r"mobile games?|video games?|game (?:studio|developer|publisher)|"
-    r"web|website|marketplace"
+    r"web|website|marketplace|"
+    # The startup ecosystem the map has a type for (decision 2026-10-15).
+    r"venture capital|venture fund|vc fund|vc firm|accelerators?|incubators?"
 )
 
 #: Words that name a kind of organisation the map does not list. "Technical"

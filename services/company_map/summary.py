@@ -132,16 +132,19 @@ def choose_summary(
     site: str | None,
     wikidata: str | None,
     name: str,
+    directory: tuple[str | None, str] | None = None,
 ) -> tuple[str, str] | None:
     """
     The first usable line as ``(summary, source)``, tried curated, site,
-    wikidata. ``None`` when none of them yields one - the caller may then
+    wikidata, then a directory's one-liner (``(text, "yc" | "github_org")``,
+    the company describing itself in YC's or GitHub's listing). ``None`` when none of them yields one - the caller may then
     try :func:`llm_summary`.
     """
     candidates: tuple[tuple[str | None, str], ...] = (
         (curated, "curated"),
         (site, "site"),
         (None if _is_bare_company(wikidata) else wikidata, "wikidata"),
+        directory or (None, "directory"),
     )
     for text, source in candidates:
         cleaned = clean_description(text, name)

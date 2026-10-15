@@ -215,7 +215,7 @@ class Company(Base):
         String(200), nullable=True, comment="One line: what they sell, to whom"
     )
     summary_source: Mapped[str | None] = mapped_column(
-        String(16), nullable=True, comment="curated | site | wikidata | llm"
+        String(16), nullable=True, comment="curated | site | wikidata | yc | github_org | llm"
     )
     stage: Mapped[str | None] = mapped_column(String(16), nullable=True)
     sector: Mapped[str | None] = mapped_column(String(24), nullable=True)

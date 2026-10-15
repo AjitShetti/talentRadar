@@ -124,3 +124,49 @@ class TestOtherSignals:
     def test_nothing_to_go_on_is_not_tech(self):
         assert not is_tech(name="Acme", description=None, industry_labels=(), sector=None)
         assert not is_tech(name="Acme", description="company", industry_labels=(), sector="other")
+
+
+class TestEcosystemAndTechSources:
+    """Ruling 2026-10-15: VCs and accelerators stay on the map (it has a VC type),
+    and a company Y Combinator or GitHub put there is tech by its source."""
+
+    @pytest.mark.parametrize(
+        "description",
+        [
+            "Venture capital firm investing in early-stage Indian companies",
+            "early stage VC fund",
+            "seed accelerator programme",
+        ],
+    )
+    def test_investors_and_accelerators_are_tech_ecosystem(self, description: str):
+        assert is_tech(name="Axilor Ventures", description=description, sector=None)
+
+    @pytest.mark.parametrize("source", ["yc", "github_org"])
+    def test_a_row_from_a_tech_by_nature_source_is_tech_with_no_text(self, source: str):
+        from services.company_map.tech import classify
+        from storage.models import Company
+
+        row = Company(name="Quiet Co", extra_metadata={"provenance": {"name": source}})
+        assert classify(row) is True
+
+    def test_a_directory_description_is_read(self):
+        from services.company_map.tech import classify
+        from storage.models import Company
+
+        row = Company(
+            name="Quiet Co",
+            extra_metadata={
+                "provenance": {"name": "hiring_list"},
+                "yc_description": "Indian payments software",
+            },
+        )
+        assert classify(row) is True
+
+    def test_a_hiring_list_row_alone_is_not_enough(self):
+        from services.company_map.tech import classify
+        from storage.models import Company
+
+        row = Company(
+            name="Third Wave Coffee", extra_metadata={"provenance": {"name": "hiring_list"}}
+        )
+        assert classify(row) is False

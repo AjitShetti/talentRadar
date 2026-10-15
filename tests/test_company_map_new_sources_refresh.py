@@ -131,7 +131,7 @@ async def test_yc_text_goes_to_metadata_never_to_the_description_column() -> Non
         await run_step("yc", 5000)
     razorpay = await _company("razorpay.com")
     assert razorpay.description is None
-    assert razorpay.summary is None
+    assert razorpay.summary_source == "yc"  # the one-liner is a sourced summary, not a description
     meta = razorpay.extra_metadata or {}
     assert meta["yc_description"].startswith("India's only full-stack financial")
     assert meta["yc_batch"] == "Winter 2015"
@@ -470,3 +470,13 @@ async def test_github_orgs_step_twice_changes_nothing() -> None:
         await run_step("github_orgs", 60)
     after = {c.slug: (c.domain, c.sector, c.github_org) for c in await _companies()}
     assert before == after and len(after) == 3
+
+
+async def test_a_yc_company_gets_its_own_one_liner_as_summary_on_import() -> None:
+    # No homepage read needed: the listing is the company describing itself.
+    with patch.object(refresh.yc, "fetch", AsyncMock(return_value=_yc())):
+        await run_step("yc", 5000)
+    rows = {c.name: c for c in await _companies()}
+    razorpay = rows["Razorpay"]
+    assert razorpay.summary and razorpay.summary_source == "yc"
+    assert razorpay.is_tech is True
