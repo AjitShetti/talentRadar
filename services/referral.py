@@ -180,11 +180,11 @@ async def draft(
     Draft a referral ask. ``None`` when the role does not exist.
 
     ``generated`` is False when the template was used, so the interface can
-    say so instead of presenting a template as a tailored draft. A template
-    result also carries ``reason``: ``"daily_cap"`` when the user has already
-    had their day's model-written drafts (shared with outreach drafts, see
-    ``services/llm_budget.py``), ``"model_unavailable"`` when the model failed
-    or answered with nothing. A generated draft has no ``reason``.
+    say so instead of presenting a template as a tailored draft. ``reason``
+    is always present: ``None`` for a generated draft, ``"daily_cap"`` when
+    the user has already had their day's model-written drafts (shared with
+    outreach drafts, see ``services/llm_budget.py``), ``"model_unavailable"``
+    when the model failed or answered with nothing.
     """
     job_uuid = parse_uuid(job_id)
     if job_uuid is None:
@@ -239,4 +239,4 @@ async def draft(
             "generated": False,
             "reason": reason,
         }
-    return {"message": text[:MAX_MESSAGE_CHARS].strip(), "generated": True}
+    return {"message": text[:MAX_MESSAGE_CHARS].strip(), "generated": True, "reason": None}

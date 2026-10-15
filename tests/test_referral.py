@@ -121,7 +121,7 @@ async def test_draft_returns_the_models_message(monkeypatch, loaded):
 
     monkeypatch.setattr(referral, "_chat", chat)
     result = await referral.draft(job_id=ROLE["id"], user_id=str(uuid.uuid4()), recipient_name="Asha")
-    assert result == {"message": "Hi Asha, hope you are well...", "generated": True}
+    assert result == {"message": "Hi Asha, hope you are well...", "generated": True, "reason": None}
 
 
 async def test_draft_falls_back_when_the_model_is_unavailable(monkeypatch, loaded):
@@ -257,7 +257,7 @@ async def test_referral_empty_reply_says_the_model_was_unavailable(
     assert result is not None and result["reason"] == "model_unavailable"
 
 
-async def test_a_generated_draft_carries_no_reason(
+async def test_a_generated_draft_always_carries_the_reason_key_as_none(
     monkeypatch: pytest.MonkeyPatch, loaded: None
 ) -> None:
     async def chat(system: str, user: str, **kwargs: Any) -> str:
@@ -266,7 +266,9 @@ async def test_a_generated_draft_carries_no_reason(
     monkeypatch.setattr(referral, "_chat", chat)
     result = await referral.draft(job_id=JOB_ID, user_id=str(uuid.uuid4()))
     assert result is not None and result["generated"] is True
-    assert result.get("reason") is None
+    # The key is always there, so the payload has one shape on every path.
+    assert "reason" in result
+    assert result["reason"] is None
 
 
 async def test_an_unknown_role_spends_no_claim(monkeypatch: pytest.MonkeyPatch) -> None:
