@@ -108,7 +108,10 @@ async def directory(
     city: str | None = Query("Bengaluru", description="City with an engineering office"),
     tier: str | None = Query(None, description=f"One of: {', '.join(ALL_TIERS)}"),
     industry: str | None = Query(None),
-    q: str | None = Query(None, description="Free-text search over name, industry and description"),
+    q: str | None = Query(
+        None,
+        description="Words; each must match a name, what they do, area, stage, sector or type",
+    ),
     has_open_roles: bool = Query(False, description="Only companies with live postings"),
     stage: str | None = Query(None, description=f"One of: {', '.join(STAGES)}"),
     sector: str | None = Query(None, description=f"One of: {', '.join(SECTORS)}"),
@@ -116,6 +119,10 @@ async def directory(
     size: str | None = Query(None, description=f"One of: {', '.join(SIZES)}"),
     raised_within_days: int | None = Query(
         None, ge=1, le=3650, description="Only companies with funding news this recent"
+    ),
+    pinned: bool | None = Query(
+        None,
+        description="True: only companies the map can draw. False: only the ones it cannot (List only).",
     ),
     limit: int = Query(100, ge=1, le=200),
     offset: int = Query(0, ge=0),
@@ -138,6 +145,7 @@ async def directory(
         area=area,
         size=size,
         raised_within_days=raised_within_days,
+        pinned=pinned,
         limit=limit,
         offset=offset,
     )

@@ -632,3 +632,141 @@ async def test_a_failed_news_prune_does_not_stop_the_job_prune(monkeypatch):
     assert summary["ran"] is True
     assert summary["deleted_news"] == 0
     assert session.rollbacks == 1
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# The directory's server-side filters, against SQLite
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest_asyncio.fixture
+async def directory(
+    db: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> AsyncIterator[Any]:
+    """Seeds listed Bengaluru companies and returns ``list_companies`` bound to them."""
+    from services import companies
+
+    monkeypatch.setattr(companies, "AsyncSessionLocal", db)
+
+    async def seed(*rows: Company) -> None:
+        async with db() as session:
+            session.add_all(rows)
+            await session.commit()
+
+    async def names(**filters: Any) -> tuple[set[str], int]:
+        page = await companies.list_companies(**filters)
+        return {card["name"] for card in page["companies"]}, page["total"]
+
+    yield type("Directory", (), {"seed": staticmethod(seed), "names": staticmethod(names)})
+
+
+def _listed(name: str, **fields: Any) -> Company:
+    """A company the directory will show: it says what it does and is in Bengaluru."""
+    defaults: dict[str, Any] = {
+        "summary": f"{name} does things.",
+        "office_cities": ["Bengaluru"],
+    }
+    return _company(name, **{**defaults, **fields})
+
+
+class TestDirectoryPinnedFilter:
+    async def test_unpinned_returns_only_companies_without_a_position(self, directory):
+        await directory.seed(
+            _listed("Pinned", lat=12.93, lng=77.62, geo_precision="exact"),
+            _listed("Loose"),
+        )
+        names, total = await directory.names(pinned=False)
+        assert names == {"Loose"}
+        assert total == 1
+
+    async def test_pinned_returns_only_companies_with_a_position(self, directory):
+        await directory.seed(
+            _listed("Pinned", lat=12.93, lng=77.62, geo_precision="exact"),
+            _listed("Loose"),
+        )
+        names, total = await directory.names(pinned=True)
+        assert names == {"Pinned"}
+        assert total == 1
+
+    async def test_no_preference_returns_both(self, directory):
+        await directory.seed(_listed("Pinned", lat=12.93, lng=77.62), _listed("Loose"))
+        names, total = await directory.names()
+        assert names == {"Pinned", "Loose"}
+        assert total == 2
+
+    async def test_a_pin_outside_bengaluru_counts_as_unpinned(self, directory):
+        # The map refuses to draw it (read._position), so "not pinned" must agree.
+        await directory.seed(
+            _listed("Pinned", lat=12.93, lng=77.62),
+            _listed("FarAway", lat=19.07, lng=72.87),
+        )
+        assert await directory.names(pinned=False) == ({"FarAway"}, 1)
+        assert await directory.names(pinned=True) == ({"Pinned"}, 1)
+
+    async def test_the_filter_reaches_the_service_from_the_route(self, auth_client):
+        page = {"companies": [], "total": 0, "offset": 0, "limit": 100, "city": "Bengaluru"}
+        with patch("api.routers.company_intel.list_companies", AsyncMock(return_value=page)) as run:
+            response = await auth_client.get("/api/v1/company-intel/?pinned=false")
+        assert response.status_code == 200
+        assert run.await_args.kwargs["pinned"] is False
+
+
+class TestDirectorySearch:
+    @pytest_asyncio.fixture(autouse=True)
+    async def _rows(self, directory):
+        await directory.seed(
+            _listed(
+                "Zeta",
+                summary="Ledger tooling.",
+                stage="series_a",
+                sector="fintech",
+                area="Koramangala",
+                tier="startup",
+            ),
+            _listed(
+                "Omega",
+                summary="Build pipelines.",
+                stage="seed",
+                sector="devtools",
+                area="HSR Layout",
+                tier="scaleup",
+            ),
+        )
+
+    async def test_a_stage_label_finds_the_company(self, directory):
+        assert await directory.names(q="Series A") == ({"Zeta"}, 1)
+
+    async def test_an_area_word_finds_the_company(self, directory):
+        assert await directory.names(q="Koramangala") == ({"Zeta"}, 1)
+
+    async def test_a_sector_label_finds_the_company(self, directory):
+        assert await directory.names(q="Developer tools") == ({"Omega"}, 1)
+
+    async def test_a_tier_label_finds_the_company(self, directory):
+        assert await directory.names(q="Scale-up") == ({"Omega"}, 1)
+
+    async def test_the_stored_value_finds_the_company_too(self, directory):
+        assert await directory.names(q="series_a") == ({"Zeta"}, 1)
+
+    async def test_every_word_must_match(self, directory):
+        assert await directory.names(q="Koramangala Series A") == ({"Zeta"}, 1)
+        assert await directory.names(q="Koramangala seed") == (set(), 0)
+        assert await directory.names(q="HSR scale-up") == ({"Omega"}, 1)
+
+    async def test_words_may_match_different_fields(self, directory):
+        # name + area + stage label, none of them in the same column
+        assert await directory.names(q="zeta koramangala series") == ({"Zeta"}, 1)
+
+    async def test_a_single_substring_still_matches_name_and_summary(self, directory):
+        assert await directory.names(q="zet") == ({"Zeta"}, 1)
+        assert await directory.names(q="pipelines") == ({"Omega"}, 1)
+
+    async def test_percent_and_underscore_are_literal(self, directory):
+        assert await directory.names(q="%") == (set(), 0)
+        # an unescaped "_" would match any character and so every company
+        assert await directory.names(q="ser_es") == (set(), 0)
+        # only Zeta has a literal underscore (its stored stage, series_a)
+        assert await directory.names(q="_") == ({"Zeta"}, 1)
+
+    async def test_whitespace_only_is_no_search(self, directory):
+        assert (await directory.names(q="   "))[1] == 2

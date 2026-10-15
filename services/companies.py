@@ -24,15 +24,22 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import String, cast, func, or_, select
+from sqlalchemy import String, and_, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from domain.areas import BENGALURU_BBOX
 from domain.company_taxonomy import SECTORS, SIZES, STAGES, is_bigger_company, size_bucket
 from domain.linkedin_links import company_people_links
 from services.base import parse_uuid
 from services.company_map import read as company_map_read
-from services.company_map.read import listed_clause, raised_within, target_roles
+from services.company_map.read import (
+    AREA_CITY,
+    canonical_city,
+    listed_clause,
+    raised_within,
+    target_roles,
+)
 from storage.database import AsyncSessionLocal
 from storage.models import Company, CompanyProfile, Job, JobStatus
 from storage.repository import UnitOfWork
@@ -100,6 +107,76 @@ def _map_filters(
         since = datetime.now(UTC) - timedelta(days=raised_within_days)
         clauses.append(Company.last_funding_at >= since)
     return clauses
+
+
+def _escape_like(text: str) -> str:
+    """Make ``%``, ``_`` and the escape character itself literal in an ILIKE."""
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _label_values(labels: dict[str, str], word: str) -> list[str]:
+    """The stored values whose human label contains ``word`` ("series" -> series_a, ...)."""
+    return [value for value, label in labels.items() if word in label.lower()]
+
+
+def _search_clause(q: str) -> ColumnElement[bool] | None:
+    """
+    The List's free-text search, the same one the map runs in the browser.
+
+    The query is split into words and **every** word has to match at least one
+    field, so "Series A" or "Koramangala fintech" finds what the map's search
+    finds. A word matches (case-insensitive substring) the name, industry,
+    description, summary, domain or area, the stored stage/sector/tier value, or
+    the human label of one ("Series A", "Developer tools", "Scale-up") — the
+    map's rows carry codes only, so the labels are mapped back to values here.
+    """
+    words = q.lower().split()
+    if not words:
+        return None
+    per_word: list[ColumnElement[bool]] = []
+    for word in words:
+        pattern = f"%{_escape_like(word)}%"
+        options: list[ColumnElement[bool]] = [
+            column.ilike(pattern, escape="\\")
+            for column in (
+                Company.name,
+                Company.industry,
+                Company.description,
+                Company.summary,
+                cast(Company.domain, String),
+                Company.area,
+                Company.stage,
+                Company.sector,
+                Company.tier,
+            )
+        ]
+        for column, labels in (
+            (Company.stage, STAGES),
+            (Company.sector, SECTORS),
+            (Company.tier, TIER_LABELS),
+        ):
+            values = _label_values(labels, word)
+            if values:
+                options.append(column.in_(values))
+        per_word.append(or_(*options))
+    return and_(*per_word)
+
+
+def _pinned_clause(city: str | None, pinned: bool) -> ColumnElement[bool]:
+    """
+    Whether the map can draw the company: the list's twin of
+    ``services.company_map.read._position``. A Bengaluru company whose stored
+    point is outside the Bengaluru box is not drawn, so it is *not pinned*.
+    """
+    has_point = and_(Company.lat.is_not(None), Company.lng.is_not(None))
+    if canonical_city(city) == AREA_CITY:
+        south, west, north, east = BENGALURU_BBOX
+        has_point = and_(
+            has_point,
+            Company.lat.between(south, north),
+            Company.lng.between(west, east),
+        )
+    return has_point if pinned else ~has_point
 
 
 def _facet_value(company: Company, facet: str) -> str | None:
@@ -183,6 +260,7 @@ async def list_companies(
     area: str | None = None,
     size: str | None = None,
     raised_within_days: int | None = None,
+    pinned: bool | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> dict[str, Any]:
@@ -210,17 +288,11 @@ async def list_companies(
             # strings, so "Fintech" has to reach "Fintech & Payments" and
             # "Fintech & Lending" or the filter returns a single card.
             stmt = stmt.where(Company.industry.ilike(f"%{industry}%"))
-        if q:
-            pattern = f"%{q.strip()}%"
-            stmt = stmt.where(
-                or_(
-                    Company.name.ilike(pattern),
-                    Company.industry.ilike(pattern),
-                    Company.description.ilike(pattern),
-                    Company.summary.ilike(pattern),
-                    cast(Company.domain, String).ilike(pattern),
-                )
-            )
+        search = _search_clause(q) if q else None
+        if search is not None:
+            stmt = stmt.where(search)
+        if pinned is not None:
+            stmt = stmt.where(_pinned_clause(city, pinned))
 
         companies = list((await session.execute(stmt)).scalars().all())
         if size:
