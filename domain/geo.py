@@ -148,6 +148,35 @@ def resolve_city(raw: str | None) -> str | None:
     return None
 
 
+_PLACE_SPLIT_RE = re.compile(r"[;|/]+")
+
+
+def mentions_city(raw: str | None, city: str) -> bool:
+    """
+    True when ``raw`` names ``city`` (any spelling) as one of its places.
+
+    For profile and directory locations that list several: ``"Mumbai |
+    Bengaluru"``, ``"SF/Bangalore"``, ``"Bengaluru, KA, India; Remote"``.
+    :func:`resolve_city` answers "which city does this string mean", which for
+    a list is its first; this asks whether the city is among them. A place
+    that also names a foreign country does not count, so ``"Whitefield, NH,
+    USA"`` is not Bengaluru's Whitefield.
+    """
+    if not raw:
+        return False
+    canonical = resolve_city(city) or city
+    aliases = INDIAN_CITY_ALIASES.get(canonical, ())
+    if not aliases:
+        return False
+    for place in _PLACE_SPLIT_RE.split(raw):
+        if not place.strip() or mentions_foreign_country(place):
+            continue
+        normalised = _normalise(place)
+        if any(re.search(rf"\b{re.escape(alias)}\b", normalised) for alias in aliases):
+            return True
+    return False
+
+
 def city_search_terms(name: str | None) -> tuple[str, ...]:
     """
     Every spelling of a city, for matching free-text location columns.

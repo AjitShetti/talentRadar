@@ -10,8 +10,10 @@ sources that describe it disagree.
   every company whose only link is its LinkedIn page into one row.
 * **Names** only ever attach data to an existing row; they never merge two.
   :func:`normalize_name` is the comparison form.
-* **Precedence**: curated > company site > Wikidata > OSM > news > LLM. A
-  lower source never overwrites a higher one, a source refreshes its own
+* **Precedence**: curated > company site > Wikidata > Y Combinator > OSM >
+  GitHub organisation > news > LLM. YC's directory is curated by YC but
+  self-reported by the founders; a GitHub profile is self-described and says
+  least about the company. A lower source never overwrites a higher one, a source refreshes its own
   value, and ``None`` never clears anything. ``stage`` and
   ``last_funding_at`` are the exception: they follow the newest *dated*
   funding evidence, so this month's Series B beats a curated "Series A".
@@ -27,7 +29,16 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlsplit
 
-SOURCE_PRECEDENCE: tuple[str, ...] = ("curated", "site", "wikidata", "osm", "news", "llm")
+SOURCE_PRECEDENCE: tuple[str, ...] = (
+    "curated",
+    "site",
+    "wikidata",
+    "yc",
+    "osm",
+    "github_org",
+    "news",
+    "llm",
+)
 
 _RANK = {source: rank for rank, source in enumerate(SOURCE_PRECEDENCE)}
 
@@ -132,6 +143,18 @@ def normalize_domain(value: str | None) -> str | None:
     else:
         domain = suffix
     return None if domain in _PROFILE_DOMAINS else domain
+
+
+def is_tenant_domain(domain: str) -> bool:
+    """
+    True for a subdomain of a hosting platform (``acme.github.io``).
+
+    :func:`normalize_domain` keeps those as identities, because the tenant is
+    unique. A source that is guessing which links are a company's own (a
+    GitHub profile's ``blog``) must not: a personal page is not an employer.
+    """
+    labels = domain.lower().rstrip(".").split(".")
+    return len(labels) >= 3 and ".".join(labels[-2:]) in _TENANT_SUFFIXES
 
 
 def _fold(text: str) -> str:

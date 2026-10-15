@@ -81,7 +81,16 @@ def _merge(current, provenance, incoming, source):
 
 class TestMerge:
     def test_precedence_order(self):
-        assert SOURCE_PRECEDENCE == ("curated", "site", "wikidata", "osm", "news", "llm")
+        assert SOURCE_PRECEDENCE == (
+            "curated",
+            "site",
+            "wikidata",
+            "yc",
+            "osm",
+            "github_org",
+            "news",
+            "llm",
+        )
 
     def test_empty_field_takes_any_source(self):
         updates, prov = _merge({"address": None}, {}, {"address": "HSR Sector 2"}, "osm")
