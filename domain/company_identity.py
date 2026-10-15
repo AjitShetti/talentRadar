@@ -36,6 +36,7 @@ SOURCE_PRECEDENCE: tuple[str, ...] = (
     "yc",
     "osm",
     "github_org",
+    "hiring_list",
     "news",
     "llm",
 )

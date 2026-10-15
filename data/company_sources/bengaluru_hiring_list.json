@@ -1,0 +1,457 @@
+{
+  "city": "Bengaluru",
+  "source": "https://docs.google.com/spreadsheets/d/1S0i9NP6sDJ4NH_G7-PrNjQVrWyrWMvouH6xIJBCAEtk",
+  "note": "Employers with a Bengaluru location in a shared India recruiter list (compiled 3 Oct 2026), supplied by Ajit on 2026-10-15. Name and website only: the list's contact names and emails are not kept (most are marked 'not revalidated'). Each domain answered over HTTPS on 2026-10-15; a domain missing from the list's website column was read from the employer's own mail domain. Whether a row is a tech employer is decided by is_tech from its own website, not here.",
+  "companies": [
+    {
+      "name": "75F APAC",
+      "domain": "75f.io",
+      "website_url": "https://75f.io"
+    },
+    {
+      "name": "Ace Turtle",
+      "domain": "aceturtle.com",
+      "website_url": "https://aceturtle.com"
+    },
+    {
+      "name": "Aequs",
+      "domain": "aequs.com",
+      "website_url": "https://aequs.com"
+    },
+    {
+      "name": "AEREO",
+      "domain": "aereo.io",
+      "website_url": "https://aereo.io"
+    },
+    {
+      "name": "AMPA Orthodontics",
+      "domain": "toothsi.in",
+      "website_url": "https://toothsi.in"
+    },
+    {
+      "name": "Appnomic",
+      "domain": "appnomic.com",
+      "website_url": "https://appnomic.com"
+    },
+    {
+      "name": "Ati Motors",
+      "domain": "atimotors.com",
+      "website_url": "https://atimotors.com"
+    },
+    {
+      "name": "Avanti",
+      "domain": "avantifinance.in",
+      "website_url": "https://avantifinance.in"
+    },
+    {
+      "name": "Avataar",
+      "domain": "avataar.ai",
+      "website_url": "https://avataar.ai"
+    },
+    {
+      "name": "Awign",
+      "domain": "awign.com",
+      "website_url": "https://awign.com"
+    },
+    {
+      "name": "Axio Biosolutions",
+      "domain": "axiobio.com",
+      "website_url": "https://axiobio.com"
+    },
+    {
+      "name": "Ayu Health",
+      "domain": "ayu.health",
+      "website_url": "https://ayu.health"
+    },
+    {
+      "name": "BankBazaar India",
+      "domain": "bankbazaar.com",
+      "website_url": "https://bankbazaar.com"
+    },
+    {
+      "name": "Beloorbayir Biotech",
+      "domain": "beloorbayir.com",
+      "website_url": "https://beloorbayir.com"
+    },
+    {
+      "name": "Bewakoof",
+      "domain": "bewakoof.com",
+      "website_url": "https://bewakoof.com"
+    },
+    {
+      "name": "Bhanzu",
+      "domain": "bhanzu.com",
+      "website_url": "https://bhanzu.com"
+    },
+    {
+      "name": "Bizom",
+      "domain": "bizom.com",
+      "website_url": "https://bizom.com"
+    },
+    {
+      "name": "Celcius Logistics Solutions",
+      "domain": "celcius.in",
+      "website_url": "https://celcius.in"
+    },
+    {
+      "name": "Clear",
+      "domain": "cleartax.in",
+      "website_url": "https://cleartax.in"
+    },
+    {
+      "name": "Cogoport",
+      "domain": "cogoport.com",
+      "website_url": "https://cogoport.com"
+    },
+    {
+      "name": "Design Cafe",
+      "domain": "designcafe.com",
+      "website_url": "https://designcafe.com"
+    },
+    {
+      "name": "Dezerv",
+      "domain": "dezerv.in",
+      "website_url": "https://dezerv.in"
+    },
+    {
+      "name": "DoShare Labs",
+      "domain": "doshare.me",
+      "website_url": "https://doshare.me"
+    },
+    {
+      "name": "EbixCash",
+      "domain": "ebixcash.com",
+      "website_url": "https://ebixcash.com"
+    },
+    {
+      "name": "Emergent AI",
+      "domain": "emergent.sh",
+      "website_url": "https://emergent.sh"
+    },
+    {
+      "name": "epiplex.ai",
+      "domain": "epiplex.ai",
+      "website_url": "https://epiplex.ai"
+    },
+    {
+      "name": "ERGOS",
+      "domain": "ergos.in",
+      "website_url": "https://ergos.in"
+    },
+    {
+      "name": "FINTELLIX",
+      "domain": "fintellix.com",
+      "website_url": "https://fintellix.com"
+    },
+    {
+      "name": "FloBiz",
+      "domain": "flobiz.in",
+      "website_url": "https://flobiz.in"
+    },
+    {
+      "name": "Forus Health",
+      "domain": "forushealth.com",
+      "website_url": "https://forushealth.com"
+    },
+    {
+      "name": "FPL Technologies",
+      "domain": "onescore.app",
+      "website_url": "https://onescore.app"
+    },
+    {
+      "name": "GIVA",
+      "domain": "giva.co",
+      "website_url": "https://giva.co"
+    },
+    {
+      "name": "GO DESi",
+      "domain": "godesi.in",
+      "website_url": "https://godesi.in"
+    },
+    {
+      "name": "GoKwik",
+      "domain": "gokwik.co",
+      "website_url": "https://gokwik.co"
+    },
+    {
+      "name": "Hector Beverages",
+      "domain": "hectorbeverages.com",
+      "website_url": "https://hectorbeverages.com"
+    },
+    {
+      "name": "HungerBox",
+      "domain": "hungerbox.com",
+      "website_url": "https://hungerbox.com"
+    },
+    {
+      "name": "iD Fresh Food",
+      "domain": "idfreshfood.com",
+      "website_url": "https://idfreshfood.com"
+    },
+    {
+      "name": "InCred Financial Services",
+      "domain": "incred.com",
+      "website_url": "https://incred.com"
+    },
+    {
+      "name": "IndiQube",
+      "domain": "indiqube.com",
+      "website_url": "https://indiqube.com"
+    },
+    {
+      "name": "Jai Kisan",
+      "domain": "jai-kisan.com",
+      "website_url": "https://jai-kisan.com"
+    },
+    {
+      "name": "Jiraaf",
+      "domain": "jiraaf.com",
+      "website_url": "https://jiraaf.com"
+    },
+    {
+      "name": "Jurisphere.ai",
+      "domain": "jurisphere.ai",
+      "website_url": "https://jurisphere.ai"
+    },
+    {
+      "name": "JUSPAY",
+      "domain": "juspay.io",
+      "website_url": "https://juspay.io"
+    },
+    {
+      "name": "Kapiva",
+      "domain": "kapiva.in",
+      "website_url": "https://kapiva.in"
+    },
+    {
+      "name": "Loyal Hospitality",
+      "domain": "loyalhospitality.in",
+      "website_url": "https://loyalhospitality.in"
+    },
+    {
+      "name": "Klay Preschools and Daycare",
+      "domain": "klay.co.in",
+      "website_url": "https://klay.co.in"
+    },
+    {
+      "name": "KPMG India",
+      "domain": "kpmg.com",
+      "website_url": "https://kpmg.com"
+    },
+    {
+      "name": "Kushal's Fashion Jewellery",
+      "domain": "kushals.com",
+      "website_url": "https://kushals.com"
+    },
+    {
+      "name": "Kuvera.in",
+      "domain": "kuvera.in",
+      "website_url": "https://kuvera.in"
+    },
+    {
+      "name": "LoadShare Networks",
+      "domain": "loadshare.net",
+      "website_url": "https://loadshare.net"
+    },
+    {
+      "name": "Logen.io",
+      "domain": "logen.io",
+      "website_url": "https://logen.io"
+    },
+    {
+      "name": "Loop",
+      "domain": "loophealth.com",
+      "website_url": "https://loophealth.com"
+    },
+    {
+      "name": "Melorra",
+      "domain": "melorra.com",
+      "website_url": "https://melorra.com"
+    },
+    {
+      "name": "MFine",
+      "domain": "mfine.co",
+      "website_url": "https://mfine.co"
+    },
+    {
+      "name": "Mokobara",
+      "domain": "mokobara.com",
+      "website_url": "https://mokobara.com"
+    },
+    {
+      "name": "MoveInSync",
+      "domain": "moveinsync.com",
+      "website_url": "https://moveinsync.com"
+    },
+    {
+      "name": "Mygate",
+      "domain": "mygate.com",
+      "website_url": "https://mygate.com"
+    },
+    {
+      "name": "Niqo Robotics",
+      "domain": "niqorobotics.com",
+      "website_url": "https://niqorobotics.com"
+    },
+    {
+      "name": "NxtGen Cloud Technologies",
+      "domain": "nxtgen.com",
+      "website_url": "https://nxtgen.com"
+    },
+    {
+      "name": "Oda Class",
+      "domain": "odaclass.com",
+      "website_url": "https://odaclass.com"
+    },
+    {
+      "name": "PlanetSpark",
+      "domain": "planetspark.in",
+      "website_url": "https://planetspark.in"
+    },
+    {
+      "name": "RED.Health",
+      "domain": "red.health",
+      "website_url": "https://red.health"
+    },
+    {
+      "name": "Refyne India",
+      "domain": "refyne.co.in",
+      "website_url": "https://refyne.co.in"
+    },
+    {
+      "name": "Remidio",
+      "domain": "remidio.com",
+      "website_url": "https://remidio.com"
+    },
+    {
+      "name": "RIPPLR",
+      "domain": "ripplr.in",
+      "website_url": "https://ripplr.in"
+    },
+    {
+      "name": "Runable",
+      "domain": "runable.com",
+      "website_url": "https://runable.com"
+    },
+    {
+      "name": "Savaari Car Rentals",
+      "domain": "savaari.com",
+      "website_url": "https://savaari.com"
+    },
+    {
+      "name": "Scripbox",
+      "domain": "scripbox.com",
+      "website_url": "https://scripbox.com"
+    },
+    {
+      "name": "SeekOut",
+      "domain": "seekout.com",
+      "website_url": "https://seekout.com"
+    },
+    {
+      "name": "SolarSquare Energy",
+      "domain": "solarsquare.in",
+      "website_url": "https://solarsquare.in"
+    },
+    {
+      "name": "StoreKing",
+      "domain": "storeking.in",
+      "website_url": "https://storeking.in"
+    },
+    {
+      "name": "String Bio",
+      "domain": "stringbio.com",
+      "website_url": "https://stringbio.com"
+    },
+    {
+      "name": "Sunstone",
+      "domain": "sunstone.in",
+      "website_url": "https://sunstone.in"
+    },
+    {
+      "name": "Supertails",
+      "domain": "supertails.com",
+      "website_url": "https://supertails.com"
+    },
+    {
+      "name": "SureWaves MediaTech",
+      "domain": "surewaves.com",
+      "website_url": "https://surewaves.com"
+    },
+    {
+      "name": "Third Wave Coffee",
+      "domain": "thirdwavecoffeeroasters.com",
+      "website_url": "https://thirdwavecoffeeroasters.com"
+    },
+    {
+      "name": "UrbanPiper",
+      "domain": "urbanpiper.com",
+      "website_url": "https://urbanpiper.com"
+    },
+    {
+      "name": "Vahan.ai",
+      "domain": "vahan.ai",
+      "website_url": "https://vahan.ai"
+    },
+    {
+      "name": "Vizury",
+      "domain": "vizury.com",
+      "website_url": "https://vizury.com"
+    },
+    {
+      "name": "Voonik",
+      "domain": "voonik.com",
+      "website_url": "https://voonik.com"
+    },
+    {
+      "name": "Vridhi Home Finance",
+      "domain": "vridhihomefinance.com",
+      "website_url": "https://vridhihomefinance.com"
+    },
+    {
+      "name": "VuNet Systems",
+      "domain": "vunetsystems.com",
+      "website_url": "https://vunetsystems.com"
+    },
+    {
+      "name": "Vyapar",
+      "domain": "vyaparapp.in",
+      "website_url": "https://vyaparapp.in"
+    },
+    {
+      "name": "Wildcraft India",
+      "domain": "wildcraft.com",
+      "website_url": "https://wildcraft.com"
+    },
+    {
+      "name": "YourStory Media",
+      "domain": "yourstory.com",
+      "website_url": "https://yourstory.com"
+    },
+    {
+      "name": "Zenact AI",
+      "domain": "zenact.ai",
+      "website_url": "https://zenact.ai"
+    },
+    {
+      "name": "Zenskar",
+      "domain": "zenskar.com",
+      "website_url": "https://zenskar.com"
+    },
+    {
+      "name": "Zigment",
+      "domain": "zigment.ai",
+      "website_url": "https://zigment.ai"
+    },
+    {
+      "name": "Zolo",
+      "domain": "zolostays.com",
+      "website_url": "https://zolostays.com"
+    },
+    {
+      "name": "ZopSmart",
+      "domain": "zopsmart.com",
+      "website_url": "https://zopsmart.com"
+    }
+  ]
+}

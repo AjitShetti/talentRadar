@@ -8,7 +8,7 @@ Run the company-map refresh steps locally, the same ones the
     python scripts/refresh_company_map.py --step wikidata
     python scripts/refresh_company_map.py --step news
 
-``all`` runs, in order: wikidata, osm, yc, github_orgs, sites, geocode,
+``all`` runs, in order: wikidata, osm, yc, hiring_list, github_orgs, sites, geocode,
 summaries, github, then the news feeds. Each step prints its counts; a failing
 step prints its error and the next one still runs.
 """

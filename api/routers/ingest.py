@@ -228,7 +228,7 @@ async def reverify_postings(limit: int = Query(default=150, ge=1, le=500)) -> di
 
 
 RefreshStep = Literal[
-    "wikidata", "osm", "yc", "github_orgs", "sites", "geocode", "summaries", "github"
+    "wikidata", "osm", "yc", "hiring_list", "github_orgs", "sites", "geocode", "summaries", "github"
 ]
 
 

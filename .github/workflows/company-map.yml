@@ -7,6 +7,7 @@
 #   daily      github_orgs (60) → sites (60) → geocode (40) → summaries (60) → github (30)
 #   Mondays    wikidata   (Bengaluru-headquartered companies)
 #              yc         (Bengaluru companies in Y Combinator's directory)
+#              hiring_list (the checked-in recruiter list; no outside request)
 #   the 1st    osm        (offices tagged inside the Bengaluru bbox)
 #
 # github_orgs walks GitHub's organisation search for Bengaluru (at most 60
@@ -27,7 +28,7 @@ on:
   workflow_dispatch:
     inputs:
       step:
-        description: "One step to run (wikidata, osm, yc, github_orgs, sites, geocode, summaries, github) or 'daily'"
+        description: "One step to run (wikidata, osm, yc, hiring_list, github_orgs, sites, geocode, summaries, github) or 'daily'"
         required: false
         default: daily
 
@@ -83,7 +84,7 @@ jobs:
             exit 0
           fi
           # 22:41 UTC: Monday's run is Tuesday 04:11 IST, still "Monday" in UTC.
-          if [ "$(date -u +%u)" = "1" ]; then refresh wikidata 2000; refresh yc 2000; fi
+          if [ "$(date -u +%u)" = "1" ]; then refresh wikidata 2000; refresh yc 2000; refresh hiring_list 2000; fi
           if [ "$(date -u +%d)" = "01" ]; then refresh osm 2000; fi
           refresh github_orgs 60
           refresh sites 60

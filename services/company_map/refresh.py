@@ -10,6 +10,8 @@ both call :func:`run_step`. A step:
 * ``wikidata`` / ``osm`` — import Bengaluru companies and merge them in.
 * ``yc`` — Bengaluru companies from Y Combinator's public directory (a
   community mirror; one request).
+* ``hiring_list`` — Bengaluru employers from the shared recruiter list checked
+  into ``data/company_sources`` (name and website only; no request).
 * ``github_orgs`` — Bengaluru organisations on GitHub: the next ``limit``
   results of a cursor-driven search, each looked up once (an organisation
   checked in the last 30 days is not looked up again) and kept only if it is a
@@ -43,7 +45,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from domain.areas import area_for_text, jitter
 from domain.company_identity import merge_fields
 from services.cache_backend import CacheBackend
-from services.company_map import github_orgs, osm, wikidata, yc
+from services.company_map import github_orgs, hiring_list, osm, wikidata, yc
 from services.company_map.geocode import geocode, resolve_location
 from services.company_map.people import github_members, upsert_people
 from services.company_map.sourced import SourcedCompany
@@ -56,7 +58,17 @@ from storage.models import Company
 
 logger = logging.getLogger(__name__)
 
-STEPS = ("wikidata", "osm", "yc", "github_orgs", "sites", "geocode", "summaries", "github")
+STEPS = (
+    "wikidata",
+    "osm",
+    "yc",
+    "hiring_list",
+    "github_orgs",
+    "sites",
+    "geocode",
+    "summaries",
+    "github",
+)
 
 #: Hard ceilings whatever the caller asks for: Nominatim's policy, the daily
 #: summary budget, and what one request can finish.
@@ -64,6 +76,7 @@ MAX_LIMIT = {
     "wikidata": 5000,
     "osm": 5000,
     "yc": 5000,
+    "hiring_list": 5000,
     "github_orgs": 100,
     "sites": 100,
     "geocode": 40,
@@ -390,6 +403,8 @@ async def run_step(step: str, limit: int) -> dict[str, int | str]:
                 counts = await _step_import(session, step, bounded)
             elif step == "yc":
                 counts = await _step_yc(session, bounded)
+            elif step == "hiring_list":
+                counts = await _import(session, hiring_list.load()[:bounded], "hiring_list")
             elif step == "github_orgs":
                 counts = await _step_github_orgs(session, bounded)
             elif step == "sites":

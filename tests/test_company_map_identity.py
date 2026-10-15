@@ -88,6 +88,7 @@ class TestMerge:
             "yc",
             "osm",
             "github_org",
+            "hiring_list",
             "news",
             "llm",
         )

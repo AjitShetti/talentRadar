@@ -26,6 +26,7 @@ class TestPrecedence:
             "yc",
             "osm",
             "github_org",
+            "hiring_list",
             "news",
             "llm",
         )

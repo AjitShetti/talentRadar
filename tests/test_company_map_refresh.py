@@ -60,6 +60,7 @@ async def test_unknown_step_is_an_error_not_an_exception():
         "wikidata",
         "osm",
         "yc",
+        "hiring_list",
         "github_orgs",
         "sites",
         "geocode",

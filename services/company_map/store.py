@@ -41,7 +41,7 @@ from storage.models import Company, Job, JobStatus
 #: Importers whose every result is a Bengaluru company (Wikidata asks for
 #: HQ = Bengaluru, Overpass for offices inside the Bengaluru bbox, YC for a
 #: Bengaluru office, GitHub for an organisation whose profile says Bengaluru).
-BENGALURU_SOURCES = frozenset({"wikidata", "osm", "yc", "github_org"})
+BENGALURU_SOURCES = frozenset({"wikidata", "osm", "yc", "github_org", "hiring_list"})
 
 #: Fields an import may write through precedence. ``description`` is not one
 #: of them: a source's short description is kept in metadata for the summary
