@@ -310,6 +310,13 @@ def test_a_missing_role_reads_as_software_engineer() -> None:
     assert _draft("email", "first", role="")[0] == "Software engineer interested in Tessel AI"
 
 
+@pytest.mark.parametrize("role", ["iOS Engineer", "macOS Developer", "dbt Developer"])
+def test_the_subject_keeps_the_users_role_exactly_as_written(role: str) -> None:
+    subject, body = _draft("email", "first", role=role)
+    assert subject == f"{role} interested in Tessel AI"
+    assert f"I'm a {role} in Bengaluru." in body
+
+
 def test_a_missing_send_date_does_not_print_none() -> None:
     for fmt in ALL_FORMATS:
         _, body = _draft(fmt, "follow_up", last_sent_on=None)

@@ -180,7 +180,8 @@ def fallback_draft(
     first = first_name(recipient_name)
     greeting = f"Hi {first}," if first else "Hi,"
     company_text = _one_line(company)
-    role_text = _one_line(role) or _FALLBACK_ROLE
+    user_role = _one_line(role)
+    role_text = user_role or _FALLBACK_ROLE
     is_email = fmt == "email"
 
     if kind == "follow_up":
@@ -215,6 +216,8 @@ def fallback_draft(
 
     subject: str | None = None
     if is_email:
-        line = f"{role_text} interested in {company_text}"
-        subject = _word_cut(line[:1].upper() + line[1:], SUBJECT_MAX)
+        # The user's own role is used as written (iOS, macOS, dbt); only the
+        # fallback is capitalised, since a subject should not start lowercase.
+        subject_role = user_role or _FALLBACK_ROLE.capitalize()
+        subject = _word_cut(f"{subject_role} interested in {company_text}", SUBJECT_MAX)
     return subject, fit_to_limit(body, FORMATS[fmt].max_chars)
