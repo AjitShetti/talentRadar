@@ -156,6 +156,20 @@ def only_graph(monkeypatch: pytest.MonkeyPatch) -> None:
         (["Product Manager"], "general"),
         ([""], "general"),
         (["   ", ""], "general"),
+        # Mobile roles that name a UI framework are mobile, not frontend.
+        (["React Native Developer"], "mobile"),
+        (["Flutter UI Engineer"], "mobile"),
+        (["Mobile UI Engineer"], "mobile"),
+        (["UI Engineer"], "frontend"),
+        # Common Indian titles.
+        (["SDE2"], "backend"),
+        (["SDE-3"], "backend"),
+        (["Sde 1"], "backend"),
+        (["Java8 Engineer"], "backend"),
+        (["Full Stack Engineer"], "backend"),
+        (["Full-stack Engineer"], "backend"),
+        (["Full-stack Developer"], "backend"),
+        (["Fullstack Engineer"], "backend"),
     ],
 )
 def test_track_for_roles(roles: list[str] | None, expected: Track) -> None:
@@ -178,11 +192,28 @@ def test_track_keyword_order_is_the_documented_one() -> None:
     assert [track for track, _ in TRACK_KEYWORDS] == [
         "ml",
         "data",
-        "frontend",
         "mobile",
+        "frontend",
         "devops",
         "backend",
     ]
+
+
+def test_react_native_is_mobile_but_react_is_frontend() -> None:
+    assert track_for_roles(["React Native Engineer"]) == "mobile"
+    assert track_for_roles(["React Developer"]) == "frontend"
+    assert track_for_roles(["React Engineer"]) == "frontend"
+    assert track_for_roles(["Android Engineer"]) == "mobile"
+    assert track_for_roles(["iOS Developer"]) == "mobile"
+
+
+def test_a_digit_stuck_to_a_title_word_does_not_hide_it() -> None:
+    # "SDE2" and "SDE 2" are the same role; so are "Python3 Engineer" and "Python 3 Engineer".
+    assert track_for_roles(["SDE2"]) == track_for_roles(["SDE 2"]) == "backend"
+    assert track_for_roles(["Python3 Engineer"]) == track_for_roles(["Python 3 Engineer"])
+    assert track_for_roles(["Python3 Engineer"]) == "backend"
+    # ...but a word that merely starts like a keyword is still not that keyword.
+    assert track_for_roles(["Sdeo Specialist"]) == "general"
 
 
 def test_every_track_has_a_label_and_a_topic_table() -> None:
@@ -322,6 +353,44 @@ def test_history_order_does_not_matter_to_weights() -> None:
     assert topic_weights("backend", history, TODAY) == topic_weights(
         "backend", list(reversed(history)), TODAY
     )
+
+
+def test_two_done_items_on_one_day_and_topic_resolve_by_slug_not_input_order() -> None:
+    # The later slug is the "last question" on the topic, whichever order the rows arrive in.
+    hard_then_right = [
+        done("q-001", "graph", 8, feel="hard"),
+        done("q-002", "graph", 8, feel="right"),
+    ]
+    right_then_hard = [
+        done("q-001", "graph", 8, feel="right"),
+        done("q-002", "graph", 8, feel="hard"),
+    ]
+    base = TRACK_TOPICS["backend"]["graph"]
+    for history in (hard_then_right, list(reversed(hard_then_right))):
+        assert topic_weights("backend", history, TODAY)["graph"] == base
+    for history in (right_then_hard, list(reversed(right_then_hard))):
+        assert topic_weights("backend", history, TODAY)["graph"] == pytest.approx(base * 1.5)
+
+
+def test_ratings_on_one_day_reach_the_band_in_slug_order_whatever_the_input_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[list[Feel]] = []
+
+    def spy(years: float | None, feels: Sequence[Feel]) -> dict[Difficulty, int]:
+        seen.append(list(feels))
+        return {"easy": 0, "medium": 100, "hard": 0}
+
+    monkeypatch.setattr(practice_pick, "difficulty_band", spy)
+    rows = [
+        done("q-001", "graph", 5, feel="hard"),
+        done("q-002", "graph", 5, feel="right"),
+        done("q-003", "tree", 3, feel="easy"),
+    ]
+    catalogue = make_catalogue(1)
+    must_pick(catalogue, history=rows)
+    must_pick(catalogue, history=list(reversed(rows)))
+    assert seen == [["hard", "right", "easy"]] * 2
 
 
 def test_a_question_that_was_not_done_is_not_practice() -> None:

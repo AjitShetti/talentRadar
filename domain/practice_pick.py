@@ -128,10 +128,15 @@ class _LastPractice:
     feel: Feel | None
 
 
+def _chronological(history: Sequence[HistoryItem]) -> list[HistoryItem]:
+    """Oldest first; two items on one day are ordered by slug, never by input order."""
+    return sorted(history, key=lambda h: (h.day, h.slug))
+
+
 def _last_practice(history: Sequence[HistoryItem], today: date) -> dict[str, _LastPractice]:
     """The newest done item per topic, ignoring anything dated after ``today``."""
     latest: dict[str, _LastPractice] = {}
-    for item in sorted(history, key=lambda h: h.day):
+    for item in _chronological(history):
         if item.done and item.day <= today:
             latest[item.topic] = _LastPractice(item.day, item.feel)
     return latest
@@ -297,7 +302,7 @@ def pick_question(
     recent = {
         item.slug for item in earlier if item.done and (day - item.day).days <= REPEAT_AFTER_DAYS
     }
-    feels = [item.feel for item in sorted(earlier, key=lambda h: h.day) if item.feel is not None]
+    feels = [item.feel for item in _chronological(earlier) if item.feel is not None]
     band = difficulty_band(years, feels)
     weights = topic_weights(track, earlier, day)
     tail_topics = sorted({t for q in ordered for t in q.topics})

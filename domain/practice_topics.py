@@ -32,15 +32,17 @@ TRACK_LABELS: dict[Track, str] = {
 }
 
 #: Keywords that put a target role on a track, in the order they are tried. A role is
-#: tokenised into words, and a keyword matches a whole run of words, so ``ml`` is not
-#: found inside ``HTML`` and ``front-end`` matches "Front End" as well. The order
-#: matters: "React Developer" is frontend because ``react`` is tried before
-#: ``developer`` (backend), and "Data Scientist" is ml because ml is tried before data.
+#: tokenised into words (letters and digits split apart, so "SDE2" is "sde", "2"), and a
+#: keyword matches a whole run of words, so ``ml`` is not found inside ``HTML`` and
+#: ``front-end`` matches "Front End" as well. The order matters: "Data Scientist" is ml
+#: because ml is tried before data; "React Native Developer" and "Flutter UI Engineer" are
+#: mobile because mobile is tried before frontend (``react``, ``ui engineer``); and
+#: "React Developer" is frontend because ``react`` is tried before ``developer`` (backend).
 TRACK_KEYWORDS: tuple[tuple[Track, tuple[str, ...]], ...] = (
     ("ml", ("machine learning", "ml", "ai engineer", "data scientist")),
     ("data", ("data engineer", "analyst", "analytics", "sql")),
+    ("mobile", ("android", "ios", "mobile", "flutter", "react native")),
     ("frontend", ("frontend", "front-end", "react", "ui engineer")),
-    ("mobile", ("android", "ios", "mobile", "flutter")),
     ("devops", ("devops", "sre", "site reliability", "platform", "cloud", "infrastructure")),
     (
         "backend",
@@ -53,6 +55,8 @@ TRACK_KEYWORDS: tuple[tuple[Track, tuple[str, ...]], ...] = (
             "node",
             "sde",
             "software engineer",
+            "full stack",
+            "fullstack",
             "developer",
         ),
     ),
@@ -182,11 +186,11 @@ TRACK_TOPICS: dict[Track, dict[str, float]] = {
     },
 }
 
-_WORD = re.compile(r"[a-z0-9]+")
+_WORD = re.compile(r"[a-z]+|[0-9]+")
 
 
 def _words(text: str) -> tuple[str, ...]:
-    """Lower-case alphanumeric words: "Front-end Dev" -> ("front", "end", "dev")."""
+    """Lower-case words, letters and digits apart: "Front-end SDE2" -> ("front", "end", "sde", "2")."""
     return tuple(_WORD.findall(text.lower()))
 
 
