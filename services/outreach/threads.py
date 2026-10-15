@@ -77,7 +77,7 @@ _EPOCH = datetime.min.replace(tzinfo=UTC)
 
 # Which person leads a thread: the first rank that anyone holds wins, and among
 # several people at that rank, the one added first.
-_LEAD_RANK = {"replied": 0, "waiting": 2, "planned": 3, "cold": 4}
+_LEAD_RANK = {"replied": 0, "waiting": 2, "cold": 3, "planned": 4}
 _LEAD_RANK_DUE = 1
 
 
@@ -150,6 +150,19 @@ def person_clock(person: OutreachPerson) -> PersonClock:
     )
 
 
+def _day_start(moment: datetime) -> datetime:
+    """00:00 IST on the IST day ``moment`` falls on, as a UTC-aware instant."""
+    return ist_day_bounds(ist_today(moment))[0]
+
+
+def follow_up_due_from(clock: PersonClock) -> datetime | None:
+    """The instant a waiting person's follow-up becomes owed: 00:00 IST on the day it
+    is dated, or ``None`` when no follow-up is pending."""
+    if clock.state != "waiting" or clock.next_follow_up_at is None:
+        return None
+    return _day_start(clock.next_follow_up_at)
+
+
 def follow_up_due(clock: PersonClock, now: datetime) -> bool:
     """Is a follow-up owed to this person today in India?
 
@@ -158,11 +171,8 @@ def follow_up_due(clock: PersonClock, now: datetime) -> bool:
     ``domain.outreach.is_due`` compares instants; this is the day-granular rule
     every surface that says "due" must share.
     """
-    return (
-        clock.state == "waiting"
-        and clock.next_follow_up_at is not None
-        and ist_today(clock.next_follow_up_at) <= ist_today(now)
-    )
+    owed_from = follow_up_due_from(clock)
+    return owed_from is not None and owed_from <= aware(now)
 
 
 # --- the summary -------------------------------------------------------------
@@ -205,14 +215,17 @@ def summarise(
 
     * ``stage`` is ``thread_stage`` over each person's effective state, so a
       waiting person who has gone quiet reads as ``cold`` without any job.
-    * ``lead`` is the person worth naming on the row: replied, then a waiting
-      person who is due, then waiting, then planned, then cold; the earliest
-      added wins a tie. A dropped person never leads, and the summary carries
-      only a name and a state - never an email or a link.
-    * ``due`` is true when a follow-up is owed today (``follow_up_due``) or, once
-      someone has replied, the thread's next step falls on or before today (IST).
-      A closed thread is never due. ``next_due_at`` is the earliest such moment,
-      due yet or not.
+    * ``lead`` is the person worth naming on the row, in the order the thread
+      stage uses: replied, then a waiting person who is due, then waiting, then
+      cold, then planned; the earliest added wins a tie. A dropped person never
+      leads, and the summary carries only a name and a state - never an email
+      or a link.
+    * ``people_count`` is the people still in the plan: a dropped person is not
+      counted.
+    * ``next_due_at`` is the earliest moment something falls owed, always the
+      start of an IST day (a follow-up from the day it is dated, a replied
+      thread's next step from its day). ``due`` is exactly "that moment has
+      arrived", so the two cannot disagree. A closed thread has neither.
     """
     moment = aware(now)
     closed = thread.closed_at is not None
@@ -220,17 +233,15 @@ def summarise(
     states = [effective_state(clock, moment) for _, clock in entries]
     stage = thread_stage(states, closed=closed)
 
-    step_day = thread.next_step_at if stage == "replied" else None
-    due = False
     deadlines: list[datetime] = []
     if not closed:
-        due = any(follow_up_due(clock, moment) for _, clock in entries)
         for _, clock in entries:
-            if clock.state == "waiting" and clock.next_follow_up_at is not None:
-                deadlines.append(clock.next_follow_up_at)
-        if step_day is not None:
-            due = due or step_day <= ist_today(moment)
-            deadlines.append(ist_day_bounds(step_day)[0])
+            owed_from = follow_up_due_from(clock)
+            if owed_from is not None:
+                deadlines.append(owed_from)
+        if stage == "replied" and thread.next_step_at is not None:
+            deadlines.append(ist_day_bounds(thread.next_step_at)[0])
+    next_due_at = min(deadlines) if deadlines else None
 
     touched = [aware(touch.happened_at) for touch in thread.touches]
     has_job = thread.job_id is not None or thread.job_title is not None
@@ -242,10 +253,10 @@ def summarise(
         "company_summary": company_summary,
         "stage": stage,
         "outcome": thread.outcome,
-        "people_count": len(entries),
+        "people_count": sum(1 for state in states if state != "dropped"),
         "lead": _lead(entries, states, moment),
-        "due": due,
-        "next_due_at": _iso(min(deadlines)) if deadlines else None,
+        "due": next_due_at is not None and next_due_at <= moment,
+        "next_due_at": _iso(next_due_at),
         "last_touch_at": _iso(max(touched)) if touched else None,
         "job": {"id": _id(thread.job_id), "title": thread.job_title} if has_job else None,
         "application": (
@@ -338,6 +349,34 @@ async def _thread_for(
     ).scalar_one_or_none()
 
 
+def _name_key(name: str) -> str:
+    """A company name as compared for "the same one typed again": whitespace
+    collapsed, case folded."""
+    return " ".join(name.split()).casefold()
+
+
+async def _open_typed_thread(
+    session: AsyncSession, uid: uuid.UUID, name: str
+) -> OutreachThread | None:
+    """The user's open name-only thread for ``name``, if they already have one.
+
+    Compared in Python so the case folding is Unicode's; the scan is bounded by
+    ``MAX_OPEN_THREADS``. A closed thread is not matched: typing the name again
+    after closing it starts a fresh conversation.
+    """
+    rows = await session.execute(
+        select(OutreachThread)
+        .where(
+            OutreachThread.user_id == uid,
+            OutreachThread.company_id.is_(None),
+            OutreachThread.closed_at.is_(None),
+        )
+        .order_by(OutreachThread.created_at, OutreachThread.id)
+    )
+    key = _name_key(name)
+    return next((t for t in rows.scalars() if _name_key(t.company_name) == key), None)
+
+
 async def _summary_of(
     session: AsyncSession, user_id: uuid.UUID, thread_id: uuid.UUID, now: datetime
 ) -> dict[str, Any]:
@@ -347,6 +386,8 @@ async def _summary_of(
 
 
 async def _ensure_room(session: AsyncSession, uid: uuid.UUID) -> None:
+    """Refuse a new or reopened thread at the cap. The cap is soft: it counts, then the
+    caller inserts, so two simultaneous requests can pass one over the limit."""
     open_threads = (
         await session.execute(
             select(func.count())
@@ -403,10 +444,14 @@ async def create_thread(
     Returns ``(ThreadSummary, created)``. A stored company (``company_id``) is
     opened once per user: a second call returns the same thread with
     ``created=False``, reopening it if it had been closed. Otherwise
-    ``company_name`` is a typed name and starts a private, name-only thread.
+    ``company_name`` is a typed name and starts a private, name-only thread; typing
+    the same name again (ignoring case and spacing) while that thread is open
+    returns it too.
     ``job_id`` attaches a posting as context and links the user's own tracker
-    row for it, if any. Opening a thread, or reopening one, is refused with a
-    ``Conflict`` once the user has ``MAX_OPEN_THREADS`` open.
+    row for it, if any; on a thread that already exists it is attached only if the
+    thread has no role yet. Opening a thread, or reopening one, is refused with a
+    ``Conflict`` once the user has ``MAX_OPEN_THREADS`` open; returning one that is
+    already open never is.
     """
     if source not in SOURCES:
         raise Invalid(f"Unknown source: {source!r}")
@@ -425,7 +470,10 @@ async def create_thread(
             name = typed
         job = None if job_id is None else await _get_job(session, job_id)
 
-        thread = None if company_uuid is None else await _thread_for(session, uid, company_uuid)
+        if company_uuid is None:
+            thread = await _open_typed_thread(session, uid, name)
+        else:
+            thread = await _thread_for(session, uid, company_uuid)
         created = thread is None
         thread_uuid = uuid.uuid4()  # the new thread's id; replaced by an existing thread's
         if thread is None:
@@ -461,9 +509,13 @@ async def create_thread(
                 await _ensure_room(session, uid)
                 thread.closed_at = None
                 thread.outcome = None
+            if job is not None and thread.job_id is None:
+                # Adding the company again, this time from a role: attach it. A role
+                # that is already attached is left alone.
+                await _set_job(session, thread, job_id, link_application=True)
         await session.commit()
 
-        logger.info("outreach thread %s %s", thread_uuid, "created" if created else "reopened")
+        logger.info("outreach thread %s %s", thread_uuid, "created" if created else "reused")
         return await _summary_of(session, uid, thread_uuid, now), created
 
 

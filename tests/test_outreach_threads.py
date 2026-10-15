@@ -26,7 +26,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import services.agent_memory as agent_memory
-from domain.outreach import MAX_OPEN_THREADS
+from domain.outreach import MAX_OPEN_THREADS, ist_day_bounds, ist_today
 from services.outreach import threads
 from services.outreach.errors import Conflict, Invalid, NotFound, OutreachError
 from services.outreach.threads import (
@@ -344,6 +344,166 @@ async def test_create_validates_its_input(outreach_db: Factory) -> None:
     with pytest.raises(NotFound):
         await attempt(company_id=str(company.id), job_id=missing)
     assert await _count(outreach_db, OutreachThread) == 0
+
+
+async def test_a_typed_name_submitted_twice_is_one_thread(outreach_db: Factory) -> None:
+    async with outreach_db() as session:
+        user = await make_user(session)
+        other = await make_user(session)
+    first = await _typed(user.id, "Acme Robotics")
+
+    again, created = await create_thread(
+        str(user.id),
+        company_id=None,
+        company_name="  acme \n  ROBOTICS ",  # the same name, typed another way
+        job_id=None,
+        source="overview",
+    )
+
+    assert created is False
+    assert again["id"] == first["id"]
+    assert again["source"] == "typed"  # the first way in is the one kept
+    assert await _count(outreach_db, OutreachThread) == 1
+
+    # A different name, another user, and a closed thread are not the same conversation.
+    different, created_different = await create_thread(
+        str(user.id), company_id=None, company_name="Acme Robotics Ltd", job_id=None, source="typed"
+    )
+    assert created_different is True and different["id"] != first["id"]
+    theirs, created_theirs = await create_thread(
+        str(other.id), company_id=None, company_name="Acme Robotics", job_id=None, source="typed"
+    )
+    assert created_theirs is True and theirs["id"] != first["id"]
+    await update_thread(str(user.id), first["id"], {"close_outcome": "not_now"})
+    fresh, created_fresh = await create_thread(
+        str(user.id), company_id=None, company_name="Acme Robotics", job_id=None, source="typed"
+    )
+    assert created_fresh is True and fresh["id"] != first["id"]
+
+
+async def test_typed_names_are_compared_casefolded(outreach_db: Factory) -> None:
+    async with outreach_db() as session:
+        user = await make_user(session)
+    first = await _typed(user.id, "Stra\u00dfe Labs")
+
+    again, created = await create_thread(
+        str(user.id), company_id=None, company_name="STRASSE   LABS", job_id=None, source="typed"
+    )
+
+    assert created is False
+    assert again["id"] == first["id"]
+
+
+async def test_a_typed_name_does_not_match_a_stored_companys_thread(outreach_db: Factory) -> None:
+    async with outreach_db() as session:
+        user = await make_user(session)
+        company = await make_company(session, "Acme Robotics")
+    stored, _ = await create_thread(
+        str(user.id), company_id=str(company.id), company_name=None, job_id=None, source="list"
+    )
+
+    typed = await _typed(user.id, "Acme Robotics")
+
+    assert typed["id"] != stored["id"]
+    assert typed["company_id"] is None
+
+
+async def test_retyping_a_name_at_the_cap_returns_the_thread(outreach_db: Factory) -> None:
+    async with outreach_db() as session:
+        user = await make_user(session)
+        session.add_all(_open_threads(user.id, MAX_OPEN_THREADS - 1))
+        await session.commit()
+    first = await _typed(user.id, "The hundredth")  # 100 open now
+
+    again, created = await create_thread(
+        str(user.id), company_id=None, company_name="the hundredth", job_id=None, source="typed"
+    )
+
+    assert created is False  # not a Conflict: nothing is being added
+    assert again["id"] == first["id"]
+
+
+async def test_adding_a_company_again_from_a_role_attaches_the_role(outreach_db: Factory) -> None:
+    async with outreach_db() as session:
+        user = await make_user(session)
+        company = await make_company(session, "Acme Robotics")
+        job = await make_job(session, company, "Embedded Engineer")
+        other_job = await make_job(session, company, "Firmware Engineer")
+        tracked = JobApplication(
+            id=uuid.uuid4(), user_id=user.id, job_id=job.id, status=ApplicationStatus.APPLIED
+        )
+        session.add(tracked)
+        await session.commit()
+    uid, cid = str(user.id), str(company.id)
+    first, _ = await create_thread(
+        uid, company_id=cid, company_name=None, job_id=None, source="drawer"
+    )
+    assert first["job"] is None
+
+    again, created = await create_thread(
+        uid, company_id=cid, company_name=None, job_id=str(job.id), source="list"
+    )
+
+    assert created is False
+    assert again["id"] == first["id"]
+    assert again["job"] == {"id": str(job.id), "title": "Embedded Engineer"}
+    assert again["application"] == {"id": str(tracked.id), "status": "applied"}
+    row = await _row(outreach_db, first["id"])
+    assert (row.job_id, row.job_title, row.application_id) == (
+        job.id,
+        "Embedded Engineer",
+        tracked.id,
+    )
+
+    # A role that is already attached is not overwritten by another one.
+    third, created_third = await create_thread(
+        uid, company_id=cid, company_name=None, job_id=str(other_job.id), source="list"
+    )
+    assert created_third is False
+    assert third["job"] == {"id": str(job.id), "title": "Embedded Engineer"}
+    assert (await _row(outreach_db, first["id"])).job_id == job.id
+
+
+async def test_a_reopened_or_typed_thread_also_takes_the_role(outreach_db: Factory) -> None:
+    async with outreach_db() as session:
+        user = await make_user(session)
+        company = await make_company(session, "Acme Robotics")
+        job = await make_job(session, company, "Embedded Engineer")
+    uid, cid = str(user.id), str(company.id)
+
+    closed, _ = await create_thread(
+        uid, company_id=cid, company_name=None, job_id=None, source="drawer"
+    )
+    await update_thread(uid, closed["id"], {"close_outcome": "not_now"})
+    reopened, created = await create_thread(
+        uid, company_id=cid, company_name=None, job_id=str(job.id), source="list"
+    )
+    assert created is False
+    assert reopened["stage"] != "closed"
+    assert reopened["job"] == {"id": str(job.id), "title": "Embedded Engineer"}
+
+    typed = await _typed(user.id, "Quill Systems")
+    retyped, created_typed = await create_thread(
+        uid, company_id=None, company_name="Quill Systems", job_id=str(job.id), source="typed"
+    )
+    assert created_typed is False
+    assert retyped["id"] == typed["id"]
+    assert retyped["job"] == {"id": str(job.id), "title": "Embedded Engineer"}
+
+
+async def test_a_role_that_does_not_exist_is_refused_even_for_an_existing_thread(
+    outreach_db: Factory,
+) -> None:
+    async with outreach_db() as session:
+        user = await make_user(session)
+        company = await make_company(session, "Acme Robotics")
+    uid, cid = str(user.id), str(company.id)
+    await create_thread(uid, company_id=cid, company_name=None, job_id=None, source="drawer")
+
+    with pytest.raises(NotFound):
+        await create_thread(
+            uid, company_id=cid, company_name=None, job_id=str(uuid.uuid4()), source="list"
+        )
 
 
 def _open_threads(user_id: uuid.UUID, count: int, *, closed: bool = False) -> list[OutreachThread]:
@@ -855,15 +1015,18 @@ def test_lead_ties_go_to_the_earliest_added() -> None:
     assert summarise(thread, NOW)["lead"] == {"name": "Added First", "state": "planned"}
 
 
-def test_dropped_people_are_counted_but_leave_a_thread_unled() -> None:
+def test_dropped_people_are_not_counted_and_leave_a_thread_unled() -> None:
     thread = _thread()
     _person(thread, "Dropped Dax", "dropped")
 
     summary = summarise(thread, NOW)
 
-    assert summary["people_count"] == 1
+    assert summary["people_count"] == 0
     assert summary["lead"] is None
     assert summary["stage"] == "planned"
+
+    _person(thread, "Planned Pia")
+    assert summarise(thread, NOW)["people_count"] == 1
 
 
 def test_a_cold_person_cools_the_thread_and_still_leads_it() -> None:
@@ -886,6 +1049,29 @@ def test_a_cold_person_cools_the_thread_and_still_leads_it() -> None:
     assert summary["next_due_at"] is None
 
 
+@pytest.mark.parametrize("cold_added_first", [True, False])
+def test_a_cold_person_leads_over_a_planned_one(cold_added_first: bool) -> None:
+    # Spec section 4: cold outranks planned for the thread's stage, so the lead must
+    # be the person who made it cold, whichever of the two was added first.
+    thread = _thread()
+    early, late = NOW - timedelta(days=25), NOW - timedelta(days=20)
+    _person(thread, "Planned Pia", created_at=late if cold_added_first else early)
+    _waiting(
+        thread,
+        "Cold Cai",
+        follow_up_at=None,
+        follow_ups_sent=2,
+        last_outbound_at=NOW - timedelta(days=11),
+        created_at=early if cold_added_first else late,
+    )
+
+    summary = summarise(thread, NOW)
+
+    assert summary["stage"] == "cold"
+    assert summary["lead"] == {"name": "Cold Cai", "state": "cold"}
+    assert summary["people_count"] == 2
+
+
 def test_a_waiting_person_is_due_from_midnight_ist() -> None:
     owed = datetime(2026, 10, 15, 10, 0, tzinfo=UTC)  # 15:30 IST on 15 October
     thread = _thread()
@@ -894,12 +1080,14 @@ def test_a_waiting_person_is_due_from_midnight_ist() -> None:
     night_before = datetime(2026, 10, 14, 18, 29, tzinfo=UTC)  # 23:59 IST on 14 October
     midnight = datetime(2026, 10, 14, 18, 30, tzinfo=UTC)  # 00:00 IST on 15 October
 
+    # The follow-up is dated 15:30 IST, but it is owed from the start of that IST day,
+    # and next_due_at says so: it is the same instant `due` flips at.
     before = summarise(thread, night_before)
     assert before["due"] is False
-    assert before["next_due_at"] == owed.isoformat()
+    assert before["next_due_at"] == midnight.isoformat()
     after = summarise(thread, midnight)
     assert after["due"] is True
-    assert after["next_due_at"] == owed.isoformat()
+    assert after["next_due_at"] == midnight.isoformat()
     assert after["lead"] == {"name": "Due Dev", "state": "waiting"}
 
 
@@ -911,7 +1099,42 @@ def test_next_due_is_the_earliest_pending_follow_up() -> None:
     summary = summarise(thread, NOW)
 
     assert summary["due"] is False
-    assert summary["next_due_at"] == (NOW + timedelta(days=2)).isoformat()
+    # NOW + 2 days is 11:30 IST on the 17th; the IST day starts at 18:30 UTC on the 16th.
+    assert summary["next_due_at"] == "2026-10-16T18:30:00+00:00"
+
+
+def _due_and_replied_threads() -> list[OutreachThread]:
+    waiting = _thread()
+    _waiting(waiting, "Waiting Wen", follow_up_at=datetime(2026, 10, 17, 15, 10, tzinfo=UTC))
+    _waiting(waiting, "Later Lee", follow_up_at=datetime(2026, 10, 21, 2, 0, tzinfo=UTC))
+
+    replied = _thread(next_step="Call on Thursday", next_step_at=date(2026, 10, 19))
+    _person(replied, "Replied Rae", "replied", replied_at=NOW - timedelta(days=1))
+    _waiting(replied, "Waiting Wen", follow_up_at=datetime(2026, 10, 22, 9, 0, tzinfo=UTC))
+    return [waiting, replied]
+
+
+def test_due_is_exactly_whether_next_due_at_has_arrived() -> None:
+    # Swept across a week in 37-minute steps, plus a minute either side of every IST midnight.
+    start = datetime(2026, 10, 14, 0, 0, tzinfo=UTC)
+    moments = [start + timedelta(minutes=37 * step) for step in range(272)]
+    for day in range(14, 24):
+        midnight = ist_day_bounds(date(2026, 10, day))[0]
+        moments += [midnight - timedelta(minutes=1), midnight, midnight + timedelta(minutes=1)]
+
+    checked = 0
+    for thread in _due_and_replied_threads():
+        for moment in moments:
+            summary = summarise(thread, moment)
+            if summary["next_due_at"] is None:
+                assert summary["due"] is False
+                continue
+            stamp = datetime.fromisoformat(summary["next_due_at"])
+            assert summary["due"] is (stamp <= moment), (summary["next_due_at"], moment)
+            # and next_due_at is always the start of an IST day
+            assert stamp == ist_day_bounds(ist_today(stamp))[0]
+            checked += 1
+    assert checked > 400
 
 
 def test_a_next_step_on_a_replied_thread_is_due_from_its_day() -> None:
@@ -938,7 +1161,7 @@ def test_a_next_step_only_counts_once_someone_has_replied() -> None:
     summary = summarise(thread, NOW)
 
     assert summary["due"] is False
-    assert summary["next_due_at"] == (NOW + timedelta(days=1)).isoformat()
+    assert summary["next_due_at"] == "2026-10-15T18:30:00+00:00"  # the 16th, IST
 
 
 def test_a_closed_thread_is_never_due() -> None:
@@ -978,7 +1201,7 @@ def test_stored_times_without_a_zone_are_read_as_utc() -> None:
 
     assert summary["created_at"] == "2026-09-01T08:00:00+00:00"
     assert summary["last_touch_at"] == "2026-10-14T07:30:00+00:00"
-    assert summary["next_due_at"] == "2026-10-16T07:30:00+00:00"
+    assert summary["next_due_at"] == "2026-10-15T18:30:00+00:00"  # 13:00 IST on the 16th
 
 
 async def test_summary_of_a_stored_thread_has_its_company_job_and_people(
