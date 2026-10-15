@@ -100,6 +100,11 @@ def upgrade() -> None:
             created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
     """)
+    # The partial unique index below only covers people with a contact row, so
+    # it cannot serve "the people of a thread" or the ON DELETE CASCADE lookup.
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_outreach_people_thread ON outreach_people(thread_id);"
+    )
     op.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS uq_outreach_people_thread_contact
         ON outreach_people (thread_id, contact_id)
@@ -121,6 +126,9 @@ def upgrade() -> None:
             created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
     """)
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_outreach_touches_thread ON outreach_touches(thread_id);"
+    )
     op.execute("""
         CREATE INDEX IF NOT EXISTS ix_outreach_touches_user_happened
         ON outreach_touches (user_id, happened_at);

@@ -2024,6 +2024,9 @@ class OutreachPerson(Base):
     )
 
     __table_args__ = (
+        # The unique index below is partial, so it cannot serve "the people of
+        # a thread" or the ON DELETE CASCADE lookup; this one can.
+        Index("ix_outreach_people_thread", "thread_id"),
         Index(
             "uq_outreach_people_thread_contact",
             "thread_id",
@@ -2092,6 +2095,7 @@ class OutreachTouch(Base):
     )
 
     __table_args__ = (
+        Index("ix_outreach_touches_thread", "thread_id"),
         Index("ix_outreach_touches_user_happened", "user_id", "happened_at"),
     )
 

@@ -236,6 +236,25 @@ def test_partial_unique_indexes() -> None:
     assert [column.name for column in touches_index.columns] == ["user_id", "happened_at"]
 
 
+def test_child_tables_are_indexed_by_thread() -> None:
+    # The partial unique index on people leads with thread_id but only covers
+    # rows that have a contact, so it cannot serve "all people of a thread" or
+    # the ON DELETE CASCADE lookup. Each child table needs a plain index.
+    for model, name in (
+        (OutreachPerson, "ix_outreach_people_thread"),
+        (OutreachTouch, "ix_outreach_touches_thread"),
+    ):
+        index = _index(model, name)
+        assert not index.unique
+        assert [column.name for column in index.columns] == ["thread_id"]
+        assert index.dialect_options["postgresql"]["where"] is None
+        assert index.dialect_options["sqlite"]["where"] is None
+
+    # Touches are read by thread and by user/day, never by person.
+    touch_indexes = {index.name for index in _table(OutreachTouch).indexes}
+    assert touch_indexes == {"ix_outreach_touches_thread", "ix_outreach_touches_user_happened"}
+
+
 def _action(model: type[Base], column: str) -> tuple[str, str | None]:
     (foreign_key,) = _column(model, column).foreign_keys
     return foreign_key.column.table.name, foreign_key.ondelete
@@ -289,8 +308,11 @@ def test_migration_is_idempotent_and_drops_in_reverse_dependency_order() -> None
     assert "ALTER TABLE" not in source  # it only creates its own tables
     assert upgrade.count("CREATE TABLE IF NOT EXISTS") == 5
     assert upgrade.count("CREATE TABLE") == 5
-    assert len(re.findall(r"CREATE (?:UNIQUE )?INDEX\s+IF NOT EXISTS", upgrade)) == 4
-    assert upgrade.count("INDEX") == 4  # no index is created any other way
+    assert len(re.findall(r"CREATE (?:UNIQUE )?INDEX\s+IF NOT EXISTS", upgrade)) == 6
+    assert upgrade.count("INDEX") == 6  # no index is created any other way
+    assert "CREATE INDEX IF NOT EXISTS ix_outreach_people_thread" in upgrade
+    assert "CREATE INDEX IF NOT EXISTS ix_outreach_touches_thread" in upgrade
+    assert "ix_outreach_touches_person" not in upgrade  # nothing reads touches by person
     assert "CREATE UNIQUE INDEX IF NOT EXISTS uq_outreach_threads_user_company" in upgrade
     assert "WHERE company_id IS NOT NULL" in upgrade
     assert "CREATE UNIQUE INDEX IF NOT EXISTS uq_outreach_people_thread_contact" in upgrade
