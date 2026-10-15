@@ -96,3 +96,13 @@ async def test_news_with_the_token_ingests(api_client, cron_token):
     assert response.status_code == 200
     assert response.json() == stats
     assert run.await_count == 1
+
+
+async def test_refresh_accepts_the_tech_step(api_client, cron_token):
+    counts = {"step": "tech", "seen": 10, "tech": 6, "not_tech": 4}
+    with patch(RUN_STEP, AsyncMock(return_value=counts)) as run:
+        response = await api_client.post(
+            f"{REFRESH}?step=tech&limit=5000", headers={"X-Cron-Token": cron_token}
+        )
+    assert response.status_code == 200
+    assert run.await_args.args == ("tech", 5000)

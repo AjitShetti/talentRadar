@@ -124,7 +124,12 @@ async def _store_item(session: AsyncSession, item: FeedItem, stats: dict[str, in
         company = await find_existing(session, domain=None, wikidata_id=None, name=subject)
         if company is None and category == "funding":
             company, created = await upsert_company_ex(
-                session, ImportedCompany(name=subject, domain=None, website_url=None), "news"
+                session,
+                # The headline is all we know of the company; the tech verdict reads it.
+                ImportedCompany(
+                    name=subject, domain=None, website_url=None, description=item.title
+                ),
+                "news",
             )
             stats["created"] += created
     if company is not None:

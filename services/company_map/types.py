@@ -45,6 +45,8 @@ class ImportedCompany:
     github_org: str | None = None
     logo_url: str | None = None
     description: str | None = None
+    #: Industry labels the source gave ("software industry"); kept for the tech verdict.
+    industry_labels: tuple[str, ...] = ()
     sector: str | None = None
     tier: str | None = None
     stage: str | None = None

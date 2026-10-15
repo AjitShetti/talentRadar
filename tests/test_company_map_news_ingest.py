@@ -116,6 +116,9 @@ async def test_an_unknown_funded_company_becomes_a_thin_row():
     assert thin.slug
     # News is India-wide; a thin row is not a Bengaluru company until a source says so.
     assert not thin.office_cities
+    # The headline is all we know of it, and the tech verdict reads that.
+    assert thin.is_tech is not None
+    assert thin.extra_metadata["news_description"]
 
 
 async def test_a_dead_feed_is_reported_not_raised():

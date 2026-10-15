@@ -288,3 +288,59 @@ async def test_posting_company_resolves_to_the_listed_row_by_name(db_session):
 
     assert await company_for_posting(db_session, "Razorpay Pvt. Ltd.") is listed
     assert await company_for_posting(db_session, "Someone Else") is None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# The tech verdict (decision 2026-10-15: the map lists tech employers only)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+async def test_an_import_stores_the_tech_verdict(db_session):
+    tech = await upsert_company(
+        db_session, _imported(description="Indian enterprise software company"), "wikidata"
+    )
+    school = await upsert_company(
+        db_session,
+        _imported(
+            name="Christ University",
+            domain="christuniversity.in",
+            website_url="https://christuniversity.in",
+            wikidata_id="Q1",
+            description="Private autonomous university in Bangalore",
+        ),
+        "wikidata",
+    )
+    assert tech is not None and tech.is_tech is True
+    assert school is not None and school.is_tech is False
+
+
+async def test_industry_labels_count_and_are_kept_for_the_reclassifier(db_session):
+    company = await upsert_company(
+        db_session,
+        _imported(description="company", industry_labels=("software industry",)),
+        "wikidata",
+    )
+    assert company is not None
+    assert company.is_tech is True
+    assert company.extra_metadata["wikidata_industries"] == ["software industry"]
+
+
+async def test_a_later_non_tech_import_never_unlists_a_tech_row(db_session):
+    db_session.add(Company(name="Razorpay", domain="razorpay.com", tier="unicorn", is_tech=True))
+    await db_session.flush()
+
+    company = await upsert_company(db_session, _imported(description="company"), "osm")
+
+    assert company is not None
+    assert company.is_tech is True
+
+
+async def test_more_evidence_can_turn_a_no_into_a_yes(db_session):
+    first = await upsert_company(db_session, _imported(description="company"), "wikidata")
+    assert first is not None and first.is_tech is False
+
+    again = await upsert_company(
+        db_session, _imported(description="Indian payments platform"), "osm"
+    )
+    assert again is first
+    assert again.is_tech is True

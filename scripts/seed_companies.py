@@ -60,6 +60,7 @@ def catalogue_fields(record: dict[str, Any]) -> dict[str, Any]:
     one-line ``summary`` from the first sentence of the description.
     """
     fields = {f: record[f] for f in _COMPANY_FIELDS if record.get(f) is not None}
+    fields["is_tech"] = True  # the catalogue is the list of tech employers
     if not fields.get("sector"):
         fields["sector"] = sector_from_text(record.get("industry")) or "other"
     chosen = choose_summary(

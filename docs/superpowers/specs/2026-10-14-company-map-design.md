@@ -30,7 +30,10 @@ unpinned companies are one chip away, in List.
 ## 2. Goals, non-goals, anti-goals
 
 **Goals**
-- Every Bengaluru employer we can source, across all tiers, plus VCs.
+- Every Bengaluru **tech** employer we can source, across all tiers
+  (startups, scale-ups, unicorns, Big Tech, GCCs, IT services). Decision
+  2026-10-15: the map lists tech employers only; a university, hospital,
+  brewery or burrito chain that Wikidata happens to know is not listed (§4.2).
 - A one-line summary for each, with its provenance shown.
 - A location that never claims more precision than we have.
 - Founders and leaders, each with a cited public source and the profile links
@@ -222,10 +225,20 @@ company sites, which would leak users' IPs to them.
     value.
   - Exception: `stage` and `last_funding_at` follow the newest *dated*
     evidence. A Series B announced this month beats a curated "Series A".
-- **Listed** (map, list, facets): a company with a `summary` or
-  `description` that is a Bengaluru company. That means `office_cities`
-  contains Bengaluru, or `area` is set, or `hq_city` is Bengaluru. Other
-  thin rows stay hidden, as today.
+- **Listed** (map, list, facets, news): a tech employer (`is_tech IS TRUE`)
+  with a `summary` or `description` that is a Bengaluru company. That means
+  `office_cities` contains Bengaluru, or `area` is set, or `hq_city` is
+  Bengaluru. Other thin rows stay hidden, as today.
+- **Tech rule** (decision 2026-10-15). `companies.is_tech` (migration 016) holds
+  `domain.company_taxonomy.is_tech`: tech words in the description or industry
+  labels say yes ("software", "AI", "platform", "e-commerce", "digital",
+  "semiconductor"…), even beside a non-tech word; otherwise a non-tech word
+  ("university", "hospital", "bank", "airline", "restaurant", "pharmaceutical"…)
+  says no; otherwise a software-ish sector or a tech word in the name says yes.
+  No text is not tech. A curated catalogue tier is tech. NULL means "not
+  classified yet" and is not listed. The verdict only moves towards `True`, so a
+  later source that says less never unlists a company; the `tech` refresh step
+  re-reads every row that is not yet `True`.
 
 ### 4.3 Location — per company, the first hit wins
 

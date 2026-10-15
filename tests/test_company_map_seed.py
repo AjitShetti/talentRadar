@@ -47,3 +47,10 @@ def test_an_explicit_sector_and_the_new_fields_are_kept():
 
 def test_no_description_means_no_summary_key():
     assert "summary" not in catalogue_fields({"name": "Acme", "industry": "Payments"})
+
+
+def test_every_catalogue_record_is_a_tech_employer():
+    # The curated catalogue is the list of tech employers; the classifier
+    # decides only the rows an importer found.
+    for record in load_catalogue():
+        assert catalogue_fields(record)["is_tech"] is True, record["name"]

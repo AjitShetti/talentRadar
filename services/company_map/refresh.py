@@ -25,6 +25,9 @@ both call :func:`run_step`. A step:
 * ``summaries`` — the budgeted LLM line for companies whose sources had text
   but no usable sentence. A company with no source text gets none.
 * ``github`` — public org members as engineers.
+* ``tech`` — the tech verdict (``services/company_map/tech.py``) for every row
+  that is not yet listed, from the descriptions stored since: the map lists
+  tech employers only. Run last, after ``sites`` and ``summaries`` have added text.
 
 :func:`run_step` never raises: a failure comes back as ``{"error": …}`` and
 the rows keep their last good data.
@@ -51,6 +54,7 @@ from services.company_map.people import github_members, upsert_people
 from services.company_map.sourced import SourcedCompany
 from services.company_map.store import apply_location, due, mark_tried, upsert_company_ex
 from services.company_map.summary import choose_summary, has_source_text, llm_summary
+from services.company_map.tech import apply_tech, reclassify_tech
 from services.company_map.types import GeoHit, ImportedCompany, SiteFacts
 from services.company_map.website import read_site
 from storage.database import AsyncSessionLocal
@@ -68,6 +72,7 @@ STEPS = (
     "geocode",
     "summaries",
     "github",
+    "tech",
 )
 
 #: Hard ceilings whatever the caller asks for: Nominatim's policy, the daily
@@ -82,6 +87,7 @@ MAX_LIMIT = {
     "geocode": 40,
     "summaries": 60,
     "github": 50,
+    "tech": 5000,
 }
 
 #: Where the GitHub search walk stands (a ``github_orgs.Cursor``), and for how long.
@@ -297,6 +303,7 @@ def _apply_site(company: Company, facts: SiteFacts | None) -> None:
         )
         if chosen:
             _set_summary(company, *chosen)
+    apply_tech(company)
 
 
 async def _step_sites(session: AsyncSession, limit: int) -> dict[str, int]:
@@ -374,6 +381,7 @@ async def _step_summaries(session: AsyncSession, limit: int) -> dict[str, int]:
             if line:
                 _set_summary(company, line, "llm")
                 generated += 1
+        apply_tech(company)
         mark_tried(company, "summary_at")
         await session.commit()
     return {"due": len(companies), "from_sources": sourced, "llm": generated}
@@ -389,6 +397,12 @@ async def _step_github(session: AsyncSession, limit: int) -> dict[str, int]:
             mark_tried(company, "github_people_at")
             await session.commit()
     return {"due": len(companies), "people": inserted}
+
+
+async def _step_tech(session: AsyncSession, limit: int) -> dict[str, int]:
+    counts = await reclassify_tech(session, limit)
+    await session.commit()
+    return counts
 
 
 async def run_step(step: str, limit: int) -> dict[str, int | str]:
@@ -413,6 +427,8 @@ async def run_step(step: str, limit: int) -> dict[str, int | str]:
                 counts = await _step_geocode(session, bounded)
             elif step == "summaries":
                 counts = await _step_summaries(session, bounded)
+            elif step == "tech":
+                counts = await _step_tech(session, bounded)
             else:
                 counts = await _step_github(session, bounded)
     except Exception as exc:  # a scheduled step must never take the caller down

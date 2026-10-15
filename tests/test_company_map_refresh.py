@@ -66,6 +66,7 @@ async def test_unknown_step_is_an_error_not_an_exception():
         "geocode",
         "summaries",
         "github",
+        "tech",
     }
 
 
@@ -189,3 +190,87 @@ async def test_an_area_level_address_hit_is_nudged_off_the_centroid():
     assert company.geo_precision == "area"
     assert (company.lat, company.lng) == pytest.approx(jitter(str(company.id), lat, lng))
     assert (company.lat, company.lng) != pytest.approx((lat, lng))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# The `tech` step: classify what the migration left unclassified
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+async def _by_name() -> dict[str, Company]:
+    return {c.name: c for c in await _companies()}
+
+
+async def test_tech_step_classifies_unclassified_rows_from_what_is_stored():
+    await _add(name="Curated Co", domain="curated.example", tier="gcc")
+    await _add(
+        name="Imported Cafe",
+        domain="cafe.example",
+        tier="startup",  # an importer's guess, not a curated tier
+        extra_metadata={
+            "provenance": {"tier": "wikidata"},
+            "wikidata_description": "A fast casual restaurant chain",
+        },
+    )
+    await _add(
+        name="Wiki Soft",
+        domain="wikisoft.example",
+        extra_metadata={"wikidata_description": "Indian enterprise software company"},
+    )
+    await _add(
+        name="Site Only",
+        domain="siteonly.example",
+        extra_metadata={"site": {"description": "We build an AI platform for lawyers."}},
+    )
+    await _add(name="Summarised", domain="sum.example", summary="Lending for MSMEs, online.")
+    await _add(name="Silent", domain="silent.example")
+    await _add(name="Already", domain="already.example", is_tech=True)
+
+    result = await run_step("tech", 100)
+
+    rows = await _by_name()
+    assert result == {"step": "tech", "seen": 6, "tech": 4, "not_tech": 2}
+    assert rows["Curated Co"].is_tech is True
+    assert rows["Imported Cafe"].is_tech is False
+    assert rows["Wiki Soft"].is_tech is True
+    assert rows["Site Only"].is_tech is True
+    assert rows["Summarised"].is_tech is True
+    assert rows["Silent"].is_tech is False
+    assert rows["Already"].is_tech is True
+
+
+async def test_tech_step_gives_a_no_a_second_look_but_never_takes_a_yes_back():
+    await _add(name="Late Bloomer", domain="late.example", is_tech=False)
+    await _add(
+        name="Tech Once",
+        domain="once.example",
+        is_tech=True,
+        extra_metadata={"wikidata_description": "Indian airline"},
+    )
+    async with AsyncSessionLocal() as session:
+        company = (
+            await session.execute(select(Company).where(Company.name == "Late Bloomer"))
+        ).scalar_one()
+        company.summary = "Payments platform for SMEs."
+        await session.commit()
+
+    await run_step("tech", 100)
+
+    rows = await _by_name()
+    assert rows["Late Bloomer"].is_tech is True
+    assert rows["Tech Once"].is_tech is True
+
+
+async def test_sites_step_reclassifies_the_row_it_just_read():
+    await _add(name="Acme Pay", domain="acmepay.example", website_url="https://acmepay.example")
+    facts = SiteFacts(
+        title="Acme Pay",
+        description="Acme Pay runs a payments platform for small Indian merchants.",
+        text="Acme Pay runs payment rails.",
+        address=None,
+        pincode=None,
+    )
+    with patch.object(refresh, "read_site", AsyncMock(return_value=facts)):
+        await run_step("sites", 10)
+    [company] = await _companies()
+    assert company.is_tech is True

@@ -242,6 +242,12 @@ class Company(Base):
     enriched_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, comment="Last website / Wikidata pass"
     )
+    # Migration 016. The map lists tech employers only: TRUE is listed, FALSE
+    # is a classified non-tech row, NULL has not been classified yet. A catalogue
+    # tier is tech; an importer's row is decided by domain.company_taxonomy.is_tech.
+    is_tech: Mapped[bool | None] = mapped_column(
+        Boolean, nullable=True, index=True, comment="Tech employer (the map lists TRUE only)"
+    )
 
     # Enrichment payload (arbitrary extra fields from data providers)
     # NOTE: 'metadata' is reserved by SQLAlchemy Declarative API; the Python

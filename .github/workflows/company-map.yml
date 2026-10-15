@@ -4,7 +4,7 @@
 # Each step is one call to POST /api/v1/ingest/company-map/refresh?step=…,
 # which never raises and leaves the last good data on failure:
 #
-#   daily      github_orgs (60) → sites (60) → geocode (40) → summaries (60) → github (30)
+#   daily      github_orgs (60) → sites (60) → geocode (40) → summaries (60) → github (30) → tech
 #   Mondays    wikidata   (Bengaluru-headquartered companies)
 #              yc         (Bengaluru companies in Y Combinator's directory)
 #              hiring_list (the checked-in recruiter list; no outside request)
@@ -28,7 +28,7 @@ on:
   workflow_dispatch:
     inputs:
       step:
-        description: "One step to run (wikidata, osm, yc, hiring_list, github_orgs, sites, geocode, summaries, github) or 'daily'"
+        description: "One step to run (wikidata, osm, yc, hiring_list, github_orgs, sites, geocode, summaries, github, tech) or 'daily'"
         required: false
         default: daily
 
@@ -91,3 +91,5 @@ jobs:
           refresh geocode 40
           refresh summaries 60
           refresh github 30
+          # Last: reads the descriptions the steps above just stored.
+          refresh tech 5000

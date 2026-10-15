@@ -16,8 +16,9 @@ No LLM call and no outside request happens here. LinkedIn links are built,
 never fetched (``domain/linkedin_links.py``).
 
 "Listed" (:func:`listed_clause`) is the one rule for which companies the map,
-the list and the facets show: a company with a summary or a description that
-is in the city — an office there, a canonical area, or its headquarters.
+the list, the facets and the news strip show: a tech employer
+(``companies.is_tech``, decision 2026-10-15) with a summary or a description
+that is in the city — an office there, a canonical area, or its headquarters.
 """
 
 from __future__ import annotations
@@ -121,11 +122,16 @@ def in_city_clause(city: str) -> ColumnElement[bool]:
     return or_(*clauses)
 
 
+def is_tech_clause() -> ColumnElement[bool]:
+    """A tech employer. NULL (not classified yet) is not listed."""
+    return Company.is_tech.is_(True)
+
+
 def listed_clause(city: str | None) -> ColumnElement[bool]:
-    """Summary or description, and (when a city is given) in that city."""
+    """A tech employer with a summary or description, and (given a city) in that city."""
     if not city:
-        return has_text_clause()
-    return and_(has_text_clause(), in_city_clause(city))
+        return and_(is_tech_clause(), has_text_clause())
+    return and_(is_tech_clause(), has_text_clause(), in_city_clause(city))
 
 
 def _aware(value: datetime | None) -> datetime | None:

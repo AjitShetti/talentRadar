@@ -15,6 +15,8 @@ Where importer output meets ``companies``.
 * :func:`upsert_company` writes what a source may write
   (``domain.company_identity.merge_fields``) and records provenance in
   ``metadata.provenance``.
+* The tech verdict (``services/company_map/tech.py``) is recomputed on every
+  upsert from everything stored, and only ever moves towards listed.
 * :func:`apply_location` keeps the most precise position: exact > street >
   area, and a curated position is never replaced.
 * :func:`due` picks the rows each refresh step should work on, companies
@@ -35,6 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from domain.areas import area_for_point, in_bengaluru
 from domain.company_identity import merge_fields, normalize_domain, normalize_name, slugify
 from services.company_map.people import upsert_people
+from services.company_map.tech import apply_tech
 from services.company_map.types import GeoHit, ImportedCompany
 from storage.models import Company, Job, JobStatus
 
@@ -246,7 +249,10 @@ async def upsert_company_ex(
     metadata["provenance"] = provenance
     if imported.description:
         metadata[f"{source}_description"] = imported.description.strip()[:500]
+    if imported.industry_labels:
+        metadata[f"{source}_industries"] = list(imported.industry_labels)[:20]
     company.extra_metadata = metadata
+    apply_tech(company)
 
     if source in BENGALURU_SOURCES:
         cities = list(company.office_cities or [])

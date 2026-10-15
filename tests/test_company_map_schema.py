@@ -110,3 +110,34 @@ def test_migration_follows_014():
     spec.loader.exec_module(module)
     assert module.revision == "015_company_map"
     assert module.down_revision == "014_interview_role"
+
+
+MIGRATION_016 = MIGRATION.with_name("016_company_is_tech.py")
+
+
+def test_company_has_the_tech_verdict_column():
+    column = Company.__table__.c.is_tech
+    assert column.nullable  # NULL = not classified yet, and not listed
+
+
+def _load_016():
+    spec = importlib.util.spec_from_file_location("migration_016", MIGRATION_016)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_migration_016_follows_015():
+    module = _load_016()
+    assert module.revision == "016_company_is_tech"
+    assert module.down_revision == "015_company_map"
+
+
+def test_migration_016_is_idempotent_and_backfills_curated_tiers():
+    source = MIGRATION_016.read_text(encoding="utf-8")
+    assert "ADD COLUMN IF NOT EXISTS is_tech BOOLEAN" in source
+    assert "DROP COLUMN IF EXISTS is_tech" in source
+    # A curated tier is tech; an importer's tier (provenance names its source) is not proof.
+    assert "SET is_tech = TRUE" in source
+    assert "provenance" in source

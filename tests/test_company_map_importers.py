@@ -67,6 +67,7 @@ class TestWikidataParse:
             founded_year=2010,
             x_url="https://x.com/zerodhaonline",
             description="Indian financial services company",
+            industry_labels=("financial services",),
             sector="fintech",
             tier="startup",
             people=(
@@ -96,6 +97,10 @@ class TestWikidataParse:
         # "payment system" and "software industry": the taxonomy's order puts
         # fintech before SaaS.
         assert razorpay.sector == "fintech"
+
+    def test_industry_labels_are_kept_for_the_tech_verdict(self) -> None:
+        razorpay = _by_qid(wikidata.parse(_load("wikidata.json")))["Q109985545"]
+        assert razorpay.industry_labels == ("payment system", "software industry")
 
     def test_x_links_use_x_dot_com(self) -> None:
         companies = wikidata.parse(_load("wikidata.json"))
@@ -220,6 +225,21 @@ class TestOsmParse:
         assert acme.address == "42, 27th Main Road, HSR Layout, 560102"
         assert acme.domain == "acme-labs.in"
         assert acme.website_url == "https://www.acme-labs.in/about"
+
+    def test_an_it_office_says_so_and_a_plain_company_office_does_not(self) -> None:
+        def node(office: str) -> dict[str, Any]:
+            return {
+                "type": "node",
+                "id": 1,
+                "lat": 12.9116,
+                "lon": 77.6389,
+                "tags": {"office": office, "name": "Acme", "website": "https://acme.example"},
+            }
+
+        (it_office,) = osm.parse({"elements": [node("it")]})
+        (company,) = osm.parse({"elements": [node("company")]})
+        assert it_office.industry_labels == ("information technology",)
+        assert company.industry_labels == ()
 
     def test_payload_without_elements_parses_to_nothing(self) -> None:
         assert osm.parse({}) == []

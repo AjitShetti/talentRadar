@@ -144,6 +144,8 @@ def _office(element: dict[str, Any]) -> ImportedCompany | None:
         lat=position[0],
         lng=position[1],
         address=_address(tags),
+        # office=it is a mapper saying "software or IT company"; office=company says nothing.
+        industry_labels=("information technology",) if _tag(tags, "office") == "it" else (),
     )
 
 

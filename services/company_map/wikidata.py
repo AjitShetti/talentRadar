@@ -298,6 +298,9 @@ def _company(qid: str, rows: list[Row]) -> ImportedCompany | None:
         github_org=github_orgs[0] if github_orgs else None,
         logo_url=_https(logos[0]) if logos else None,
         description=_label(rows, "itemDescription"),
+        industry_labels=tuple(
+            label for label in _values(rows, "industryLabel") if not _QID.match(label)
+        ),
         sector=_sector(_values(rows, "industryLabel")),
         tier=tier_for_import(is_vc=is_vc, founded_year=founded_year, is_public=is_public),
         stage="public" if is_public else None,

@@ -18,6 +18,7 @@ Everything here is pure; a wrong mapping is a one-line table change.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 
 STAGES: dict[str, str] = {
     "bootstrapped": "Bootstrapped",
@@ -196,3 +197,95 @@ def is_bigger_company(
         return employee_count >= 200
     floor = _range_floor(employee_count_range)
     return floor is not None and floor >= 201
+
+
+# ---------------------------------------------------------------------------
+# Tech employers
+# ---------------------------------------------------------------------------
+# The map lists tech employers only (decision 2026-10-15): startups,
+# scale-ups, unicorns, Big Tech, GCCs and IT services. A source says so in a
+# few words ("Indian enterprise software company"), so the rule reads words:
+#
+# * a STRONG tech word in the description or industry labels says yes, even
+#   beside a non-tech word ("pharmaceutical ... online platform");
+# * otherwise a NON-TECH word anywhere (the name included) says no
+#   ("university", "hospital", "bank", "airline"...);
+# * otherwise a WEAK signal says yes: a software-ish sector, a tech word in
+#   the name, "startup".
+#
+# No text at all is not tech: the map never lists a guess.
+
+
+def _words(pattern: str) -> re.Pattern[str]:
+    return re.compile(rf"(?<![a-z0-9])(?:{pattern})(?![a-z0-9])", re.IGNORECASE)
+
+
+_STRONG_TECH = _words(
+    r"software|saas|paas|iaas|app|apps|platform|platforms|internet|online|digital|"
+    r"e-?commerce|quick[- ]commerce|fintech|edtech|healthtech|insurtech|regtech|adtech|"
+    r"proptech|martech|agritech|legaltech|hrtech|deep-?tech|nanotech\w*|"
+    r"tech|technology|technologies|information technology|it services|it consulting|"
+    r"ai|a\.i\.|artificial intelligence|machine learning|generative ai|llm|"
+    r"computer vision|data|analytics|cloud|cyber\w*|devops|api|apis|open[- ]source|"
+    r"semiconductors?|embedded|firmware|iot|robotics?|drones?|blockchain|crypto|"
+    r"electronics design|eda|cad|cae|"
+    r"micro-?mobility|mobility (?:platform|startup)|ev charging|"
+    r"employer of record|educational company|education company|learning company|"
+    r"computing|computer|automation|"
+    r"mobile games?|video games?|game (?:studio|developer|publisher)|"
+    r"web|website|marketplace"
+)
+
+#: Words that name a kind of organisation the map does not list. "Technical"
+#: is deliberately not a tech word, and an "institute of technology" is a school.
+_NON_TECH = _words(
+    r"universit(?:y|ies)|college|colleges|school|schools|institute|institutes|academy|"
+    r"hospitals?|clinics?|healthcare network|nursing|"
+    r"banks?|banking|"
+    r"real estate|properties|realty|housing|"
+    r"brewer(?:y|ies)|distiller(?:y|ies)|liquor|alcohol\w*|"
+    r"restaurants?|cafes?|food chain|fast casual|bakery|"
+    r"airlines?|airways|"
+    r"pharmaceuticals?|pharma|"
+    r"hotels?|resorts?|textiles?|garments?|apparel|cement|steel|"
+    r"mining|fertili[sz]ers?|sugar|tea|coffee|"
+    r"temple|trust|church|ngo|foundation"
+)
+
+#: Sector buckets (``SECTORS``) that read as software or hardware product
+#: companies. Weak: ``sector_from_text`` also reads "health" in "healthcare
+#: network" and "bank" in "banking group", so a sector never outvotes a
+#: non-tech word.
+_TECH_SECTORS = frozenset({"ai", "saas", "devtools", "fintech", "edtech", "deeptech", "gaming"})
+
+#: Words in a *name* that say technology.
+_TECH_NAME = _words(
+    r"technolog(?:y|ies)|software|softech|infotech|tech|ai|labs|cloud|"
+    r"digital|data|robotics|semiconductors?|networks"
+)
+
+_WEAK_TECH = _words(r"startup|unicorn|telecom\w*")
+
+
+def is_tech(
+    *,
+    name: str,
+    description: str | None,
+    industry_labels: Sequence[str] = (),
+    sector: str | None,
+) -> bool:
+    """
+    Whether this employer is a tech company, from what its sources say.
+
+    ``description`` is any source's one-liner (Wikidata's, a site's, the
+    summary), ``industry_labels`` Wikidata industry labels, ``sector`` a
+    ``SECTORS`` key. Pure and deliberately conservative: silence is ``False``.
+    """
+    said = " ; ".join([description or "", *industry_labels])
+    if _STRONG_TECH.search(said):
+        return True
+    if _NON_TECH.search(said) or _NON_TECH.search(name):
+        return False
+    if sector in _TECH_SECTORS:
+        return True
+    return bool(_TECH_NAME.search(name) or _WEAK_TECH.search(said))

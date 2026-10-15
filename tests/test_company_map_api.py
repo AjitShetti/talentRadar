@@ -36,6 +36,7 @@ from storage.models import (
 )
 
 READ = "services.company_map.read"
+
 CID = str(uuid.uuid4())
 MAP_PAYLOAD: dict[str, Any] = {
     "generated_at": "2026-10-14T00:00:00+00:00",
@@ -295,7 +296,11 @@ async def db(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[async_sessionmake
 
 
 def _company(name: str, **fields: Any) -> Company:
-    defaults: dict[str, Any] = {"id": uuid.uuid4(), "domain": f"{name.lower()}.example"}
+    defaults: dict[str, Any] = {
+        "id": uuid.uuid4(),
+        "domain": f"{name.lower()}.example",
+        "is_tech": True,  # the map lists tech employers only; tests opt out explicitly
+    }
     return Company(name=name, **{**defaults, **fields})
 
 
@@ -330,7 +335,31 @@ async def seeded(db: async_sessionmaker[AsyncSession]) -> dict[str, Any]:
         lng=72.87,
         geo_precision="exact",
     )
-    companies = [pinned, by_area_only, by_hq_only, no_text, elsewhere, outside_bbox]
+    # Says what it does and is in Bengaluru, but is not a tech employer: one
+    # row flagged False, one never classified (NULL). Neither may be listed.
+    brewery = _company(
+        "Brewco",
+        summary="Craft beer brewery in Bengaluru.",
+        office_cities=["Bengaluru"],
+        lat=12.97,
+        lng=77.59,
+        geo_precision="exact",
+        is_tech=False,
+    )
+    unclassified = _company(
+        "Legacy", summary="Has a summary, never classified.", office_cities=["Bengaluru"]
+    )
+    unclassified.is_tech = None
+    companies = [
+        pinned,
+        by_area_only,
+        by_hq_only,
+        no_text,
+        elsewhere,
+        outside_bbox,
+        brewery,
+        unclassified,
+    ]
 
     user = User(id=uuid.uuid4(), email="u@example.com", hashed_password="x")
     async with db() as session:
@@ -356,6 +385,8 @@ async def seeded(db: async_sessionmaker[AsyncSession]) -> dict[str, Any]:
                         (by_area_only, "Backend Engineer", "Mumbai"),
                         (by_hq_only, "Data Analyst", "Bengaluru"),
                         (elsewhere, "Backend Engineer", "Bengaluru"),
+                        (brewery, "Backend Engineer", "Bengaluru"),
+                        (unclassified, "Backend Engineer", "Bengaluru"),
                     ]
                 )
             ]
@@ -420,6 +451,14 @@ async def seeded(db: async_sessionmaker[AsyncSession]) -> dict[str, Any]:
                     published_at=now - timedelta(days=1),
                 ),
                 CompanyNews(
+                    url="https://inc42.com/e",
+                    source="inc42",
+                    title="Brewco Bags $3 Mn",
+                    category="funding",
+                    company_id=brewery.id,
+                    published_at=now - timedelta(hours=1),
+                ),
+                CompanyNews(
                     url="https://inc42.com/d",
                     source="inc42",
                     title="Unknown Startup Bags $1 Mn",
@@ -436,6 +475,8 @@ async def seeded(db: async_sessionmaker[AsyncSession]) -> dict[str, Any]:
         "thin": str(no_text.id),
         "delta": str(elsewhere.id),
         "epsilon": str(outside_bbox.id),
+        "brewco": str(brewery.id),
+        "legacy": str(unclassified.id),
         "user": str(user.id),
     }
 
@@ -449,6 +490,13 @@ class TestMapRows:
         assert ids == {seeded["acme"], seeded["beta"], seeded["gamma"], seeded["epsilon"]}
         assert payload["total"] == 4
         assert payload["pinned"] == 1
+
+    async def test_a_non_tech_row_with_a_summary_is_not_on_the_map(self, seeded):
+        from services.company_map.read import map_rows
+
+        ids = {row[0] for row in (await map_rows())["rows"]}
+        assert seeded["brewco"] not in ids  # is_tech = False
+        assert seeded["legacy"] not in ids  # is_tech = NULL: not yet classified
 
     async def test_row_shape_and_rounding(self, seeded):
         from services.company_map.read import map_rows
@@ -550,6 +598,12 @@ class TestNews:
 
         items = await latest_news()
         assert [i["company_name"] for i in items] == ["Acme", "Acme"]
+
+    async def test_latest_news_leaves_out_a_non_tech_company(self, seeded):
+        from services.company_map.read import latest_news
+
+        names = {i["company_name"] for i in await latest_news(limit=50)}
+        assert "Brewco" not in names
 
     async def test_latest_news_by_category(self, seeded):
         from services.company_map.read import latest_news
@@ -709,6 +763,39 @@ class TestDirectoryPinnedFilter:
             response = await auth_client.get("/api/v1/company-intel/?pinned=false")
         assert response.status_code == 200
         assert run.await_args.kwargs["pinned"] is False
+
+
+class TestDirectoryIsTechOnly:
+    async def test_a_non_tech_row_with_a_summary_is_not_on_the_list(self, directory):
+        await directory.seed(
+            _listed("Software", tier="startup", sector="saas"),
+            _listed("Brewery", summary="Craft beer.", is_tech=False, tier="startup"),
+            _listed("Unsorted", summary="Never classified.", is_tech=None),
+        )
+        assert await directory.names() == ({"Software"}, 1)
+        assert await directory.names(q="Craft") == (set(), 0)
+
+    async def test_facets_do_not_count_a_non_tech_row(self, directory):
+        from services import companies
+
+        await directory.seed(
+            _listed("Software", tier="startup", sector="saas", stage="seed", area="HSR Layout"),
+            _listed(
+                "Brewery",
+                is_tech=False,
+                tier="startup",
+                sector="consumer",
+                stage="seed",
+                area="HSR Layout",
+            ),
+        )
+        facets = await companies.directory_facets()
+        assert facets["total"] == 1
+        assert [s["value"] for s in facets["sectors"]] == ["saas"]
+        assert facets["stages"] == [{"value": "seed", "label": "Seed", "count": 1}]
+        assert facets["areas"] == [{"value": "HSR Layout", "label": "HSR Layout", "count": 1}]
+        assert [t["value"] for t in facets["tiers"]] == ["startup"]
+        assert facets["tiers"][0]["count"] == 1
 
 
 class TestDirectorySearch:
