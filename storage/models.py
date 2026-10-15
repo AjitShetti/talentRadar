@@ -1590,6 +1590,301 @@ class CompanyNews(Base):
 
 
 # ---------------------------------------------------------------------------
+# events — the Bengaluru tech-events tracker (migration 018)
+# ---------------------------------------------------------------------------
+
+
+class Event(Base):
+    """
+    One event: read from a source (Luma, GDG, Eventbrite) or added by a user.
+
+    ``(source, external_id)`` is the identity, so a re-read updates the row.
+    ``listed`` and ``reasons`` are the relevance verdict
+    (``domain.event_relevance``). A cross-source duplicate sets ``duplicate_of``
+    to its primary and is never listed; the primary carries the listing.
+    ``owner_user_id`` is set only for an event a user added by hand, and is
+    private to that user. Retention: ``services/job_retention.py``.
+    """
+
+    __tablename__ = "events"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    source: Mapped[str] = mapped_column(
+        String(16), nullable=False, comment="luma | gdg | eventbrite | user"
+    )
+    external_id: Mapped[str] = mapped_column(
+        String(160),
+        nullable=False,
+        comment="Luma evt-…; GDG slug; Eventbrite numeric id; for user, the row id",
+    )
+    url: Mapped[str] = mapped_column(
+        String(1024), nullable=False, comment="The public event page (https only)"
+    )
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    snippet: Mapped[str | None] = mapped_column(
+        String(600), nullable=True, comment="Description, de-boilerplated and bounded"
+    )
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ends_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, comment="NULL = start + 2 h"
+    )
+    venue_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    address: Mapped[str | None] = mapped_column(
+        String(300), nullable=True, comment="As printed by the source"
+    )
+    area: Mapped[str | None] = mapped_column(
+        String(48), nullable=True, comment="Canonical area, from domain.areas"
+    )
+    lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lng: Mapped[float | None] = mapped_column(Float, nullable=True)
+    geo_precision: Mapped[str | None] = mapped_column(
+        String(8), nullable=True, comment="exact | area | none"
+    )
+    is_online: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    is_free: Mapped[bool | None] = mapped_column(
+        Boolean, nullable=True, comment="NULL = the source did not say"
+    )
+    organiser_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    organiser_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    hosts: Mapped[list[str] | None] = mapped_column(
+        StringArray, nullable=True, comment="'Hosted by' names, when the source states them"
+    )
+    format: Mapped[str | None] = mapped_column(
+        String(16),
+        nullable=True,
+        comment="meetup | talk | workshop | hackathon | conference | mixer | demo | hiring | other",
+    )
+    topics: Mapped[list[str] | None] = mapped_column(
+        StringArray, nullable=True, comment="Closed vocabulary (domain.event_relevance)"
+    )
+    listed: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment="The relevance verdict",
+    )
+    reasons: Mapped[list[str] | None] = mapped_column(
+        StringArray, nullable=True, comment="The evidence behind listed, in display order"
+    )
+    is_cancelled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment="Only from an explicit source signal, never from a missing listing",
+    )
+    duplicate_of: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("events.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=True,
+        comment="Set only for a manual event; private to that user",
+    )
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        comment="Moves on every sighting",
+    )
+    detail_fetched_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Last detail-page read (GDG and Eventbrite)",
+    )
+
+    # NOTE: 'metadata' is reserved by SQLAlchemy Declarative API; the Python
+    # attribute is 'extra_metadata' but maps to the 'metadata' Postgres column.
+    extra_metadata: Mapped[dict[str, Any] | None] = mapped_column(
+        "metadata",
+        JSONB,
+        nullable=True,
+        comment="Raw taxonomy ids, source scope and link reasons",
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint("source", "external_id", name="uq_events_source_external_id"),
+        Index("ix_events_starts_at", "starts_at"),
+        Index("ix_events_listed_starts_at", "listed", "starts_at"),
+        Index("ix_events_duplicate_of", "duplicate_of"),
+        Index("ix_events_owner_user_id", "owner_user_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Event {self.source}:{self.external_id} {self.title[:40]!r}>"
+
+
+class EventCompany(Base):
+    """
+    An event linked to a company on the map (spec §5.2).
+
+    A join table rather than a column, because one event can name two
+    companies ("BitGo x Giottus"). An event never creates a company; the link
+    is made only to a company with ``is_tech IS TRUE``.
+    """
+
+    __tablename__ = "event_companies"
+
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("events.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    role: Mapped[str] = mapped_column(String(12), nullable=False, comment="organiser | host")
+    matched_on: Mapped[str] = mapped_column(
+        String(24),
+        nullable=False,
+        comment="organiser_name | organiser_domain | host_name | title_pair | title_at",
+    )
+
+    __table_args__ = (Index("ix_event_companies_company_id", "company_id"),)
+
+    def __repr__(self) -> str:
+        return f"<EventCompany event={self.event_id} company={self.company_id} {self.role}>"
+
+
+class EventSave(Base):
+    """
+    A user's own side of an event: saved, or going, with an optional note.
+
+    Unique per ``(user_id, event_id)``. Private to the user: every read is
+    filtered by ``user_id``.
+    """
+
+    __tablename__ = "event_saves"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("events.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(String(8), nullable=False, comment="saved | going")
+    note: Mapped[str | None] = mapped_column(
+        String(2000), nullable=True, comment="The user's own note on the event"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "event_id", name="uq_event_saves_user_event"),
+        Index("ix_event_saves_event_id", "event_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<EventSave user={self.user_id} event={self.event_id} {self.status}>"
+
+
+class EventContact(Base):
+    """
+    A person the user met at an event: the user's private notes (spec §5.4).
+
+    Never enriched, never looked up, never in a public payload. ``email`` is
+    only what the person gave the user. ``company_id`` is resolved by exact
+    normalised name at write time; if that company is deleted, the link is
+    cleared and the person's row is kept.
+    """
+
+    __tablename__ = "event_contacts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("events.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    title: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    company_name: Mapped[str | None] = mapped_column(String(200), nullable=True, comment="As typed")
+    company_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    linkedin_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    x_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    github_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    email: Mapped[str | None] = mapped_column(
+        String(254), nullable=True, comment="Only what the person gave the user"
+    )
+    note: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        Index("ix_event_contacts_user_created", "user_id", "created_at"),
+        Index("ix_event_contacts_event_id", "event_id"),
+        Index("ix_event_contacts_company_id", "company_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<EventContact user={self.user_id} event={self.event_id} {self.name!r}>"
+
+
+# ---------------------------------------------------------------------------
 # market_snapshots — historical trends for the trends dashboard
 # ---------------------------------------------------------------------------
 
