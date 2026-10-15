@@ -234,6 +234,7 @@ __marimo__/
 /data/*
 !/data/companies/
 !/data/company_sources/
+!/data/practice/
 data/raw/
 data/raw/**
 /.agents

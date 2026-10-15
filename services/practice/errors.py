@@ -1,0 +1,21 @@
+"""
+services/practice/errors.py
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+What the Practice services raise. The router turns each into a status code:
+``PracticeConflict`` is 409, ``PracticeInvalid`` is 422 and ``PracticeNotFound`` is 404.
+The message is written for the person using the page, so it is safe to show.
+"""
+
+from __future__ import annotations
+
+
+class PracticeConflict(Exception):  # noqa: N818 - names the condition, as RateLimited does
+    """The request is fine but clashes with what is stored (already done, already started)."""
+
+
+class PracticeInvalid(Exception):  # noqa: N818 - names the condition, as RateLimited does
+    """The request cannot be accepted as given (a bad repo link, a closed window, a wrong repo)."""
+
+
+class PracticeNotFound(Exception):  # noqa: N818 - names the condition, as RateLimited does
+    """The thing asked about does not exist, or is not the caller's to see."""
