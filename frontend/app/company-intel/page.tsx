@@ -295,12 +295,9 @@ export default function CompanyIntelPage() {
   const visibleUnpinned = useMemo(() => visible.filter(r => r.lat == null).length, [visible])
   const raisedCount = useMemo(() => rows.filter(r => r.raised90d).length, [rows])
 
-  // Which view: the user's choice if they made one, else the map unless fewer
-  // than half the employers could be pinned (spec §1), and always the list
-  // when the map cannot be drawn.
-  const sparse = loadState === 'ready' && (counts.total === 0 || counts.pinned * 2 < counts.total)
-  const view: View = mapDown || loadState === 'error' ? 'list' : (storedView ?? (sparse ? 'list' : 'map'))
-  const autoList = view === 'list' && !mapDown && loadState === 'ready' && storedView === null && sparse
+  // Which view: the user's choice if they made one, else the map; always the
+  // list when the map cannot be drawn. Unpinned employers are one chip away.
+  const view: View = mapDown || loadState === 'error' ? 'list' : (storedView ?? 'map')
   const mapActive = view === 'map' && viewHydrated && loadState === 'ready'
   const docked = view === 'map' && canDock && !mapDown
   const newsOpen = newsOpenStored ?? !narrow
@@ -347,7 +344,7 @@ export default function CompanyIntelPage() {
             <section className="page-heading cm-heading">
               <div className="cm-title">
                 <span className="board-kicker">Company Intel — {CITY}</span>
-                <h1>Every tech employer in {CITY}, on one map<span>.</span></h1>
+                <h1>Every employer in {CITY}, on one map<span>.</span></h1>
               </div>
               <dl className="cm-readout" aria-label={`${CITY} employers`}>
                 {readout.map(([label, value]) =>
@@ -418,7 +415,6 @@ export default function CompanyIntelPage() {
         </div>
 
         {mapDown && <div className="cm-inner"><p className="cm-fallback" role="status"><Info size={15} /><span>Map unavailable — showing the list.</span><small>{mapDown}</small></p></div>}
-        {autoList && <div className="cm-inner"><p className="cm-fallback" role="status"><Info size={15} /><span>Fewer than half of these employers have a location yet, so the page opens on the list.</span></p></div>}
         {error && <div className="cm-inner"><p className="form-error cm-error">{error}</p></div>}
 
         {!mapDown && <section className="cm-stage" hidden={view !== 'map'} data-testid="company-map-stage" data-drawer={docked && selectedId ? 'open' : 'closed'}>

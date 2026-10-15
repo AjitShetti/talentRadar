@@ -24,8 +24,8 @@ sources, and a stream of funding news.
 
 The ledger strip states what the system actually holds, for example
 "1,240 employers · 870 on the map · 41 raised in 90 days". DESIGN.md asks for
-this in place of a bare metric. The first import is the measurement. If fewer
-than half the companies can be pinned, the page opens on List rather than Map.
+this in place of a bare metric. The page always opens on Map (Ajit, 2026-10-15);
+unpinned companies are one chip away, in List.
 
 ## 2. Goals, non-goals, anti-goals
 
