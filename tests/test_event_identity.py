@@ -9,6 +9,7 @@ no network: every function under test is pure.
 from __future__ import annotations
 
 import socket
+import unicodedata
 from dataclasses import FrozenInstanceError, dataclass
 from datetime import UTC, datetime, timedelta, timezone
 
@@ -73,6 +74,68 @@ def test_title_tokens_of_nothing_but_stop_words_is_empty() -> None:
 
 def test_title_tokens_keep_a_word_that_only_contains_a_stop_word() -> None:
     assert title_tokens("Xenon theatre") == frozenset({"xenon", "theatre"})
+
+
+def test_any_year_from_2000_to_2099_is_a_stop_token() -> None:
+    assert title_tokens("Rust Summit 2031") == frozenset({"rust", "summit"})
+    assert title_tokens("2000 2099") == frozenset()
+    assert same_event(ev("Rust Summit 2031", online=True), ev("Rust Summit", online=True))
+
+
+def test_numbers_that_are_not_a_year_stay_tokens() -> None:
+    assert title_tokens("Rust 1999 2100 20260 2031b") == frozenset(
+        {"rust", "1999", "2100", "20260", "2031b"}
+    )
+
+
+def test_a_latin_accent_is_folded_away_when_two_titles_are_compared() -> None:
+    assert same_event(ev("Café Rust", online=True), ev("Cafe Rust", online=True))
+    assert title_tokens("Zoë Müller résumé") == frozenset({"zoe", "muller", "resume"})
+
+
+DEVANAGARI_PYTHON = "पायथन कार्यशाला"  # "Python workshop"
+DEVANAGARI_RUST = "रस्ट कार्यशाला"  # "Rust workshop"
+KANNADA_PYTHON = "ಪೈಥಾನ್ ಕಾರ್ಯಾಗಾರ"  # "Python workshop"
+KANNADA_RUST = "ರಸ್ಟ್ ಕಾರ್ಯಾಗಾರ"  # "Rust workshop"
+
+
+def whole_words(title: str) -> frozenset[str]:
+    """The words of ``title`` as written (decomposed the way the tokeniser reads them)."""
+    return frozenset(unicodedata.normalize("NFKD", word) for word in title.split())
+
+
+@pytest.mark.parametrize(
+    "title", [DEVANAGARI_PYTHON, DEVANAGARI_RUST, KANNADA_PYTHON, KANNADA_RUST]
+)
+def test_an_indic_word_stays_one_token_with_its_vowel_signs_and_viramas(title: str) -> None:
+    tokens = title_tokens(title)
+    assert tokens == whole_words(title)
+    assert len(tokens) == 2
+
+
+@pytest.mark.parametrize(
+    "title", [DEVANAGARI_PYTHON, DEVANAGARI_RUST, KANNADA_PYTHON, KANNADA_RUST]
+)
+def test_an_indic_title_is_the_same_event_as_itself(title: str) -> None:
+    assert same_event(ev(title, online=True), ev(title, online=True))
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [(DEVANAGARI_PYTHON, DEVANAGARI_RUST), (KANNADA_PYTHON, KANNADA_RUST)],
+)
+def test_two_indic_titles_sharing_one_of_three_words_are_different_events(
+    first: str, second: str
+) -> None:
+    # Torn into consonants and half-words, these two overlapped by exactly one half.
+    assert not same_event(ev(first, online=True), ev(second, online=True))
+
+
+def test_a_zero_width_joiner_does_not_split_an_indic_word() -> None:
+    plain = title_tokens("कार्यशाला")
+    assert len(plain) == 1
+    assert title_tokens("कार्‌यशाला") == title_tokens("कार्यशाला")
+    assert title_tokens("कार्‍यशाला") == title_tokens("कार्यशाला")
 
 
 # --- same_event -------------------------------------------------------------
@@ -172,8 +235,20 @@ def test_a_point_on_one_side_and_an_area_on_the_other_cannot_be_compared() -> No
     assert same_event(ev("Rust async", point=HSR), ev("Rust async", area="Whitefield"))
 
 
-def test_online_against_a_known_venue_is_compatible_when_the_venue_cannot_be_compared() -> None:
-    assert same_event(ev("Rust async", online=True), ev("Rust async", point=HSR))
+def test_an_online_listing_is_never_the_same_event_as_an_in_person_one() -> None:
+    online = ev("Rust async", online=True)
+    in_person = ev("Rust async", point=HSR)
+    assert not same_event(online, in_person)
+    assert not same_event(in_person, online)
+
+
+def test_an_online_listing_is_not_the_same_as_an_in_person_one_with_no_place_at_all() -> None:
+    online = ev("Rust async", online=True)
+    unplaced = ev("Rust async")  # in person, but no point and no area
+    assert not same_event(online, unplaced)
+    assert not same_event(unplaced, online)
+    # Two such in-person events are still compatible: the place is unknown, not different.
+    assert same_event(unplaced, ev("Rust async"))
 
 
 def test_same_event_accepts_a_parsed_event_fact() -> None:
@@ -478,6 +553,25 @@ def test_surrounding_whitespace_is_trimmed() -> None:
     ],
 )
 def test_malformed_and_unusual_urls_are_not_matched(url: str) -> None:
+    assert parse_event_url(url) is None
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://lu.ma./abc",
+        "https://luma.com./abc",
+        "https://gdg.community.dev./events/details/x/",
+        "https://lu.ma/abc%2Fdef",
+        "https://lu.ma/abc%2fdef",
+        "https://gdg.community.dev/events/details/x%2Fy/",
+        "https://www.eventbrite.com/e/x%2F-123",
+        "https://lu.ma/abc%00",
+        "https://lu.ma/abc?q=café",
+        "https://lu.ma/abc#café",
+    ],
+)
+def test_a_trailing_dot_an_escaped_separator_or_non_ascii_text_is_not_matched(url: str) -> None:
     assert parse_event_url(url) is None
 
 

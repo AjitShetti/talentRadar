@@ -41,8 +41,9 @@ MAX_SAME_VENUE_KM = 1.5
 
 _EARTH_KM = 6371.0
 
-#: Words that say nothing about *which* event a title is. A year or the city is
-#: on nearly every title; "x" and "at" are how a title joins its parts.
+#: Words that say nothing about *which* event a title is. The city is on nearly
+#: every title; "x" and "at" are how a title joins its parts. A year is dropped
+#: too, whichever it is (:data:`_YEAR`).
 _STOP_TOKENS = frozenset(
     (
         # joining words
@@ -62,12 +63,16 @@ _STOP_TOKENS = frozenset(
         "blr",
         "meetup",
         "edition",
-        "2025",
-        "2026",
-        "2027",
     )
 )
-_NON_WORD = re.compile(r"[\W_]+")
+_YEAR = re.compile(r"20\d\d")
+#: What is removed before reading words: Latin diacritics (the combining marks
+#: left by NFKD, U+0300-U+036F) and the zero-width (non-)joiners that Indic
+#: scripts put inside a word. Every other mark - a Devanagari vowel sign, a
+#: virama, a Kannada matra - is part of its word and stays.
+_IGNORED = re.compile("[\u0300-\u036f\u200c\u200d]")
+#: Unicode categories that make up a word: letters, numbers and marks.
+_WORD_CATEGORIES = frozenset("LNM")
 
 
 class EventLike(Protocol):
@@ -88,19 +93,29 @@ class EventLike(Protocol):
 
 
 def _fold(text: str) -> str:
-    """``text`` without accents ("Café" -> "Cafe")."""
-    decomposed = unicodedata.normalize("NFKD", text)
-    return "".join(c for c in decomposed if not unicodedata.combining(c))
+    """``text`` without Latin accents ("Café" -> "Cafe") or word joiners.
+
+    Only the Latin combining accents go. Dropping every combining mark would
+    shred an Indic word into bare consonants.
+    """
+    return _IGNORED.sub("", unicodedata.normalize("NFKD", text))
 
 
 def title_tokens(title: str) -> frozenset[str]:
     """The distinguishing words of a title: lowercase, unaccented, no stop words.
 
-    Punctuation and symbols (``×``, ``:``, ``-``) only separate words. A title
-    made of nothing but stop words has no tokens.
+    A word is a run of letters, numbers and combining marks in any script, so
+    "पायथन" and "ಕಾರ್ಯಾಗಾರ" stay whole. Punctuation and symbols (``×``, ``:``,
+    ``-``, ``_``) only separate words. A year (2000-2099) is dropped like any
+    other stop word, and a title made of nothing but stop words has no tokens.
     """
-    words = _NON_WORD.split(_fold(title).lower())
-    return frozenset(word for word in words if word and word not in _STOP_TOKENS)
+    folded = _fold(title).lower()
+    spaced = "".join(c if unicodedata.category(c)[0] in _WORD_CATEGORIES else " " for c in folded)
+    return frozenset(
+        word
+        for word in spaced.split()
+        if word not in _STOP_TOKENS and _YEAR.fullmatch(word) is None
+    )
 
 
 def _km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
@@ -115,8 +130,15 @@ def _point(event: EventLike) -> tuple[float, float] | None:
 
 
 def _same_place(a: EventLike, b: EventLike) -> bool:
-    """Could these two be at one place? Only a *known* difference says no."""
-    if a.is_online and b.is_online:
+    """Could these two be at one place?
+
+    An online listing and an in-person one are never the same event. Between two
+    in-person events only a *known* difference says no: an unplaced event could be
+    anywhere.
+    """
+    if a.is_online != b.is_online:
+        return False
+    if a.is_online:
         return True
     comparable = False
     point_a, point_b = _point(a), _point(b)
@@ -140,8 +162,9 @@ def same_event(a: EventLike, b: EventLike) -> bool:
     * the title tokens overlap by a Jaccard index of at least one half. A title
       with no distinguishing words ("Meetup Bangalore") is evidence of nothing,
       so it is never the same as anything;
-    * the places are compatible: both online, within 1.5 km, in the same area,
-      or either unknown.
+    * the places are compatible. One online and one in person: never. Both
+      online: always. Both in person: within 1.5 km, in the same area, or either
+      place unknown.
     """
     if abs(as_utc(a.starts_at) - as_utc(b.starts_at)) > START_WINDOW:
         return False
