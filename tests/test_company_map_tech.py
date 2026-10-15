@@ -170,3 +170,117 @@ class TestEcosystemAndTechSources:
             name="Third Wave Coffee", extra_metadata={"provenance": {"name": "hiring_list"}}
         )
         assert classify(row) is False
+
+
+class TestHomepageTextIsWeak:
+    """Review C1 (2026-10-15): every homepage says "online", "app" or "digital".
+    A homepage can make a silent row tech only with a specific tech word, and
+    never outvotes what Wikidata, a curator or the name says."""
+
+    @pytest.mark.parametrize(
+        ("name", "description", "site_text"),
+        [
+            ("Narayana Health", "Indian hospital chain", "Book a doctor appointment online"),
+            ("Christ University", "Private autonomous university", "Apply online for admissions"),
+            ("Canara Bank", "Indian public sector bank", "Internet banking and mobile app"),
+            ("Toit", "brewery in Bangalore", "Order online on our app"),
+            ("IISc", "public research university", "science and technology research with AI"),
+        ],
+    )
+    def test_a_homepage_never_outvotes_a_non_tech_source(self, name, description, site_text):
+        assert not is_tech(name=name, description=description, sector=None, site_text=site_text)
+
+    @pytest.mark.parametrize(
+        "site_text",
+        [
+            "Shop online for backpacks and jackets",
+            "India's favourite digital gold app",
+            "Order on our website or app",
+        ],
+    )
+    def test_generic_web_words_on_a_homepage_are_not_enough(self, site_text):
+        assert not is_tech(name="Wildcraft", description=None, sector=None, site_text=site_text)
+
+    @pytest.mark.parametrize(
+        "site_text",
+        ["An AI platform for lawyers", "Payments SaaS for merchants", "Cloud cost automation"],
+    )
+    def test_a_specific_tech_word_on_a_homepage_is_enough(self, site_text):
+        assert is_tech(name="Quiet Co", description=None, sector=None, site_text=site_text)
+
+    def test_a_homepage_cannot_override_a_non_tech_name(self):
+        assert not is_tech(
+            name="Third Wave Coffee",
+            description=None,
+            sector=None,
+            site_text="Order coffee online with our AI-powered app",
+        )
+
+
+class TestTechSourcesOnlyForTheirOwnRows:
+    """Review I3: a GitHub org merged into a bank's row does not make the bank tech;
+    a directory-created row is tech unless its own text says otherwise."""
+
+    def _row(self, provenance: dict, **metadata):
+        from storage.models import Company
+
+        return Company(
+            name=metadata.pop("name", "Quiet Co"),
+            extra_metadata={"provenance": provenance, **metadata},
+        )
+
+    def test_a_github_field_on_a_wikidata_bank_is_not_tech(self):
+        from services.company_map.tech import classify
+
+        row = self._row(
+            {"name": "wikidata", "github_org": "github_org"},
+            name="Canara Bank",
+            wikidata_description="Indian public sector bank",
+        )
+        assert classify(row) is False
+
+    def test_a_github_created_foundation_is_not_tech(self):
+        from services.company_map.tech import classify
+
+        row = self._row(
+            {"name": "github_org"},
+            github_org_description="Bengaluru community foundation for open learning",
+        )
+        assert classify(row) is False
+
+    def test_a_yc_created_row_with_a_bland_line_is_tech(self):
+        from services.company_map.tech import classify
+
+        row = self._row({"name": "yc"}, yc_description="Helping Indian families save")
+        assert classify(row) is True
+
+    def test_a_site_line_never_makes_a_hospital_tech_and_the_verdict_can_go_back(self):
+        from services.company_map.tech import apply_tech
+        from storage.models import Company
+
+        row = Company(
+            name="Narayana Health",
+            is_tech=True,
+            summary="Book online",
+            summary_source="site",
+            extra_metadata={
+                "provenance": {"name": "wikidata"},
+                "wikidata_description": "Indian hospital chain",
+                "site": {"description": "Book a doctor appointment online"},
+            },
+        )
+        assert apply_tech(row) is False
+        assert row.is_tech is False
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "ride-hailing app",
+        "building foundation models for Indian languages",
+        "Teaches coding to children",
+        "developer tools for API testing",
+    ],
+)
+def test_review_m1_misses_are_now_tech(description: str):
+    assert is_tech(name="Quiet Co", description=description, sector=None)

@@ -126,6 +126,10 @@ def _wikidata_description(company: Company) -> str | None:
     return value if isinstance(value, str) else None
 
 
+#: Summary sources a better-ranked line may replace.
+_DIRECTORY_SOURCES = frozenset({"yc", "github_org"})
+
+
 def _directory_description(company: Company) -> tuple[str, str] | None:
     """A YC or GitHub one-liner as ``(text, source)``, YC first."""
     metadata = company.extra_metadata or {}
@@ -314,7 +318,8 @@ def _apply_site(company: Company, facts: SiteFacts | None) -> None:
     company.extra_metadata = metadata
     if not company.area and facts.address:
         company.area = area_for_text(facts.address)
-    if not company.summary:
+    # A directory one-liner is a stopgap: a curated, homepage or Wikidata line replaces it.
+    if not company.summary or company.summary_source in _DIRECTORY_SOURCES:
         chosen = choose_summary(
             curated=company.description,
             site=facts.description,

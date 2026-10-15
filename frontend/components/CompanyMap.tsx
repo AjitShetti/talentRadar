@@ -20,7 +20,7 @@ const SRC_LIT = 'cm-lit'
 const SRC_APPROX = 'cm-approx'
 const PIN_LAYERS = ['cm-pin-solid', 'cm-pin-ring']
 const APPROX_LAYERS = ['cm-approx-ring']
-const LIT_LAYERS = ['cm-lit-solid', 'cm-lit-ring']
+const LIT_LAYERS = ['cm-lit-solid', 'cm-lit-ring', 'cm-lit-approx']
 const HIT_LAYERS = [...LIT_LAYERS, ...PIN_LAYERS, ...APPROX_LAYERS]
 /** The two clustered sources, with the prefix that keeps their cluster buttons apart. */
 const CLUSTERED = [
@@ -30,6 +30,8 @@ const CLUSTERED = [
 /** Above this zoom the source stops clustering, so every company is its own pin. */
 const CLUSTER_MAX_ZOOM = 14
 const REVEAL_ZOOM = CLUSTER_MAX_ZOOM + 0.6
+/** A company with no location on record is shown at city scale, never down to a street it is not on. */
+const APPROX_REVEAL_ZOOM = 12
 /** Give the style and the first tiles this long before the map counts as down. */
 const LOAD_TIMEOUT_MS = 20000
 /** Tile failures with not one tile ever drawn before the map counts as down. */
@@ -48,8 +50,9 @@ function toCollection(rows: MapCompany[], selectedId: string | null): PinCollect
     features.push({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [row.lng, row.lat] },
-      // A lit pin is a hollow ring when its position is not a real address (area or approximate).
-      properties: { id: row.id, name: row.name, area: row.area, prec: row.precision, ring: row.precision === 'area' || row.precision === 'city' ? 1 : 0, selected: row.id === selectedId ? 1 : 0 },
+      // A lit pin is solid at a real address, a ring at an area (1), and a faint
+      // labelled ring when no location is on record (2).
+      properties: { id: row.id, name: row.name, area: row.area, prec: row.precision, ring: row.precision === 'city' ? 2 : row.precision === 'area' ? 1 : 0, selected: row.id === selectedId ? 1 : 0 },
     })
   }
   return { type: 'FeatureCollection', features }
@@ -173,6 +176,19 @@ function pinLayers(): AddLayerObject[] {
       id: 'cm-lit-ring', type: 'circle', source: SRC_LIT,
       filter: ['==', ['get', 'ring'], 1],
       paint: { 'circle-radius': radius(6.6), 'circle-color': hole, 'circle-stroke-color': accent, 'circle-stroke-width': 2.2 },
+    },
+    // Lit but not located: thinner and dimmer than the area ring, and named as
+    // such under the pin, so a phone (no hover, no legend) still says it.
+    {
+      id: 'cm-lit-approx', type: 'circle', source: SRC_LIT,
+      filter: ['==', ['get', 'ring'], 2],
+      paint: { 'circle-radius': radius(6), 'circle-color': hole, 'circle-stroke-color': accent, 'circle-stroke-width': 1.3, 'circle-stroke-opacity': 0.7 },
+    },
+    {
+      id: 'cm-lit-approx-label', type: 'symbol', source: SRC_LIT,
+      filter: ['all', ['==', ['get', 'ring'], 2], ['==', ['get', 'selected'], 1]],
+      layout: { 'text-field': 'Location unknown', 'text-font': ['Noto Sans Regular'], 'text-size': 11, 'text-offset': [0, 1.5], 'text-anchor': 'top', 'text-allow-overlap': true },
+      paint: { 'text-color': accent, 'text-halo-color': hole, 'text-halo-width': 1.2 },
     },
   ]
 }
@@ -464,7 +480,7 @@ export default function CompanyMap({ rows, litIds, selectedId, selected, active,
     if (fromPin && visible) return
     m.easeTo({
       center: [selected.lng, selected.lat],
-      zoom: fromPin ? zoom : Math.max(zoom, REVEAL_ZOOM),
+      zoom: fromPin ? zoom : isApproximate(selected) ? APPROX_REVEAL_ZOOM : Math.max(zoom, REVEAL_ZOOM),
       offset: [-inset / 2, 0],
       duration: reducedMotion() ? 0 : 600,
     })

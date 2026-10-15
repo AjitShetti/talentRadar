@@ -228,6 +228,27 @@ All three default to `false`.
 | `429` under light load | `TRUSTED_PROXY_HOPS` is 0 behind a proxy. |
 | Resume PDF export returns LaTeX only | The renderer raised; check the logs. Three of the four call sites degrade this way by design. |
 
+## Company map: tech employers only (migration 016)
+
+Order matters. The new code reads `companies.is_tech`, so the column must exist
+before it starts, and only curated catalogue rows are `TRUE` until the `tech`
+step has run once:
+
+1. `alembic upgrade head` against Neon (adds `is_tech`, marks curated rows tech).
+2. Deploy the API (Render) and the frontend (Vercel).
+3. Run the classifier now rather than waiting for the nightly job:
+   Actions → `company-map` → Run workflow → step `tech`
+   (or `POST /api/v1/ingest/company-map/refresh?step=tech&limit=5000` with `X-Cron-Token`).
+4. Then run step `yc` and `hiring_list` once, so the new sources do not wait
+   for Monday.
+
+`/map` is cached for an hour (`tr:map:<city>`); it catches up on its own.
+
+The `github_orgs` step needs `GITHUB_TOKEN` (a fine-grained token with no
+scopes is enough) on Render. Without it GitHub allows 60 lookups an hour per
+IP, which a shared Render IP has usually spent already; the step then stops
+with `"stopped": "rate_limited"` and moves nothing.
+
 ## What is still worth doing later
 
 Deliberately not done here, because none of it blocks a free launch:

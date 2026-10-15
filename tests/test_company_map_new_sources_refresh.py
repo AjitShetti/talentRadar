@@ -480,3 +480,23 @@ async def test_a_yc_company_gets_its_own_one_liner_as_summary_on_import() -> Non
     razorpay = rows["Razorpay"]
     assert razorpay.summary and razorpay.summary_source == "yc"
     assert razorpay.is_tech is True
+
+
+async def test_a_homepage_line_replaces_a_directory_one_liner() -> None:
+    # Review I2: the YC line is a stopgap until a better-ranked source speaks.
+    from services.company_map.types import SiteFacts
+
+    with patch.object(refresh.yc, "fetch", AsyncMock(return_value=_yc())):
+        await run_step("yc", 5000)
+    facts = SiteFacts(
+        title="Razorpay",
+        description="Razorpay runs payments infrastructure for Indian businesses.",
+        text="",
+        address=None,
+        pincode=None,
+    )
+    with patch.object(refresh, "read_site", AsyncMock(return_value=facts)):
+        await run_step("sites", 100)
+    razorpay = await _company("razorpay.com")
+    assert razorpay.summary_source == "site"
+    assert razorpay.summary.startswith("Razorpay runs payments infrastructure")

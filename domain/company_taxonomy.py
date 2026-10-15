@@ -220,23 +220,39 @@ def _words(pattern: str) -> re.Pattern[str]:
     return re.compile(rf"(?<![a-z0-9])(?:{pattern})(?![a-z0-9])", re.IGNORECASE)
 
 
-_STRONG_TECH = _words(
-    r"software|saas|paas|iaas|app|apps|platform|platforms|internet|online|digital|"
-    r"e-?commerce|quick[- ]commerce|fintech|edtech|healthtech|insurtech|regtech|adtech|"
+#: Tech words that name what a company builds. Specific enough that a
+#: company's own homepage saying one is evidence.
+_SPECIFIC_TECH_WORDS = (
+    r"software|saas|paas|iaas|"
+    r"fintech|edtech|healthtech|insurtech|regtech|adtech|"
     r"proptech|martech|agritech|legaltech|hrtech|deep-?tech|nanotech\w*|"
-    r"tech|technology|technologies|information technology|it services|it consulting|"
-    r"ai|a\.i\.|artificial intelligence|machine learning|generative ai|llm|"
-    r"computer vision|data|analytics|cloud|cyber\w*|devops|api|apis|open[- ]source|"
+    r"information technology|it services|it consulting|"
+    r"ai|a\.i\.|ai-powered|artificial intelligence|machine learning|generative ai|llm|"
+    r"computer vision|analytics|cloud|cyber\w*|devops|api|apis|open[- ]source|"
     r"semiconductors?|embedded|firmware|iot|robotics?|drones?|blockchain|crypto|"
     r"electronics design|eda|cad|cae|"
     r"micro-?mobility|mobility (?:platform|startup)|ev charging|"
-    r"employer of record|educational company|education company|learning company|"
-    r"computing|computer|automation|"
+    r"employer of record|payments? (?:platform|gateway|infrastructure|api)|ride-?hailing|"
+    r"developer tools?|devtools|foundation models?|coding|"
+    r"computing|automation|"
     r"mobile games?|video games?|game (?:studio|developer|publisher)|"
-    r"web|website|marketplace|"
     # The startup ecosystem the map has a type for (decision 2026-10-15).
     r"venture capital|venture fund|vc fund|vc firm|accelerators?|incubators?"
 )
+
+#: Tech words every consumer business's homepage also uses ("order online",
+#: "our app", "digital gold"). They count when a directory or encyclopedia
+#: describes the company with them, never from the homepage alone.
+_GENERIC_TECH_WORDS = (
+    r"app|apps|platform|platforms|internet|online|digital|"
+    r"e-?commerce|quick[- ]commerce|"
+    r"tech|technology|technologies|data|computer|"
+    r"educational company|education company|learning company|"
+    r"web|website|marketplace"
+)
+
+_STRONG_TECH = _words(f"{_SPECIFIC_TECH_WORDS}|{_GENERIC_TECH_WORDS}")
+_SITE_TECH = _words(_SPECIFIC_TECH_WORDS)
 
 #: Words that name a kind of organisation the map does not list. "Technical"
 #: is deliberately not a tech word, and an "institute of technology" is a school.
@@ -275,19 +291,31 @@ def is_tech(
     description: str | None,
     industry_labels: Sequence[str] = (),
     sector: str | None,
+    site_text: str | None = None,
 ) -> bool:
     """
     Whether this employer is a tech company, from what its sources say.
 
-    ``description`` is any source's one-liner (Wikidata's, a site's, the
-    summary), ``industry_labels`` Wikidata industry labels, ``sector`` a
-    ``SECTORS`` key. Pure and deliberately conservative: silence is ``False``.
+    ``description`` is what a curator, encyclopedia, directory or news item
+    says (Wikidata's one-liner, YC's), ``industry_labels`` Wikidata industry
+    labels, ``sector`` a ``SECTORS`` key. ``site_text`` is the company's own
+    homepage line, and is weak (review 2026-10-15): it says yes only with a
+    specific tech word, and only when neither the sources nor the name name
+    a non-tech kind of organisation. Pure and deliberately conservative:
+    silence is ``False``.
     """
     said = " ; ".join([description or "", *industry_labels])
     if _STRONG_TECH.search(said):
         return True
-    if _NON_TECH.search(said) or _NON_TECH.search(name):
+    if non_tech_named(name=name, text=said):
         return False
+    if site_text and _SITE_TECH.search(site_text) and not _NON_TECH.search(site_text):
+        return True
     if sector in _TECH_SECTORS:
         return True
     return bool(_TECH_NAME.search(name) or _WEAK_TECH.search(said))
+
+
+def non_tech_named(*, name: str, text: str | None) -> bool:
+    """Whether the name or a source's text names a kind of organisation the map does not list."""
+    return bool(_NON_TECH.search(text or "") or _NON_TECH.search(name))

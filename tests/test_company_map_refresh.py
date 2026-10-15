@@ -224,22 +224,23 @@ async def test_tech_step_classifies_unclassified_rows_from_what_is_stored():
     )
     await _add(name="Summarised", domain="sum.example", summary="Lending for MSMEs, online.")
     await _add(name="Silent", domain="silent.example")
+    # A yes with nothing stored to support it is taken back (review C1).
     await _add(name="Already", domain="already.example", is_tech=True)
 
     result = await run_step("tech", 100)
 
     rows = await _by_name()
-    assert result == {"step": "tech", "seen": 6, "tech": 4, "not_tech": 2}
+    assert result == {"step": "tech", "seen": 7, "tech": 4, "not_tech": 3}
     assert rows["Curated Co"].is_tech is True
     assert rows["Imported Cafe"].is_tech is False
     assert rows["Wiki Soft"].is_tech is True
     assert rows["Site Only"].is_tech is True
     assert rows["Summarised"].is_tech is True
     assert rows["Silent"].is_tech is False
-    assert rows["Already"].is_tech is True
+    assert rows["Already"].is_tech is False
 
 
-async def test_tech_step_gives_a_no_a_second_look_but_never_takes_a_yes_back():
+async def test_tech_step_gives_a_no_a_second_look_and_takes_back_an_unsupported_yes():
     await _add(name="Late Bloomer", domain="late.example", is_tech=False)
     await _add(
         name="Tech Once",
@@ -258,7 +259,7 @@ async def test_tech_step_gives_a_no_a_second_look_but_never_takes_a_yes_back():
 
     rows = await _by_name()
     assert rows["Late Bloomer"].is_tech is True
-    assert rows["Tech Once"].is_tech is True
+    assert rows["Tech Once"].is_tech is False  # Wikidata says airline
 
 
 async def test_sites_step_reclassifies_the_row_it_just_read():
