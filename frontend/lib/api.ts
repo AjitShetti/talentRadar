@@ -89,9 +89,14 @@ export type FounderDiscovery = { available: boolean; people: Array<{ name: strin
 export type MapRow = [id: string, name: string, lat: number | null, lng: number | null, precision: GeoPrecision, tier: string | null, stage: string | null, sector: string | null, area: string | null, size: string | null, open_roles: number, raised_90d: boolean]
 export type MapPayload = { generated_at: string; city: string; total: number; pinned: number; rows: MapRow[] }
 export type MapCompany = { id: string; name: string; lat: number | null; lng: number | null; precision: GeoPrecision; tier: string | null; stage: string | null; sector: string | null; area: string | null; size: string | null; openRoles: number; raised90d: boolean }
+/** Must match services/company_map/read.py::MAP_COLUMNS. A row of any other length comes from a different contract. */
+const MAP_ROW_LENGTH = 12
 export function decodeMapRows(rows: MapRow[]): MapCompany[] {
-  return rows.map(([id, name, lat, lng, precision, tier, stage, sector, area, size, openRoles, raised90d]) =>
-    ({ id, name, lat, lng, precision, tier, stage, sector, area, size, openRoles, raised90d }))
+  // A row that is not exactly 12 long would otherwise shift every field after the gap, so skip it.
+  return rows
+    .filter(row => Array.isArray(row) && row.length === MAP_ROW_LENGTH)
+    .map(([id, name, lat, lng, precision, tier, stage, sector, area, size, openRoles, raised90d]) =>
+      ({ id, name, lat, lng, precision, tier, stage, sector, area, size, openRoles, raised90d }))
 }
 export type CompanyListFilters = { city?: string; tier?: string; industry?: string; q?: string; hasOpenRoles?: boolean; stage?: string; sector?: string; area?: string; size?: string; raisedWithinDays?: number; pinned?: boolean; limit?: number; offset?: number }
 export type NewContact = { kind?: string; name?: string | null; title?: string | null; email?: string | null; linkedin_url?: string | null; notes?: string | null; source_url?: string | null; verified?: boolean }

@@ -179,6 +179,9 @@ export default function CompanyMap({ rows, litIds, selectedId, selected, active,
   const clickedRef = useRef<string | null>(null)
   const onSelectRef = useRef(onSelect)
   const onUnavailableRef = useRef(onUnavailable)
+  // The cluster buttons, owned by the component so a data change can drop them all
+  // (see `syncClusters`). Keyed by `clusterKey`, not by the bare cluster id.
+  const markersRef = useRef(new Map<string, Marker>())
   const [started, setStarted] = useState(false)
   const [ready, setReady] = useState(false)
 
@@ -186,8 +189,12 @@ export default function CompanyMap({ rows, litIds, selectedId, selected, active,
   useEffect(() => { insetRef.current = rightInset }, [rightInset])
   useEffect(() => { if (active) setStarted(true) }, [active])
 
-  // Clusters count only what is not lit: a lit company is always its own pin.
-  const pointsData = useMemo(() => toCollection(rows.filter(r => !litIds.has(r.id)), null), [rows, litIds])
+  // Clusters count only what is neither lit nor selected: both are always their own
+  // pin (litData), so leaving the selected company in here would count it twice.
+  const pointsData = useMemo(
+    () => toCollection(rows.filter(r => !litIds.has(r.id) && r.id !== selectedId), null),
+    [rows, litIds, selectedId],
+  )
   const litData = useMemo(() => {
     const lit = rows.filter(r => litIds.has(r.id))
     if (selected && !litIds.has(selected.id)) lit.push(selected)
@@ -207,7 +214,7 @@ export default function CompanyMap({ rows, litIds, selectedId, selected, active,
     let tilesDrawn = 0
     let tileErrors = 0
     let hoverKey: { source: string; id: string } | null = null
-    const markers = new Map<number, Marker>()
+    const markers = markersRef.current
     let map: MapLibreMap | null = null
     let timer: ReturnType<typeof setTimeout> | undefined
 
@@ -268,21 +275,29 @@ export default function CompanyMap({ rows, litIds, selectedId, selected, active,
       const zoomInto = (clusterId: number, center: [number, number]) => {
         const source = m.getSource(SRC_POINTS) as GeoJSONSource | undefined
         if (!source) return
+        // A cluster that was re-clustered or removed since the click rejects; that is not an error.
         void source.getClusterExpansionZoom(clusterId).then(zoom => {
           m.easeTo({ center, zoom: Math.min(zoom + 0.2, 18), duration: reducedMotion() ? 0 : 450 })
-        })
+        }).catch(() => undefined)
       }
       const syncClusters = () => {
         if (!m.getSource(SRC_POINTS)) return
-        const seen = new Set<number>()
+        const seen = new Set<string>()
         for (const feature of m.querySourceFeatures(SRC_POINTS, { filter: ['has', 'point_count'] })) {
           const props = feature.properties as { cluster_id?: number; point_count?: number }
           const clusterId = props.cluster_id
           const count = props.point_count
-          if (clusterId === undefined || count === undefined || feature.geometry.type !== 'Point' || seen.has(clusterId)) continue
-          seen.add(clusterId)
-          if (markers.has(clusterId)) continue
+          if (clusterId === undefined || count === undefined || feature.geometry.type !== 'Point') continue
           const [lng, lat] = feature.geometry.coordinates
+          // MapLibre's cluster ids are (index << 5) + (zoom + 1) + points.length, so two
+          // different filter states with the same number of points hand out the same id
+          // for different clusters. An id alone would keep the old button, at its old
+          // position with its old count. The count and the position make the key
+          // describe the cluster rather than name a slot.
+          const key = `${clusterId}:${count}:${lng.toFixed(5)},${lat.toFixed(5)}`
+          if (seen.has(key)) continue
+          seen.add(key)
+          if (markers.has(key)) continue
           const el = document.createElement('button')
           el.type = 'button'
           el.className = 'cm-cluster'
@@ -292,7 +307,7 @@ export default function CompanyMap({ rows, litIds, selectedId, selected, active,
           label.textContent = String(count)
           el.append(label)
           el.addEventListener('click', ev => { ev.stopPropagation(); zoomInto(clusterId, [lng, lat]) })
-          markers.set(clusterId, new ml.Marker({ element: el, anchor: 'center' }).setLngLat([lng, lat]).addTo(m))
+          markers.set(key, new ml.Marker({ element: el, anchor: 'center' }).setLngLat([lng, lat]).addTo(m))
         }
         markers.forEach((marker, id) => { if (!seen.has(id)) { marker.remove(); markers.delete(id) } })
       }
@@ -368,6 +383,10 @@ export default function CompanyMap({ rows, litIds, selectedId, selected, active,
   useEffect(() => {
     const m = mapRef.current
     if (!m || !ready) return
+    // New data means new clusters. Drop every button now; the source's own
+    // `sourcedata` event rebuilds them from the new tiles.
+    markersRef.current.forEach(marker => marker.remove())
+    markersRef.current.clear()
     ;(m.getSource(SRC_POINTS) as GeoJSONSource | undefined)?.setData(pointsData)
   }, [pointsData, ready])
   useEffect(() => {
