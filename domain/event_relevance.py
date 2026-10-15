@@ -19,16 +19,23 @@ a :class:`Verdict`: a verdict with reasons, never a score.
   needs a host that is a tech company on the map, which keeps fee-charging
   placement drives out.
 
-Every table below is a tuple of words matched whole-word and case-insensitively
-over ``title + " " + snippet``, so "AI" is not "AIrline" and "rust" is not
-"Rustic". A space or hyphen inside a word matches either ("open source",
-"open-source", "Hands-On", "hands on").
+Every table below is a tuple of words matched whole-word and case-insensitively,
+so "AI" is not "AIrline" and "rust" is not "Rustic". A space or hyphen inside a
+word matches either ("open source", "open-source", "Hands-On", "hands on").
+Technology and topics are read over ``title + " " + snippet``. The **format** is
+read from the title first, because a description names every format ("connect
+with the community", "a hands-on session", "a jam-packed evening") and would
+otherwise defeat the two format gates above: only in person does a title that
+names no format fall back to the description, and a hiring phrase anywhere in
+the text marks a title with no other format as hiring, which errs towards
+unlisting.
 
 The reasons are the evidence behind ``listed``, in display order: what makes it
 tech (a GDG chapter, a trusted calendar, Eventbrite's technology category, or
-else the topics it names), where it is, and who hosts it. ``scope.key`` is the
-display name of a trusted Luma calendar: its reason reads "<key> calendar", so
-the code that builds the scope must put the calendar's name there.
+else the topics it names, at most three), where it is, and who hosts it. A GDG
+chapter is an event whose source is ``gdg``. ``scope.key`` is the display name
+of a trusted Luma calendar: its reason reads "<key> calendar", so the code that
+builds the scope must put the calendar's name there.
 
 Pure: no I/O, no clock, no database.
 """
@@ -97,6 +104,9 @@ TOPIC_LABELS: dict[str, str] = {
 
 #: Only these formats are worth attending when the event is online.
 ONLINE_FORMATS: tuple[str, ...] = ("hackathon", "workshop", "conference")
+
+#: A long description can name every topic; a reason names the first few, in vocabulary order.
+MAX_TOPIC_REASONS = 3
 
 #: An event that runs longer than this is a course, not an event.
 MAX_DURATION = timedelta(days=3)
@@ -367,6 +377,7 @@ _GENERAL_TECH_WORDS: tuple[str, ...] = (
     "buildathon",
     "buildathons",
     "fintech",
+    "crypto custody",
     "ux",
     "figma",
     "product management",
@@ -378,10 +389,14 @@ _GENERAL_TECH_WORDS: tuple[str, ...] = (
     "product designers",
 )
 
+#: Topic words that name a subject, not a technology: "Bitcoin investing for beginners"
+#: is a web3 event but not a tech one. They label an event; they do not list it.
+_TOPIC_ONLY_WORDS: frozenset[str] = frozenset({"crypto", "cryptocurrency", "bitcoin"})
+
 #: Any of these in the title or snippet makes an event technology: the general words
-#: and the words of every technology topic.
+#: and the words of every technology topic, less the topic-only words.
 TECH_WORDS: tuple[str, ...] = _GENERAL_TECH_WORDS + tuple(
-    word for topic in _TECH_TOPICS for word in TOPIC_WORDS[topic]
+    word for topic in _TECH_TOPICS for word in TOPIC_WORDS[topic] if word not in _TOPIC_ONLY_WORDS
 )
 
 #: Paid courses are not events: these words exclude only when the event is known not to be free.
@@ -475,6 +490,7 @@ def _compile(words: tuple[str, ...]) -> re.Pattern[str]:
 
 
 _FORMAT_PATTERNS = tuple((name, _compile(words)) for name, words in FORMAT_WORDS)
+_HIRING = dict(_FORMAT_PATTERNS)["hiring"]
 _TOPIC_PATTERNS = {topic: _compile(words) for topic, words in TOPIC_WORDS.items()}
 _TECH = _compile(TECH_WORDS)
 _PAID_COURSE = _compile(PAID_COURSE_WORDS)
@@ -505,7 +521,9 @@ def event_topics(text: str) -> tuple[str, ...]:
 
 def _declared_tech(facts: EventFacts, scope: SourceScope) -> str | None:
     """The reason when the source itself vouches that the event is technology."""
-    if facts.source == "gdg" or scope.key.lower().startswith("gdg"):
+    # By source, never by the scope's name: a Luma calendar called "GDG Cloud Bengaluru"
+    # is a calendar, not a chapter.
+    if facts.source == "gdg":
         return "GDG chapter"
     if scope.trusted_tech:
         return f"{scope.key} calendar"
@@ -620,6 +638,22 @@ def _host_name(facts: EventFacts) -> str:
     return next((name for name in named if name), "a company on the map")
 
 
+def _format(facts: EventFacts) -> str:
+    """The event's format: what its title names, else (in person only) its description.
+
+    An online event whose title names no format stays ``other`` however its description
+    reads, so a "webinar" with "a hands-on session" is not a workshop. A hiring phrase
+    anywhere in the text marks a title that names no other format as hiring: a
+    placement drive that also says "join our community" is still a placement drive.
+    """
+    named = event_format(facts.title)
+    if named == "hiring" or (named == "other" and _HIRING.search(_text(facts))):
+        return "hiring"
+    if named == "other" and not facts.is_online:
+        return event_format(facts.snippet or "")
+    return named
+
+
 def assess(
     facts: EventFacts, scope: SourceScope, *, host_is_listed_company: bool = False
 ) -> Verdict:
@@ -629,7 +663,7 @@ def assess(
     on the company map; a hiring event is listed only then.
     """
     text = _text(facts)
-    fmt = event_format(text)
+    fmt = _format(facts)
     topics = event_topics(text)
     place = _place(facts, scope)
     if place is None:
@@ -641,7 +675,7 @@ def assess(
     reasons: list[str] = []
     if declared is not None:
         reasons.append(declared)
-    reasons.extend(TOPIC_LABELS[topic] for topic in topics)
+    reasons.extend(TOPIC_LABELS[topic] for topic in topics[:MAX_TOPIC_REASONS])
     if declared is None and keyword is not None and not topics:
         reasons.append(f"mentions {' '.join(keyword.group(0).lower().split())}")
     reasons.append(place.reason)

@@ -63,9 +63,9 @@ def online_facts(title: str, **overrides: object) -> EventFacts:
 # as first recorded. "listed" is the verdict on the title alone. The unlisted ones name no
 # technology in their titles; a real description would usually say what they are.
 RECORDED = (
-    ("-1 to Swiggy with Nandan Reddy | South Park Commons (BLR)", 12.9163, 77.6463, False),
+    ("-1 to Swiggy with Rohan Quill | South Park Commons (BLR)", 12.9163, 77.6463, False),
     (
-        "Reimagining education in the age of AI with Dr. Prathosh A.P. (IISc)",
+        "Reimagining education in the age of AI with Dr. Ila Quill (IISc)",
         12.9802,
         77.6415,
         True,
@@ -81,7 +81,7 @@ RECORDED = (
     ("RSI Research Mixer", 12.9182, 77.6705, False),
     ("BitGo x Giottus: Crypto Custody in Action", 12.9319, 77.6283, True),
     ("Physical AI Demo Night (SPC in partnership with Elevation Capital)", 12.9151, 77.6432, True),
-    ("-1 to Binny Bansal | South Park Commons (BLR)", 12.9153, 77.6468, False),
+    ("-1 to Meera Quill | South Park Commons (BLR)", 12.9153, 77.6468, False),
     ("Code Meets Animation - Bangalore", 12.9166, 77.6712, False),
     ("Okta Developer Connect Bengaluru", 12.9225, 77.6862, True),
     ("QFF 2026: Quantum and Qiskit 101", 12.9219, 77.6202, True),
@@ -137,7 +137,7 @@ def test_qiskit_101_is_a_quantum_workshop() -> None:
 
 
 def test_minus_one_to_is_a_talk() -> None:
-    title = "-1 to Swiggy with Nandan Reddy | South Park Commons (BLR)"
+    title = "-1 to Swiggy with Rohan Quill | South Park Commons (BLR)"
     assert assess(make_facts(title), LUMA_BENGALURU).format == "talk"
 
 
@@ -331,24 +331,28 @@ def test_a_tech_event_that_is_not_stored_is_not_listed() -> None:
     assert far.listed is False
 
 
-EXCLUDED: tuple[tuple[str, dict[str, object], str], ...] = (
+EXCLUDED: tuple[tuple[str, dict[str, object], str, bool], ...] = (
     (
         "Data Science Certification Course",
         {"is_free": False},
         "paid course",
+        True,
     ),
-    ("Free demo class: Python with placement guarantee", {}, "free demo class"),
-    ("Crypto trading masterclass", {}, "trading"),
-    ("Speed dating for techies", {}, "dating"),
-    ("AI Bootcamp", {"ends_at": START + timedelta(days=5)}, "longer than 3 days"),
+    ("Free demo class: Python with placement guarantee", {}, "free demo class", True),
+    # "Crypto" alone is not technology (see test_crypto_alone_is_not_tech), so the
+    # first row is excluded and not tech; the second is tech and still excluded.
+    ("Crypto trading masterclass", {}, "trading", False),
+    ("Crypto trading bots in Python", {}, "trading", True),
+    ("Speed dating for techies", {}, "dating", True),
+    ("AI Bootcamp", {"ends_at": START + timedelta(days=5)}, "longer than 3 days", True),
 )
 
 
-@pytest.mark.parametrize(("title", "overrides", "reason"), EXCLUDED)
-def test_exclusions(title: str, overrides: dict[str, object], reason: str) -> None:
+@pytest.mark.parametrize(("title", "overrides", "reason", "tech"), EXCLUDED)
+def test_exclusions(title: str, overrides: dict[str, object], reason: str, tech: bool) -> None:
     facts = make_facts(title, **overrides)
-    # Each reads as technology; the exclusion alone keeps it off the list.
-    assert is_tech(facts, LUMA_BENGALURU) is True
+    # Where it reads as technology, the exclusion alone keeps it off the list.
+    assert is_tech(facts, LUMA_BENGALURU) is tech
     assert excluded(facts) == reason
     verdict = assess(facts, LUMA_BENGALURU)
     assert verdict.store is True
@@ -424,6 +428,77 @@ def test_hiring_needs_listed_host() -> None:
     assert hosted.format == "hiring"
 
 
+def test_a_webinar_is_not_rescued_by_its_description() -> None:
+    # The title names no format and the event is online: the description is not consulted.
+    facts = online_facts("Intro to Kubernetes webinar", snippet="A hands-on session")
+    verdict = assess(facts, LUMA_BENGALURU)
+    assert verdict.format == "other"
+    assert verdict.listed is False
+    # The same word as a title does qualify it.
+    workshop = online_facts("Intro to Kubernetes workshop", snippet="A webinar")
+    assert assess(workshop, LUMA_BENGALURU).listed is True
+
+
+def test_a_placement_drive_is_not_rescued_by_its_description() -> None:
+    facts = make_facts(
+        "Placement drive for Java developers", snippet="Join our community of engineers"
+    )
+    unhosted = assess(facts, LUMA_BENGALURU)
+    assert unhosted.format == "hiring"
+    assert unhosted.listed is False
+    assert assess(facts, LUMA_BENGALURU, host_is_listed_company=True).listed is True
+
+
+def test_a_walk_in_drive_stays_hiring_whatever_its_description_says() -> None:
+    facts = make_facts(
+        "Walk-in drive for Java developers", snippet="Connect with our hiring managers"
+    )
+    verdict = assess(facts, LUMA_BENGALURU)
+    assert verdict.format == "hiring"
+    assert verdict.listed is False
+
+
+def test_a_hiring_phrase_in_the_description_marks_a_title_with_no_format_as_hiring() -> None:
+    facts = make_facts(
+        "Java developers evening", snippet="A walk-in drive for freshers, with networking"
+    )
+    verdict = assess(facts, LUMA_BENGALURU)
+    assert verdict.format == "hiring"
+    assert verdict.listed is False
+    # A title that names a format keeps it.
+    titled = make_facts("Java Hackathon", snippet="A walk-in drive for freshers")
+    assert assess(titled, LUMA_BENGALURU).format == "hackathon"
+    # An online event is never listed as hiring, with or without a host.
+    online = online_facts("Java developers evening", snippet="A placement drive for freshers")
+    assert assess(online, LUMA_BENGALURU, host_is_listed_company=True).listed is False
+
+
+def test_the_title_names_the_format_before_the_description_does() -> None:
+    jam_packed = make_facts("Python Meetup", snippet="A jam-packed evening")
+    assert assess(jam_packed, LUMA_BENGALURU).format == "meetup"
+    social = make_facts("Rust Workshop", snippet="Connect with the community")
+    assert assess(social, LUMA_BENGALURU).format == "workshop"
+
+
+def test_in_person_falls_back_to_the_description_when_the_title_names_no_format() -> None:
+    facts = make_facts("Swift Bengaluru × Okta", snippet="A hands-on session for iOS developers")
+    assert assess(facts, LUMA_BENGALURU).format == "workshop"
+
+
+def test_crypto_alone_is_not_tech() -> None:
+    for title in (
+        "Bitcoin investing for beginners",
+        "Crypto trading masterclass",
+        "Cryptocurrency tips",
+    ):
+        assert is_tech(make_facts(title), LUMA_BENGALURU) is False
+        assert assess(make_facts(title), LUMA_BENGALURU).listed is False
+    # It is still a topic, and a technical crypto subject is still technology.
+    assert "web3" in event_topics("Bitcoin investing for beginners")
+    assert is_tech(make_facts("BitGo x Giottus: Crypto Custody in Action"), LUMA_BENGALURU)
+    assert is_tech(make_facts("Solidity and blockchain"), LUMA_BENGALURU)
+
+
 def test_gdg_scope_is_tech() -> None:
     facts = make_facts("Build with Gemini - Bangalore", source="gdg")
     verdict = assess(facts, GDG)
@@ -432,11 +507,19 @@ def test_gdg_scope_is_tech() -> None:
     assert is_tech(make_facts("Evening get-together", source="gdg"), GDG) is True
 
 
-def test_a_gdg_chapter_is_known_by_its_scope_key_too() -> None:
+def test_a_gdg_chapter_is_known_by_its_source_not_its_scope_key() -> None:
     chapter = SourceScope(key="gdg:gdg-bangalore", india=True, trusted_tech=True)
-    verdict = assess(make_facts("Evening get-together"), chapter)
+    verdict = assess(make_facts("Evening get-together", source="gdg"), chapter)
     assert verdict.listed is True
     assert verdict.reasons[0] == "GDG chapter"
+
+
+def test_a_luma_calendar_named_gdg_is_not_a_gdg_chapter() -> None:
+    calendar = SourceScope(key="GDG Cloud Bengaluru", india=True, trusted_tech=True)
+    verdict = assess(make_facts("Evening get-together"), calendar)
+    assert verdict.listed is True
+    assert "GDG chapter" not in verdict.reasons
+    assert verdict.reasons[0] == "GDG Cloud Bengaluru calendar"
 
 
 def test_a_trusted_calendar_is_tech_and_named() -> None:
@@ -554,7 +637,7 @@ def test_format_is_first_match_in_the_documented_order() -> None:
 
 
 def test_the_minus_one_to_series_needs_its_hyphen() -> None:
-    assert event_format("-1 to Binny Bansal") == "talk"
+    assert event_format("-1 to Meera Quill") == "talk"
     assert event_format("Section 1 to 3 explained") == "other"
 
 
@@ -625,6 +708,34 @@ def test_reasons_read_source_then_topic_then_place() -> None:
     assert verdict.reasons == ("GDG chapter", "AI", "in Koramangala")
     assert verdict.area == "Koramangala"
     assert verdict.topics == ("ai",)
+
+
+def test_reasons_name_at_most_three_topics_in_vocabulary_order() -> None:
+    snippet = (
+        "AI and data on the cloud: Kubernetes, React, Android, security, product design "
+        "and startup founders."
+    )
+    verdict = assess(make_facts("Systems evening", snippet=snippet), LUMA_BENGALURU)
+    # Every topic is still recorded; only the reasons are capped.
+    assert verdict.topics == (
+        "ai",
+        "data",
+        "cloud",
+        "devops",
+        "web",
+        "mobile",
+        "security",
+        "product",
+        "design",
+        "startups",
+    )
+    assert verdict.reasons[:3] == ("AI", "Data", "Cloud")
+    assert len(verdict.reasons) == 4
+    assert verdict.reasons[3].startswith("in ")
+
+    gdg = assess(make_facts("Systems evening", source="gdg", snippet=snippet), GDG)
+    assert gdg.reasons[:4] == ("GDG chapter", "AI", "Data", "Cloud")
+    assert len(gdg.reasons) == 5
 
 
 def test_keyword_tech_with_no_topic_names_the_word() -> None:
