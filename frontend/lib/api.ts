@@ -93,7 +93,7 @@ export function decodeMapRows(rows: MapRow[]): MapCompany[] {
   return rows.map(([id, name, lat, lng, precision, tier, stage, sector, area, size, openRoles, raised90d]) =>
     ({ id, name, lat, lng, precision, tier, stage, sector, area, size, openRoles, raised90d }))
 }
-export type CompanyListFilters = { city?: string; tier?: string; industry?: string; q?: string; hasOpenRoles?: boolean; stage?: string; sector?: string; area?: string; size?: string; raisedWithinDays?: number; limit?: number; offset?: number }
+export type CompanyListFilters = { city?: string; tier?: string; industry?: string; q?: string; hasOpenRoles?: boolean; stage?: string; sector?: string; area?: string; size?: string; raisedWithinDays?: number; pinned?: boolean; limit?: number; offset?: number }
 export type NewContact = { kind?: string; name?: string | null; title?: string | null; email?: string | null; linkedin_url?: string | null; notes?: string | null; source_url?: string | null; verified?: boolean }
 // A dated commitment on the tracker — the only thing on the overview the user
 // cannot reschedule by ignoring it, so it leads the page.
@@ -266,6 +266,7 @@ export const api = {
       if (filters.area) params.set('area', filters.area)
       if (filters.size) params.set('size', filters.size)
       if (filters.raisedWithinDays) params.set('raised_within_days', String(filters.raisedWithinDays))
+      if (filters.pinned !== undefined) params.set('pinned', String(filters.pinned))
       if (filters.limit) params.set('limit', String(filters.limit))
       if (filters.offset) params.set('offset', String(filters.offset))
       return request<CompanyDirectory>(`/api/v1/company-intel/?${params.toString()}`, {}, true)

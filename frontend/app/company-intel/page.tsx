@@ -47,8 +47,6 @@ const SUMMARY_SOURCE: Record<SummarySource, string> = {
   curated: 'curated', site: 'from their website', wikidata: 'from Wikidata', llm: 'AI summary',
 }
 const PEOPLE_KINDS = new Set(['founder', 'leader', 'engineer'])
-/** Stands in for the unpinned ids when that filter is off, so the list does not refetch when the map rows arrive. */
-const NO_IDS: ReadonlySet<string> = new Set()
 
 type SelectKey = 'type' | 'area' | 'stage' | 'sector' | 'size'
 const SELECTS: ReadonlyArray<{ key: SelectKey; label: string; all: string; field: 'tier' | 'area' | 'stage' | 'sector' | 'size'; names: Record<string, string> | null }> = [
@@ -291,7 +289,6 @@ export default function CompanyIntelPage() {
     () => Object.fromEntries(SELECTS.map(spec => [spec.key, optionsFor(rows, filters, spec)])) as Record<SelectKey, Option[]>,
     [rows, filters],
   )
-  const unpinnedIds = useMemo(() => new Set(rows.filter(r => r.lat == null).map(r => r.id)), [rows])
   const visibleUnpinned = useMemo(() => visible.filter(r => r.lat == null).length, [visible])
   const raisedCount = useMemo(() => rows.filter(r => r.raised90d).length, [rows])
 
@@ -440,7 +437,6 @@ export default function CompanyIntelPage() {
         {view === 'list' && <div className="cm-inner cm-list">
           <DirectoryList
             filters={filters}
-            unpinnedIds={filters.unpinned ? unpinnedIds : NO_IDS}
             unpinnedCount={Math.max(0, counts.total - counts.pinned)}
             selectedId={selectedId}
             onPick={setSelectedId}
@@ -548,9 +544,8 @@ function FilterSheet({ filters, options, count, setters, onHiring, onRaised, onC
 }
 
 // ── List view ────────────────────────────────────────────────────────────────
-function DirectoryList({ filters, unpinnedIds, unpinnedCount, selectedId, onPick, onToggleUnpinned, onTotal, anyFilter, loadingRows }: {
+function DirectoryList({ filters, unpinnedCount, selectedId, onPick, onToggleUnpinned, onTotal, anyFilter, loadingRows }: {
   filters: Filters
-  unpinnedIds: ReadonlySet<string>
   unpinnedCount: number
   selectedId: string | null
   onPick: (id: string) => void
@@ -565,9 +560,8 @@ function DirectoryList({ filters, unpinnedIds, unpinnedCount, selectedId, onPick
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState('')
 
-  // The server runs the list's filters (it can search what a company does).
-  // "Not pinned" is the one thing only the map rows know, so that filter reads
-  // every page and keeps the cards whose id has no position.
+  // The server runs every one of the list's filters, "not pinned" included
+  // (`pinned=false`), so the list pages the same way whatever is switched on.
   const query = useMemo<CompanyListFilters>(() => ({
     city: CITY,
     tier: filters.type || undefined,
@@ -578,32 +572,19 @@ function DirectoryList({ filters, unpinnedIds, unpinnedCount, selectedId, onPick
     size: filters.size || undefined,
     hasOpenRoles: filters.hiring,
     raisedWithinDays: filters.raised ? RAISED_DAYS : undefined,
-  }), [filters.type, filters.q, filters.stage, filters.sector, filters.area, filters.size, filters.hiring, filters.raised])
+    pinned: filters.unpinned ? false : undefined,
+  }), [filters.type, filters.q, filters.stage, filters.sector, filters.area, filters.size, filters.hiring, filters.raised, filters.unpinned])
   const onlyUnpinned = filters.unpinned
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    const run = async (): Promise<{ cards: CompanyCard[]; total: number }> => {
-      if (!onlyUnpinned) {
-        const result = await api.company.directory(query)
-        return { cards: result.companies, total: result.total }
-      }
-      const all: CompanyCard[] = []
-      for (let page = 0; page < 8; page += 1) {
-        const result = await api.company.directory({ ...query, limit: 200, offset: all.length })
-        all.push(...result.companies)
-        if (!result.companies.length || all.length >= result.total) break
-      }
-      const only = all.filter(c => unpinnedIds.has(c.id))
-      return { cards: only, total: only.length }
-    }
-    run()
-      .then(result => { if (!cancelled) { setCards(result.cards); setTotal(result.total); setError('') } })
+    api.company.directory(query)
+      .then(result => { if (!cancelled) { setCards(result.companies); setTotal(result.total); setError('') } })
       .catch(err => { if (!cancelled) { setCards([]); setTotal(0); setError(err instanceof Error ? err.message : 'Could not load the company directory.') } })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [query, onlyUnpinned, unpinnedIds])
+  }, [query])
 
   useEffect(() => { onTotal(loading ? null : total) }, [loading, total, onTotal])
   useEffect(() => () => onTotal(null), [onTotal])
@@ -651,7 +632,7 @@ function DirectoryList({ filters, unpinnedIds, unpinnedCount, selectedId, onPick
             </div>
           </>}
 
-    {!loading && !error && !onlyUnpinned && cards.length < total &&
+    {!loading && !error && cards.length < total &&
       <div className="ci-more">
         <button type="button" className="ci-chip" onClick={loadMore} disabled={loadingMore}>
           {loadingMore ? 'Loading…' : `Show more — ${fmt(total - cards.length)} of ${fmt(total)} still to come`}
