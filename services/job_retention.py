@@ -25,14 +25,17 @@ LLM-enriched, which cost quota to produce.
 ``NEWS_RETENTION_DAYS``, a funding item after ``FUNDING_NEWS_RETENTION_DAYS``
 (phase 2's funding radar reads them for longer). An item's age is its
 publish date, or when we stored it if the feed gave none.
+
+Outreach threads that are closed or cold and have been idle for a year go in
+the same pass (``services/outreach/retention.py``).
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import text
+from sqlalchemy import CursorResult, text
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +122,7 @@ async def prune_stale_jobs() -> dict[str, Any]:
         "deleted_by_age": 0,
         "deleted_by_pressure": 0,
         "deleted_news": 0,
+        "deleted_outreach_threads": 0,
         "size_before": 0,
         "size_after": 0,
         "ran": False,
@@ -150,12 +154,23 @@ async def prune_stale_jobs() -> dict[str, Any]:
                 ),
                 {"days": RAW_RETENTION_DAYS, "cap": MAX_DELETIONS_PER_RUN},
             )
-            summary["deleted_by_age"] = aged.rowcount or 0
+            summary["deleted_by_age"] = cast("CursorResult[Any]", aged).rowcount or 0
             await session.commit()
 
             # News ages out on its own clock, before the size check so the
             # space it frees counts.
             summary["deleted_news"] = await prune_company_news(session)
+
+            # Dead outreach threads go in the same pass. Its own step with its own
+            # rollback, like the news: a database that predates migration 017 has no
+            # such table, and that must not lose the summary of the prune around it.
+            try:
+                from services.outreach.retention import prune_outreach
+
+                summary["deleted_outreach_threads"] = await prune_outreach(session)
+            except Exception as exc:
+                logger.warning("Outreach retention step failed: %s", exc)
+                await session.rollback()
 
             # Rule 2: pressure.
             size = await database_size_bytes(session)
@@ -185,7 +200,9 @@ async def prune_stale_jobs() -> dict[str, Any]:
                         ),
                         {"cap": remaining},
                     )
-                    summary["deleted_by_pressure"] = pressured.rowcount or 0
+                    summary["deleted_by_pressure"] = (
+                        cast("CursorResult[Any]", pressured).rowcount or 0
+                    )
                     await session.commit()
 
             summary["size_after"] = await database_size_bytes(session)
@@ -196,6 +213,6 @@ async def prune_stale_jobs() -> dict[str, Any]:
         return summary
 
     total = summary["deleted_by_age"] + summary["deleted_by_pressure"]
-    if total or summary["deleted_news"]:
+    if total or summary["deleted_news"] or summary["deleted_outreach_threads"]:
         logger.info("Retention: removed %d stale job(s) — %s", total, summary)
     return summary

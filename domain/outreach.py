@@ -229,9 +229,16 @@ def apply_touch(clock: PersonClock, *, direction: str, channel: str, at: datetim
     """Record one touch against a person's clock.
 
     A reply (anything inbound, or a call or event either way) stops the clock.
-    An outbound message starts it, nudges it, or - when the clock has nothing
-    left to do - is logged without moving it: the user may have written anyway,
-    and the timeline should say so.
+    ``replied_at`` is the first reply: a later one does not move it, and one
+    logged late with an earlier date pulls it back to that date. An outbound
+    message starts the clock, nudges it, or - when the clock has nothing left to
+    do - is logged without moving it: the user may have written anyway, and the
+    timeline should say so.
+
+    Touches are logged in the order the user remembers them, not the order they
+    happened. An outbound message dated before the last one already logged is
+    kept as kind ``other`` and never moves the clock: a late entry must not
+    rewind a follow-up. A reply still replies, whenever it is dated.
     """
     if direction not in DIRECTIONS:
         raise ValueError(f"Unknown direction: {direction!r}")
@@ -240,10 +247,14 @@ def apply_touch(clock: PersonClock, *, direction: str, channel: str, at: datetim
     moment = aware(at)
 
     if direction == "in" or channel in _CONVERSATION_CHANNELS:
+        first_reply = moment if clock.replied_at is None else min(aware(clock.replied_at), moment)
         return TouchEffect(
-            replace(clock, state="replied", replied_at=moment, next_follow_up_at=None),
+            replace(clock, state="replied", replied_at=first_reply, next_follow_up_at=None),
             "reply",
         )
+
+    if clock.last_outbound_at is not None and moment < aware(clock.last_outbound_at):
+        return TouchEffect(clock, "other")
 
     if clock.state == "planned":
         return TouchEffect(_first_message(moment), "first")

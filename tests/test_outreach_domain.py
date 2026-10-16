@@ -219,6 +219,49 @@ def test_out_on_a_dropped_person_changes_nothing() -> None:
     assert effect.clock == dropped
 
 
+def test_a_later_reply_keeps_the_first_replied_at() -> None:
+    replied = apply_touch(waiting_clock(), direction="in", channel="linkedin", at=T + days(3)).clock
+    again = apply_touch(replied, direction="in", channel="email", at=T + days(6))
+    assert again.kind == "reply"
+    assert again.clock.state == "replied"
+    assert again.clock.replied_at == T + days(3)
+    call = apply_touch(replied, direction="out", channel="call", at=T + days(7))
+    assert call.kind == "reply"
+    assert call.clock.replied_at == T + days(3)
+
+
+def test_a_reply_logged_late_with_an_earlier_date_is_the_first_reply() -> None:
+    replied = apply_touch(waiting_clock(), direction="in", channel="linkedin", at=T + days(6)).clock
+    earlier = apply_touch(replied, direction="in", channel="email", at=T + days(3))
+    assert earlier.clock.replied_at == T + days(3)
+
+
+def test_out_dated_before_the_last_one_is_logged_without_moving_the_clock() -> None:
+    clock = waiting_clock()
+    effect = apply_touch(clock, direction="out", channel="email", at=T - days(1))
+    assert effect.kind == "other"
+    assert effect.clock == clock
+    # The same instant is not "before": it is an ordinary follow-up.
+    assert apply_touch(clock, direction="out", channel="email", at=T).kind == "follow_up"
+
+
+def test_a_backdated_out_does_not_pull_a_follow_up_clock_back() -> None:
+    clock = apply_touch(waiting_clock(), direction="out", channel="email", at=T + days(5)).clock
+    effect = apply_touch(clock, direction="out", channel="email", at=T + days(2))
+    assert effect.kind == "other"
+    assert effect.clock == clock
+    assert effect.clock.next_follow_up_at == T + days(12)
+
+
+def test_a_backdated_reply_still_replies() -> None:
+    clock = apply_touch(waiting_clock(), direction="out", channel="email", at=T + days(5)).clock
+    effect = apply_touch(clock, direction="in", channel="email", at=T + days(2))
+    assert effect.kind == "reply"
+    assert effect.clock.state == "replied"
+    assert effect.clock.replied_at == T + days(2)
+    assert effect.clock.next_follow_up_at is None
+
+
 def test_apply_touch_reads_a_naive_time_as_utc() -> None:
     effect = apply_touch(
         PersonClock.new(), direction="out", channel="linkedin", at=datetime(2026, 10, 10, 6, 0)
