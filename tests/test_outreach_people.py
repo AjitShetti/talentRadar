@@ -579,6 +579,52 @@ async def test_typed_name_prefers_the_callers_own_contact_over_a_public_one(
     assert await _count(outreach_db, CompanyContact) == 2
 
 
+async def test_typed_name_matching_another_users_private_contact_makes_a_new_one(
+    outreach_db: Factory,
+) -> None:
+    async with outreach_db() as session:
+        user = await make_user(session)
+        other = await make_user(session)
+        company = await make_company(session, "Tessel AI")
+        theirs = await make_contact(
+            session,
+            company,
+            "referral",
+            "Meera Pillai",
+            user_id=other.id,
+            source_url=None,
+            source_kind="user",
+            title="Staff Engineer",
+        )
+    thread_id = await _open(user, company)
+
+    detail = await add_person(
+        str(user.id), thread_id, contact_id=None, name="meera pillai", email="meera@example.com"
+    )
+
+    [person] = detail["people"]
+    async with outreach_db() as session:
+        rows = (await session.execute(select(CompanyContact))).scalars().all()
+    assert len(rows) == 2
+    their_row = next(c for c in rows if c.id == theirs.id)
+    # Their private row is exactly as it was, and not the one linked.
+    assert (their_row.user_id, their_row.email, their_row.linkedin_url, their_row.title) == (
+        other.id,
+        None,
+        None,
+        "Staff Engineer",
+    )
+    assert person["contact_id"] != str(theirs.id)
+    mine = next(c for c in rows if c.id != theirs.id)
+    assert str(mine.id) == person["contact_id"]
+    assert (mine.user_id, mine.kind, mine.name, mine.email) == (
+        user.id,
+        "referral",
+        "meera pillai",
+        "meera@example.com",
+    )
+
+
 async def test_a_contact_id_and_typed_fields_are_not_taken_together(outreach_db: Factory) -> None:
     async with outreach_db() as session:
         user = await make_user(session)
@@ -958,7 +1004,9 @@ def test_first_messages_count_people_not_touches() -> None:
     thread.touches = [touch(asha, NOW - timedelta(days=1)), touch(asha, NOW - timedelta(days=3))]
     assert first_messages_last_7_days(thread, NOW) == 1
 
-    # A different person is another; a thread-level first touch (no person) counts once.
+    # A different person is another. A first touch with no person (a thread-level
+    # one, or one whose person was removed) cannot be matched to anyone, so each
+    # counts: the note errs toward showing.
     thread.touches = [
         touch(asha, NOW - timedelta(days=1)),
         touch(asha, NOW - timedelta(days=2)),
@@ -966,11 +1014,50 @@ def test_first_messages_count_people_not_touches() -> None:
         touch(None, NOW - timedelta(days=1), channel="github"),
         touch(None, NOW - timedelta(days=4), channel="github"),
     ]
-    assert first_messages_last_7_days(thread, NOW) == 3
+    assert first_messages_last_7_days(thread, NOW) == 4
 
     # Only touches inside the window say who was written to.
     thread.touches = [touch(asha, NOW - timedelta(days=1)), touch(dev, NOW - timedelta(days=9))]
     assert first_messages_last_7_days(thread, NOW) == 1
+
+
+async def test_pacing_survives_removing_the_people_written_to(outreach_db: Factory) -> None:
+    """Removing a person detaches their touches (``person_id`` NULL); the week's
+    count must not shrink because of it."""
+    async with outreach_db() as session:
+        user = await make_user(session)
+        company = await make_company(session, "Tessel AI")
+    thread_id = await _open(user, company)
+    asha = await _waiting(outreach_db, thread_id, "Asha Rao")
+    dev = await _waiting(outreach_db, thread_id, "Dev Menon")
+    await _store_touch(outreach_db, thread_id, user.id, asha.id, NOW - timedelta(days=3))
+    await _store_touch(outreach_db, thread_id, user.id, dev.id, NOW - timedelta(days=2))
+
+    await remove_person(str(user.id), thread_id, str(asha.id))
+    detail = await remove_person(str(user.id), thread_id, str(dev.id))
+
+    assert [t["person_id"] for t in detail["touches"]] == [None, None]
+    assert detail["pacing_note"] == pacing_note("Tessel AI", 2)
+
+
+async def test_pacing_counts_a_removed_person_and_a_thread_level_touch(
+    outreach_db: Factory,
+) -> None:
+    async with outreach_db() as session:
+        user = await make_user(session)
+        company = await make_company(session, "Tessel AI")
+    thread_id = await _open(user, company)
+    asha = await _waiting(outreach_db, thread_id, "Asha Rao")
+    await _store_touch(outreach_db, thread_id, user.id, asha.id, NOW - timedelta(days=3))
+    quiet = await remove_person(str(user.id), thread_id, str(asha.id))
+    assert quiet["pacing_note"] is None
+
+    await _store_touch(
+        outreach_db, thread_id, user.id, None, NOW - timedelta(days=1), channel="github"
+    )
+    detail = await get_thread(str(user.id), thread_id, now=NOW)
+
+    assert detail["pacing_note"] == pacing_note("Tessel AI", 2)
 
 
 async def test_remove_person_keeps_the_timeline(outreach_db: Factory) -> None:

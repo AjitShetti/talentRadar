@@ -256,9 +256,13 @@ def first_messages_last_7_days(thread: OutreachThread, now: datetime) -> int:
     seven days.
 
     The pacing note says "N people", so this counts distinct people, not touches: two
-    first messages to one person (a fresh start after they went cold) are one. A
-    thread-level first touch (no person, such as a GitHub comment) counts once, and
-    so do the touches of people since removed, whose link the database cleared.
+    first messages to one person (a fresh start after they went cold) are one.
+
+    A first touch with no person cannot be told apart from another: it is either
+    thread-level (a GitHub comment) or belongs to someone since removed, whose link the
+    database cleared (``ON DELETE SET NULL``). Each such touch counts as one, so the
+    count is the distinct non-null ``person_id``s plus one per person-less first touch.
+    That errs toward showing the note, and removing a person never hides it.
 
     The thread must have its touches loaded. A follow-up, a reply or an unrecorded
     ``other`` is not a first message. The window is rolling and its start is
@@ -266,15 +270,15 @@ def first_messages_last_7_days(thread: OutreachThread, now: datetime) -> int:
     """
     moment = aware(now)
     since = moment - _PACING_WINDOW
-    return len(
-        {
-            touch.person_id
-            for touch in thread.touches
-            if touch.kind == "first"
-            and touch.direction == "out"
-            and since <= aware(touch.happened_at) <= moment
-        }
-    )
+    firsts = [
+        touch
+        for touch in thread.touches
+        if touch.kind == "first"
+        and touch.direction == "out"
+        and since <= aware(touch.happened_at) <= moment
+    ]
+    people = {touch.person_id for touch in firsts if touch.person_id is not None}
+    return len(people) + sum(1 for touch in firsts if touch.person_id is None)
 
 
 # --- what the user types -----------------------------------------------------------
