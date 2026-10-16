@@ -6,7 +6,8 @@ Record real source responses so the contract tests can replay them offline.
     python scripts/capture_fixtures.py                  # every source
     python scripts/capture_fixtures.py --source foundit # just one
     python scripts/capture_fixtures.py --company-map    # company-map importers
-    python scripts/capture_fixtures.py --events         # Events: the Luma iCal feeds
+    python scripts/capture_fixtures.py --events         # Events: Luma iCal feeds, GDG pages
+    python scripts/capture_fixtures.py --events --events-source gdg   # just the GDG pages
 
 Rather than guessing each scraper's request URLs, this wraps
 ``ScraplingManager.fetch_html_or_json`` and records every call the scraper
@@ -33,7 +34,15 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from ingestion.scrapling_manager import ScraplingManager
 from ingestion.sources.registry import LiveSource, live_source_registry
-from scripts.fixture_privacy import pseudonymise_ics
+from scripts.fixture_privacy import (
+    bare_json_page,
+    gdg_chapter_people,
+    gdg_event_people,
+    pseudonymise_ics,
+    reduce_gdg_chapter,
+    reduce_gdg_event,
+    scrub_gdg_slug,
+)
 
 if TYPE_CHECKING:
     import httpx
@@ -298,6 +307,137 @@ async def capture_events_luma(redact: Sequence[str] = ()) -> int:
     return 0 if written == len(plan) else 1
 
 
+_GDG_EVENT_PAGES = 2  # event pages recorded: upcoming events first, then the newest past ones
+
+
+def _write_gz(path: Path, data: bytes) -> None:
+    """Gzip with no timestamp in the header, so recording the same page twice gives the same file."""
+    path.write_bytes(gzip.compress(data, compresslevel=9, mtime=0))
+
+
+async def capture_events_gdg(
+    redact: Sequence[str] = (), *, client: httpx.AsyncClient | None = None
+) -> int:
+    """
+    Record the GDG pages the tests replay: each chapter page in
+    ``data/events/sources.json`` and up to two event pages. Every request goes
+    through ``gdg.fetch_page`` (so ``assert_allowed`` runs first and ``/api/`` and
+    ``/gql/`` are never touched), at least ``CRAWL_DELAY_S`` after the one before.
+
+    The event pages are the chapters' upcoming events, in chapter order, and then
+    (when there are fewer than two) their past events, newest first as each page
+    lists them. Each page is cut down to the one JSON block its parser reads and
+    every person in it is pseudonymised (see ``reduce_gdg_chapter`` and
+    ``reduce_gdg_event``), then written gzipped. A page that does not hold the
+    expected JSON, or whose reduction no longer parses, is reported and not
+    written: a fixture that proves nothing is never made up. Returns a process
+    exit code: 0 when every planned file was written.
+
+    Review the diff for people the rules cannot see, such as a speaker named in
+    a description, and re-run with ``--redact "Full Name"`` for each. ``client``
+    is for tests; a run on its own makes its own.
+    """
+    import httpx
+
+    from services.events import gdg
+
+    chapters = json.loads(EVENT_SOURCES.read_text(encoding="utf-8"))["gdg"]["chapters"]
+    own_client = client is None
+    http = httpx.AsyncClient() if client is None else client
+    requests = 0
+    written = 0
+
+    async def fetch(url: str) -> bytes | None:
+        nonlocal requests
+        if requests:
+            await asyncio.sleep(gdg.CRAWL_DELAY_S)
+        requests += 1
+        try:
+            return await gdg.fetch_page(http, url)
+        except (httpx.HTTPError, ValueError) as exc:
+            print(f"  gdg {url[len(gdg.BASE) :]} FAILED: {type(exc).__name__}: {exc}")
+            return None
+
+    # (real slug, chapter name, people already known): the real slug is what is requested.
+    upcoming: list[tuple[str, str, list[str]]] = []
+    past: list[tuple[str, str, list[str]]] = []
+    try:
+        EVENTS_DIR.mkdir(parents=True, exist_ok=True)
+        for entry in chapters:
+            slug, name = entry["slug"], entry["name"]
+            data = await fetch(gdg.chapter_url(slug))
+            if data is None:
+                continue
+            blob = await asyncio.to_thread(gdg.chapter_blob, data)
+            if blob is None:
+                print(f"  gdg chapter {slug} holds no page data - not writing a fixture")
+                continue
+            listings = await asyncio.to_thread(gdg.parse_chapter, data)
+            try:
+                reduced = reduce_gdg_chapter(blob, redact=redact)
+            except ValueError as exc:
+                print(
+                    f"  gdg chapter {slug} has no usable page data ({exc}) - not writing a fixture"
+                )
+                continue
+            page = bare_json_page(
+                reduced, script_type="application/json", script_id="__NEXT_DATA__"
+            )
+            _write_gz(EVENTS_DIR / f"gdg_chapter_{slug}.html.gz", page)
+            people = [*gdg_chapter_people(blob), *redact]
+            upcoming += [(item.slug, name, people) for item in listings]
+            past += [(past_slug, name, people) for past_slug in gdg.past_event_slugs(blob)]
+            print(
+                f"  gdg chapter {slug:22} {len(listings):>2} upcoming -> gdg_chapter_{slug}.html.gz"
+            )
+            written += 1
+
+        chosen: dict[str, tuple[str, list[str]]] = {}
+        for slug, name, people in [*upcoming, *past]:
+            if len(chosen) < _GDG_EVENT_PAGES:
+                chosen.setdefault(slug, (name, people))
+        for slug, (name, people) in chosen.items():
+            data = await fetch(gdg.event_page_url(slug))
+            if data is None:
+                continue
+            block = await asyncio.to_thread(gdg.event_json_ld, data)
+            try:
+                reduced = reduce_gdg_event(block, redact=people)
+            except ValueError as exc:
+                print(f"  gdg event {slug} has no Event JSON-LD ({exc}) - not writing a fixture")
+                continue
+            names = [*people, *gdg_event_people(block or {})]
+            kept_slug = scrub_gdg_slug(slug, names)
+            page = bare_json_page(reduced, script_type="application/ld+json")
+            facts = await asyncio.to_thread(
+                gdg.parse_event_page, page, slug=kept_slug, chapter=name
+            )
+            if facts is None:
+                print(f"  gdg event {slug} no longer parses once reduced - not writing a fixture")
+                continue
+            filename = f"gdg_event_{kept_slug}.html.gz"
+            _write_gz(EVENTS_DIR / filename, page)
+            print(f"  gdg event {facts.starts_at:%Y-%m-%d} {facts.title[:40]!r} -> {filename}")
+            written += 1
+    finally:
+        if own_client:
+            await http.aclose()
+    planned = len(chapters) + _GDG_EVENT_PAGES
+    print(f"\nWrote {written} of {planned} GDG fixture(s) in {requests} request(s).")
+    return 0 if written == planned else 1
+
+
+async def capture_events(redact: Sequence[str] = (), sources: Sequence[str] = ()) -> int:
+    """Record the Events fixtures of ``sources`` ("luma", "gdg"; none given means all)."""
+    wanted = set(sources) or {"luma", "gdg"}
+    codes = []
+    if "luma" in wanted:
+        codes.append(await capture_events_luma(redact))
+    if "gdg" in wanted:
+        codes.append(await capture_events_gdg(redact))
+    return 0 if all(code == 0 for code in codes) else 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Record live source responses as test fixtures.")
     parser.add_argument("--source", action="append", help="Capture only this source (repeatable)")
@@ -305,7 +445,16 @@ def main() -> int:
         "--company-map", action="store_true", help="Record the company-map importer fixtures"
     )
     parser.add_argument(
-        "--events", action="store_true", help="Record the Events fixtures (Luma iCal feeds)"
+        "--events",
+        action="store_true",
+        help="Record the Events fixtures (Luma iCal feeds and GDG pages)",
+    )
+    parser.add_argument(
+        "--events-source",
+        action="append",
+        default=[],
+        choices=("luma", "gdg"),
+        help="With --events: record only this source (repeatable)",
     )
     parser.add_argument(
         "--redact",
@@ -318,7 +467,7 @@ def main() -> int:
     if args.company_map:
         return asyncio.run(capture_company_map())
     if args.events:
-        return asyncio.run(capture_events_luma(args.redact))
+        return asyncio.run(capture_events(args.redact, args.events_source))
     return asyncio.run(main_async(args))
 
 

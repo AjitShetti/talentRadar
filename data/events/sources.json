@@ -25,5 +25,19 @@
         "checked": "2026-10-16"
       }
     ]
+  },
+  "gdg": {
+    "chapters": [
+      {
+        "slug": "gdg-bangalore",
+        "name": "GDG Bangalore",
+        "checked": "2026-10-16"
+      },
+      {
+        "slug": "gdg-cloud-bengaluru",
+        "name": "GDG Cloud Bengaluru",
+        "checked": "2026-10-16"
+      }
+    ]
   }
 }
