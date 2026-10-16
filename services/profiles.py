@@ -116,6 +116,21 @@ async def get_or_create_profile(*, user_id: str) -> dict[str, Any]:
         await session.close()
 
 
+async def _forget_suggestions(user_id: str) -> None:
+    """Drop the user's cached outreach suggestions: their roles, goals or skills changed.
+
+    Imported here, not at the top: ``services.outreach`` reads this package. The save has
+    already been committed, and a cache that cannot be cleared must not undo it, so
+    whatever goes wrong is logged and swallowed.
+    """
+    try:
+        from services.outreach.suggest import invalidate
+
+        await invalidate(user_id)
+    except Exception:
+        logger.warning("Could not clear cached outreach suggestions", exc_info=True)
+
+
 async def upsert_profile(*, user_id: str, data: dict[str, Any]) -> dict[str, Any]:
     """
     Upsert onboarding fields and skill rows for a user. Returns the
@@ -201,6 +216,7 @@ async def upsert_profile(*, user_id: str, data: dict[str, Any]) -> dict[str, Any
                 )
 
         await session.commit()
+        await _forget_suggestions(user_id)
         result = await get_profile(user_id=user_id)
         return result or {}
     finally:

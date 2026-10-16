@@ -15,9 +15,10 @@ people and skills here are fictional.
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -27,6 +28,7 @@ from sqlalchemy import event, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import services.agent_memory as agent_memory
+import services.profiles as profiles
 from services.cache_backend import CacheBackend
 from services.outreach import suggest
 from services.outreach.errors import NotFound
@@ -44,8 +46,10 @@ from services.outreach.suggest import (
 from services.outreach.threads import create_thread, delete_thread
 from storage.models import (
     AgentMemory,
+    Company,
     CompanyNews,
     CompanyProfile,
+    Job,
     OssIssueSnapshot,
     OutreachThread,
     Profile,
@@ -340,6 +344,49 @@ async def test_profile_complete_flag(outreach_db: Factory) -> None:
     # A target role without skills is not enough to rank by skills.
     assert (await suggestions(str(roles_only.id), now=NOW))["profile_complete"] is False
     assert (await suggestions(str(complete.id), now=NOW))["profile_complete"] is True
+
+
+@pytest.mark.asyncio
+async def test_saving_the_profile_refreshes_the_suggestions(
+    outreach_db: Factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(profiles, "AsyncSessionLocal", outreach_db)
+    async with outreach_db() as s:
+        user = await make_user(s)
+        await make_funded(s, "Fernhill Labs", 12)
+        hiring = await make_company(s, "Quillstone")
+        await make_job(s, hiring, "Senior Backend Engineer", city="Bengaluru")
+
+    before = await suggestions(str(user.id), now=NOW)
+    assert names(before) == ["Fernhill Labs"]
+    assert before["profile_complete"] is False
+    assert await CacheBackend.get(cache_key(str(user.id))) is not None
+
+    await profiles.upsert_profile(
+        user_id=str(user.id), data={"target_roles": [BACKEND], "skills": ["Python"]}
+    )
+
+    after = await suggestions(str(user.id), now=NOW)
+    assert names(after) == ["Quillstone", "Fernhill Labs"]
+    assert after["profile_complete"] is True
+
+
+@pytest.mark.asyncio
+async def test_a_failing_cache_never_fails_a_profile_save(
+    outreach_db: Factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(profiles, "AsyncSessionLocal", outreach_db)
+    async with outreach_db() as s:
+        user = await make_user(s)
+    data = {"target_roles": [BACKEND], "full_name": "Test User"}
+
+    monkeypatch.setattr(CacheBackend, "delete", AsyncMock(side_effect=RuntimeError("redis down")))
+    saved = await profiles.upsert_profile(user_id=str(user.id), data=data)
+    assert saved["target_roles"] == [BACKEND]
+
+    monkeypatch.setattr(suggest, "invalidate", AsyncMock(side_effect=RuntimeError("boom")))
+    saved = await profiles.upsert_profile(user_id=str(user.id), data={"career_goals": "fintech"})
+    assert saved["career_goals"] == "fintech"
 
 
 # --- people ----------------------------------------------------------------------
@@ -673,11 +720,36 @@ async def test_other_dismissals_do_not_hide_suggestions(outreach_db: Factory) ->
     assert names(await suggestions(str(user.id), now=NOW)) == ["Fernhill Labs"]
 
 
+@pytest.mark.asyncio
+async def test_a_role_name_keeps_printable_characters_only(outreach_db: Factory) -> None:
+    # A zero-width space, a line break, a bell and a right-to-left override among the words.
+    messy = "Backend" + chr(0x200B) + chr(10) + "  Engineer" + chr(7) + chr(0x202E)
+    async with outreach_db() as s:
+        user = await make_user(s)
+        s.add(Profile(user_id=user.id, target_roles=[messy]))
+        await s.commit()
+        hiring = await make_company(s, "Quillstone")
+        await make_job(s, hiring, "Senior Backend Engineer", city="Bengaluru")
+
+    only = (await suggestions(str(user.id), now=NOW))["suggestions"][0]
+
+    assert only["reasons"] == ["Hiring Backend Engineer · 1 open"]
+
+
+def test_as_utc_leaves_an_aware_time_alone() -> None:
+    ist = timezone(timedelta(hours=5, minutes=30))
+    aware_time = datetime(2026, 10, 15, 11, 30, tzinfo=ist)
+
+    assert agent_memory._as_utc(aware_time) is aware_time
+    # And reads a naive one, which is what SQLite returns, as UTC.
+    assert agent_memory._as_utc(datetime(2026, 10, 15, 6, 0)) == NOW
+
+
 # --- cost -------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_candidates_are_bounded_and_funded_first(
+async def test_candidates_are_bounded_hiring_first_then_funded(
     outreach_db: Factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(suggest, "MAX_CANDIDATES", 3)
@@ -686,11 +758,78 @@ async def test_candidates_are_bounded_and_funded_first(
         await make_profile(s, user)
         for n, days in enumerate((20, 5, 10)):
             await make_funded(s, f"Funded {n}", days)
-        # Hiring for the target role, but raised nothing: it sorts after every raise.
+        # Hiring for the target role in Bengaluru, but raised nothing: it still makes the cut,
+        # and the raise nearest the cap (20 days ago) is what falls out.
         unfunded = await make_company(s, "Unfunded Co")
         await make_job(s, unfunded, BACKEND, city="Bengaluru")
 
-    assert names(await suggestions(str(user.id), now=NOW)) == ["Funded 1", "Funded 2", "Funded 0"]
+    assert names(await suggestions(str(user.id), now=NOW)) == [
+        "Unfunded Co",
+        "Funded 1",
+        "Funded 2",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_the_only_hiring_company_is_inside_the_candidate_cap(outreach_db: Factory) -> None:
+    """401 companies qualify; the one that raised nothing but is hiring is not the one cut."""
+    async with outreach_db() as s:
+        user = await make_user(s)
+        await make_profile(s, user)
+        s.add_all(
+            Company(
+                id=uuid.uuid4(),
+                name=f"Funded {n:03d}",
+                is_tech=True,
+                summary="One line.",
+                office_cities=["Bengaluru"],
+                last_funding_at=days_ago(1 + n % 25),
+            )
+            for n in range(MAX_CANDIDATES)
+        )
+        hiring = Company(
+            id=uuid.uuid4(),
+            name="Hiring Co",
+            is_tech=True,
+            summary="One line.",
+            office_cities=["Bengaluru"],
+        )
+        s.add(hiring)
+        await s.flush()
+        s.add(Job(company_id=hiring.id, source="greenhouse", title=BACKEND, city="Bengaluru"))
+        await s.commit()
+
+    result = await suggestions(str(user.id), now=NOW)
+
+    assert result["suggestions"][0]["name"] == "Hiring Co"
+    assert result["suggestions"][0]["score"] == 35
+    assert len(result["suggestions"]) == 10
+
+
+def test_threads_are_excluded_with_not_exists_not_a_list_of_ids() -> None:
+    stmt = suggest._candidates_statement(uuid.uuid4(), NOW, frozenset({"fintech"}))
+
+    sql = " ".join(str(stmt).upper().split())
+
+    assert "NOT IN" not in sql
+    assert re.search(r"NOT \(?EXISTS \(SELECT [^)]*FROM OUTREACH_THREADS", sql)
+
+
+@pytest.mark.asyncio
+async def test_dismissing_refills_the_cached_list(
+    outreach_db: Factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(suggest, "CACHED_TOP", 2)
+    async with outreach_db() as s:
+        user = await make_user(s)
+        top = await make_funded(s, "Co 0", 2)
+        await make_funded(s, "Co 1", 10)
+        await make_funded(s, "Co 2", 40)
+
+    assert names(await suggestions(str(user.id), now=NOW)) == ["Co 0", "Co 1"]
+    await dismiss_suggestion(str(user.id), str(top.id))
+
+    assert names(await suggestions(str(user.id), now=NOW)) == ["Co 1", "Co 2"]
 
 
 @pytest.mark.asyncio

@@ -26,7 +26,11 @@ Rules this module keeps:
   without anything clearing it, so both are read on every call and removed from
   what the cache returns. ``invalidate`` is what lets the list refill: a company
   the user just started (or stopped) a thread with changes which twenty-five make
-  the cut.
+  the cut. A profile save clears it too (``services/profiles.py``), since the
+  roles, goals and skills decide the ranking.
+* **Companies that are hiring are weighed first.** The candidate cap is applied
+  after ordering the companies with an active Bengaluru role ahead of the rest, so
+  a company hiring for you that never raised is not what falls outside the 400.
 * **Only people the user may be told about.** A suggested person is a curated
   founder, leader or engineer, or one of the user's own saved contacts. Another
   user's private contact is never loaded, and a ``careers_page`` row is a link, not
@@ -43,7 +47,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Row, case, exists, func, or_, select
+from sqlalchemy import ColumnElement, Row, Select, case, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import services.agent_memory as agent_memory
@@ -165,18 +169,20 @@ async def invalidate(user_id: str) -> None:
 # --- what the user has already dealt with --------------------------------------------
 
 
-async def _excluded(uid: uuid.UUID) -> set[str]:
-    """Company ids to leave out for this user: any company they have a thread with (open
-    or closed) and any whose suggestion they dismissed and whose snooze has not ended."""
+async def _threaded(uid: uuid.UUID) -> set[str]:
+    """Ids of the companies the user has a thread with, open or closed."""
     async with AsyncSessionLocal() as session:
-        threaded = (
-            await session.execute(
-                select(OutreachThread.company_id).where(
-                    OutreachThread.user_id == uid, OutreachThread.company_id.is_not(None)
-                )
+        rows = await session.execute(
+            select(OutreachThread.company_id).where(
+                OutreachThread.user_id == uid, OutreachThread.company_id.is_not(None)
             )
-        ).scalars()
-        ids = {str(company_id) for company_id in threaded}
+        )
+        return {str(company_id) for company_id in rows.scalars()}
+
+
+async def _dismissed(uid: uuid.UUID) -> set[str]:
+    """Ids of the companies whose suggestion the user dismissed and whose snooze has not ended."""
+    ids: set[str] = set()
     for card in await agent_memory.active_dismissals(user_id=str(uid)):
         if card.startswith(_CARD_PREFIX) and (cid := parse_uuid(card[len(_CARD_PREFIX) :])):
             ids.add(str(cid))
@@ -218,19 +224,45 @@ async def _user_signals(
     return roles, user, bool(roles) and bool(skill_names)
 
 
-async def _candidates(
-    session: AsyncSession, now: datetime, sectors: frozenset[str], excluded: set[uuid.UUID]
-) -> list[Row[Any]]:
-    """Listed Bengaluru companies with at least one signal, most recently funded first.
+def _posting_in_city() -> ColumnElement[bool]:
+    """A posting located in Bengaluru, by its city or its raw location text, in any of
+    the city's spellings: the match ``hiring_for_you`` makes."""
+    return or_(
+        *(
+            clause
+            for term in _city_terms(AREA_CITY)
+            for clause in (Job.city.ilike(f"%{term}%"), Job.location_raw.ilike(f"%{term}%"))
+        )
+    )
 
-    A signal is a raise in the last ``FUNDING_SIGNAL_DAYS``, any active posting, an open
-    good-first-issue count, or the sector of one of the user's goals. Companies the
-    user already has a thread with or dismissed are left out here as well as on the
-    way out, so the ranked list the cache keeps is all usable.
+
+def _role_name(role: str) -> str:
+    """A target role as a reason line shows it: printable characters only, whitespace
+    flattened to single spaces, cut to ``ROLE_NAME_MAX``."""
+    printable = "".join(ch for ch in role if ch.isprintable() or ch.isspace())
+    return " ".join(printable.split())[:ROLE_NAME_MAX]
+
+
+def _candidates_statement(uid: uuid.UUID, now: datetime, sectors: frozenset[str]) -> Select[Any]:
+    """The query behind :func:`_candidates`, apart from running it.
+
+    Listed Bengaluru companies with at least one signal: a raise in the last
+    ``FUNDING_SIGNAL_DAYS``, any active posting, an open good-first-issue count, or the
+    sector of one of the user's goals. Companies the user already has a thread with are
+    left out (``NOT EXISTS`` on their own threads, so the statement does not grow with
+    them). Those with an active Bengaluru posting come first, then the most recently
+    funded, so the cap never cuts a company that is hiring for the sake of one that
+    merely raised.
     """
     has_posting = exists().where(Job.company_id == Company.id, Job.status == JobStatus.ACTIVE)
+    hiring_here = exists().where(
+        Job.company_id == Company.id, Job.status == JobStatus.ACTIVE, _posting_in_city()
+    )
     has_issues = exists().where(
         OssIssueSnapshot.company_id == Company.id, OssIssueSnapshot.total_count > 0
+    )
+    has_thread = exists().where(
+        OutreachThread.user_id == uid, OutreachThread.company_id == Company.id
     )
     signals = [
         Company.last_funding_at >= now - timedelta(days=FUNDING_SIGNAL_DAYS),
@@ -239,7 +271,7 @@ async def _candidates(
     ]
     if sectors:
         signals.append(Company.sector.in_(sorted(sectors)))
-    stmt = (
+    return (
         select(
             Company.id,
             Company.name,
@@ -252,13 +284,21 @@ async def _candidates(
             Company.employee_count_range,
             Company.last_funding_at,
         )
-        .where(listed_clause(AREA_CITY), or_(*signals))
-        .order_by(Company.last_funding_at.desc().nulls_last(), Company.name, Company.id)
+        .where(listed_clause(AREA_CITY), or_(*signals), ~has_thread)
+        .order_by(
+            case((hiring_here, 0), else_=1),
+            Company.last_funding_at.desc().nulls_last(),
+            Company.name,
+            Company.id,
+        )
         .limit(MAX_CANDIDATES)
     )
-    if excluded:
-        stmt = stmt.where(Company.id.not_in(excluded))
-    return list((await session.execute(stmt)).all())
+
+
+async def _candidates(
+    session: AsyncSession, uid: uuid.UUID, now: datetime, sectors: frozenset[str]
+) -> list[Row[Any]]:
+    return list((await session.execute(_candidates_statement(uid, now, sectors))).all())
 
 
 async def _role_counts(
@@ -270,24 +310,17 @@ async def _role_counts(
     Titles are matched the way search and ``hiring_for_you`` match them.
     """
     matchers = [
-        (" ".join(role.split())[:ROLE_NAME_MAX], clause)
+        (_role_name(role), clause)
         for role in roles[:MAX_TARGET_ROLES]
         if (clause := _title_matches(role)) is not None
     ]
-    in_city = or_(
-        *(
-            clause
-            for term in _city_terms(AREA_CITY)
-            for clause in (Job.city.ilike(f"%{term}%"), Job.location_raw.ilike(f"%{term}%"))
-        )
-    )
     columns: list[Any] = [Job.company_id, func.count(Job.id)]
     if matchers:
         columns.append(func.sum(case((or_(*(clause for _, clause in matchers)), 1), else_=0)))
         columns.extend(func.sum(case((clause, 1), else_=0)) for _, clause in matchers)
     stmt = (
         select(*columns)
-        .where(Job.company_id.in_(ids), Job.status == JobStatus.ACTIVE, in_city)
+        .where(Job.company_id.in_(ids), Job.status == JobStatus.ACTIVE, _posting_in_city())
         .group_by(Job.company_id)
     )
     counts: dict[uuid.UUID, tuple[int, int, str | None]] = {}
@@ -435,18 +468,23 @@ def _top_person(company: Row[Any], contacts: list[CompanyContact]) -> dict[str, 
     return {"name": ranked[0].name, "title": ranked[0].title, "kind": ranked[0].kind}
 
 
-async def _compute(uid: uuid.UUID, now: datetime, excluded: set[str]) -> dict[str, Any]:
+async def _compute(uid: uuid.UUID, now: datetime, dismissed: set[str]) -> dict[str, Any]:
     """Rank the candidates and return what the cache keeps.
 
-    Statements sent, for any number of companies, besides the two that read threads and
-    dismissals: the user's roles, goals and skills (3),
-    the candidates (1), and one each for role counts, stacks (2 with skills to match),
-    issue counts, funding rounds (only if any company raised) and people.
+    Companies with a thread are left out by the candidate query itself; ``dismissed``
+    (read once by the caller) is removed from what it returns. Statements sent, for any
+    number of companies, besides the two that read threads and dismissals: the user's
+    roles, goals and skills (3), the candidates (1), and one each for role counts,
+    stacks (2 with skills to match), issue counts, funding rounds (only if any company
+    raised) and people.
     """
-    skip = {cid for cid in (parse_uuid(raw) for raw in excluded) if cid is not None}
     async with AsyncSessionLocal() as session:
         roles, user, complete = await _user_signals(session, uid)
-        rows = await _candidates(session, now, user.sectors, skip)
+        rows = [
+            row
+            for row in await _candidates(session, uid, now, user.sectors)
+            if str(row.id) not in dismissed
+        ]
         if not rows:
             return {"profile_complete": complete, "suggestions": []}
         ids = [row.id for row in rows]
@@ -513,10 +551,11 @@ async def suggestions(
         return {"suggestions": [], "profile_complete": False}
     moment = datetime.now(UTC) if now is None else aware(now)
 
-    excluded = await _excluded(uid)
+    dismissed = await _dismissed(uid)
+    excluded = dismissed | await _threaded(uid)
     entry = await _read_cache(user_id)
     if entry is None:
-        entry = await _compute(uid, moment, excluded)
+        entry = await _compute(uid, moment, dismissed)
         await _write_cache(user_id, entry)
 
     kept = [row for row in entry["suggestions"] if row["company_id"] not in excluded]
