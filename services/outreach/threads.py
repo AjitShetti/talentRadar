@@ -135,6 +135,21 @@ def _like_escape(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+async def _forget_suggestions(user_id: str) -> None:
+    """Drop the user's cached suggestions: their set of threads has changed.
+
+    ``suggest`` reads threads, so it is imported here and not at the top (a cycle).
+    The write that called this has already been committed, and a cache that cannot be
+    cleared must not undo it: whatever goes wrong is logged and swallowed.
+    """
+    try:
+        from services.outreach.suggest import invalidate
+
+        await invalidate(user_id)
+    except Exception:
+        logger.warning("Could not clear cached outreach suggestions", exc_info=True)
+
+
 # --- the clock, read from a stored person -----------------------------------------
 
 
@@ -514,6 +529,8 @@ async def create_thread(
                 # that is already attached is left alone.
                 await _set_job(session, thread, job_id, link_application=True)
         await session.commit()
+        if created:
+            await _forget_suggestions(user_id)
 
         logger.info("outreach thread %s %s", thread_uuid, "created" if created else "reused")
         return await _summary_of(session, uid, thread_uuid, now), created
@@ -616,6 +633,7 @@ async def delete_thread(user_id: str, thread_id: str) -> None:
         thread_uuid = thread.id
         await session.delete(thread)
         await session.commit()
+        await _forget_suggestions(user_id)
         logger.info("outreach thread %s deleted", thread_uuid)
 
 
