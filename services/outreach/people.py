@@ -252,7 +252,13 @@ def channels_for(
 
 
 def first_messages_last_7_days(thread: OutreachThread, now: datetime) -> int:
-    """First messages the user sent in this thread in the last seven days.
+    """How many people the user sent a first message to in this thread in the last
+    seven days.
+
+    The pacing note says "N people", so this counts distinct people, not touches: two
+    first messages to one person (a fresh start after they went cold) are one. A
+    thread-level first touch (no person, such as a GitHub comment) counts once, and
+    so do the touches of people since removed, whose link the database cleared.
 
     The thread must have its touches loaded. A follow-up, a reply or an unrecorded
     ``other`` is not a first message. The window is rolling and its start is
@@ -260,12 +266,14 @@ def first_messages_last_7_days(thread: OutreachThread, now: datetime) -> int:
     """
     moment = aware(now)
     since = moment - _PACING_WINDOW
-    return sum(
-        1
-        for touch in thread.touches
-        if touch.kind == "first"
-        and touch.direction == "out"
-        and since <= aware(touch.happened_at) <= moment
+    return len(
+        {
+            touch.person_id
+            for touch in thread.touches
+            if touch.kind == "first"
+            and touch.direction == "out"
+            and since <= aware(touch.happened_at) <= moment
+        }
     )
 
 
@@ -352,6 +360,54 @@ async def _contact_to_add(
     return contact
 
 
+async def _typed_contact(
+    session: AsyncSession, thread: OutreachThread, company_id: uuid.UUID, typed: _Typed
+) -> CompanyContact:
+    """The contact behind someone the user typed into a company thread.
+
+    A contact the caller can already see at this company with the same name (case
+    and spacing ignored; a careers page is never a person) is reused, so removing
+    a person and typing them again, or typing the name of a curated founder, never
+    leaves two rows for one person. The caller's own contact is preferred over a
+    curated one. A curated row is shared and is never written to; the caller's own
+    gains the email or LinkedIn link it did not have, and keeps the ones it has.
+    Otherwise a new private ``referral`` contact is created and flushed, so the
+    person's foreign key can point at it.
+
+    This builds the row itself rather than calling ``company_contacts.save_contact``,
+    which opens its own session and commits, so the add stays one atomic write.
+    """
+    key = _name_key(typed.name or "")
+    matches = [
+        c
+        for c in await _visible_contacts(session, company_id, thread.user_id)
+        if c.name and c.kind not in _NOT_A_PERSON and _name_key(c.name) == key
+    ]
+    if matches:
+        contact = min(matches, key=lambda c: c.user_id is None)
+        if any(p.contact_id == contact.id for p in thread.people):
+            raise Conflict(_ALREADY)
+        if contact.user_id is not None:
+            contact.email = contact.email or typed.email
+            contact.linkedin_url = contact.linkedin_url or typed.linkedin_url
+        return contact
+    contact = CompanyContact(
+        id=uuid.uuid4(),
+        company_id=company_id,
+        user_id=thread.user_id,
+        kind=TYPED_KIND,
+        name=typed.name,
+        title=typed.title,
+        email=typed.email,
+        linkedin_url=typed.linkedin_url,
+        source_kind="user",
+        verified=False,
+    )
+    session.add(contact)
+    await session.flush()  # the person's foreign key needs the row to exist
+    return contact
+
+
 def _find_person(thread: OutreachThread, person_id: str) -> OutreachPerson:
     pid = parse_uuid(person_id)
     person = None if pid is None else next((p for p in thread.people if p.id == pid), None)
@@ -380,9 +436,12 @@ async def add_person(
 
     * a contact is snapshotted (``name``, ``title``, ``kind``); adding it twice is a
       ``Conflict``, as is typing a name already in the thread;
-    * a typed person in a company thread is saved as a private ``referral`` contact
-      and linked; in a name-only thread the person keeps the typed ``email`` and
-      LinkedIn link and no contact is written.
+    * a typed person in a company thread is linked to the contact the caller can
+      already see at that company under the same name, else saved as a new private
+      ``referral`` contact (see ``_typed_contact``, which inlines
+      ``save_contact``'s construction to keep the add atomic); in a name-only
+      thread the person keeps the typed ``email`` and LinkedIn link and no
+      contact is written.
 
     All free text is cleaned and bounded. A contact id on a name-only thread, a
     ``careers_page`` contact, a bad address or a link that is not a LinkedIn
@@ -421,20 +480,12 @@ async def add_person(
             raise Conflict(f"A thread holds at most {MAX_PEOPLE_PER_THREAD} people")
 
         if contact_id is None and thread.company_id is not None:
-            contact = CompanyContact(
-                id=uuid.uuid4(),
-                company_id=thread.company_id,
-                user_id=thread.user_id,
-                kind=TYPED_KIND,
-                name=typed.name,
-                title=typed.title,
-                email=typed.email,
-                linkedin_url=typed.linkedin_url,
-                source_kind="user",
-                verified=False,
-            )
-            session.add(contact)
-            await session.flush()  # the person's foreign key needs the row to exist
+            contact = await _typed_contact(session, thread, thread.company_id, typed)
+            fields = {
+                "name": _contact_name(contact),
+                "title": contact.title or typed.title,
+                "kind": contact.kind,
+            }
         elif contact_id is None:
             fields.update(email=typed.email, linkedin_url=typed.linkedin_url)
 

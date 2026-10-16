@@ -442,6 +442,143 @@ async def test_typed_person_in_a_company_thread_is_saved_as_a_private_contact(
     assert await _count(outreach_db, OutreachPerson) == 1
 
 
+async def test_removing_a_typed_person_keeps_the_contact_and_retyping_reuses_it(
+    outreach_db: Factory,
+) -> None:
+    async with outreach_db() as session:
+        user = await make_user(session)
+        company = await make_company(session, "Tessel AI")
+    thread_id = await _open(user, company)
+
+    first = await add_person(
+        str(user.id), thread_id, contact_id=None, name="Rhea Kapoor", title="Engineering Manager"
+    )
+    contact_id = first["people"][0]["contact_id"]
+    removed = await remove_person(str(user.id), thread_id, first["people"][0]["id"])
+
+    # She was saved as a contact, so she stays one, and is offered like any other.
+    assert await _count(outreach_db, CompanyContact) == 1
+    assert [p["contact_id"] for p in removed["suggested_people"]] == [contact_id]
+
+    again = await add_person(
+        str(user.id),
+        thread_id,
+        contact_id=None,
+        name="  rhea   KAPOOR ",
+        email="rhea@example.com",
+        linkedin_url="https://www.linkedin.com/in/rhea-kapoor",
+    )
+
+    assert await _count(outreach_db, CompanyContact) == 1
+    [person] = again["people"]
+    assert person["contact_id"] == contact_id
+    assert (person["name"], person["title"], person["user_saved"]) == (
+        "Rhea Kapoor",
+        "Engineering Manager",
+        True,
+    )
+    assert again["suggested_people"] == []
+    # Details typed this time fill the gaps in her own private contact.
+    async with outreach_db() as session:
+        contact = (await session.execute(select(CompanyContact))).scalar_one()
+    assert (contact.email, contact.linkedin_url) == (
+        "rhea@example.com",
+        "https://www.linkedin.com/in/rhea-kapoor",
+    )
+    assert [c["channel"] for c in person["channels"]] == ["linkedin", "email"]
+
+    # Typing different details later does not overwrite what she already has.
+    await remove_person(str(user.id), thread_id, person["id"])
+    later = await add_person(
+        str(user.id), thread_id, contact_id=None, name="Rhea Kapoor", email="other@example.com"
+    )
+    assert later["people"][0]["contact_id"] == contact_id
+    async with outreach_db() as session:
+        contact = (await session.execute(select(CompanyContact))).scalar_one()
+    assert contact.email == "rhea@example.com"
+
+
+async def test_typed_name_matching_a_public_contact_links_it_and_leaves_it_alone(
+    outreach_db: Factory,
+) -> None:
+    async with outreach_db() as session:
+        user = await make_user(session)
+        other = await make_user(session)
+        company = await make_company(session, "Tessel AI")
+        elsewhere = await make_company(session, "Ledgerline")
+        founder = await make_contact(session, company, "founder", "Asha Rao", title="CEO")
+        await make_contact(session, elsewhere, "founder", "Dev Menon")
+        await make_contact(
+            session,
+            company,
+            "referral",
+            "Dev Menon",
+            user_id=other.id,
+            source_url=None,
+            source_kind="user",
+        )
+    thread_id = await _open(user, company)
+
+    detail = await add_person(
+        str(user.id),
+        thread_id,
+        contact_id=None,
+        name="asha  rao",
+        title="Someone else",
+        email="asha.personal@example.com",
+        linkedin_url="https://www.linkedin.com/in/asha-rao",
+    )
+
+    [person] = detail["people"]
+    assert person["contact_id"] == str(founder.id)
+    assert (person["name"], person["title"], person["kind"]) == ("Asha Rao", "CEO", "founder")
+    assert person["user_saved"] is False
+    assert detail["suggested_people"] == []
+    async with outreach_db() as session:
+        rows = (await session.execute(select(CompanyContact))).scalars().all()
+        stored = next(c for c in rows if c.id == founder.id)
+    assert len(rows) == 3
+    # The public row is shared: nothing the user typed was written onto it.
+    assert (stored.user_id, stored.email, stored.linkedin_url, stored.title) == (
+        None,
+        None,
+        None,
+        "CEO",
+    )
+    # Typing the name of a person who is already in the thread is still a conflict.
+    with pytest.raises(Conflict, match="Already in this thread"):
+        await add_person(str(user.id), thread_id, contact_id=None, name="Asha Rao")
+
+    # Another company's contact, and another user's private one, are not matches.
+    await add_person(str(user.id), thread_id, contact_id=None, name="Dev Menon")
+    assert await _count(outreach_db, CompanyContact) == 4
+
+
+async def test_typed_name_prefers_the_callers_own_contact_over_a_public_one(
+    outreach_db: Factory,
+) -> None:
+    async with outreach_db() as session:
+        user = await make_user(session)
+        company = await make_company(session, "Tessel AI")
+        await make_contact(session, company, "founder", "Asha Rao")
+        mine = await make_contact(
+            session,
+            company,
+            "referral",
+            "Asha Rao",
+            user_id=user.id,
+            source_url=None,
+            source_kind="user",
+        )
+    thread_id = await _open(user, company)
+
+    detail = await add_person(str(user.id), thread_id, contact_id=None, name="Asha Rao")
+
+    assert [p["contact_id"] for p in detail["people"]] == [str(mine.id)]
+    assert detail["people"][0]["user_saved"] is True
+    assert await _count(outreach_db, CompanyContact) == 2
+
+
 async def test_a_contact_id_and_typed_fields_are_not_taken_together(outreach_db: Factory) -> None:
     async with outreach_db() as session:
         user = await make_user(session)
@@ -757,6 +894,10 @@ async def test_pacing_note_in_detail(outreach_db: Factory) -> None:
     quiet = await get_thread(str(user.id), thread_id, now=NOW)
     assert quiet["pacing_note"] is None
 
+    # Writing to the same person again is not writing to another person.
+    await _store_touch(outreach_db, thread_id, user.id, first.id, NOW - timedelta(days=3))
+    assert (await get_thread(str(user.id), thread_id, now=NOW))["pacing_note"] is None
+
     await _store_touch(outreach_db, thread_id, user.id, second.id, NOW - timedelta(days=2))
     noisy = await get_thread(str(user.id), thread_id, now=NOW)
     assert noisy["pacing_note"] == pacing_note("Tessel AI", 2)
@@ -795,6 +936,41 @@ def test_first_messages_are_counted_in_a_rolling_seven_days() -> None:
 
     thread.touches = []
     assert first_messages_last_7_days(thread, NOW) == 0
+
+
+def test_first_messages_count_people_not_touches() -> None:
+    def touch(person_id: uuid.UUID | None, at: datetime, **kw: Any) -> OutreachTouch:
+        values: dict[str, Any] = {
+            "id": uuid.uuid4(),
+            "person_id": person_id,
+            "direction": "out",
+            "kind": "first",
+            "channel": "linkedin",
+            "happened_at": at,
+        }
+        values.update(kw)
+        return OutreachTouch(**values)
+
+    asha, dev = uuid.uuid4(), uuid.uuid4()
+    thread = OutreachThread(id=uuid.uuid4(), company_name="Tessel AI")
+
+    # Two first messages to one person (a fresh start after going cold) are one person.
+    thread.touches = [touch(asha, NOW - timedelta(days=1)), touch(asha, NOW - timedelta(days=3))]
+    assert first_messages_last_7_days(thread, NOW) == 1
+
+    # A different person is another; a thread-level first touch (no person) counts once.
+    thread.touches = [
+        touch(asha, NOW - timedelta(days=1)),
+        touch(asha, NOW - timedelta(days=2)),
+        touch(dev, NOW - timedelta(days=2)),
+        touch(None, NOW - timedelta(days=1), channel="github"),
+        touch(None, NOW - timedelta(days=4), channel="github"),
+    ]
+    assert first_messages_last_7_days(thread, NOW) == 3
+
+    # Only touches inside the window say who was written to.
+    thread.touches = [touch(asha, NOW - timedelta(days=1)), touch(dev, NOW - timedelta(days=9))]
+    assert first_messages_last_7_days(thread, NOW) == 1
 
 
 async def test_remove_person_keeps_the_timeline(outreach_db: Factory) -> None:
