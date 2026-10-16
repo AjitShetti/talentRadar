@@ -39,5 +39,10 @@
         "checked": "2026-10-16"
       }
     ]
+  },
+  "eventbrite": {
+    "organizers": [],
+    "venues": [],
+    "status": "needs token and vetted organiser ids"
   }
 }

@@ -9,7 +9,7 @@ from functools import lru_cache
 from typing import Literal
 from urllib.parse import parse_qsl, quote_plus, urlencode, urlsplit, urlunsplit
 
-from pydantic import AliasChoices, Field, computed_field
+from pydantic import AliasChoices, Field, computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -200,6 +200,19 @@ class Settings(BaseSettings):
     # endpoints such as ``/ingest/reverify``. Unset means no token is accepted
     # and only an admin can run them.
     cron_token: str | None = Field(default=None)
+
+    # Personal OAuth token for the Eventbrite API v3 (the Events source reads
+    # Eventbrite through that API only). Optional: without it Eventbrite is
+    # skipped. Blank (``EVENTBRITE_TOKEN=``) means unset. Never log it; it is
+    # left out of repr() so printing the settings cannot leak it.
+    eventbrite_token: str | None = Field(default=None, repr=False)
+
+    @field_validator("eventbrite_token", mode="before")
+    @classmethod
+    def _blank_eventbrite_token_is_unset(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
 
     # ------------------------------------------------------------------ #
     # Scraping                                                             #

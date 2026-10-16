@@ -27,21 +27,25 @@ import pytest
 
 from scripts import capture_fixtures
 from scripts.fixture_privacy import (
+    PLACEHOLDER_CONTINUATION,
     PLACEHOLDER_EMAIL,
     PUBLIC_ORGANISATIONS,
     bare_json_page,
     emails_in,
     embedded_json,
     event_people,
+    eventbrite_people,
     gdg_chapter_people,
     person_names,
     personal_keys,
     pseudonymise_ics,
+    reduce_eventbrite_event,
+    reduce_eventbrite_list,
     reduce_gdg_chapter,
     reduce_gdg_event,
     scrub_gdg_slug,
 )
-from services.events import gdg
+from services.events import eventbrite, gdg
 from services.events.luma import feed_url, parse_feed
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -932,3 +936,647 @@ async def test_capture_gdg_survives_a_failed_chapter_and_still_records_the_rest(
     names = sorted(p.name for p in (tmp_path / "out").iterdir())
     assert "gdg_chapter_gdg-quill.html.gz" in names
     assert "gdg_chapter_gdg-gone.html.gz" not in names
+
+
+# ── Eventbrite ───────────────────────────────────────────────────────────────
+
+EVENTBRITE_EVENT = FIXTURES / "eventbrite_event.json"
+EVENTBRITE_LIST = FIXTURES / "eventbrite_organizer_events.json"
+EVENTBRITE_FIXTURES = [EVENTBRITE_EVENT, EVENTBRITE_LIST]
+_HAND_WRITTEN = "hand-written from the documented v3 shapes; re-record with a token"
+_FICTIONAL_ORGANISERS = frozenset({"quill tech meetups"})
+_EVENTBRITE_PAGE = re.compile(r"https://(?:www\.)?eventbrite\.(?:com|co\.in)/e/\S+")
+
+
+def _eventbrite_blob(path: Path) -> dict[str, Any]:
+    blob = json.loads(path.read_text(encoding="utf-8"))
+    assert isinstance(blob, dict)
+    return blob
+
+
+def test_the_eventbrite_recordings_are_all_there() -> None:
+    assert EVENTBRITE_EVENT.is_file() and EVENTBRITE_LIST.is_file()
+
+
+def test_eventbrite_fixtures_parse() -> None:
+    event = eventbrite.parse_event(_eventbrite_blob(EVENTBRITE_EVENT))
+    assert event is not None, "the recorded event no longer yields an event"
+    assert event.source == "eventbrite" and event.external_id.isdigit()
+    assert event.starts_at.tzinfo is not None and event.title
+    assert _EVENTBRITE_PAGE.fullmatch(event.url)
+
+    events, continuation = eventbrite.parse_event_list(_eventbrite_blob(EVENTBRITE_LIST))
+    assert len(events) >= 1, "the recorded list page no longer yields an event"
+    assert continuation is not None, "the recorded list page shows no next page"
+    assert len({e.external_id for e in events}) == len(events)
+    for each in events:
+        assert each.external_id.isdigit() and each.title
+        assert each.starts_at.tzinfo is not None
+        assert _EVENTBRITE_PAGE.fullmatch(each.url)
+        assert each.taxonomy.get("category"), "the recording keeps the category id"
+    # the two recordings describe the same world: the single event is one the list names
+    assert event.external_id in {e.external_id for e in events}
+    assert eventbrite.parse_event_list(_eventbrite_blob(EVENTBRITE_LIST)) == (events, continuation)
+
+
+@pytest.mark.parametrize("path", EVENTBRITE_FIXTURES, ids=lambda p: p.name)
+def test_eventbrite_fixtures_say_so_when_they_are_hand_written(path: Path) -> None:
+    """Until a token records them, the comment says the shape is the documented one."""
+    comment = _eventbrite_blob(path).get("_comment")
+    assert comment in (None, _HAND_WRITTEN)
+
+
+@pytest.mark.parametrize("path", EVENTBRITE_FIXTURES, ids=lambda p: p.name)
+def test_eventbrite_fixtures_name_only_fictional_or_pseudonymised_organisers(path: Path) -> None:
+    names = eventbrite_people(_eventbrite_blob(path))
+    assert names, "the recording names no organiser, so it proves nothing"
+    for name in names:
+        assert (
+            _PSEUDONYM.fullmatch(name)
+            or name.casefold() in PUBLIC_ORGANISATIONS
+            or name.casefold() in _FICTIONAL_ORGANISERS
+        ), name
+
+
+@pytest.mark.parametrize("path", EVENTBRITE_FIXTURES, ids=lambda p: p.name)
+def test_eventbrite_fixtures_carry_no_credential_email_or_profile_link(path: Path) -> None:
+    text = path.read_text(encoding="utf-8")
+    blob = _eventbrite_blob(path)
+    for address in _ANY_EMAIL.findall(text):
+        assert address == PLACEHOLDER_EMAIL, f"{path.name}: {address}"
+    lowered = text.lower()
+    for word in ("bearer", "authorization", "access_token", "oauth", "mailto:"):
+        assert word not in lowered, f"{path.name}: {word}"
+    assert _PROFILE_LINK.search(lowered) is None, path.name
+    assert personal_keys(blob) == [], path.name
+
+
+def test_the_curated_eventbrite_block_is_well_formed() -> None:
+    block = json.loads(SOURCES.read_text(encoding="utf-8"))["eventbrite"]
+    assert isinstance(block["organizers"], list) and isinstance(block["venues"], list)
+    assert isinstance(block["status"], str) and block["status"]
+    assert block.get("organizer_endpoint", "unavailable") == "unavailable"
+    for entry in block["organizers"] + block["venues"]:
+        assert set(entry) == {"id", "name", "checked"}
+        assert re.fullmatch(r"[0-9]{1,32}", entry["id"])
+        assert entry["name"] and entry["name"].strip() == entry["name"]
+        assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", entry["checked"])
+    if not block["organizers"] and not block["venues"]:
+        assert block["status"] == "needs token and vetted organiser ids"
+
+
+# ── the Eventbrite reducers ──────────────────────────────────────────────────
+
+_RAW_EB_EVENT: dict[str, Any] = {
+    "name": {"text": "Rust Night with ADA QUILL", "html": "<p>Rust Night with Ada Quill</p>"},
+    "description": {
+        "text": "Mail ada.quill@example.org",
+        "html": "<p>Mail ada.quill@example.org</p>",
+    },
+    "id": "9001",
+    "url": "https://www.eventbrite.com/e/rust-night-with-ada-quill-tickets-9001",
+    "vanity_url": "https://ada-quill.eventbrite.com",
+    "start": {
+        "timezone": "Asia/Kolkata",
+        "local": "2026-11-21T18:00:00",
+        "utc": "2026-11-21T12:30:00Z",
+    },
+    "end": {
+        "timezone": "Asia/Kolkata",
+        "local": "2026-11-21T20:00:00",
+        "utc": "2026-11-21T14:30:00Z",
+    },
+    "status": "live",
+    "online_event": False,
+    "is_free": True,
+    "summary": "Ada Quill talks about Rust. Ask ada.quill@example.org.",
+    "organizer_id": "5",
+    "venue_id": "6",
+    "category_id": "102",
+    "subcategory_id": "2004",
+    "format_id": "2",
+    "logo": {
+        "url": "https://img.example/logo.png",
+        "original": {"url": "https://img.example/o.png"},
+    },
+    "venue": {
+        "id": "6",
+        "name": "Quill Hall",
+        "age_restriction": None,
+        "latitude": "12.9352",
+        "longitude": "77.6245",
+        "address": {
+            "address_1": "1 Quill Lane",
+            "city": "Bengaluru",
+            "latitude": "12.9352",
+            "longitude": "77.6245",
+            "localized_address_display": "1 Quill Lane, Koramangala, Bengaluru",
+            "localized_multi_line_address_display": ["1 Quill Lane"],
+        },
+    },
+    "organizer": {
+        "id": "5",
+        "name": "Ada Quill",
+        "description": {"text": "Ada runs this.", "html": "<p>Ada runs this.</p>"},
+        "website": "https://ada.example",
+        "url": "https://www.eventbrite.com/o/ada-quill-5",
+        "twitter": "@ada",
+        "facebook": "https://facebook.com/ada",
+    },
+    "format": {
+        "id": "2",
+        "name": "Seminar or Talk",
+        "resource_uri": "https://www.eventbriteapi.com/v3/formats/2/",
+    },
+}
+
+
+def _raw_eb_event(**changes: Any) -> dict[str, Any]:
+    event: dict[str, Any] = json.loads(_dump(_RAW_EB_EVENT))
+    event.update(changes)
+    return event
+
+
+def _raw_eb_list(count: int = 5, *, more: bool = True) -> dict[str, Any]:
+    events = []
+    for number in range(count):
+        event = _raw_eb_event(id=str(9001 + number))
+        event["url"] = (
+            f"https://www.eventbrite.com/e/rust-night-with-ada-quill-tickets-{9001 + number}"
+        )
+        events.append(event)
+    pagination: dict[str, Any] = {
+        "object_count": count,
+        "page_number": 1,
+        "page_size": count,
+        "page_count": 2,
+        "has_more_items": more,
+    }
+    if more:
+        pagination["continuation"] = "REALCURSORdoNOTcommit"
+    return {"pagination": pagination, "events": events}
+
+
+def test_reduce_eventbrite_event_keeps_what_the_parser_reads_and_no_person() -> None:
+    reduced = reduce_eventbrite_event(_RAW_EB_EVENT)
+    text = _dump(reduced)
+    for gone in (
+        "Ada",
+        "ADA",
+        "ada",
+        "example.org",
+        "img.example",
+        "twitter",
+        "facebook",
+        "description",
+        "vanity_url",
+        "logo",
+        "organizer_id",
+        "venue_id",
+        "age_restriction",
+        "localized_multi_line",
+        "address_1",
+        "html",
+    ):
+        assert gone not in text, gone
+    assert reduced["organizer"] == {"name": "Host 1 Quill"}
+    assert eventbrite_people(reduced) == ["Host 1 Quill"]
+    assert personal_keys(reduced) == []
+    assert set(emails_in(reduced)) <= {PLACEHOLDER_EMAIL}
+
+    facts = eventbrite.parse_event(reduced)
+    assert facts is not None
+    assert facts.title == "Rust Night with Host 1 Quill"
+    assert facts.snippet == f"Host 1 Quill talks about Rust. Ask {PLACEHOLDER_EMAIL}."
+    assert facts.external_id == "9001" and facts.url.endswith("-tickets-9001")
+    assert (facts.venue_name, facts.locality) == ("Quill Hall", "Bengaluru")
+    assert (facts.lat, facts.lng) == (12.9352, 77.6245)
+    assert facts.taxonomy == {"category": "102", "subcategory": "2004", "format": "2"}
+    assert facts.is_free is True and facts.timezone == "Asia/Kolkata"
+    assert facts.organiser_name == "Host 1 Quill" and facts.organiser_url is None
+
+
+def test_reduce_eventbrite_event_scrubs_a_name_from_the_link_and_keeps_it_valid() -> None:
+    reduced = reduce_eventbrite_event(_RAW_EB_EVENT)
+    assert reduced["url"] == "https://www.eventbrite.com/e/rust-night-with-host-host-tickets-9001"
+    assert eventbrite.parse_event(reduced) is not None
+
+
+def test_reduce_eventbrite_event_keeps_a_public_organisation_and_its_pages() -> None:
+    event = _raw_eb_event()
+    event["organizer"] = {**event["organizer"], "name": "Swift Bengaluru"}
+    event["name"] = {"text": "Swift Bengaluru Meetup"}
+    reduced = reduce_eventbrite_event(event)
+    assert reduced["organizer"] == {
+        "name": "Swift Bengaluru",
+        "website": "https://ada.example",
+        "url": "https://www.eventbrite.com/o/ada-quill-5",
+    }
+    assert reduced["name"] == {"text": "Swift Bengaluru Meetup"}
+
+
+def test_reduce_eventbrite_event_takes_extra_names_for_people_only_the_prose_mentions() -> None:
+    event = _raw_eb_event(summary="Keynote by Eve Mentioned of Quill Labs.")
+    assert "Eve Mentioned" in _dump(reduce_eventbrite_event(event))
+    renamed = _dump(reduce_eventbrite_event(event, redact=("Eve Mentioned",)))
+    assert "Eve Mentioned" not in renamed and "Quill Labs" in renamed
+
+
+def test_reduce_eventbrite_event_keeps_an_online_event_without_a_venue() -> None:
+    reduced = reduce_eventbrite_event(_raw_eb_event(venue=None, venue_id=None, online_event=True))
+    assert reduced["venue"] is None and reduced["online_event"] is True
+    facts = eventbrite.parse_event(reduced)
+    assert facts is not None and facts.is_online and facts.venue_name is None
+
+
+def test_reduce_eventbrite_event_is_deterministic_idempotent_and_never_mutates_its_input() -> None:
+    snapshot = json.loads(_dump(_RAW_EB_EVENT))
+    once = reduce_eventbrite_event(_RAW_EB_EVENT)
+    assert snapshot == _RAW_EB_EVENT
+    assert reduce_eventbrite_event(_RAW_EB_EVENT) == once
+    assert reduce_eventbrite_event(once) == once
+
+
+@pytest.mark.parametrize("payload", [None, [], "x", {}, {"id": 5}, {"name": {"text": "x"}}])
+def test_reduce_eventbrite_event_rejects_something_that_is_not_an_event(payload: Any) -> None:
+    with pytest.raises(ValueError):
+        reduce_eventbrite_event(payload)
+
+
+def test_reduce_eventbrite_list_shares_pseudonyms_limits_and_replaces_the_cursor() -> None:
+    reduced = reduce_eventbrite_list(_raw_eb_list(5), limit=3)
+    assert len(reduced["events"]) == 3
+    assert reduced["pagination"] == {
+        "object_count": 5,
+        "page_number": 1,
+        "page_size": 5,
+        "page_count": 2,
+        "continuation": PLACEHOLDER_CONTINUATION,
+        "has_more_items": True,
+    }
+    text = _dump(reduced)
+    assert "REALCURSOR" not in text and "Ada" not in text
+    assert eventbrite_people(reduced) == ["Host 1 Quill"]
+    events, continuation = eventbrite.parse_event_list(reduced)
+    assert [e.external_id for e in events] == ["9001", "9002", "9003"]
+    assert continuation == PLACEHOLDER_CONTINUATION
+
+
+def test_reduce_eventbrite_list_gives_each_organiser_one_pseudonym_across_events() -> None:
+    page = _raw_eb_list(3)
+    page["events"][1]["organizer"] = {**page["events"][1]["organizer"], "name": "Ben Fictional"}
+    reduced = reduce_eventbrite_list(page)
+    assert eventbrite_people(reduced) == ["Host 1 Quill", "Host 2 Quill"]
+    names = [e["organizer"]["name"] for e in reduced["events"]]
+    assert names == ["Host 1 Quill", "Host 2 Quill", "Host 1 Quill"]
+
+
+def test_reduce_eventbrite_list_without_more_items_has_no_cursor() -> None:
+    reduced = reduce_eventbrite_list(_raw_eb_list(2, more=False))
+    assert reduced["pagination"]["has_more_items"] is False
+    assert "continuation" not in reduced["pagination"]
+    assert eventbrite.parse_event_list(reduced)[1] is None
+
+
+def test_reduce_eventbrite_list_is_idempotent_and_never_mutates_its_input() -> None:
+    page = _raw_eb_list(4)
+    snapshot = json.loads(_dump(page))
+    once = reduce_eventbrite_list(page)
+    assert page == snapshot
+    assert reduce_eventbrite_list(once) == once
+
+
+@pytest.mark.parametrize("payload", [None, [], {}, {"events": None}, {"events": {}}, "x"])
+def test_reduce_eventbrite_list_rejects_a_page_without_events(payload: Any) -> None:
+    with pytest.raises(ValueError):
+        reduce_eventbrite_list(payload)
+
+
+# ── the Eventbrite capture, replayed ─────────────────────────────────────────
+
+_EB_TOKEN = "CAPTURETOKEN0123456789"
+_EB_ORGANIZER = {"id": "98765432101", "name": "Quill Tech Meetups", "checked": "2026-10-16"}
+_EB_VENUE = {"id": "45678901234", "name": "Quill Commons", "checked": "2026-10-16"}
+
+
+def _eb_served(request: httpx.Request) -> httpx.Response:
+    path = request.url.path
+    if path.startswith("/v3/organizers/") or path.startswith("/v3/venues/"):
+        return httpx.Response(200, json=_raw_eb_list(4))
+    assert path == "/v3/events/9001/", path
+    return httpx.Response(200, json=_raw_eb_event())
+
+
+async def _run_eventbrite(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    handler: Any,
+    *,
+    organizers: list[dict[str, str]] | None = None,
+    venues: list[dict[str, str]] | None = None,
+    token: str | None = _EB_TOKEN,
+    redact: tuple[str, ...] = (),
+) -> tuple[int, list[float]]:
+    sources = tmp_path / "sources.json"
+    sources.write_text(
+        json.dumps(
+            {
+                "eventbrite": {
+                    "organizers": [_EB_ORGANIZER] if organizers is None else organizers,
+                    "venues": [] if venues is None else venues,
+                    "status": "needs token and vetted organiser ids",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(capture_fixtures, "EVENT_SOURCES", sources)
+    monkeypatch.setattr(capture_fixtures, "EVENTS_DIR", tmp_path / "out")
+    monkeypatch.setattr(capture_fixtures, "_eventbrite_token", lambda: None)
+    pauses: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        pauses.append(seconds)
+
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        code = await capture_fixtures.capture_events_eventbrite(redact, client=client, token=token)
+    return code, pauses
+
+
+def _seed_hand_written(tmp_path: Path) -> dict[str, bytes]:
+    """The committed fixtures, copied to where the capture writes, to see them survive."""
+    out = tmp_path / "out"
+    out.mkdir(parents=True, exist_ok=True)
+    seeded = {}
+    for path in EVENTBRITE_FIXTURES:
+        (out / path.name).write_bytes(path.read_bytes())
+        seeded[path.name] = path.read_bytes()
+    return seeded
+
+
+def _untouched(tmp_path: Path, seeded: dict[str, bytes]) -> bool:
+    out = tmp_path / "out"
+    return {p.name: p.read_bytes() for p in out.iterdir()} == seeded
+
+
+async def test_capture_eventbrite_skips_cleanly_without_a_token(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    seeded = _seed_hand_written(tmp_path)
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return _eb_served(request)
+
+    for blank in (None, ""):
+        code, pauses = await _run_eventbrite(tmp_path, monkeypatch, handler, token=blank)
+        assert code == 0
+        assert seen == [] and pauses == []  # no request at all
+        assert _untouched(tmp_path, seeded)  # the hand-written fixtures are not overwritten
+        assert "SKIPPED" in capsys.readouterr().out
+
+
+async def test_capture_eventbrite_skips_when_no_organiser_or_venue_is_listed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    seeded = _seed_hand_written(tmp_path)
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return _eb_served(request)
+
+    code, _ = await _run_eventbrite(tmp_path, monkeypatch, handler, organizers=[], venues=[])
+    out = capsys.readouterr().out
+    assert code == 0 and seen == [] and _untouched(tmp_path, seeded)
+    assert "SKIPPED" in out and "needs token and vetted organiser ids" in out
+    assert _EB_TOKEN not in out
+
+
+async def test_capture_eventbrite_records_scrubbed_fixtures_through_the_api_politely(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return _eb_served(request)
+
+    code, pauses = await _run_eventbrite(tmp_path, monkeypatch, handler)
+    out_dir = tmp_path / "out"
+
+    assert code == 0
+    assert [r.url.path for r in seen] == [
+        f"/v3/organizers/{_EB_ORGANIZER['id']}/events/",
+        "/v3/events/9001/",
+    ]
+    assert pauses == [capture_fixtures._EVENTBRITE_GAP_S]  # between requests, not before the first
+    for request in seen:
+        assert request.url.host == "www.eventbriteapi.com"
+        assert request.headers["Authorization"] == f"Bearer {_EB_TOKEN}"
+        assert request.headers["User-Agent"].startswith("TalentRadar/1.0")
+    assert sorted(p.name for p in out_dir.iterdir()) == [
+        "eventbrite_event.json",
+        "eventbrite_organizer_events.json",
+    ]
+    for path in out_dir.iterdir():
+        text = path.read_text(encoding="utf-8")
+        assert _EB_TOKEN not in text and "_comment" not in text
+        for gone in ("Ada", "ada.quill", "example.org", "img.example", "REALCURSOR", "twitter"):
+            assert gone not in text, f"{path.name}: {gone}"
+        assert text.endswith("\n") and "\r" not in text
+    assert _EB_TOKEN not in capsys.readouterr().out
+
+    event = eventbrite.parse_event(
+        json.loads((out_dir / "eventbrite_event.json").read_text("utf-8"))
+    )
+    assert event is not None and event.external_id == "9001"
+    assert event.organiser_name == "Host 1 Quill"
+    events, continuation = eventbrite.parse_event_list(
+        json.loads((out_dir / "eventbrite_organizer_events.json").read_text("utf-8"))
+    )
+    assert [e.external_id for e in events] == ["9001", "9002", "9003"]
+    assert continuation == PLACEHOLDER_CONTINUATION
+
+
+async def test_capture_eventbrite_is_reproducible(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _run_eventbrite(tmp_path, monkeypatch, _eb_served)
+    first = {p.name: p.read_bytes() for p in (tmp_path / "out").iterdir()}
+    assert first
+    await _run_eventbrite(tmp_path, monkeypatch, _eb_served)
+    assert {p.name: p.read_bytes() for p in (tmp_path / "out").iterdir()} == first
+
+
+async def test_capture_eventbrite_applies_redact_to_names_no_rule_can_find(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.startswith("/v3/events/"):
+            return _eb_served(request)
+        page = _raw_eb_list(2)
+        page["events"][0]["summary"] = "Keynote by Eve Mentioned."
+        return httpx.Response(200, json=page)
+
+    code, _ = await _run_eventbrite(tmp_path, monkeypatch, handler, redact=("Eve Mentioned",))
+    assert code == 0
+    text = (tmp_path / "out" / "eventbrite_organizer_events.json").read_text(encoding="utf-8")
+    assert "Eve Mentioned" not in text and "Keynote by Host" in text
+
+
+async def test_capture_eventbrite_falls_back_to_the_venue_when_the_organiser_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.path)
+        if request.url.path.startswith("/v3/organizers/"):
+            return httpx.Response(403, json={"error": "NOT_AUTHORIZED"})
+        return _eb_served(request)
+
+    code, pauses = await _run_eventbrite(tmp_path, monkeypatch, handler, venues=[_EB_VENUE])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert seen == [
+        f"/v3/organizers/{_EB_ORGANIZER['id']}/events/",
+        f"/v3/venues/{_EB_VENUE['id']}/events/",
+        "/v3/events/9001/",
+    ]
+    assert len(pauses) == 2
+    assert '"organizer_endpoint": "unavailable"' in out  # the finding to record in sources.json
+    assert _EB_TOKEN not in out
+    assert (tmp_path / "out" / "eventbrite_organizer_events.json").is_file()
+
+
+async def test_capture_eventbrite_does_not_fall_back_on_a_server_error_only_a_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.startswith("/v3/organizers/"):
+            return httpx.Response(500)
+        return _eb_served(request)
+
+    await _run_eventbrite(tmp_path, monkeypatch, handler, venues=[_EB_VENUE])
+    assert '"organizer_endpoint": "unavailable"' not in capsys.readouterr().out
+
+
+async def test_capture_eventbrite_refused_everywhere_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seeded = _seed_hand_written(tmp_path)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403)
+
+    code, _ = await _run_eventbrite(tmp_path, monkeypatch, handler)
+    assert code == 1 and _untouched(tmp_path, seeded)
+
+
+async def test_capture_eventbrite_writes_neither_file_when_the_event_call_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seeded = _seed_hand_written(tmp_path)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.startswith("/v3/events/"):
+            return httpx.Response(404)
+        return _eb_served(request)
+
+    code, _ = await _run_eventbrite(tmp_path, monkeypatch, handler)
+    assert code == 1
+    assert _untouched(
+        tmp_path, seeded
+    )  # the list was good, but both are written together or not at all
+
+
+@pytest.mark.parametrize(
+    "page",
+    [
+        {"events": [], "pagination": {}},
+        {"events": [{"id": "x"}]},
+        {"nothing": True},
+        {"events": "x"},
+    ],
+    ids=["empty", "unreadable", "no-events", "wrong-type"],
+)
+async def test_capture_eventbrite_writes_nothing_for_a_page_that_parses_to_no_events(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, page: dict[str, Any]
+) -> None:
+    seeded = _seed_hand_written(tmp_path)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=page)
+
+    code, pauses = await _run_eventbrite(tmp_path, monkeypatch, handler)
+    assert code == 1 and pauses == [] and _untouched(tmp_path, seeded)
+
+
+async def test_capture_eventbrite_writes_nothing_for_an_event_that_does_not_parse(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seeded = _seed_hand_written(tmp_path)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.startswith("/v3/events/"):
+            return httpx.Response(200, json=_raw_eb_event(url="https://evil.example/e/x-9001"))
+        return _eb_served(request)
+
+    code, _ = await _run_eventbrite(tmp_path, monkeypatch, handler)
+    assert code == 1 and _untouched(tmp_path, seeded)
+
+
+async def test_capture_eventbrite_never_prints_the_token_even_when_a_call_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, json={"error": "INVALID_AUTH"})
+
+    code, _ = await _run_eventbrite(tmp_path, monkeypatch, handler)
+    captured = capsys.readouterr()
+    assert code == 1 and _EB_TOKEN not in captured.out + captured.err
+
+
+async def test_capture_events_runs_the_eventbrite_part_alone_and_skips_without_a_token(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seeded = _seed_hand_written(tmp_path)
+    monkeypatch.setattr(capture_fixtures, "EVENTS_DIR", tmp_path / "out")
+    monkeypatch.setattr(capture_fixtures, "_eventbrite_token", lambda: None)
+    assert await capture_fixtures.capture_events(sources=["eventbrite"]) == 0
+    assert _untouched(tmp_path, seeded)
+
+
+def test_events_source_accepts_eventbrite(monkeypatch: pytest.MonkeyPatch) -> None:
+    got: list[tuple[Any, Any]] = []
+
+    async def fake(redact: Any = (), sources: Any = ()) -> int:
+        got.append((redact, sources))
+        return 0
+
+    monkeypatch.setattr(capture_fixtures, "capture_events", fake)
+    monkeypatch.setattr(
+        "sys.argv", ["capture_fixtures.py", "--events", "--events-source", "eventbrite"]
+    )
+    assert capture_fixtures.main() == 0
+    assert got == [([], ["eventbrite"])]
+
+
+def test_the_token_comes_from_the_environment_then_the_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVENTBRITE_TOKEN", f"  {_EB_TOKEN}  ")
+    assert capture_fixtures._eventbrite_token() == _EB_TOKEN
+    monkeypatch.setenv("EVENTBRITE_TOKEN", "   ")
+    monkeypatch.setattr(
+        "config.settings.get_settings",
+        lambda: type("S", (), {"eventbrite_token": "FROMSETTINGS"})(),
+    )
+    assert capture_fixtures._eventbrite_token() == "FROMSETTINGS"
+    monkeypatch.setattr(
+        "config.settings.get_settings", lambda: type("S", (), {"eventbrite_token": None})()
+    )
+    assert capture_fixtures._eventbrite_token() is None

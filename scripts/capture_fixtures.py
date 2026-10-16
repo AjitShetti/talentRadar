@@ -6,8 +6,9 @@ Record real source responses so the contract tests can replay them offline.
     python scripts/capture_fixtures.py                  # every source
     python scripts/capture_fixtures.py --source foundit # just one
     python scripts/capture_fixtures.py --company-map    # company-map importers
-    python scripts/capture_fixtures.py --events         # Events: Luma iCal feeds, GDG pages
+    python scripts/capture_fixtures.py --events         # Events: Luma iCal feeds, GDG pages, Eventbrite API
     python scripts/capture_fixtures.py --events --events-source gdg   # just the GDG pages
+    EVENTBRITE_TOKEN=... python scripts/capture_fixtures.py --events --events-source eventbrite
 
 Rather than guessing each scraper's request URLs, this wraps
 ``ScraplingManager.fetch_html_or_json`` and records every call the scraper
@@ -26,6 +27,7 @@ import argparse
 import asyncio
 import gzip
 import json
+import os
 import re
 import sys
 from collections.abc import Sequence
@@ -39,6 +41,8 @@ from scripts.fixture_privacy import (
     gdg_chapter_people,
     gdg_event_people,
     pseudonymise_ics,
+    reduce_eventbrite_event,
+    reduce_eventbrite_list,
     reduce_gdg_chapter,
     reduce_gdg_event,
     scrub_gdg_slug,
@@ -427,14 +431,165 @@ async def capture_events_gdg(
     return 0 if written == planned else 1
 
 
+_EVENTBRITE_LIST_EVENTS = 3  # events kept in the recorded list page
+_EVENTBRITE_GAP_S = 1.0  # one request a second
+_EVENTBRITE_RECORDINGS = 2  # the event and the list page
+
+
+def _eventbrite_token() -> str | None:
+    """The personal token from ``EVENTBRITE_TOKEN`` in the environment, else from the settings
+    (``.env``); ``None`` when there is none. It is never printed."""
+    token = os.environ.get("EVENTBRITE_TOKEN", "").strip()
+    if token:
+        return token
+    try:
+        from config.settings import get_settings
+
+        return get_settings().eventbrite_token
+    except ValueError:  # the settings need unrelated keys that a bare checkout lacks
+        return None
+
+
+def _listed(entries: object) -> list[dict[str, Any]]:
+    return [e for e in entries if isinstance(e, dict)] if isinstance(entries, list) else []
+
+
+async def capture_events_eventbrite(
+    redact: Sequence[str] = (),
+    *,
+    client: httpx.AsyncClient | None = None,
+    token: str | None = None,
+) -> int:
+    """
+    Record the two Eventbrite payloads the tests replay, through the official API only: the
+    first curated organiser's live events (one page) and then one of those events by id with
+    ``expand=venue,organizer,format``. When ``organizers/{id}/events`` is refused (403 or 404, a
+    token that is not a member of the organisation) the first curated venue's events are used
+    instead; add ``"organizer_endpoint": "unavailable"`` under ``"eventbrite"`` in
+    ``data/events/sources.json`` when that happens. Requests are one a second.
+
+    Without ``EVENTBRITE_TOKEN``, or with no organiser or venue in ``sources.json``, nothing is
+    requested or written: the committed fixtures (hand-written from the documented shapes
+    until a token exists) are left as they are, and the exit code is 0. Both files are written
+    together or not at all, and only once each still parses after being cut down (see
+    ``reduce_eventbrite_event``): a recording that proves nothing never replaces one that does.
+    The token is never printed or written. Review the diff for people the rules cannot see,
+    and re-run with ``--redact "Full Name"`` for each. ``client`` and ``token`` are for tests.
+    """
+    import httpx
+
+    from services.events import eventbrite
+
+    key = token if token is not None else _eventbrite_token()
+    if not key:
+        print(
+            "  eventbrite SKIPPED: EVENTBRITE_TOKEN is not set, so no request was made. "
+            "tests/fixtures/events/eventbrite_*.json are left as they are."
+        )
+        return 0
+    config = json.loads(EVENT_SOURCES.read_text(encoding="utf-8")).get("eventbrite", {})
+    organizers, venues = _listed(config.get("organizers")), _listed(config.get("venues"))
+    if not organizers and not venues:
+        print(
+            "  eventbrite SKIPPED: data/events/sources.json lists no organiser or venue "
+            f"({config.get('status', 'no status')}). Nothing was requested or written."
+        )
+        return 0
+
+    own_client = client is None
+    http = httpx.AsyncClient() if client is None else client
+    requests = 0
+
+    async def call(label: str, fetch: Any, *args: str) -> tuple[dict[str, Any] | None, int | None]:
+        """The payload (or ``None``) and, for an HTTP error status, that status."""
+        nonlocal requests
+        if requests:
+            await asyncio.sleep(_EVENTBRITE_GAP_S)
+        requests += 1
+        try:
+            return await fetch(http, key, *args), None
+        except httpx.HTTPStatusError as exc:
+            print(f"  eventbrite {label} FAILED: {type(exc).__name__}: {exc}")
+            return None, exc.response.status_code
+        except (httpx.HTTPError, ValueError) as exc:
+            print(f"  eventbrite {label} FAILED: {type(exc).__name__}: {exc}")
+            return None, None
+
+    recorded: dict[str, dict[str, Any]] = {}
+    try:
+        page: dict[str, Any] | None = None
+        if organizers:
+            ident = str(organizers[0].get("id"))
+            page, status = await call(f"organizer {ident}", eventbrite.organizer_events, ident)
+            if page is None and status in (403, 404):
+                print(
+                    '  eventbrite: organizer events are not served to this token; record "organizer_endpoint": '
+                    '"unavailable" under "eventbrite" in data/events/sources.json'
+                )
+        if page is None and venues:
+            ident = str(venues[0].get("id"))
+            page, _ = await call(f"venue {ident}", eventbrite.venue_events, ident)
+        if page is None:
+            print("  eventbrite: no list page could be read - not writing a fixture")
+            return 1
+        events, _ = eventbrite.parse_event_list(page)
+        if not events:
+            print("  eventbrite: the list page parsed to 0 events - not writing a fixture")
+            return 1
+        try:
+            reduced_page = reduce_eventbrite_list(
+                page, redact=redact, limit=_EVENTBRITE_LIST_EVENTS
+            )
+        except ValueError as exc:
+            print(f"  eventbrite: the list page cannot be recorded ({exc}) - not writing a fixture")
+            return 1
+        if not eventbrite.parse_event_list(reduced_page)[0]:
+            print("  eventbrite: the list no longer parses once reduced - not writing a fixture")
+            return 1
+        recorded["eventbrite_organizer_events.json"] = reduced_page
+
+        wanted = events[0].external_id
+        payload, _ = await call(f"event {wanted}", eventbrite.get_event, wanted)
+        if payload is None:
+            print("  eventbrite: the event could not be read - not writing a fixture")
+            return 1
+        try:
+            reduced_event = reduce_eventbrite_event(payload, redact=redact)
+        except ValueError as exc:
+            print(f"  eventbrite: the event cannot be recorded ({exc}) - not writing a fixture")
+            return 1
+        facts = eventbrite.parse_event(reduced_event)
+        if facts is None:
+            print("  eventbrite: the event no longer parses once reduced - not writing a fixture")
+            return 1
+        recorded["eventbrite_event.json"] = reduced_event
+    finally:
+        if own_client:
+            await http.aclose()
+
+    EVENTS_DIR.mkdir(parents=True, exist_ok=True)
+    for filename, body in recorded.items():
+        text = json.dumps(body, indent=2, ensure_ascii=False) + "\n"
+        (EVENTS_DIR / filename).write_text(text, encoding="utf-8", newline="\n")
+        print(f"  eventbrite {filename}")
+    print(f"  eventbrite event {facts.starts_at:%Y-%m-%d} {facts.title[:40]!r}")
+    print(
+        f"\nWrote {len(recorded)} of {_EVENTBRITE_RECORDINGS} Eventbrite fixture(s) "
+        f"in {requests} request(s)."
+    )
+    return 0
+
+
 async def capture_events(redact: Sequence[str] = (), sources: Sequence[str] = ()) -> int:
-    """Record the Events fixtures of ``sources`` ("luma", "gdg"; none given means all)."""
-    wanted = set(sources) or {"luma", "gdg"}
+    """Record the Events fixtures of ``sources`` ("luma", "gdg", "eventbrite"; none means all)."""
+    wanted = set(sources) or {"luma", "gdg", "eventbrite"}
     codes = []
     if "luma" in wanted:
         codes.append(await capture_events_luma(redact))
     if "gdg" in wanted:
         codes.append(await capture_events_gdg(redact))
+    if "eventbrite" in wanted:
+        codes.append(await capture_events_eventbrite(redact))
     return 0 if all(code == 0 for code in codes) else 1
 
 
@@ -447,13 +602,13 @@ def main() -> int:
     parser.add_argument(
         "--events",
         action="store_true",
-        help="Record the Events fixtures (Luma iCal feeds and GDG pages)",
+        help="Record the Events fixtures (Luma iCal feeds, GDG pages, Eventbrite API)",
     )
     parser.add_argument(
         "--events-source",
         action="append",
         default=[],
-        choices=("luma", "gdg"),
+        choices=("luma", "gdg", "eventbrite"),
         help="With --events: record only this source (repeatable)",
     )
     parser.add_argument(

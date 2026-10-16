@@ -648,3 +648,148 @@ def emails_in(node: object) -> list[str]:
         for child in node:
             found.extend(emails_in(child))
     return found
+
+
+# ── Eventbrite ───────────────────────────────────────────────────────────────
+
+#: The cursor of a recorded list page. The real one is the API's own bookmark into an
+#: organiser's events and has no place in the repository.
+PLACEHOLDER_CONTINUATION = "eyJwYWdlIjogMn0"
+_EVENTBRITE_EVENT_URL = re.compile(r"(https://(?:www\.)?eventbrite\.(?:com|co\.in)/e/)([^\s?#]+)")
+_EVENTBRITE_IDS = ("category_id", "subcategory_id", "format_id")
+_EVENTBRITE_COUNTS = ("object_count", "page_number", "page_size", "page_count")
+
+
+def _eventbrite_events(payload: object) -> list[dict[str, Any]]:
+    """The event objects of one event or of a list page."""
+    data = _dict(payload)
+    listed = data.get("events")
+    if isinstance(listed, list):
+        return [entry for entry in listed if isinstance(entry, dict)]
+    return [data] if data else []
+
+
+def eventbrite_people(payload: object) -> list[str]:
+    """Every organiser name in an Eventbrite event or list page, once each, in order."""
+    names: list[str] = []
+    for event in _eventbrite_events(payload):
+        name = _dict(event.get("organizer")).get("name")
+        if isinstance(name, str) and name.strip() and name not in names:
+            names.append(name)
+    return names
+
+
+def _stringy(source: dict[str, Any], keys: Iterable[str]) -> dict[str, Any]:
+    """The ``keys`` of ``source`` whose values are text, copied."""
+    return {key: source[key] for key in keys if isinstance(source.get(key), str)}
+
+
+def _reduce_eventbrite_venue(venue: dict[str, Any], people: _People) -> dict[str, Any]:
+    kept = _stringy(venue, ("latitude", "longitude"))
+    if isinstance(venue.get("name"), str):
+        kept["name"] = people.text(venue["name"])
+    address = _dict(venue.get("address"))
+    kept_address = _stringy(address, ("city", "latitude", "longitude"))
+    if isinstance(address.get("localized_address_display"), str):
+        kept_address["localized_address_display"] = people.text(
+            address["localized_address_display"]
+        )
+    if kept_address:
+        kept["address"] = kept_address
+    return kept
+
+
+def _reduce_eventbrite_organizer(organizer: dict[str, Any], people: _People) -> dict[str, Any]:
+    name = organizer.get("name")
+    if not isinstance(name, str):
+        return {}
+    shown = people.name(name)
+    kept: dict[str, Any] = {"name": shown}
+    # An organisation's own pages stay; a person's (or an unknown name's) are dropped.
+    if shown == name:
+        for key in ("website", "url"):
+            if isinstance(organizer.get(key), str):
+                kept[key] = people.text(organizer[key])
+    return kept
+
+
+def _reduce_eventbrite_event(event: dict[str, Any], people: _People) -> dict[str, Any]:
+    out: dict[str, Any] = _stringy(event, ("id", "status"))
+    for key in _EVENTBRITE_IDS:
+        if key in event and (event[key] is None or isinstance(event[key], str)):
+            out[key] = event[key]
+    for key in ("online_event", "is_free"):
+        if isinstance(event.get(key), bool):
+            out[key] = event[key]
+    url = event.get("url")
+    if isinstance(url, str):
+        link = _EVENTBRITE_EVENT_URL.fullmatch(url)
+        out["url"] = f"{link.group(1)}{people.slug(link.group(2))}" if link else people.text(url)
+    name = _dict(event.get("name")).get("text")
+    if isinstance(name, str):
+        out["name"] = {"text": people.text(name)}
+    if isinstance(event.get("summary"), str):
+        out["summary"] = people.text(event["summary"])
+    for key in ("start", "end"):
+        if isinstance(event.get(key), dict):
+            out[key] = _stringy(event[key], ("timezone", "utc"))
+    if "venue" in event and event["venue"] is None:
+        out["venue"] = None
+    elif isinstance(event.get("venue"), dict):
+        out["venue"] = _reduce_eventbrite_venue(event["venue"], people)
+    if isinstance(event.get("organizer"), dict):
+        out["organizer"] = _reduce_eventbrite_organizer(event["organizer"], people)
+    format_block = _dict(event.get("format"))
+    kept_format = _stringy(format_block, ("id",))
+    if isinstance(format_block.get("name"), str):
+        kept_format["name"] = people.text(format_block["name"])
+    if kept_format:
+        out["format"] = kept_format
+    return out
+
+
+def reduce_eventbrite_event(payload: object, *, redact: Sequence[str] = ()) -> dict[str, Any]:
+    """An API event object cut down to what ``services/events/eventbrite.py`` reads, with no person in it.
+
+    Kept: id, url, title, summary, start and end, status, the online and free flags, the three
+    taxonomy ids, the venue (name, printed address, city, coordinates) and the format. The
+    organiser is kept by name only when it is a public organisation; any other name is replaced
+    with a pseudonym and its website and page are dropped, since an organiser may be one
+    person. Every e-mail address becomes :data:`PLACEHOLDER_EMAIL` and every name in
+    ``redact`` is replaced wherever the kept text names it. Everything else (descriptions,
+    logos, the organiser's profile) is dropped. ``ValueError`` when ``payload`` has no id.
+    """
+    if not isinstance(payload, dict) or not isinstance(payload.get("id"), str):
+        raise ValueError("not an Eventbrite event")
+    people = _People([*redact, *eventbrite_people(payload)])
+    return _reduce_eventbrite_event(payload, people)
+
+
+def reduce_eventbrite_list(
+    payload: object, *, redact: Sequence[str] = (), limit: int = 3
+) -> dict[str, Any]:
+    """A list page with its first ``limit`` events reduced by the same rules as one event.
+
+    One set of pseudonyms covers the whole page, so an organiser is the same person in every
+    event. The real cursor is replaced by :data:`PLACEHOLDER_CONTINUATION`.
+    ``ValueError`` when the page has no ``events`` list.
+    """
+    data = _dict(payload)
+    if not isinstance(data.get("events"), list):
+        raise ValueError("no events list in the Eventbrite page")
+    chosen = [entry for entry in data["events"] if isinstance(entry, dict)][:limit]
+    people = _People([*redact, *eventbrite_people({"events": chosen})])
+    pagination = _dict(data.get("pagination"))
+    kept: dict[str, Any] = {
+        key: pagination[key]
+        for key in _EVENTBRITE_COUNTS
+        if isinstance(pagination.get(key), int) and not isinstance(pagination[key], bool)
+    }
+    more = pagination.get("has_more_items") is True
+    if more:
+        kept["continuation"] = PLACEHOLDER_CONTINUATION
+    kept["has_more_items"] = more
+    return {
+        "pagination": kept,
+        "events": [_reduce_eventbrite_event(event, people) for event in chosen],
+    }
