@@ -66,6 +66,8 @@ KEY_FILE_LIMIT = 4
 #: A file bigger than this is not shown to the judge.
 MAX_KEY_FILE_BYTES = 200 * 1024
 _MAX_PATH_CHARS = 500
+#: In a repo path these end it or rewrite the request built from it (see ``_is_safe_path``).
+_UNSAFE_PATH_CHARS = frozenset("?#%\\")
 
 _SHA = re.compile(r"[0-9a-f]{40}")
 
@@ -179,11 +181,12 @@ def parse_timestamp(value: object) -> datetime | None:
         return None
     try:
         parsed = datetime.fromisoformat(value)
-    except ValueError:
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            return None
+        # An instant at the edge of the supported years can overflow when moved to UTC.
+        return parsed.astimezone(UTC)
+    except (ValueError, OverflowError):
         return None
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        return None
-    return parsed.astimezone(UTC)
 
 
 # -- repo URL and video link ------------------------------------------------------------------
@@ -276,8 +279,28 @@ def snapshot(pushes: Sequence[Push], deadline_at: datetime) -> tuple[Push | None
 # -- file tree and key files ------------------------------------------------------------------
 
 
+def _is_safe_path(path: str) -> bool:
+    """Whether a repo path can be put into a request URL without changing the request.
+
+    The candidate chooses these names, and a key file's path ends up in
+    ``.../contents/<path>?ref=<snapshot>``. So a path is refused if it is empty or long,
+    holds a control character or any whitespace but a plain space, holds one of ``?``,
+    ``#``, ``%`` or a backslash (they end the path, drop or replace ``ref``, or smuggle in
+    escapes), or has an empty, ``.`` or ``..`` segment.
+    """
+    return (
+        0 < len(path) <= _MAX_PATH_CHARS
+        and path.isprintable()
+        and _UNSAFE_PATH_CHARS.isdisjoint(path)
+        and all(part not in ("", ".", "..") for part in path.split("/"))
+    )
+
+
 def parse_tree(payload: Any) -> list[TreeEntry]:
-    """The files (blobs) of a ``git/trees?recursive=1`` response. A missing size is 0."""
+    """The files (blobs) of a ``git/trees?recursive=1`` response. A missing size is 0.
+
+    A blob whose path is not safe to put in a request URL (see ``_is_safe_path``) is skipped.
+    """
     rows = payload.get("tree") if isinstance(payload, dict) else None
     if not isinstance(rows, list):
         return []
@@ -286,9 +309,7 @@ def parse_tree(payload: Any) -> list[TreeEntry]:
         if not isinstance(row, dict) or row.get("type") != "blob":
             continue
         path, size = row.get("path"), row.get("size")
-        if not isinstance(path, str) or not path or len(path) > _MAX_PATH_CHARS:
-            continue
-        if not path.isprintable():
+        if not isinstance(path, str) or not _is_safe_path(path):
             continue
         if not isinstance(size, int) or isinstance(size, bool) or size < 0:
             size = 0
@@ -319,12 +340,14 @@ def is_test_path(path: str) -> bool:
 
 
 def _is_candidate(entry: TreeEntry) -> bool:
-    """A source file the judge could be shown: not vendored, generated, locked, hidden by
-    a ``.git*`` name, minified or oversize. Binaries and images fall out on extension."""
+    """A source file the judge could be shown: a safe path, not vendored, generated, locked,
+    hidden by a ``.git*`` name, minified or oversize. Binaries and images fall out on
+    extension."""
     parts = entry.path.lower().split("/")
     name = parts[-1]
     return (
-        not any(part in _VENDORED_DIRS for part in parts[:-1])
+        _is_safe_path(entry.path)
+        and not any(part in _VENDORED_DIRS for part in parts[:-1])
         and not any(part.startswith(".git") for part in parts)
         and name not in _LOCKFILES
         and ".min." not in name

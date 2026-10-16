@@ -256,6 +256,24 @@ def test_parse_timestamp_rejects_anything_that_is_not_an_aware_instant(value: ob
     assert parse_timestamp(value) is None
 
 
+@pytest.mark.parametrize(
+    "value", ["9999-12-31T23:59:59-12:00", "0001-01-01T00:00:00+05:30", "9999-12-31T23:59:59-23:59"]
+)
+def test_parse_timestamp_rejects_an_instant_that_overflows_when_moved_to_utc(value: str) -> None:
+    # Parses as an aware datetime, but converting it to UTC leaves the supported years.
+    assert parse_timestamp(value) is None
+
+
+def test_a_row_with_an_overflowing_timestamp_is_skipped_not_raised() -> None:
+    good = load_fixture("submission/activity.json")[1]
+    overflowing = {**good, "timestamp": "9999-12-31T23:59:59-12:00"}
+    assert parse_activity([overflowing, good], MAIN) == parse_activity([good], MAIN)
+    commit = load_fixture("submission/commits.json")[0]
+    dated = {**commit["commit"], "author": {"date": "9999-12-31T23:59:59-12:00"}}
+    parsed = parse_commits([{**commit, "commit": dated}])
+    assert [(c.sha, c.claimed_at) for c in parsed] == [(commit["sha"], None)]
+
+
 # --- activity and the snapshot ------------------------------------------------------------
 
 
@@ -513,6 +531,51 @@ def test_parse_tree_skips_unusable_rows() -> None:
 @pytest.mark.parametrize("payload", [None, [], "x", {}, {"tree": "no"}, {"tree": None}])
 def test_parse_tree_of_an_unexpected_payload_is_empty(payload: object) -> None:
     assert parse_tree(payload) == []
+
+
+#: Paths a candidate can commit that would change the request built from them
+#: (``.../contents/<path>?ref=<snapshot>``): a ``#`` or ``?`` ends the path and drops or
+#: replaces ``ref``, ``%`` and ``\`` smuggle in escapes, ``..`` climbs out of ``contents``.
+#: Each would be the first key file if it were allowed.
+UNSAFE_PATHS = (
+    "src/app#.py",
+    "src/a?ref=main.py",
+    "src/a%2e%2e.py",
+    "src\\app.py",
+    "src/a\tb.py",
+    "src/a\nb.py",
+    "src/a\x00b.py",
+    "src/a\N{NO-BREAK SPACE}b.py",
+    "src/a\N{EM SPACE}b.py",
+    "src/../src/big.py",
+    "src/./big.py",
+    "./src/big.py",
+    "/src/big.py",
+    "src//big.py",
+)
+
+
+@pytest.mark.parametrize("path", UNSAFE_PATHS)
+def test_parse_tree_drops_a_path_that_could_change_the_request_built_from_it(path: str) -> None:
+    payload = {
+        "tree": [
+            {"path": path, "type": "blob", "size": 9000},
+            {"path": "src/ok.py", "type": "blob", "size": 5},
+        ]
+    }
+    assert parse_tree(payload) == [TreeEntry("src/ok.py", 5)]
+
+
+@pytest.mark.parametrize("path", UNSAFE_PATHS)
+def test_key_files_never_include_a_path_that_could_change_the_request(path: str) -> None:
+    # Hand-built entries: the pick must be safe on its own, not only after parse_tree.
+    assert pick_key_files([_entry(path, 9000), _entry("src/ok.py", 5)]) == ["src/ok.py"]
+
+
+def test_a_plain_space_in_a_path_is_kept() -> None:
+    payload = {"tree": [{"path": "src/my app.py", "type": "blob", "size": 5}]}
+    assert parse_tree(payload) == [TreeEntry("src/my app.py", 5)]
+    assert pick_key_files([_entry("src/my app.py", 5)]) == ["src/my app.py"]
 
 
 def test_key_files_of_the_submission_skip_vendored_locked_and_binary_files() -> None:
