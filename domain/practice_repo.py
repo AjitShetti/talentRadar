@@ -48,8 +48,10 @@ VIDEO_HOSTS = (
 #: may create the empty repo while the Start dialog is open.
 REPO_CREATION_GRACE = timedelta(minutes=15)
 
-#: Activity types that move a branch to commits the author chose to push.
-PUSH_KINDS = ("push", "force_push")
+#: Activity types that move a branch to a new tip, which is ``after``. GitHub reports the
+#: first push to a new branch as ``branch_creation`` and a merge as ``pr_merge`` or
+#: ``merge_queue_merge``. ``branch_deletion`` removes the tip and is never counted.
+PUSH_KINDS = ("push", "force_push", "branch_creation", "pr_merge", "merge_queue_merge")
 
 #: First line of a commit message, cut to this many characters.
 COMMIT_MESSAGE_CHARS = 80
@@ -67,7 +69,24 @@ _MAX_PATH_CHARS = 500
 
 _SHA = re.compile(r"[0-9a-f]{40}")
 
-_VENDORED_DIRS = frozenset({"node_modules", "vendor", "dist", "build"})
+#: Directories that hold vendored, installed, built or generated code, never the candidate's own.
+_VENDORED_DIRS = frozenset(
+    {
+        "node_modules",
+        "vendor",
+        "dist",
+        "build",
+        "venv",
+        ".venv",
+        "env",
+        "site-packages",
+        "__pycache__",
+        ".git",
+        "target",
+        ".next",
+        "coverage",
+    }
+)
 _LOCKFILES = frozenset(
     {
         "package-lock.json",
@@ -119,7 +138,7 @@ class Push:
 
     ``sha`` is the entry's ``after`` (the branch tip once the push landed) and
     ``before`` the tip it replaced (forty zeros for a new branch). ``at`` is GitHub's
-    own timestamp. ``kind`` is ``push`` or ``force_push``.
+    own timestamp. ``kind`` is the activity type, one of ``PUSH_KINDS``.
     """
 
     sha: str
@@ -213,7 +232,10 @@ def valid_video_url(url: str) -> bool:
 
 
 def parse_activity(payload: Any, ref: str) -> list[Push]:
-    """The ``push`` and ``force_push`` entries on ``ref`` of an Activity API response.
+    """The entries on ``ref`` of an Activity API response that moved it to a new tip.
+
+    That is every type in ``PUSH_KINDS``: ``push``, ``force_push``, ``branch_creation``,
+    ``pr_merge`` and ``merge_queue_merge``. ``branch_deletion`` is not one.
 
     The order of the payload is kept (GitHub lists newest first). Entries on other refs,
     of other types, or with an unreadable id or timestamp are dropped.
@@ -238,8 +260,8 @@ def snapshot(pushes: Sequence[Push], deadline_at: datetime) -> tuple[Push | None
     """The push to judge, and how many pushes came after the deadline.
 
     The push is the latest one with ``at <= deadline_at``: a push at exactly the deadline
-    counts. Pushes after it, force pushes included, are ignored and only counted. When two
-    pushes share a timestamp the one listed first wins (GitHub lists newest first).
+    counts. Pushes and merges after it, force pushes included, are ignored and only counted.
+    When two share a timestamp the one listed first wins (GitHub lists newest first).
     ``None`` when nothing was pushed in time.
 
     Only push times are read. Commit dates play no part.
@@ -325,7 +347,9 @@ def pick_key_files(tree: Sequence[TreeEntry], limit: int = KEY_FILE_LIMIT) -> li
 
     Entry points come first (``main.*``, ``app.*``, ``server.*``, ``index.*``, ``cli.*``,
     ``manage.py``; shallowest first), then the largest source files under ``src/``,
-    ``app/``, ``lib/`` or ``api/``, then the largest test file if there is one. Vendored,
+    ``app/``, ``lib/`` or ``api/``. If the tree has a test file, the best (largest) one
+    takes the last slot, even when entry points or sources would have filled it, so a
+    reader can see that tests exist; with a single slot the entry point wins. Vendored,
     generated, locked, minified, hidden, binary and oversize files never qualify.
     """
     candidates = [entry for entry in tree if _is_candidate(entry)]
@@ -343,8 +367,10 @@ def pick_key_files(tree: Sequence[TreeEntry], limit: int = KEY_FILE_LIMIT) -> li
     entry_points.sort(key=lambda pair: (pair[1].path.count("/"), pair[0], pair[1].path))
     sources.sort(key=lambda entry: (-entry.size, entry.path))
     tests.sort(key=lambda entry: (-entry.size, entry.path))
-    ordered = [entry for _, entry in entry_points] + sources + tests[:1]
-    return [entry.path for entry in ordered][: max(limit, 0)]
+    ranked = [entry for _, entry in entry_points] + sources
+    reserve_test = bool(tests) and limit > 1
+    picked = ranked[: limit - 1] + tests[:1] if reserve_test else ranked[: max(limit, 0)]
+    return [entry.path for entry in picked]
 
 
 # -- commits ----------------------------------------------------------------------------------

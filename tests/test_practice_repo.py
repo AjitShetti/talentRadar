@@ -270,11 +270,84 @@ def test_parse_activity_keeps_the_four_main_pushes_and_drops_the_wip_branch() ->
     assert [p.sha[:2] for p in wip] == ["5d"]
 
 
-def test_parse_activity_reads_push_and_force_push_only() -> None:
+def _activity_entry(
+    activity_type: str, *, after: int, before: int | None, at: datetime, ref: str = MAIN
+) -> dict[str, Any]:
+    """One Activity API entry in the shape GitHub records (see ``github_activity.json``)."""
+    return {
+        "id": after,
+        "node_id": f"PSH_demo_{after}",
+        "before": _sha(before) if before is not None else "0" * 40,
+        "after": _sha(after),
+        "ref": ref,
+        "timestamp": at.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "activity_type": activity_type,
+        "actor": {"login": "demo-builder"},
+    }
+
+
+def test_parse_activity_ignores_a_deleted_branch_and_unknown_types() -> None:
     payload = load_fixture("submission/activity.json")
     payload.append({**payload[0], "activity_type": "branch_deletion", "id": 9})
     payload.append({**payload[0], "activity_type": "something_new", "id": 10})
     assert len(parse_activity(payload, MAIN)) == 4
+
+
+def test_a_branch_creation_push_to_main_counts_as_a_push_in_the_window() -> None:
+    # A repo whose first push creates `main`: GitHub records it as branch_creation, not push.
+    at = STARTED + timedelta(hours=3)
+    payload = [_activity_entry("branch_creation", after=5, before=None, at=at)]
+    pushes = parse_activity(payload, MAIN)
+    assert pushes == [Push(sha=_sha(5), before="0" * 40, at=at, kind="branch_creation")]
+    assert snapshot(pushes, DEADLINE) == (pushes[0], 0)
+    signals = _signals(commits=[_line(5)], pushes=pushes)
+    assert signals["pushes_in_window"] == 1
+    assert signals["largest_push_commits"] == 1
+
+
+def test_a_pr_merge_into_main_counts_and_can_be_the_snapshot() -> None:
+    first, merged = STARTED + timedelta(hours=3), STARTED + timedelta(hours=40)
+    payload = [
+        _activity_entry("pr_merge", after=6, before=5, at=merged),
+        _activity_entry("branch_creation", after=5, before=None, at=first),
+    ]
+    pushes = parse_activity(payload, MAIN)
+    assert [p.kind for p in pushes] == ["pr_merge", "branch_creation"]
+    chosen, late = snapshot(pushes, DEADLINE)
+    assert chosen is not None
+    assert chosen.sha == _sha(6)
+    assert late == 0
+    signals = _signals(pushes=pushes)
+    assert signals["pushes_in_window"] == 2
+    assert signals["push_span_hours"] == 37.0
+
+
+def test_a_merge_queue_merge_counts() -> None:
+    at = STARTED + timedelta(hours=9)
+    payload = [_activity_entry("merge_queue_merge", after=7, before=6, at=at)]
+    assert [p.kind for p in parse_activity(payload, MAIN)] == ["merge_queue_merge"]
+
+
+def test_a_pr_merge_after_the_deadline_is_ignored_and_counted() -> None:
+    payload = [
+        _activity_entry("pr_merge", after=8, before=7, at=DEADLINE + timedelta(minutes=1)),
+        _activity_entry("push", after=7, before=None, at=DEADLINE - timedelta(hours=1)),
+    ]
+    chosen, late = snapshot(parse_activity(payload, MAIN), DEADLINE)
+    assert chosen is not None
+    assert chosen.sha == _sha(7)
+    assert late == 1
+
+
+def test_a_branch_deletion_is_never_a_push() -> None:
+    at = STARTED + timedelta(hours=3)
+    payload = [
+        _activity_entry("branch_deletion", after=0, before=5, at=at),
+        # Even one that names a real tip in `after` is not a push.
+        _activity_entry("branch_deletion", after=5, before=4, at=at),
+    ]
+    assert parse_activity(payload, MAIN) == []
+    assert snapshot(parse_activity(payload, MAIN), DEADLINE) == (None, 0)
 
 
 def test_parse_activity_skips_malformed_entries() -> None:
@@ -301,10 +374,30 @@ def test_parse_activity_of_a_non_list_is_empty(payload: object) -> None:
 
 def test_parse_activity_reads_the_recorded_github_shape() -> None:
     pushes = parse_activity(load_fixture("github_activity.json"), "refs/heads/v2")
-    assert pushes
-    assert all(p.kind in ("push", "force_push") for p in pushes)
+    assert len(pushes) == 6
+    assert {p.kind for p in pushes} == {"push", "branch_creation"}
+    assert pushes[-1].kind == "branch_creation"
+    assert pushes[-1].before == "0" * 40
     assert all(len(p.sha) == 40 and p.at.tzinfo is UTC for p in pushes)
     assert pushes == sorted(pushes, key=lambda p: p.at, reverse=True)
+
+
+def test_the_recorded_main_branch_is_all_pr_merges() -> None:
+    pushes = parse_activity(load_fixture("github_activity.json"), MAIN)
+    assert len(pushes) == 8
+    assert {p.kind for p in pushes} == {"pr_merge"}
+
+
+def test_every_recorded_activity_entry_but_a_deletion_is_read() -> None:
+    payload = load_fixture("github_activity.json")
+    refs = {entry["ref"] for entry in payload}
+    assert {entry["activity_type"] for entry in payload} == {
+        "push",
+        "force_push",
+        "branch_creation",
+        "pr_merge",
+    }
+    assert sum(len(parse_activity(payload, ref)) for ref in refs) == len(payload) == 20
 
 
 def test_snapshot_includes_push_at_deadline() -> None:
@@ -516,6 +609,79 @@ def test_key_files_never_pick_a_test_as_an_entry_point_or_source() -> None:
 
 def test_key_files_of_an_empty_tree_is_empty() -> None:
     assert pick_key_files([]) == []
+
+
+def test_key_files_reserve_a_slot_for_the_best_test_when_entry_points_fill_the_limit() -> None:
+    tree = [
+        _entry("main.py"),
+        _entry("app.py"),
+        _entry("server.js"),
+        _entry("index.js"),
+        _entry("cli.py"),
+        _entry("tests/test_small.py", 10),
+        _entry("tests/test_big.py", 900),
+    ]
+    assert pick_key_files(tree) == ["main.py", "app.py", "server.js", "tests/test_big.py"]
+    assert pick_key_files(tree, limit=2) == ["main.py", "tests/test_big.py"]
+
+
+def test_key_files_reserve_a_slot_for_a_test_when_sources_fill_the_limit() -> None:
+    tree = [_entry(f"src/f{i}.py", 100 + i) for i in range(10)] + [_entry("tests/test_x.py", 1)]
+    assert pick_key_files(tree) == ["src/f9.py", "src/f8.py", "src/f7.py", "tests/test_x.py"]
+
+
+def test_key_files_without_a_test_use_every_slot_for_other_files() -> None:
+    tree = [_entry(name) for name in ("main.py", "app.py", "server.js", "index.js", "cli.py")]
+    assert pick_key_files(tree) == ["main.py", "app.py", "server.js", "index.js"]
+
+
+def test_key_files_keep_a_test_after_fewer_other_files_than_the_limit() -> None:
+    tree = [_entry("src/a.py", 5), _entry("tests/test_a.py", 5)]
+    assert pick_key_files(tree) == ["src/a.py", "tests/test_a.py"]
+    assert pick_key_files([_entry("tests/test_a.py")]) == ["tests/test_a.py"]
+
+
+def test_key_files_with_a_single_slot_prefer_the_entry_point_to_the_test() -> None:
+    tree = [_entry("main.py"), _entry("tests/test_a.py")]
+    assert pick_key_files(tree, limit=1) == ["main.py"]
+
+
+#: Directories that hold vendored, installed, built or generated code, never the candidate's own.
+NOT_THE_CANDIDATES_OWN = (
+    "node_modules",
+    "vendor",
+    "dist",
+    "build",
+    "venv",
+    ".venv",
+    "env",
+    "site-packages",
+    "__pycache__",
+    ".git",
+    "target",
+    ".next",
+    "coverage",
+)
+
+
+@pytest.mark.parametrize("directory", NOT_THE_CANDIDATES_OWN)
+def test_key_files_never_come_from_a_vendored_or_generated_directory(directory: str) -> None:
+    tree = [
+        _entry(f"{directory}/main.py", 50),
+        _entry(f"{directory}/lib/pkg/app.py", 50),
+        _entry(f"src/{directory}/server.js", 50),
+        _entry(f"{directory}/lib/pkg/tests/test_x.py", 50),
+        _entry("src/ok.py", 1),
+    ]
+    assert pick_key_files(tree) == ["src/ok.py"]
+
+
+@pytest.mark.parametrize("directory", NOT_THE_CANDIDATES_OWN)
+def test_tests_inside_a_vendored_or_generated_directory_are_not_tests(directory: str) -> None:
+    for path in (f"{directory}/lib/tests/test_x.py", f"src/{directory}/spec/a.py"):
+        assert not is_test_path(path)
+    tree = [_entry(f"{directory}/lib/tests/test_x.py"), _entry("src/a.py")]
+    assert _signals(tree=tree)["tests_present"] is False
 
 
 @pytest.mark.parametrize(
