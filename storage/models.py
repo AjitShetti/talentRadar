@@ -12,11 +12,13 @@ Tables
 """
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from enum import Enum as PyEnum
 from typing import Any
 
 from sqlalchemy import (
+    CHAR,
     JSON,
     BigInteger,
     Boolean,
@@ -28,6 +30,7 @@ from sqlalchemy import (
     Index,
     Integer,
     Numeric,
+    SmallInteger,
     String,
     Text,
     TypeDecorator,
@@ -1797,6 +1800,275 @@ class DailyJobMatch(Base):
 
     def __repr__(self) -> str:
         return f"<DailyJobMatch user={self.user_id} date={self.match_date} rank={self.rank}>"
+
+
+# ---------------------------------------------------------------------------
+# practice — the daily LeetCode pick, the weekly take-home and its judgement,
+# and the per-user switches (docs/superpowers/specs/2026-10-15-practice-design.md §5)
+# ---------------------------------------------------------------------------
+
+# Every state an attempt can be in. A judged or rejected attempt keeps its row;
+# "missed" is shown only to its owner.
+ATTEMPT_STATUSES: tuple[str, ...] = (
+    "started",
+    "submitted",
+    "queued",
+    "judged",
+    "rejected",
+    "judge_failed",
+    "missed",
+)
+
+
+class PracticeDay(Base):
+    """One IST day the user acted on in Practice: a swap or a "done"."""
+
+    __tablename__ = "practice_days"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    day: Mapped[date] = mapped_column(Date, nullable=False, comment="IST calendar date")
+    question_slug: Mapped[str] = mapped_column(
+        String(128), nullable=False, comment="Catalogue slug"
+    )
+    topic: Mapped[str] = mapped_column(String(48), nullable=False, comment="The topic drawn")
+    difficulty: Mapped[str] = mapped_column(
+        String(8), nullable=False, comment="easy | medium | hard"
+    )
+    swaps: Mapped[int] = mapped_column(
+        SmallInteger,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+        comment="0 or 1: whether the user asked for a different question this day",
+    )
+    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    feel: Mapped[str | None] = mapped_column(
+        String(8), nullable=True, comment="easy | right | hard, the one-tap rating"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "day", name="uq_practice_days_user_day"),
+        Index("ix_practice_days_user_done", "user_id", "done_at"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<PracticeDay user={self.user_id} day={self.day}>"
+
+
+class PracticeChallenge(Base):
+    """One edition of the weekly take-home. Its brief is copied in at creation."""
+
+    __tablename__ = "practice_challenges"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    slug: Mapped[str] = mapped_column(
+        String(96), nullable=False, comment="<brief-slug>-<YYYY-MM-DD of opens_at>"
+    )
+    brief_slug: Mapped[str] = mapped_column(
+        String(80), nullable=False, comment="The brief file's slug"
+    )
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    track: Mapped[str] = mapped_column(
+        String(16), nullable=False, comment="backend | frontend | fullstack | data | ai"
+    )
+    hours: Mapped[int] = mapped_column(SmallInteger, nullable=False, comment="24 or 48")
+    brief: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, comment="The brief file's content, copied at creation (<= 8 KB)"
+    )
+    opens_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    closes_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("slug", name="uq_practice_challenges_slug"),
+        Index("ix_practice_challenges_opens_at", "opens_at"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<PracticeChallenge slug={self.slug!r}>"
+
+
+class PracticeAttempt(Base):
+    """One user's take-home: the start, the submission and the judgement, in one row."""
+
+    __tablename__ = "practice_attempts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    challenge_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("practice_challenges.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, comment="One of ATTEMPT_STATUSES"
+    )
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, comment="Server time of Start"
+    )
+    deadline_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, comment="started_at plus the brief's hours"
+    )
+    proof_code: Mapped[str] = mapped_column(
+        CHAR(10), nullable=False, comment="[A-Z2-9]{10}; the repo's .talentradar file holds it"
+    )
+    repo_owner: Mapped[str | None] = mapped_column(
+        String(39), nullable=True, comment="Captured from the strict GitHub URL"
+    )
+    repo_name: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, comment="Captured from the strict GitHub URL"
+    )
+    writeup: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True, comment="decisions, tradeoffs, ai_usage, next_steps; each bounded"
+    )
+    video_url: Mapped[str | None] = mapped_column(
+        String(300), nullable=True, comment="Shown to its owner and to an admin, never judged"
+    )
+    submitted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, comment="Last save"
+    )
+    repo_created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, comment="From GitHub's own timestamp"
+    )
+    snapshot_sha: Mapped[str | None] = mapped_column(
+        CHAR(40), nullable=True, comment="The last push at or before the deadline"
+    )
+    snapshot_pushed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, comment="From the GitHub Activity API"
+    )
+    signals: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True, comment="Deterministic evidence, not points"
+    )
+    scores: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True, comment="{criterion: number}, the final scores"
+    )
+    total: Mapped[Decimal | None] = mapped_column(
+        Numeric(4, 1), nullable=True, comment="Weighted total, 0 to 100, one decimal"
+    )
+    notes: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True, comment="Per-criterion notes, strengths, improvements, summary"
+    )
+    judge_runs: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True, comment="At most two runs: scores, model, prompt version, time"
+    )
+    judge_input_sha256: Mapped[str | None] = mapped_column(
+        CHAR(64), nullable=True, comment="SHA-256 of the assembled judge input"
+    )
+    judge_attempts: Mapped[int] = mapped_column(
+        SmallInteger,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+        comment="Failed judge calls so far; judge_failed after six",
+    )
+    next_judge_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, comment="Backoff: when the judge may try again"
+    )
+    reject_reason: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="Shown to the owner when status is rejected"
+    )
+    flags: Mapped[list[str]] = mapped_column(
+        StringArray,
+        nullable=False,
+        default=list,
+        server_default=text("'{}'"),
+        comment="e.g. injection_text",
+    )
+    held: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+        comment="Off the leaderboard until an admin clears it",
+    )
+    appeal_reason: Mapped[str | None] = mapped_column(
+        String(500), nullable=True, comment="For an admin only; never sent to the model"
+    )
+    appealed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    judged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    override_note: Mapped[str | None] = mapped_column(
+        String(500), nullable=True, comment="Admin note on an override"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "challenge_id", name="uq_practice_attempts_user_challenge"),
+        UniqueConstraint("proof_code", name="uq_practice_attempts_proof_code"),
+        Index("ix_practice_attempts_board", "challenge_id", "status", "total"),
+        Index("ix_practice_attempts_due", "status", "next_judge_at"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<PracticeAttempt user={self.user_id} challenge={self.challenge_id} "
+            f"status={self.status!r}>"
+        )
+
+
+class PracticeSettings(Base):
+    """A user's Practice switches: leaderboard name, repo link, contest reminder."""
+
+    __tablename__ = "practice_settings"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    display_name: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, comment="Opt-in leaderboard name"
+    )
+    show_repo: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+        comment="Opt-in: the repo link appears on the board",
+    )
+    contest_reminder: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+        comment="Show the weekly contest on the Overview and on /practice",
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    def __repr__(self) -> str:
+        return f"<PracticeSettings user={self.user_id}>"
 
 
 # ---------------------------------------------------------------------------
