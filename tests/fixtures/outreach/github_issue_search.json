@@ -1,0 +1,76 @@
+{
+  "total_count": 7,
+  "incomplete_results": false,
+  "items": [
+    {
+      "html_url": "https://github.com/fernhill-dev/fernhill/issues/412",
+      "number": 412,
+      "title": "Add a --json flag to `fernhill run`",
+      "labels": [
+        {
+          "name": "good first issue"
+        }
+      ],
+      "updated_at": "2026-10-13T18:30:02Z",
+      "comments": 4,
+      "repository_url": "https://api.github.com/repos/fernhill-dev/fernhill"
+    },
+    {
+      "html_url": "https://github.com/fernhill-dev/fernhill-docs/issues/88",
+      "number": 88,
+      "title": "Explain how retries are counted in the run guide",
+      "labels": [
+        {
+          "name": "help wanted"
+        },
+        {
+          "name": "docs"
+        }
+      ],
+      "updated_at": "2026-10-11T07:55:19Z",
+      "comments": 1,
+      "repository_url": "https://api.github.com/repos/fernhill-dev/fernhill-docs"
+    },
+    {
+      "html_url": "https://github.com/someone-else/fork/issues/3",
+      "number": 3,
+      "title": "Typo in the install section",
+      "labels": [
+        {
+          "name": "bug"
+        }
+      ],
+      "updated_at": "2026-10-09T21:14:36Z",
+      "comments": 0,
+      "repository_url": "https://api.github.com/repos/someone-else/fork"
+    },
+    {
+      "html_url": "https://github.com/fernhill-dev/fernhill/issues/419",
+      "number": 419,
+      "title": "Make fernhill sync retry transient index failures with backoff, record each attempt in the run log, and keep the local cache consistent when a pass is interrupted halfway through the batch so that a rerun neither duplicates work nor skips postings already written to the store during the earlier pass",
+      "labels": [
+        {
+          "name": "triage-needs-owner-review-before-the-next-sprint-planning-q4"
+        },
+        {
+          "name": "bug"
+        },
+        {
+          "name": "backend"
+        },
+        {
+          "name": "reliability"
+        },
+        {
+          "name": "p2"
+        },
+        {
+          "name": "needs-repro"
+        }
+      ],
+      "updated_at": "2026-10-15T08:07:44Z",
+      "comments": 12,
+      "repository_url": "https://api.github.com/repos/fernhill-dev/fernhill"
+    }
+  ]
+}
