@@ -35,13 +35,11 @@ The ``company.stage`` and ``company.sector`` of a detail are display labels
 
 from __future__ import annotations
 
-import importlib
 import logging
 import re
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from types import ModuleType
 from typing import Any, Literal
 from urllib.parse import urlsplit
 
@@ -64,6 +62,7 @@ from services.base import parse_uuid
 from services.company_contacts import _EMAIL_RE
 from services.company_map.read import target_roles
 from services.outreach.errors import Conflict, Invalid, NotFound
+from services.outreach.oss import snapshot_for
 from services.outreach.threads import (
     _id,
     _in_added_order,
@@ -718,13 +717,7 @@ async def get_thread(
         if company is not None:
             contacts = await _visible_contacts(session, company.id, thread.user_id)
             roles = await target_roles(session, thread.user_id)
-            oss: ModuleType | None
-            try:
-                oss = importlib.import_module("services.outreach.oss")
-            except ImportError:
-                oss = None
-            if oss is not None:
-                issues = await oss.snapshot_for(company.id)
+            issues = await snapshot_for(company.id)
 
     by_id = {contact.id: contact for contact in contacts}
     people = _in_added_order(thread.people)

@@ -15,10 +15,8 @@ rows that were never stored. Every person and company here is fictional.
 
 from __future__ import annotations
 
-import sys
 import uuid
 from datetime import UTC, datetime, timedelta
-from types import ModuleType
 from typing import Any, cast
 
 import pytest
@@ -39,6 +37,7 @@ from services.outreach.threads import create_thread
 from storage.models import (
     Company,
     CompanyContact,
+    OssIssueSnapshot,
     OutreachPerson,
     OutreachThread,
     OutreachTouch,
@@ -1243,53 +1242,59 @@ async def test_touches_come_newest_first(outreach_db: Factory) -> None:
     assert detail["touches"][2]["happened_at"] == (NOW - timedelta(days=6)).isoformat()
 
 
-async def test_detail_carries_the_snapshot_when_the_oss_module_exists(
-    outreach_db: Factory, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_detail_carries_the_stored_snapshot(outreach_db: Factory) -> None:
     async with outreach_db() as session:
         user = await make_user(session)
         company = await make_company(session, "Tessel AI")
+        session.add(
+            OssIssueSnapshot(
+                company_id=company.id,
+                org="tessel-ai",
+                status="ok",
+                total_count=1,
+                issues=[],
+                fetched_at=NOW - timedelta(days=2),
+            )
+        )
+        await session.commit()
     thread_id = await _open(user, company)
-    snapshot = {
-        "org": "tessel-ai",
-        "status": "ok",
-        "total_count": 0,
-        "issues": [],
-        "fetched_at": "x",
-    }
-    asked: list[Any] = []
-
-    async def snapshot_for(company_id: Any) -> dict[str, Any]:
-        asked.append(company_id)
-        return snapshot
-
-    fake = ModuleType("services.outreach.oss")
-    fake.__dict__["snapshot_for"] = snapshot_for
-    monkeypatch.setitem(sys.modules, "services.outreach.oss", fake)
 
     detail = await get_thread(str(user.id), thread_id, now=NOW)
 
-    assert detail["issues"] == snapshot
-    assert [str(asked_id) for asked_id in asked] == [str(company.id)]
+    assert detail["issues"] == {
+        "org": "tessel-ai",
+        "status": "ok",
+        "total_count": 1,
+        "issues": [],
+        "fetched_at": (NOW - timedelta(days=2)).isoformat(),
+    }
 
-    # A name-only thread has no company to ask about.
-    asked.clear()
-    typed = await get_thread(str(user.id), await _typed_thread(user), now=NOW)
-    assert typed["issues"] is None
-    assert asked == []
 
-
-async def test_detail_without_the_oss_module_has_no_issues(
-    outreach_db: Factory, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_detail_without_a_snapshot_has_no_issues(outreach_db: Factory) -> None:
     async with outreach_db() as session:
         user = await make_user(session)
         company = await make_company(session, "Tessel AI")
     thread_id = await _open(user, company)
-    # A None entry makes the import raise, whether or not the module exists yet.
-    monkeypatch.setitem(cast("dict[str, Any]", sys.modules), "services.outreach.oss", None)
 
     detail = await get_thread(str(user.id), thread_id, now=NOW)
 
     assert detail["issues"] is None
     assert detail["company"] is not None
+
+
+async def test_a_name_only_thread_asks_for_no_snapshot(
+    outreach_db: Factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with outreach_db() as session:
+        user = await make_user(session)
+    asked: list[Any] = []
+
+    async def snapshot_for(company_id: Any) -> None:
+        asked.append(company_id)
+
+    monkeypatch.setattr("services.outreach.people.snapshot_for", snapshot_for)
+
+    detail = await get_thread(str(user.id), await _typed_thread(user), now=NOW)
+
+    assert detail["issues"] is None
+    assert asked == []
