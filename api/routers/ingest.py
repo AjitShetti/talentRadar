@@ -265,15 +265,16 @@ async def ingest_startup_news() -> dict[str, int | str]:
 @router.post("/outreach-issues", dependencies=[Depends(require_cron_or_admin)])
 async def refresh_outreach_issues(
     limit: int = Query(default=20, ge=1, le=60),
-) -> dict[str, int | str]:
+) -> dict[str, int | str | None]:
     """
     Check a bounded number of companies for good-first-issues on GitHub.
 
     Called daily by ``.github/workflows/outreach.yml``. This is the only thing
     that searches GitHub for issues: a page load reads the stored snapshots. The step
     spaces its requests to GitHub's limits, caps ``limit`` at 20 without a
-    ``GITHUB_TOKEN``, stops at the first rate-limit response, and never raises:
-    a failure comes back as ``{"error": ...}``.
+    ``GITHUB_TOKEN``, never raises (a failure comes back as ``{"error": ...}``)
+    and says in ``stopped`` why a run ended early: ``budget``, ``rate_limited``,
+    ``auth`` (a rejected token) or ``errors`` (GitHub unreachable).
     """
     from services.outreach import oss
 

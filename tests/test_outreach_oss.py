@@ -16,7 +16,9 @@ Every company, organisation and issue here is fictional.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -84,7 +86,9 @@ class Seen:
 
     @property
     def orgs(self) -> list[str]:
-        return [request.url.params["q"].split()[0].removeprefix("org:") for request in self.requests]
+        return [
+            request.url.params["q"].split()[0].removeprefix("org:") for request in self.requests
+        ]
 
 
 @asynccontextmanager
@@ -100,14 +104,50 @@ async def github(answer: Answer) -> AsyncIterator[tuple[httpx.AsyncClient, Seen]
         yield client, seen
 
 
-class Sleeps:
-    """A ``sleep`` that records how long it was asked to wait and returns at once."""
+class FakeClock:
+    """A monotonic clock the test moves by hand."""
 
     def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+class Sleeps:
+    """A ``sleep`` that records how long it was asked to wait and returns at once.
+
+    Given a ``FakeClock`` it also moves that clock on, as a real wait would.
+    """
+
+    def __init__(self, clock: FakeClock | None = None) -> None:
         self.calls: list[float] = []
+        self.clock = clock
 
     async def __call__(self, seconds: float) -> None:
         self.calls.append(seconds)
+        if self.clock is not None:
+            self.clock.now += seconds
+
+
+def expected(
+    *,
+    checked: int = 0,
+    ok: int = 0,
+    not_found: int = 0,
+    errors: int = 0,
+    rate_limited: int = 0,
+    stopped: str | None = None,
+) -> dict[str, int | str | None]:
+    """The whole result of a run, so a test names only what differs from zero."""
+    return {
+        "checked": checked,
+        "ok": ok,
+        "not_found": not_found,
+        "errors": errors,
+        "rate_limited": rate_limited,
+        "stopped": stopped,
+    }
 
 
 @pytest.fixture
@@ -154,9 +194,7 @@ async def store_snapshot(
         await session.commit()
 
 
-async def open_thread(
-    factory: Factory, company: Company, *, closed: bool = False
-) -> None:
+async def open_thread(factory: Factory, company: Company, *, closed: bool = False) -> None:
     async with factory() as session:
         user = await make_user(session)
         session.add(
@@ -188,7 +226,7 @@ OLD_ISSUE = {
 
 def test_search_query() -> None:
     assert search_query("fernhill-dev", date(2026, 10, 15)) == (
-        'org:fernhill-dev is:issue is:open no:assignee archived:false '
+        "org:fernhill-dev is:issue is:open no:assignee archived:false "
         'label:"good first issue","good-first-issue","help wanted" updated:>=2025-10-15'
     )
 
@@ -220,7 +258,10 @@ def test_parse_search_drops_foreign_urls_and_trims_labels() -> None:
 
     long_one = issues[2]
     assert len(long_one["labels"]) == MAX_LABELS
-    assert long_one["labels"][0] == "triage-needs-owner-review-before-the-next-sprint-planning-q4"[:LABEL_MAX]
+    assert (
+        long_one["labels"][0]
+        == "triage-needs-owner-review-before-the-next-sprint-planning-q4"[:LABEL_MAX]
+    )
     assert long_one["title"].startswith("Make fernhill sync retry transient index failures")
     assert TITLE_MAX - 10 < len(long_one["title"]) <= TITLE_MAX
 
@@ -262,7 +303,10 @@ def test_parse_search_never_links_outside_the_org(url: str) -> None:
 
 def test_parse_search_accepts_the_orgs_name_in_any_case() -> None:
     # GitHub logins are case-insensitive; the link still points into the org.
-    item = {**FIXTURE["items"][0], "html_url": "https://github.com/Fernhill-Dev/fernhill/issues/412"}
+    item = {
+        **FIXTURE["items"][0],
+        "html_url": "https://github.com/Fernhill-Dev/fernhill/issues/412",
+    }
     _, issues = parse_search({"total_count": 1, "items": [item]}, "fernhill-dev")
     assert [issue["number"] for issue in issues] == [412]
 
@@ -326,13 +370,15 @@ async def test_refresh_records_ok_and_not_found(outreach_db: Factory, no_token: 
         tessel = await listed(session, "Tessel", "tessel-ai")
 
     def answer(org: str, request: httpx.Request) -> httpx.Response:
-        return ok_answer(org, request) if org == "fernhill-dev" else status_answer(422)(org, request)
+        return (
+            ok_answer(org, request) if org == "fernhill-dev" else status_answer(422)(org, request)
+        )
 
     sleeps = Sleeps()
     async with github(answer) as (client, seen):
         result = await refresh_issues(20, client=client, sleep=sleeps, now=NOW)
 
-    assert result == {"checked": 2, "ok": 1, "not_found": 1, "errors": 0, "rate_limited": 0}
+    assert result == expected(checked=2, ok=1, not_found=1)
     assert seen.orgs == ["fernhill-dev", "tessel-ai"]
     assert sleeps.calls == [6.5]  # between the two requests, not before the first or after the last
 
@@ -387,7 +433,9 @@ async def test_refresh_sends_the_token_and_uses_the_faster_gap(
         await refresh_issues(60, client=client, sleep=sleeps, now=NOW)
 
     assert sleeps.calls == [2.2]
-    assert [request.headers["Authorization"] for request in seen.requests] == [f"Bearer {token}"] * 2
+    assert [request.headers["Authorization"] for request in seen.requests] == [
+        f"Bearer {token}"
+    ] * 2
 
 
 @pytest.mark.parametrize(("has_token", "expected"), [(False, 20), (True, 25)])
@@ -397,7 +445,9 @@ async def test_the_run_is_capped_by_the_limit_and_the_run_limit(
     has_token: bool,
     expected: int,
 ) -> None:
-    monkeypatch.setattr(get_settings(), "github_token", "test-token-not-real" if has_token else None)
+    monkeypatch.setattr(
+        get_settings(), "github_token", "test-token-not-real" if has_token else None
+    )
     async with outreach_db() as session:
         for n in range(30):
             await listed(session, f"Co {n:02d}", f"org-{n:02d}")
@@ -411,9 +461,7 @@ async def test_the_run_is_capped_by_the_limit_and_the_run_limit(
 
 
 @pytest.mark.parametrize("code", [403, 429])
-async def test_refresh_stops_on_rate_limit(
-    outreach_db: Factory, no_token: None, code: int
-) -> None:
+async def test_refresh_stops_on_rate_limit(outreach_db: Factory, no_token: None, code: int) -> None:
     async with outreach_db() as session:
         oldest = await listed(session, "Fernhill", "fernhill-dev")
         newer = await listed(session, "Tessel", "tessel-ai")
@@ -430,8 +478,7 @@ async def test_refresh_stops_on_rate_limit(
     async with github(status_answer(code)) as (client, seen):
         result = await refresh_issues(20, client=client, sleep=sleeps, now=NOW)
 
-    assert result["rate_limited"] == 1
-    assert result["checked"] == 1
+    assert result == expected(checked=1, rate_limited=1, stopped="rate_limited")
     assert seen.orgs == ["fernhill-dev"]  # nothing is asked after the refusal
     assert sleeps.calls == []
 
@@ -468,12 +515,14 @@ async def test_refresh_keeps_the_results_found_before_the_rate_limit(
         await listed(session, "Tessel", "tessel-ai")
 
     def answer(org: str, request: httpx.Request) -> httpx.Response:
-        return ok_answer(org, request) if org == "fernhill-dev" else status_answer(403)(org, request)
+        return (
+            ok_answer(org, request) if org == "fernhill-dev" else status_answer(403)(org, request)
+        )
 
     async with github(answer) as (client, _):
         result = await refresh_issues(20, client=client, sleep=Sleeps(), now=NOW)
 
-    assert result == {"checked": 2, "ok": 1, "not_found": 0, "errors": 0, "rate_limited": 1}
+    assert result == expected(checked=2, ok=1, rate_limited=1, stopped="rate_limited")
     stored = await snapshot_of(outreach_db, fernhill)
     assert stored is not None
     assert stored.status == "ok"
@@ -491,7 +540,7 @@ async def test_refresh_error_keeps_previous_issues(outreach_db: Factory, no_toke
     async with github(status_answer(500)) as (client, _):
         result = await refresh_issues(20, client=client, sleep=Sleeps(), now=NOW)
 
-    assert result == {"checked": 1, "ok": 0, "not_found": 0, "errors": 1, "rate_limited": 0}
+    assert result == expected(checked=1, errors=1)
     after = await snapshot_of(outreach_db, fernhill)
     assert after is not None
     assert after.status == "error"
@@ -570,7 +619,7 @@ async def test_a_network_failure_is_one_orgs_error_and_the_run_goes_on(
     async with github(answer) as (client, seen):
         result = await refresh_issues(20, client=client, sleep=Sleeps(), now=NOW)
 
-    assert result == {"checked": 2, "ok": 1, "not_found": 0, "errors": 1, "rate_limited": 0}
+    assert result == expected(checked=2, ok=1, errors=1)
     assert seen.orgs == ["fernhill-dev", "tessel-ai"]
     stored = await snapshot_of(outreach_db, tessel)
     assert stored is not None
@@ -653,8 +702,207 @@ async def test_an_invalid_org_is_skipped_and_counted_as_an_error(
         result = await refresh_issues(1, client=client, sleep=Sleeps(), now=NOW)
 
     assert seen.orgs == ["fernhill-dev"]
-    assert result == {"checked": 2, "ok": 1, "not_found": 0, "errors": 1, "rate_limited": 0}
+    assert result == expected(checked=2, ok=1, errors=1)
     assert await snapshot_of(outreach_db, broken) is None
+
+
+# --- stopping early: time, errors, a bad token, the rate-limit header ---------------
+
+
+async def test_the_run_stops_before_a_request_that_could_overrun_the_budget(
+    outreach_db: Factory, no_token: None
+) -> None:
+    async with outreach_db() as session:
+        for n in range(6):
+            await listed(session, f"Co {n}", f"org-{n}")
+
+    clock = FakeClock()
+    sleeps = Sleeps(clock)
+
+    def slow(org: str, request: httpx.Request) -> httpx.Response:
+        clock.now += 60.0  # each request takes a minute
+        return ok_answer(org, request)
+
+    async with github(slow) as (client, seen):
+        result = await refresh_issues(
+            20, client=client, sleep=sleeps, now=NOW, clock=clock, budget=240.0
+        )
+
+    # Elapsed at the start of each org: 0, 66.5, 133, 199.5 (after its own 60 s request,
+    # 259.5). Another gap (6.5 s) and a request that may take its full timeout (8 s)
+    # would not fit in 240 s after the fourth.
+    assert seen.orgs == ["org-0", "org-1", "org-2", "org-3"]
+    assert sleeps.calls == [6.5, 6.5, 6.5]
+    assert result == expected(checked=4, ok=4, stopped="budget")
+
+
+async def test_a_budget_too_small_for_one_request_does_nothing(
+    outreach_db: Factory, no_token: None
+) -> None:
+    async with outreach_db() as session:
+        await listed(session, "Fernhill", "fernhill-dev")
+
+    async with github(ok_answer) as (client, seen):
+        result = await refresh_issues(
+            20, client=client, sleep=Sleeps(), now=NOW, clock=FakeClock(), budget=10.0
+        )
+
+    assert seen.requests == []
+    assert result == expected(stopped="budget")
+
+
+async def test_a_hung_request_is_cut_off_by_the_backstop_and_the_counts_come_back(
+    outreach_db: Factory, no_token: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with outreach_db() as session:
+        await listed(session, "Fernhill", "fernhill-dev")
+    # Take the waits out of the pre-request check, so the first request starts and
+    # then hangs; only the backstop (budget + 0 s) can end it.
+    monkeypatch.setattr(oss, "run_limits", lambda has_token: (0.0, 20))
+    monkeypatch.setattr(oss, "REQUEST_TIMEOUT_SECONDS", 0.0)
+    monkeypatch.setattr(oss, "BACKSTOP_SECONDS", 0.0)
+
+    async def hang(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(30)
+        return httpx.Response(200, json=FIXTURE)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(hang)) as client:
+        result = await refresh_issues(20, client=client, sleep=Sleeps(), now=NOW, budget=0.5)
+
+    assert result == expected(checked=1, stopped="budget")  # no "error": this is not a bug
+
+
+async def test_five_errors_in_a_row_stop_the_run(outreach_db: Factory, no_token: None) -> None:
+    async with outreach_db() as session:
+        companies = [await listed(session, f"Co {n}", f"org-{n}") for n in range(8)]
+
+    async with github(status_answer(503)) as (client, seen):
+        result = await refresh_issues(20, client=client, sleep=Sleeps(), now=NOW)
+
+    assert seen.orgs == [f"org-{n}" for n in range(5)]
+    assert result == expected(checked=5, errors=5, stopped="errors")
+    # A 503 storm stamps at most the five that were tried; the rest stay first in line.
+    stamped = [await snapshot_of(outreach_db, company) is not None for company in companies]
+    assert stamped == [True] * 5 + [False] * 3
+
+
+async def test_a_success_resets_the_run_of_errors(outreach_db: Factory, no_token: None) -> None:
+    async with outreach_db() as session:
+        for n in range(9):
+            await listed(session, f"Co {n}", f"org-{n}")
+
+    def answer(org: str, request: httpx.Request) -> httpx.Response:
+        return ok_answer(org, request) if org == "org-4" else status_answer(503)(org, request)
+
+    async with github(answer) as (client, seen):
+        result = await refresh_issues(20, client=client, sleep=Sleeps(), now=NOW)
+
+    # Four errors, one success, four errors: never five in a row.
+    assert len(seen.requests) == 9
+    assert result == expected(checked=9, ok=1, errors=8)
+
+
+@pytest.mark.parametrize("with_snapshot", [False, True])
+async def test_a_401_stops_the_run_and_writes_no_row(
+    outreach_db: Factory, token: str, with_snapshot: bool
+) -> None:
+    async with outreach_db() as session:
+        fernhill = await listed(session, "Fernhill", "fernhill-dev")
+        tessel = await listed(session, "Tessel", "tessel-ai")
+    if with_snapshot:
+        # Both have been checked before; Fernhill longest ago, so it is asked first.
+        await store_snapshot(
+            outreach_db, fernhill, age=timedelta(days=10), org="fernhill-dev", issues=[OLD_ISSUE]
+        )
+        await store_snapshot(outreach_db, tessel, age=timedelta(days=5), org="tessel-ai")
+    before = await snapshot_of(outreach_db, fernhill)
+
+    async with github(status_answer(401)) as (client, seen):
+        result = await refresh_issues(20, client=client, sleep=Sleeps(), now=NOW)
+
+    # A revoked token says nothing about the organisation: nothing is recorded for it.
+    assert seen.orgs == ["fernhill-dev"]
+    assert result == expected(checked=1, errors=1, stopped="auth")
+    after = await snapshot_of(outreach_db, fernhill)
+    assert (after is None) == (before is None)
+    if after is not None and before is not None:
+        assert (after.status, after.issues, after.fetched_at) == (
+            before.status,
+            before.issues,
+            before.fetched_at,
+        )
+
+
+@pytest.mark.parametrize(
+    ("headers", "stops"),
+    [
+        ({"X-RateLimit-Remaining": "0"}, True),
+        ({"X-RateLimit-Remaining": "7"}, False),
+        ({"X-RateLimit-Remaining": "soon"}, False),
+        ({}, False),
+    ],
+)
+async def test_the_run_stops_when_the_response_says_none_are_left(
+    outreach_db: Factory, no_token: None, headers: dict[str, str], stops: bool
+) -> None:
+    async with outreach_db() as session:
+        fernhill = await listed(session, "Fernhill", "fernhill-dev")
+        await listed(session, "Tessel", "tessel-ai")
+
+    def answer(org: str, request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=FIXTURE, headers=headers)
+
+    async with github(answer) as (client, seen):
+        result = await refresh_issues(20, client=client, sleep=Sleeps(), now=NOW)
+
+    # The answer that said "none left" is still recorded; only the next request is held back.
+    stored = await snapshot_of(outreach_db, fernhill)
+    assert stored is not None
+    assert stored.status == "ok"
+    if stops:
+        assert seen.orgs == ["fernhill-dev"]
+        assert result == expected(checked=1, ok=1, stopped="rate_limited")
+    else:
+        assert seen.orgs == ["fernhill-dev", "tessel-ai"]
+        assert result == expected(checked=2, ok=2)
+
+
+async def test_retry_after_is_logged_as_a_number_only(
+    outreach_db: Factory, no_token: None, caplog: pytest.LogCaptureFixture
+) -> None:
+    async with outreach_db() as session:
+        await listed(session, "Fernhill", "fernhill-dev")
+
+    def answer(org: str, request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, json={"message": "no"}, headers={"Retry-After": "60"})
+
+    with caplog.at_level(logging.INFO, logger="services.outreach.oss"):
+        async with github(answer) as (client, _):
+            await refresh_issues(20, client=client, sleep=Sleeps(), now=NOW)
+
+    assert "wait 60 seconds" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "value", ["60; see https://evil.example/", "Wed, 21 Oct 2026 07:28:00 GMT", "-5"]
+)
+async def test_a_retry_after_that_is_not_a_plain_number_is_not_logged(
+    outreach_db: Factory, no_token: None, caplog: pytest.LogCaptureFixture, value: str
+) -> None:
+    async with outreach_db() as session:
+        await listed(session, "Fernhill", "fernhill-dev")
+
+    def answer(org: str, request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, json={"message": "no"}, headers={"Retry-After": value})
+
+    with caplog.at_level(logging.INFO, logger="services.outreach.oss"):
+        async with github(answer) as (client, _):
+            result = await refresh_issues(20, client=client, sleep=Sleeps(), now=NOW)
+
+    assert result["stopped"] == "rate_limited"
+    assert "evil.example" not in caplog.text
+    assert "Oct 2026" not in caplog.text
+    assert "wait" not in caplog.text
 
 
 # --- who is checked first ----------------------------------------------------------
@@ -736,12 +984,10 @@ async def test_a_thread_company_is_not_due_again_within_a_day(
         result = await refresh_issues(20, client=client, sleep=Sleeps(), now=NOW)
 
     assert seen.requests == []
-    assert result == {"checked": 0, "ok": 0, "not_found": 0, "errors": 0, "rate_limited": 0}
+    assert result == expected()
 
 
-async def test_a_failed_check_leaves_the_company_due(
-    outreach_db: Factory, no_token: None
-) -> None:
+async def test_a_failed_check_leaves_the_company_due(outreach_db: Factory, no_token: None) -> None:
     # A run that errors leaves ``fetched_at`` alone, so the same company comes up again.
     async with outreach_db() as session:
         fernhill = await listed(session, "Fernhill", "fernhill-dev")

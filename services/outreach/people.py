@@ -713,11 +713,14 @@ async def get_thread(
         )
         contacts: list[CompanyContact] = []
         roles: list[str] = []
-        issues: dict[str, Any] | None = None
+        company_id = None if company is None else company.id
         if company is not None:
             contacts = await _visible_contacts(session, company.id, thread.user_id)
             roles = await target_roles(session, thread.user_id)
-            issues = await snapshot_for(company.id)
+
+    # The snapshot opens its own session; ask once this one is closed, so two pooled
+    # connections are never held at the same time.
+    issues: dict[str, Any] | None = None if company_id is None else await snapshot_for(company_id)
 
     by_id = {contact.id: contact for contact in contacts}
     people = _in_added_order(thread.people)

@@ -21,7 +21,14 @@ Rules the step keeps:
   not a login is skipped and counted as an error; it never reaches a URL.
 * **The rate limit is a stop, not a retry.** With ``GITHUB_TOKEN`` the requests
   are 2.2 s apart and a run is at most 60; without it 6.5 s and 20. A 403 or 429
-  ends the run at once.
+  ends the run at once, and so does an answer that says none are left
+  (``X-RateLimit-Remaining: 0``).
+* **A run is bounded and stops for a reason.** It will not start a request that
+  could finish after the wall-clock budget (a hard backstop cancels a hung one),
+  it stops after five errors in a row (GitHub is down, not this company), and it
+  stops at a 401 (a revoked token) without recording anything for that company.
+  The result's ``stopped`` says which: ``budget``, ``rate_limited``, ``auth``,
+  ``errors`` or ``None`` for a run that finished its list.
 * **A failed check keeps what was known.** A 404 or 422 (no such organisation)
   is recorded as ``not_found`` with no issues. Any other failure marks the row
   ``error`` and leaves its issues, total and ``fetched_at`` alone, so the drawer
@@ -45,6 +52,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -85,7 +93,16 @@ ISSUE_WINDOW_DAYS = 365
 RAISED_WITHIN_DAYS = 90
 
 SEARCH_URL = "https://api.github.com/search/issues"
-_TIMEOUT = httpx.Timeout(8.0, connect=4.0)
+#: The most one request is expected to take; the budget check allows for it.
+REQUEST_TIMEOUT_SECONDS = 8.0
+_TIMEOUT = httpx.Timeout(REQUEST_TIMEOUT_SECONDS, connect=4.0)
+
+#: A run starts no request that could end after this many seconds...
+DEFAULT_BUDGET_SECONDS = 240.0
+#: ...and is cancelled outright this long after the budget, whatever is hung.
+BACKSTOP_SECONDS = 30.0
+#: This many errors in a row mean GitHub (or the network) is down: stop, do not stamp more rows.
+MAX_CONSECUTIVE_ERRORS = 5
 
 #: ``(seconds between requests, requests in a run)``, by whether a token is set.
 _WITH_TOKEN = (2.2, 60)
@@ -94,7 +111,9 @@ _WITHOUT_TOKEN = (6.5, 20)
 _RATE_LIMITED = frozenset({403, 429})
 _NOT_FOUND = frozenset({404, 422})
 
-# GitHub's login rule: alphanumerics and single hyphens, at most 39 characters.
+# What this accepts as a GitHub login: 1 to 39 characters, the first a letter or digit,
+# the rest letters, digits or hyphens. (GitHub also forbids a trailing or doubled hyphen
+# in new names; older logins have them, so they are not rejected here.)
 _ORG = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})")
 _UPDATED_AT = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
 
@@ -159,7 +178,9 @@ def _issue(item: Any, pattern: re.Pattern[str]) -> dict[str, Any] | None:
         "title": _flat(item.get("title"), TITLE_MAX),
         "url": f"https://github.com/{owner}/{repo}/issues/{number}",
         "labels": _labels(item.get("labels")),
-        "updated_at": updated if isinstance(updated, str) and _UPDATED_AT.fullmatch(updated) else None,
+        "updated_at": updated
+        if isinstance(updated, str) and _UPDATED_AT.fullmatch(updated)
+        else None,
         "comments": _count(item.get("comments")),
     }
 
@@ -215,9 +236,11 @@ async def snapshot_for(company_id: str | uuid.UUID) -> dict[str, Any] | None:
 class _Outcome:
     """What GitHub said about one organisation."""
 
-    status: str  # ok | not_found | rate_limited | error
+    status: str  # ok | not_found | rate_limited | error | auth (never stored)
     total: int = 0
     issues: list[dict[str, Any]] = field(default_factory=list)
+    #: The response said no requests are left in this window.
+    exhausted: bool = False
 
 
 def _due_statement(now: datetime) -> Select[tuple[uuid.UUID, str | None]]:
@@ -260,9 +283,25 @@ async def _due_companies(now: datetime) -> list[tuple[uuid.UUID, str]]:
     return [(company_id, org) for company_id, org in rows if org]
 
 
+def _none_left(response: httpx.Response) -> bool:
+    """Does ``X-RateLimit-Remaining`` say the window is used up?"""
+    raw = response.headers.get("X-RateLimit-Remaining", "").strip()
+    return raw.isascii() and raw.isdigit() and int(raw) == 0
+
+
+def _log_retry_after(response: httpx.Response) -> None:
+    """Log how long GitHub asked us to wait, only if it is a plain number of seconds.
+
+    The header is the other side's text: it is logged as an ``int`` or not at all.
+    """
+    raw = response.headers.get("Retry-After", "").strip()
+    if raw.isascii() and raw.isdigit() and len(raw) <= 7:
+        logger.info("GitHub asked to wait %d seconds", int(raw))
+
+
 async def _search(client: httpx.AsyncClient, org: str, today: date) -> _Outcome:
-    """Ask GitHub once. A refusal, a missing org, a bad answer and a dead network are
-    each an outcome; anything else is a bug and propagates."""
+    """Ask GitHub once. A refusal, a bad token, a missing org, a bad answer and a dead
+    network are each an outcome; anything else is a bug and propagates."""
     try:
         response = await client.get(
             SEARCH_URL,
@@ -279,21 +318,27 @@ async def _search(client: httpx.AsyncClient, org: str, today: date) -> _Outcome:
         return _Outcome("error")
 
     code = response.status_code
+    if code == 401:
+        # A revoked or expired token: it says nothing about this organisation.
+        logger.warning("GitHub rejected the configured token (401); stopping the run")
+        return _Outcome("auth")
     if code in _RATE_LIMITED:
+        _log_retry_after(response)
         return _Outcome("rate_limited")
+    exhausted = _none_left(response)
     if code in _NOT_FOUND:
-        return _Outcome("not_found")
+        return _Outcome("not_found", exhausted=exhausted)
     if code != 200:
         logger.info("GitHub issue search answered %s", code)
-        return _Outcome("error")
+        return _Outcome("error", exhausted=exhausted)
     try:
         payload = response.json()
     except ValueError:
-        return _Outcome("error")
+        return _Outcome("error", exhausted=exhausted)
     if not isinstance(payload, dict):
-        return _Outcome("error")
+        return _Outcome("error", exhausted=exhausted)
     total, issues = parse_search(payload, org)
-    return _Outcome("ok", total, issues)
+    return _Outcome("ok", total, issues, exhausted)
 
 
 async def _record(company_id: uuid.UUID, org: str, outcome: _Outcome, now: datetime) -> None:
@@ -311,8 +356,12 @@ async def _record(company_id: uuid.UUID, org: str, outcome: _Outcome, now: datet
             if outcome.status == "rate_limited":
                 return
             row = OssIssueSnapshot(
-                company_id=company_id, org=org, status=outcome.status, total_count=0,
-                issues=[], fetched_at=now,
+                company_id=company_id,
+                org=org,
+                status=outcome.status,
+                total_count=0,
+                issues=[],
+                fetched_at=now,
             )
             session.add(row)
         elif row.org.casefold() != org.casefold():
@@ -324,13 +373,34 @@ async def _record(company_id: uuid.UUID, org: str, outcome: _Outcome, now: datet
         await session.commit()
 
 
+@dataclass
+class _Tally:
+    """What a run has done so far, kept outside :func:`_run` so a failure cannot lose it."""
+
+    counts: dict[str, int] = field(
+        default_factory=lambda: {
+            "checked": 0,
+            "ok": 0,
+            "not_found": 0,
+            "errors": 0,
+            "rate_limited": 0,
+        }
+    )
+    #: Why the run ended before its list did: budget | rate_limited | auth | errors.
+    stopped: str | None = None
+
+
 async def _run(
-    counts: dict[str, int],
+    tally: _Tally,
     limit: int,
     client: httpx.AsyncClient | None,
     sleep: Callable[[float], Awaitable[None]],
     now: datetime | None,
+    clock: Callable[[], float],
+    budget: float,
 ) -> None:
+    started = clock()
+    counts = tally.counts
     moment = datetime.now(UTC) if now is None else aware(now)
     gap, run_cap = run_limits(bool(get_settings().github_token))
     cap = min(limit, run_cap)
@@ -352,22 +422,40 @@ async def _run(
         return
 
     http = httpx.AsyncClient(timeout=_TIMEOUT) if client is None else client
+    errors_in_a_row = 0
     try:
         for index, (company_id, org) in enumerate(targets):
+            if clock() - started + gap + REQUEST_TIMEOUT_SECONDS > budget:
+                tally.stopped = "budget"
+                break
             if index:
                 await sleep(gap)
             counts["checked"] += 1
             outcome = await _search(http, org, moment.date())
+            if outcome.status == "auth":
+                counts["errors"] += 1
+                tally.stopped = "auth"
+                break
             try:
                 await _record(company_id, org, outcome, moment)
                 stored = True
             except Exception:
-                logger.warning("Could not store the issues of company %s", company_id, exc_info=True)
+                logger.warning(
+                    "Could not store the issues of company %s", company_id, exc_info=True
+                )
                 stored = False
             if outcome.status == "rate_limited":
                 counts["rate_limited"] += 1
+                tally.stopped = "rate_limited"
                 break
             counts[_COUNTER[outcome.status] if stored else "errors"] += 1
+            if outcome.exhausted:
+                tally.stopped = "rate_limited"
+                break
+            errors_in_a_row = errors_in_a_row + 1 if outcome.status == "error" or not stored else 0
+            if errors_in_a_row >= MAX_CONSECUTIVE_ERRORS:
+                tally.stopped = "errors"
+                break
     finally:
         if client is None:
             await http.aclose()
@@ -379,25 +467,41 @@ async def refresh_issues(
     client: httpx.AsyncClient | None = None,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     now: datetime | None = None,
-) -> dict[str, int | str]:
+    clock: Callable[[], float] = time.monotonic,
+    budget: float = DEFAULT_BUDGET_SECONDS,
+) -> dict[str, int | str | None]:
     """Check up to ``limit`` due companies against GitHub and store what it says.
 
     The cap is ``limit`` or the run limit for the token (60 with one, 20 without),
     whichever is smaller. Returns ``{"checked", "ok", "not_found", "errors",
-    "rate_limited"}``; ``checked`` counts every company looked at, including one
-    skipped for an unusable organisation name, so the other four add up to it.
+    "rate_limited", "stopped"}``; ``checked`` counts every company looked at,
+    including one skipped for an unusable organisation name, so the four outcome
+    counts add up to it. ``stopped`` is why the run ended before its list did
+    (``"budget"``, ``"rate_limited"``, ``"auth"``, ``"errors"``), or ``None``.
+
+    No request is started that could end after ``budget`` seconds of ``clock``; a
+    backstop of ``BACKSTOP_SECONDS`` more cancels a request that hangs, and the counts
+    still come back (``stopped="budget"``).
 
     Never raises. An unexpected failure comes back as the same counts plus
     ``"error"`` (the exception's class name); what was stored before it stays.
-    ``client`` and ``sleep`` are for tests.
+    ``client``, ``sleep``, ``now`` and ``clock`` are for tests.
     """
-    counts = {"checked": 0, "ok": 0, "not_found": 0, "errors": 0, "rate_limited": 0}
-    result: dict[str, int | str] = {}
+    tally = _Tally()
+    error: str | None = None
+    scope = asyncio.timeout(budget + BACKSTOP_SECONDS)
     try:
-        await _run(counts, limit, client, sleep, now)
+        async with scope:
+            await _run(tally, limit, client, sleep, now, clock, budget)
     except Exception as exc:
-        logger.warning("The good-first-issue refresh failed", exc_info=True)
-        result["error"] = type(exc).__name__
-    summary: dict[str, int | str] = {**counts, **result}
+        if isinstance(exc, TimeoutError) and scope.expired():
+            logger.warning("The good-first-issue refresh hit its time limit")
+            tally.stopped = "budget"
+        else:
+            logger.warning("The good-first-issue refresh failed", exc_info=True)
+            error = type(exc).__name__
+    summary: dict[str, int | str | None] = {**tally.counts, "stopped": tally.stopped}
+    if error is not None:
+        summary["error"] = error
     logger.info("Good-first-issue refresh: %s", summary)
     return summary

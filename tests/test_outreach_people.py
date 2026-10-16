@@ -16,6 +16,8 @@ rows that were never stored. Every person and company here is fictional.
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
@@ -1280,6 +1282,39 @@ async def test_detail_without_a_snapshot_has_no_issues(outreach_db: Factory) -> 
 
     assert detail["issues"] is None
     assert detail["company"] is not None
+
+
+async def test_detail_reads_the_snapshot_after_its_own_session_is_closed(
+    outreach_db: Factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with outreach_db() as session:
+        user = await make_user(session)
+        company = await make_company(session, "Tessel AI")
+    thread_id = await _open(user, company)
+    open_sessions = 0
+
+    @asynccontextmanager
+    async def counted() -> AsyncIterator[AsyncSession]:
+        nonlocal open_sessions
+        open_sessions += 1
+        try:
+            async with outreach_db() as session:
+                yield session
+        finally:
+            open_sessions -= 1
+
+    open_when_asked: list[int] = []
+
+    async def snapshot_for(company_id: Any) -> None:
+        open_when_asked.append(open_sessions)
+
+    monkeypatch.setattr("services.outreach.people.AsyncSessionLocal", counted)
+    monkeypatch.setattr("services.outreach.people.snapshot_for", snapshot_for)
+
+    await get_thread(str(user.id), thread_id, now=NOW)
+
+    # The snapshot has its own session; two pooled connections are never held at once.
+    assert open_when_asked == [0]
 
 
 async def test_a_name_only_thread_asks_for_no_snapshot(
