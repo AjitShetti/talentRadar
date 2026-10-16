@@ -12,7 +12,7 @@ hostile, in layers:
 * **A fence nobody can forge.** Every source is wrapped in a fence of its own,
   ``<<<REPO FILE path=... NONCE>>>`` ... ``<<<END REPO FILE NONCE>>>`` or
   ``<<<WRITEUP decisions NONCE>>>`` ... ``<<<END WRITEUP NONCE>>>``. The nonce is the first
-  12 hex characters of a SHA-256 over all the candidate's text (``fence_nonce``), and the
+  16 hex characters of a SHA-256 over all the candidate's text (``fence_nonce``), and the
   system prompt says only a marker carrying exactly that code opens or closes a fence;
   anything else that looks like one is evidence. A candidate cannot write the hash of their
   own text into that text, so this holds whatever characters they use; the prompt is still
@@ -347,7 +347,7 @@ def _candidate_texts(inp: JudgeInput) -> list[str]:
 
 
 def fence_nonce(inp: JudgeInput) -> str:
-    """The code every fence marker of this submission carries: the first 12 hex characters of a
+    """The code every fence marker of this submission carries: the first 16 hex characters of a
     SHA-256 over all the candidate's text (``_candidate_texts``).
 
     Each piece is hashed with its length in front, so no text can be moved across a boundary
@@ -360,7 +360,7 @@ def fence_nonce(inp: JudgeInput) -> str:
         data = text.encode("utf-8", "surrogatepass")
         digest.update(len(data).to_bytes(8, "big"))
         digest.update(data)
-    return digest.hexdigest()[:12]
+    return digest.hexdigest()[:16]
 
 
 #: What of the brief the judge reads: one-line fields, then lists, most decisive first so that a
