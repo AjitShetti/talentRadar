@@ -107,6 +107,9 @@ MAX_HOSTS = 10
 
 _NUL = chr(0)
 _HTTPS = "https://"
+#: ``Event.__table__``'s unique constraint on ``(source, external_id)``; a test pins it.
+_KEY_CONSTRAINT = "uq_events_source_external_id"
+_SQLITE_KEY = "UNIQUE constraint failed: events.source, events.external_id"
 _STATED = "stated"  # a pin the source gave
 _PLACED = "placed"  # a pin we put at the centre of the address's area
 
@@ -507,7 +510,8 @@ def _locate(row: Event, facts: EventFacts, area: str | None, meta: dict[str, Any
     the row ends up with: ``meta["pin"]`` remembers whether it was stated or placed by
     us, and ``meta["address_withheld"]`` (which only ever turns on) whether it is only
     near, so an event that comes back in person after an online sighting gets its pin's
-    own precision back rather than staying ``none``.
+    own precision back rather than staying ``none``. A pin whose origin was never
+    recorded is read as placed, so it can never become ``exact``.
     """
     if facts.is_online:
         row.geo_precision = "none"  # the pin, if any, is kept for when it is in person again
@@ -524,7 +528,7 @@ def _locate(row: Event, facts: EventFacts, area: str | None, meta: dict[str, Any
         row.lat, row.lng = placed
         meta["pin"] = _PLACED
     row.geo_precision = _precision(
-        row.source, str(meta.get("pin", _STATED)), bool(meta.get("address_withheld"))
+        row.source, str(meta.get("pin", _PLACED)), bool(meta.get("address_withheld"))
     )
 
 
@@ -619,20 +623,41 @@ async def _find_stored(session: AsyncSession, source: str, external_id: str) -> 
     return found.scalars().first()
 
 
+def _is_key_conflict(error: IntegrityError) -> bool:
+    """The failure is the unique ``(source, external_id)`` constraint, and nothing else.
+
+    asyncpg names the constraint on the exception the driver's was raised from
+    (``constraint_name``) and in its message; psycopg2 in its message; SQLite never
+    names a constraint, only the columns ("UNIQUE constraint failed: events.source,
+    events.external_id"). A foreign key, the primary key or any other violation is not
+    this one.
+    """
+    constraint = getattr(getattr(error.orig, "__cause__", None), "constraint_name", None)
+    message = str(error.orig)
+    return constraint == _KEY_CONSTRAINT or _KEY_CONSTRAINT in message or _SQLITE_KEY in message
+
+
 async def _insert(session: AsyncSession, row: Event) -> Event:
     """Insert ``row``, or return the row another run stored first.
 
     The insert runs in a savepoint: two runs can both miss the lookup and both insert,
     and the unique ``(source, external_id)`` then fails one of them. That one is not an
     error. Its savepoint is rolled back (the transaction and everything the caller has
-    done in it stand), and the winner is returned for it to update. An integrity error
-    with no such row behind it is something else, and propagates.
+    done in it stand), and the winner is returned for it to update.
+
+    Only that constraint is a lost race (:func:`_is_key_conflict`). Any other integrity
+    error, such as the ``duplicate_of`` foreign key when the primary vanished mid-run,
+    propagates even if a row with this key turns up afterwards: taking that row as the
+    winner would drop the failed insert's duplicate link without a word. A key conflict
+    whose winner has gone again propagates too.
     """
     try:
         async with session.begin_nested():
             session.add(row)
             await session.flush()
-    except IntegrityError:
+    except IntegrityError as error:
+        if not _is_key_conflict(error):
+            raise
         winner = await _find_stored(session, row.source, row.external_id)
         if winner is None:
             raise

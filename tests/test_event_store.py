@@ -25,7 +25,7 @@ from typing import Any
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, func, select
+from sqlalchemy import UniqueConstraint, delete, func, select
 from sqlalchemy import event as sa_event
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -168,6 +168,11 @@ def stored(result: UpsertResult) -> Event:
 def test_constants_match_the_brief() -> None:
     assert HORIZON_DAYS == 90
     assert timedelta(minutes=45) == DEDUPE_WINDOW == START_WINDOW
+
+
+def test_the_key_constraint_name_matches_the_model() -> None:
+    names = {c.name for c in Event.__table__.constraints if isinstance(c, UniqueConstraint)}
+    assert store._KEY_CONSTRAINT in names
 
 
 def test_column_widths_match_the_model() -> None:
@@ -1379,3 +1384,148 @@ async def test_a_placed_pin_never_becomes_exact_by_coming_back(session: AsyncSes
     stored(await upsert(session, _online(twin), EVENTBRITE, now=NOW + timedelta(hours=1)))
     back = stored(await upsert(session, twin, EVENTBRITE, now=NOW + timedelta(hours=2)))
     assert (back.lat, back.lng) == pin and back.geo_precision == "area"
+
+
+# ── fix round 2: only the key conflict is a race; a pin of unknown origin is not exact ─
+
+
+def _integrity_error(message: str, constraint: str | None = None) -> IntegrityError:
+    """An ``IntegrityError`` shaped like the drivers': a message, and on asyncpg the
+    constraint's name on the exception the driver's was raised from."""
+    orig = Exception(message)
+    if constraint is not None:
+        cause = Exception(message)
+        cause.constraint_name = constraint  # type: ignore[attr-defined]
+        orig.__cause__ = cause
+    return IntegrityError("INSERT INTO events ...", {}, orig)
+
+
+@pytest.mark.parametrize(
+    ("error", "is_key_conflict"),
+    [
+        pytest.param(
+            _integrity_error(
+                "<class 'asyncpg.exceptions.UniqueViolationError'>: duplicate key value "
+                'violates unique constraint "uq_events_source_external_id"',
+                constraint="uq_events_source_external_id",
+            ),
+            True,
+            id="asyncpg, constraint_name",
+        ),
+        pytest.param(
+            _integrity_error("clave duplicada", constraint="uq_events_source_external_id"),
+            True,
+            id="asyncpg, constraint_name alone",
+        ),
+        pytest.param(
+            _integrity_error(
+                'duplicate key value violates unique constraint "uq_events_source_external_id"\n'
+                "DETAIL:  Key (source, external_id)=(luma, evt-1) already exists."
+            ),
+            True,
+            id="message names the constraint",
+        ),
+        pytest.param(
+            _integrity_error("UNIQUE constraint failed: events.source, events.external_id"),
+            True,
+            id="sqlite",
+        ),
+        pytest.param(
+            _integrity_error(
+                'duplicate key value violates unique constraint "events_pkey"',
+                constraint="events_pkey",
+            ),
+            False,
+            id="asyncpg, primary key",
+        ),
+        pytest.param(
+            _integrity_error(
+                'insert or update on table "events" violates foreign key constraint '
+                '"events_duplicate_of_fkey"',
+                constraint="events_duplicate_of_fkey",
+            ),
+            False,
+            id="asyncpg, duplicate_of foreign key",
+        ),
+        pytest.param(_integrity_error("FOREIGN KEY constraint failed"), False, id="sqlite fk"),
+        pytest.param(
+            _integrity_error("UNIQUE constraint failed: events.id"), False, id="sqlite pk"
+        ),
+        pytest.param(
+            _integrity_error("NOT NULL constraint failed: events.title"), False, id="sqlite null"
+        ),
+        pytest.param(
+            _integrity_error("UNIQUE constraint failed: event_companies.event_id"),
+            False,
+            id="sqlite, another table",
+        ),
+        pytest.param(_integrity_error(""), False, id="no message"),
+    ],
+)
+def test_only_the_source_external_id_conflict_is_a_key_conflict(
+    error: IntegrityError, is_key_conflict: bool
+) -> None:
+    assert store._is_key_conflict(error) is is_key_conflict
+
+
+async def test_a_key_conflict_whose_winner_has_gone_again_propagates(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The row that won was deleted before the re-select: there is nothing to update."""
+    stored(await upsert(session, make_facts()))
+
+    async def nothing(db: AsyncSession, source: str, external_id: str) -> Event | None:
+        return None
+
+    monkeypatch.setattr(store, "_find_stored", nothing)
+    with pytest.raises(IntegrityError, match="UNIQUE"):
+        await upsert_event(session, make_facts(), LUMA, now=NOW + timedelta(hours=1))
+
+    await session.rollback()
+    assert await count(session, Event) == 1
+
+
+async def test_a_foreign_key_violation_is_not_taken_for_a_race(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The primary a duplicate points at vanished mid-run, and a row with this key turns up.
+
+    Whatever stands under the key afterwards, the insert failed for another reason, and
+    returning that row as the winner would drop the duplicate link without a word.
+    """
+    taken = stored(await upsert(session, make_facts(external_id="evt-taken", title="Rust Meetup")))
+    calls = 0
+
+    async def lookup(db: AsyncSession, source: str, external_id: str) -> Event | None:
+        nonlocal calls
+        calls += 1
+        return None if calls == 1 else taken  # the re-select after the failure finds a row
+
+    async def ghost(*args: Any, **kwargs: Any) -> Event:
+        return Event(id=uuid.uuid4())  # a primary that is no longer in the database
+
+    monkeypatch.setattr(store, "_find_stored", lookup)
+    monkeypatch.setattr(store, "find_duplicate", ghost)
+    with pytest.raises(IntegrityError, match="FOREIGN KEY"):
+        await upsert_event(session, make_facts(), LUMA, now=NOW)
+
+    assert calls == 1  # it never looked for a winner
+    await session.rollback()
+    assert await count(session, Event) == 1  # the row that was there; nothing was written
+
+
+async def test_a_pin_with_no_recorded_origin_is_never_exact(session: AsyncSession) -> None:
+    """A row that never recorded a stated pin fails closed: near, not exact."""
+    twin = eventbrite_twin()
+    row = stored(await upsert(session, twin, EVENTBRITE))
+    assert row.geo_precision == "exact"
+
+    row.extra_metadata = {k: v for k, v in (row.extra_metadata or {}).items() if k != "pin"}
+    await session.commit()
+
+    again = stored(
+        await upsert(session, _no_position(twin), EVENTBRITE, now=NOW + timedelta(hours=1))
+    )
+    assert (again.lat, again.lng) == (row.lat, row.lng)
+    assert again.geo_precision == "area"
+    assert (again.extra_metadata or {}).get("pin") is None  # nothing invented
