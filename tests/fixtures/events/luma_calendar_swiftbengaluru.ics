@@ -1,0 +1,456 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Luma//SwiftBengaluru//EN
+X-WR-CALNAME:SwiftBengaluru
+X-WR-CALDESC:Luma Calendar
+REFRESH-INTERVAL;VALUE=DURATION:PT12H
+X-PUBLISHED-TTL:PT12H
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+BEGIN:VEVENT
+DTSTART:20240928T090000Z
+DTEND:20240928T120000Z
+DTSTAMP:20261016T051757Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-lOgybCHWO0P2m6E@events.lu.ma
+SUMMARY:Swift Developers Meetup @ Greenlight, Bengaluru
+DESCRIPTION:Get up-to-date information at: https://luma.com/94u74xck\n\nAdd
+ ress:\nGreenlight Financial Technology - India\nBengaluru, Karnataka\nIndi
+ a\n\nHosted by Swift Bengaluru & 4 others
+LOCATION:Greenlight Financial Technology - India, 603, 6th floor, Building.
+  31, Ecospace Business Park Rmz Eco World Bellandur, Adarsh Palm Retreat, 
+ Bellandur, Bengaluru, Karnataka 560103, India
+GEO:12.920674;77.685884
+SEQUENCE:214291077
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20241116T040000Z
+DTEND:20241116T073000Z
+DTSTAMP:20261016T051757Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-EBJYf43RwjDCk9r@events.lu.ma
+SUMMARY:Swift Developers Meetup @ Wayfair, Bengaluru
+DESCRIPTION:Get up-to-date information at: https://luma.com/05kixw8u\n\nAdd
+ ress:\nWayfair Global Technology Private Limited\nBengaluru, Karnataka\nIn
+ dia\n\nHosted by Swift Bengaluru & 3 others
+LOCATION:Wayfair Global Technology Private Limited, Angkor West, Bagmane Ca
+ pital Tech Park, Garudachar Palya, Mahadevapura, Bengaluru, Karnataka 5600
+ 48, India
+GEO:12.987472;77.703382
+SEQUENCE:214291077
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20241207T083000Z
+DTEND:20241207T113000Z
+DTSTAMP:20261016T051757Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-cPpUcg7v5YhgPk6@events.lu.ma
+SUMMARY:The Vision Pro Ecosystem: Pioneering Mixed Reality
+DESCRIPTION:Get up-to-date information at: https://luma.com/9in1x9eg\n\nAdd
+ ress:\nScaler School of Technology\nBengaluru, Karnataka\nIndia\n\nHosted 
+ by Swift Bengaluru & 5 others
+LOCATION:Scaler School of Technology, 14, 3rd cross, Parappana Agrahar, Ele
+ ctronic City Rd, Electronics City Phase 1, Electronic City, Bengaluru, Kar
+ nataka 560100, India
+GEO:12.838463;77.664893
+SEQUENCE:214291077
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20250201T083000Z
+DTEND:20250201T113000Z
+DTSTAMP:20261016T051757Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-hDSUBr2nRBhFkB8@events.lu.ma
+SUMMARY:Swift Developers Meetup @ Christ University Bengaluru
+DESCRIPTION:Get up-to-date information at: https://luma.com/4qg9deam\n\nAdd
+ ress:\nCentral Campus, Christ University\nBengaluru, Karnataka\nIndia\n\nH
+ osted by Swift Bengaluru & 8 others
+LOCATION:Central Campus, Christ University, WJM4+QF7, Campus Road, Bhavani 
+ Nagar, S.G. Palya, Bengaluru, Karnataka 560029, India
+GEO:12.934404;77.606181
+SEQUENCE:214291077
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20250222T083000Z
+DTEND:20250222T113000Z
+DTSTAMP:20261016T051757Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-9PTTz4skSFaPgNN@events.lu.ma
+SUMMARY:Swift Developers Meetup @ YogiFi , Bengaluru
+DESCRIPTION:Get up-to-date information at: https://luma.com/o3ep3ilk\n\nAdd
+ ress:\nYogiFi Kart (Yoga store for mat, accessories and studio)\nBengaluru
+ , Karnataka\nIndia\n\nHosted by Swift Bengaluru & 4 others
+LOCATION:YogiFi Kart (Yoga store for mat, accessories and studio), 2nd Floo
+ r, 33rd Cross Rd, above Ajfan Dates and Nuts, 4th Block, Jayanagar, Bengal
+ uru, Karnataka 560011, India
+GEO:12.926361;77.581968
+SEQUENCE:214291077
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20250322T033000Z
+DTEND:20250322T073000Z
+DTSTAMP:20261016T051757Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-ulAiEFswdZnBdsE@events.lu.ma
+SUMMARY:Swift Developers Meetup
+DESCRIPTION:Get up-to-date information at: https://luma.com/kre6ssv3\n\nAdd
+ ress:\nPrestige Minsk Square\nApple Developer Center Bengaluru 14th Floor,
+  Prestige Minsk Square Municipal No.6, Cubbon Road Bengaluru, Karnataka 56
+ 0001\nBengaluru, Karnataka\nIndia\n\nHosted by Swift Bengaluru & 4 others
+LOCATION:Prestige Minsk Square, VV Towers, Dr Ambedkar Rd, Vasanth Nagar, B
+ engaluru, Karnataka 560001, India
+GEO:12.981628;77.595962
+SEQUENCE:214291077
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20250412T083000Z
+DTEND:20250412T113000Z
+DTSTAMP:20261016T051757Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-rxcl0CAaK1HmAgB@events.lu.ma
+SUMMARY:Swift Developers Meetup @ Signeasy, Bengaluru
+DESCRIPTION:Get up-to-date information at: https://luma.com/chsxm67q\n\nAdd
+ ress:\nSigneasy\nBengaluru, Karnataka\nIndia\n\nHosted by Swift Bengaluru 
+ & 3 others
+LOCATION:Signeasy, 2nd Floor, Asha Plaza, 2 608, Srinivagilu Main Rd, above
+  Tasva, 4th Block, Koramangala, Bengaluru, Karnataka 560095, India
+GEO:12.93666;77.627175
+SEQUENCE:214291077
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20250524T083000Z
+DTEND:20250524T113000Z
+DTSTAMP:20261016T051757Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-i2pUNFPUEd220Lj@events.lu.ma
+SUMMARY:Swift Developers Meetup @ Motive, Bengaluru
+DESCRIPTION:Get up-to-date information at: https://luma.com/jsgakezj\n\nAdd
+ ress:\nWeWork Prestige Cube\nBengaluru, Karnataka\nIndia\n\nHosted by Swif
+ t Bengaluru & 5 others
+LOCATION:WeWork Prestige Cube, Ground floor, Site, No. 26 Laskar, Hosur Rd,
+  Chikku Lakshmaiah Layout, Adugodi, Bengaluru, Karnataka 560029, India
+GEO:12.93633;77.610998
+SEQUENCE:214291077
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20250609T133000Z
+DTEND:20250609T223000Z
+DTSTAMP:20261016T051757Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-o1OMjKM34qGIv9M@events.lu.ma
+SUMMARY:WWDC25 Keynote and SOTU WatchParty
+DESCRIPTION:Get up-to-date information at: https://luma.com/9mfibs65\n\nAdd
+ ress:\nSwiggy HO\nVarthur, Karnataka\nIndia\n\nHosted by Swift Bengaluru &
+  6 others
+LOCATION:Swiggy HO, I & J Block, Ground Floor, Embassy TechVillage, No. 55 
+ Sy No 8 to 14, Outer Ring Rd, Devarabisanahalli, Bellandur, Varthur, Benga
+ luru, Karnataka 560103, India
+GEO:12.928622;77.693063
+SEQUENCE:214291077
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20250705T063000Z
+DTEND:20250705T110000Z
+DTSTAMP:20261016T051757Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-FNf9pFZPTB1h0Dp@events.lu.ma
+SUMMARY:Beyond WWDC 25 at Meesho , Bengaluru
+DESCRIPTION:Get up-to-date information at: https://luma.com/3geqsneg\n\nAdd
+ ress:\nMeesho\nBengaluru, Karnataka\nIndia\n\nHosted by Swift Bengaluru & 
+ 5 others
+LOCATION:Meesho, 3rd Floor, Tower E, Helios Business Park, near Near Gate 3
+ , Chandana, Bengaluru, Karnataka 560103, India
+GEO:12.9383935;77.69030670000001
+SEQUENCE:214291077
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20250719T043000Z
+DTEND:20250719T093000Z
+DTSTAMP:20261016T051757Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-GR3hwHw3UWQTXQe@events.lu.ma
+SUMMARY:Hackathon Demo day
+DESCRIPTION:Get up-to-date information at: https://luma.com/v8lrgx1x\n\nAdd
+ ress:\nKanini Software Solutions India Private Limited\nBengaluru, Karnata
+ ka\nIndia\n\nHosted by Swift Bengaluru & 5 others
+LOCATION:Kanini Software Solutions India Private Limited, Cessna Business P
+ ark Umiya Business Bay, 9th Floor, Tower 2, Outer Ring Road (Marathahalli,
+  Sector) Internal Road, Kaverappa Layout, Kadubeesanahalli, Sarjapur, Beng
+ aluru, Karnataka 560103, India
+GEO:12.9339833;77.694886
+SEQUENCE:214291077
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20250830T090000Z
+DTEND:20250830T110000Z
+DTSTAMP:20261016T051757Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-ZqStERpU17QYdKp@events.lu.ma
+SUMMARY:Swift Developers Meetup - Online (Aug 2025)
+DESCRIPTION:Get up-to-date information at: https://luma.com/wejdtotl\n\nHos
+ ted by Swift Bengaluru, Host 1 Quill & Host 2 Quill
+LOCATION:https://luma.com/event/evt-ZqStERpU17QYdKp
+SEQUENCE:214291077
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20250925T043000Z
+DTEND:20250925T063000Z
+DTSTAMP:20261016T051757Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-CSLxU8ENpS8faoP@events.lu.ma
+SUMMARY:Hands-On SwiftUI by Host 5 Quill (Students & Early Professionals)
+DESCRIPTION:Get up-to-date information at: https://luma.com/p5umg7f9\n\nAdd
+ ress:\nBlock 2, Christ\nBengaluru, Karnataka\nIndia\n\nHosted by Swift Ben
+ galuru & 4 others
+LOCATION:Block 2, Christ, Block II, Bhavani Nagar, S.G. Palya, Bengaluru, K
+ arnataka 560029, India
+GEO:12.9330839;77.6063413
+SEQUENCE:214291077
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20251108T043000Z
+DTEND:20251108T073000Z
+DTSTAMP:20261016T051757Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-tLR9jirYaSkyyh9@events.lu.ma
+SUMMARY:Swift Developers Meetup @ PROCORE, Bengaluru
+DESCRIPTION:Get up-to-date information at: https://luma.com/27nldm4w\n\nAdd
+ ress:\nProcore Technologies Bangalore\nBengaluru, Karnataka\nIndia\n\nHost
+ ed by Swift Bengaluru & 9 others
+LOCATION:Procore Technologies Bangalore, Tablespace level 2, Godrej Centre,
+  Old Madras Rd, near SV metro station, Old Baiyyappanahalli, Indiranagar, 
+ Bengaluru, Karnataka 560038, India
+GEO:12.9873136;77.6468227
+SEQUENCE:214291077
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20251213T090000Z
+DTEND:20251213T113000Z
+DTSTAMP:20261016T051757Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-4inE09VUiQ2kHSN@events.lu.ma
+SUMMARY:Swift Developers Meetup - Online (Dec 2025)
+DESCRIPTION:Get up-to-date information at: https://luma.com/d50l0r52\n\nHos
+ ted by Swift Bengaluru & 3 others
+LOCATION:https://luma.com/event/evt-4inE09VUiQ2kHSN
+SEQUENCE:214291077
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260131T043000Z
+DTEND:20260131T073000Z
+DTSTAMP:20261016T051757Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-H3z62O52GKQ0nI9@events.lu.ma
+SUMMARY:Swift Developer Meetup @ CMRIT
+DESCRIPTION:Get up-to-date information at: https://luma.com/dec1juis\n\nAdd
+ ress:\nCMRIT College\nBengaluru, Karnataka\nIndia\n\nHosted by Swift Benga
+ luru & 5 others
+LOCATION:CMRIT College, ITPL Main Road, Kundalahalli Colony, Brookefield, B
+ engaluru, Karnataka 560037, India
+GEO:12.9675289;77.7143741
+SEQUENCE:214291077
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260228T054500Z
+DTEND:20260228T094500Z
+DTSTAMP:20261016T051757Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-OOpioDU1WwoitpN@events.lu.ma
+SUMMARY:Swift Bengaluru x Meesho
+DESCRIPTION:Get up-to-date information at: https://luma.com/0egqbj5q\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Swift Bengaluru & 5
+  others
+LOCATION:https://luma.com/event/evt-OOpioDU1WwoitpN
+GEO:12.940251392953812;77.68898377561034
+SEQUENCE:214291077
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260328T040000Z
+DTEND:20260328T080000Z
+DTSTAMP:20261016T051757Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-NWtqkKk4SEMuAk9@events.lu.ma
+SUMMARY:Swift Bengaluru x International Women’s Day Special Meetup
+DESCRIPTION:Get up-to-date information at: https://luma.com/thwv7uvt\n\nAdd
+ ress:\nPrestige Minsk Square\nBengaluru, Karnataka\nIndia\n\nHosted by Swi
+ ft Bengaluru
+LOCATION:Prestige Minsk Square, VV Towers, Dr Ambedkar Rd, Vasanth Nagar, B
+ engaluru, Karnataka 560001, India
+GEO:12.9816282;77.5959615
+SEQUENCE:214291077
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260425T090000Z
+DTEND:20260425T110000Z
+DTSTAMP:20261016T051757Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-loNCUVDrsm9mFaK@events.lu.ma
+SUMMARY:Swift Developers Meetup - Online (Apr 2026)
+DESCRIPTION:Get up-to-date information at: https://luma.com/b0ioyhnr\n\nHos
+ ted by Swift Bengaluru & 3 others
+LOCATION:https://luma.com/event/evt-loNCUVDrsm9mFaK
+SEQUENCE:214291077
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260523T083000Z
+DTEND:20260523T113000Z
+DTSTAMP:20261016T051757Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-pmdcj9gSF2JFRe4@events.lu.ma
+SUMMARY:Swift Bengaluru × Leap
+DESCRIPTION:Get up-to-date information at: https://luma.com/m63xpuab\n\nAdd
+ ress:\nIncubex HSR14\nBengaluru, India\n\nHosted by Swift Bengaluru & 3 ot
+ hers
+LOCATION:Incubex HSR14, 49, 12th Main Rd, near BDA Complex, Sector 6, HSR L
+ ayout, Bengaluru, Karnataka 560102, India
+GEO:12.913860300000001;77.6366817
+SEQUENCE:214291077
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260608T133000Z
+DTEND:20260608T193000Z
+DTSTAMP:20261016T051757Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-mCsjNAM5xtAGllW@events.lu.ma
+SUMMARY:WWDC 2026 Keynote and SOTU WatchParty
+DESCRIPTION:Get up-to-date information at: https://luma.com/kur60w7l\n\nAdd
+ ress:\nSwiggy Limited\nBengaluru, India\n\nHosted by Swift Bengaluru & 8 o
+ thers
+LOCATION:4th Floor, Survey No.14, Swiggy Limited, Tower-1, Sumadhura Capito
+ l Towers, 158, Taluk, Kadugodi Colony, Pattandur Agrahara, Kadugodi, Benga
+ luru, Karnataka 560066, India
+GEO:12.9855197;77.7487299
+SEQUENCE:214291077
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260628T090000Z
+DTEND:20260628T100000Z
+DTSTAMP:20261016T051757Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-QabCv2JzYlDm9gp@events.lu.ma
+SUMMARY:Swift Adda: Open Source Hours By SwiftBengaluru
+DESCRIPTION:Get up-to-date information at: https://luma.com/difj2deh\n\nHos
+ ted by Swift Bengaluru & 3 others
+LOCATION:https://luma.com/event/evt-QabCv2JzYlDm9gp
+SEQUENCE:214291077
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260711T043000Z
+DTEND:20260711T083000Z
+DTSTAMP:20261016T051757Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-qIgqAaTpCaHUDRL@events.lu.ma
+SUMMARY:🍎 Agentic Coding for Apple Developers - Build, Refactor & Ship i
+ OS Apps with AI
+DESCRIPTION:Get up-to-date information at: https://luma.com/qt81uxl9\n\nAdd
+ ress:\nPrestige Minsk Square\nBengaluru, India\n\nHosted by Swift Bengalur
+ u & 4 others
+LOCATION:Prestige Minsk Square, VV Towers, Dr Ambedkar Rd, Vasanth Nagar, B
+ engaluru, Karnataka 560001, India
+GEO:12.9818435;77.59590779999999
+SEQUENCE:214291077
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260725T033000Z
+DTEND:20260725T093000Z
+DTSTAMP:20261016T051757Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-tDpEO9e2j6BNG5x@events.lu.ma
+SUMMARY:Benne Builds - Mooru
+DESCRIPTION:Get up-to-date information at: https://luma.com/h4mjdvhz\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Swift Bengaluru & 6
+  others
+LOCATION:https://luma.com/event/evt-tDpEO9e2j6BNG5x
+GEO:12.914563461355439;77.58935871014002
+SEQUENCE:214291077
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260808T043000Z
+DTEND:20260808T073000Z
+DTSTAMP:20261016T051757Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-b64pHA2YjvEHKkE@events.lu.ma
+SUMMARY:Swift Bengaluru × Mercari
+DESCRIPTION:Get up-to-date information at: https://luma.com/nu6dgbxm\n\nAdd
+ ress:\nMercari Software Technologies India Private Limited\nBengaluru, Ind
+ ia\n\nHosted by Swift Bengaluru & 6 others
+LOCATION:Mercari Software Technologies India Private Limited, 8th Floor, In
+ diQube, Zinnia 8C, Embassy TechVillage, Outer Ring Rd, Kadubeesanahalli, B
+ engaluru, Karnataka 560103, India
+GEO:12.929255399999999;77.6894703
+SEQUENCE:214291077
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260926T050000Z
+DTEND:20260926T080000Z
+DTSTAMP:20261016T051757Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-z74jj6GJlXoivH0@events.lu.ma
+SUMMARY:Swift Bengaluru × PhonePe
+DESCRIPTION:Get up-to-date information at: https://luma.com/2tkxeako\n\nAdd
+ ress:\nSalarpuria Softzone\nBengaluru, India\n\nHosted by Swift Bengaluru 
+ & 7 others
+LOCATION:Salarpuria Softzone, Service Rd, Green Glen Layout, Bellandur, Ben
+ galuru, Karnataka 560103, India
+GEO:12.9242528;77.6700857
+SEQUENCE:214291077
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261016T093000Z
+DTEND:20261016T133000Z
+DTSTAMP:20261016T051757Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-RD275vfoh043JaQ@events.lu.ma
+SUMMARY:Swift Bengaluru × Okta
+DESCRIPTION:Get up-to-date information at: https://luma.com/5ditq7sv\n\nAdd
+ ress:\nOkta Identity India Private Limited\nBengaluru, India\n\nHosted by 
+ Swift Bengaluru & 6 others
+LOCATION:Okta Identity India Private Limited, 9th Floor, Campus 31, RMZ Eco
+ world Rd, Bellandur, Bengaluru, Karnataka 560103, India
+GEO:12.9208058;77.68740129999999
+SEQUENCE:214291077
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261024T040000Z
+DTEND:20261024T073000Z
+DTSTAMP:20261016T051757Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-oxv8SmChZ9OK18g@events.lu.ma
+SUMMARY:Embedded Swift: From Code to Hardware
+DESCRIPTION:Get up-to-date information at: https://luma.com/lbm2afcr\n\nAdd
+ ress:\nPrestige Minsk Square\nBengaluru, India\n\nHosted by Swift Bengalur
+ u & 5 others
+LOCATION:Prestige Minsk Square, VV Towers, Dr Ambedkar Rd, Vasanth Nagar, B
+ engaluru, Karnataka 560001, India
+GEO:12.9818435;77.59590779999999
+SEQUENCE:214291077
+STATUS:TENTATIVE
+END:VEVENT
+END:VCALENDAR

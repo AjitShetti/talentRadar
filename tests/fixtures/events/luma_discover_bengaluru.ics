@@ -1,0 +1,550 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Luma//What‘s Happening in Bengaluru//EN
+X-WR-CALNAME:What‘s Happening in Bengaluru
+X-WR-CALDESC:Luma Calendar
+REFRESH-INTERVAL;VALUE=DURATION:PT12H
+X-PUBLISHED-TTL:PT12H
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+BEGIN:VEVENT
+DTSTART:20261016T093000Z
+DTEND:20261016T133000Z
+DTSTAMP:20261016T051754Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-RD275vfoh043JaQ@events.lu.ma
+SUMMARY:Swift Bengaluru × Okta
+DESCRIPTION:Get up-to-date information at: https://luma.com/5ditq7sv\n\nAdd
+ ress:\nOkta Identity India Private Limited\nBengaluru, India\n\nSwiftBenga
+ luru Meetup @ Okta 🚀\nWe’re excited to bring the SwiftBengaluru commu
+ nity together for our next in-person meetup, hosted at Okta, Bengaluru!\nJ
+ oin fellow Swift and iOS developers for an evening of technical talks, kno
+ wledge sharing, discussions, and networking.\nWhether you're an experience
+ d iOS engineer, just getting started with Swift, or simply interested in t
+ he Apple developer ecosystem, this is a great opportunity to learn, connec
+ t, and exchange ideas with the community.\n📅 Event Details\nDate: Frida
+ y, 16 October 2026\nTime: 3:00 PM – 7:00 PM\nVenue: Okta, Bellandur,…\
+ n\nHosted by Swift Bengaluru & 6 others
+LOCATION:Okta Identity India Private Limited, 9th Floor, Campus 31, RMZ Eco
+ world Rd, Bellandur, Bengaluru, Karnataka 560103, India
+GEO:12.9208058;77.68740129999999
+SEQUENCE:214291074
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261016T123000Z
+DTEND:20261016T163000Z
+DTSTAMP:20261016T051754Z
+ORGANIZER;CN="Host 1 Quill":MAILTO:organiser@example.com
+UID:evt-rXGlCBESjPMmHaS@events.lu.ma
+SUMMARY:Namma AI Design Social
+DESCRIPTION:Get up-to-date information at: https://luma.com/tbsaa3zq\n\nAdd
+ ress:\nCheck event page for more details.\n\nNamma AI Design Social 💛\n
+ AI is moving fast. Let’s figure it out together.\nNew tools dropping eve
+ ry other day. Designers building things that seemed impossible a year ago.
+  Workflows being rewritten as we speak.\nAI is moving fast, and honestly, 
+ we're all figuring things out as we go.\nSo, let's get together, compare n
+ otes, show off the things we've been building, and figure out what happens
+  when we bring curious minds and unconventional ideas into the same room.\
+ nExpect good company, wild experiments, and conversations that go beyond 
+ “so, which AI tools are you using?”\nWhat's the scene? 👀\nThink…\
+ n\nHosted by Host 1 Quill & 4 others
+LOCATION:https://luma.com/event/evt-rXGlCBESjPMmHaS
+GEO:12.937286910997228;77.60892656774524
+SEQUENCE:214291074
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261016T130000Z
+DTEND:20261016T140000Z
+DTSTAMP:20261016T051754Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-p6nZdJs1Ld6AMtu@events.lu.ma
+SUMMARY:Blueprints of Being: The Embodied Architecture of Experience
+DESCRIPTION:Get up-to-date information at: https://luma.com/2xepmt3a\n\nAdd
+ ress:\nCheck event page for more details.\n\nEvery few weeks, social media
+  erupts into a familiar (these days) firestorm: an autonomous agent demons
+ trates introspective behavior, an LLM claims an inner life, and the tech w
+ orld splits into warring camps. Half the timeline dismisses it as cheap au
+ tocomplete (stochastic parrot); the other half wonders if we have stumbled
+  into synthetic sentience. But understanding consciousness is neither a ma
+ rketing milestone nor a mere engineering parameter; it is a civilizational
+ -level goal. As we race toward autonomous AI, our civilization faces an un
+ precedented asymmetric shock: we possess exponential…\n\nHosted by Team 
+ Lossfunk, Host 2 Quill & Host 3 Quill
+LOCATION:https://luma.com/event/evt-p6nZdJs1Ld6AMtu
+GEO:12.979738805937101;77.63899901604768
+SEQUENCE:214291074
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261017T050000Z
+DTEND:20261017T073000Z
+DTSTAMP:20261016T051754Z
+ORGANIZER;CN="Host 4 Quill":MAILTO:organiser@example.com
+UID:evt-2zWbIot4pEQRx5U@events.lu.ma
+SUMMARY:After Figma Config Networking - Bangalore | Orbit by Osiflow
+DESCRIPTION:Get up-to-date information at: https://luma.com/90uz4bjn\n\nAdd
+ ress:\nCheck event page for more details.\n\nFigma is hosting its first-ev
+ er conference in India, bringing designers and builders from all over Indi
+ a to Bangalore. Most are staying back till Sunday. Let’s meet in a small
+  group before people fly out. Curated crowd.\nHost 4 from Osiflow would lo
+ ve to invite you to a relaxed morning with coffee, orbiting around topics 
+ like interaction design, product design and the future of AI. No talks. No
+  pitches. No buildathons.\nWho it’s for:\n🎨 Designers (interaction, p
+ roduct, UI & UX)\n🔬 Researchers studying how people use technology\n
+ 💻 Developers and builders raising PRs\n🤖 People working with…\n\nH
+ osted by Host 4 Quill
+LOCATION:https://luma.com/event/evt-2zWbIot4pEQRx5U
+GEO:12.900511686957838;77.65293260039822
+SEQUENCE:214291074
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261017T053000Z
+DTEND:20261017T073000Z
+DTSTAMP:20261016T051754Z
+ORGANIZER;CN="Host 5 Quill":MAILTO:organiser@example.com
+UID:evt-btdQAQKovPRXnkU@events.lu.ma
+SUMMARY:The First 5 Sales Hires: Should They Be Closers, SDRs, or Technical
+  Experts? How to Build Your Initial GTM Team.
+DESCRIPTION:Get up-to-date information at: https://luma.com/g44lx0tq\n\nAdd
+ ress:\nBHIVE Workspace MG Road\nBengaluru, Karnataka\nIndia\n\nOnce the fo
+ under has closed the first few dozen customers, the next question is alway
+ s: Who do we hire first to build the machine? A wrong move here doesn't ju
+ st cost money—it costs months of momentum. This month, we are breaking d
+ own the blueprint for your initial Go-To-Market team:\nThe First 5 Sales H
+ ires: Should They Be Closers, SDRs, or Technical Experts?\nThere is no "on
+ e-size-fits-all" for your first five hires. Depending on your ACV, product
+  complexity, and market, your dream team might look like 3 SDRs—or it mi
+ ght look like 2 Sales Engineers and a Customer Success lead. We’re figur
+ ing…\n\nHosted by Host 5 Quill, Host 6 Quill & Host 7 Quill
+LOCATION:BHIVE Workspace MG Road, BHIVE, Mahalakshmi Chambers, 29, Mahatma 
+ Gandhi Rd, next to Trinity Metro Station, opp. Kotak Bank, Yellappa Garden
+ , Yellappa Chetty Layout, Sivanchetti Gardens, Bengaluru, Karnataka 560001
+ , India
+GEO:12.973508899999999;77.6164228
+SEQUENCE:214291074
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261017T063000Z
+DTEND:20261017T080000Z
+DTSTAMP:20261016T051754Z
+ORGANIZER;CN="Edit Lobby":MAILTO:organiser@example.com
+UID:evt-H6byedDG1jNrFR6@events.lu.ma
+SUMMARY:Recognisable in 3 Seconds: Building Distinctive Brand Codes
+DESCRIPTION:Get up-to-date information at: https://luma.com/wqm2mnvy\n\nAdd
+ ress:\nEdit Lobby\nBengaluru, India\n\nIn a feed full of brands that look 
+ and sound the same, the ones that win are the ones you'd recognise without
+  the logo.\nEdit Lobby is teaming up with Erth.Co, a design studio shaping
+  distinctive identities for a new generation of brands, including Project 
+ Qaafi, Croffle Guys, Indinoor and many more for an afternoon on what it re
+ ally takes to build a distinctive brand identity.\nWhat we'll cover\nStrat
+ egy and positioning: finding the space only your brand can own\nBrand pers
+ onality: giving a brand a character people remember\nBrand language for so
+ cials: how to build a visual and storytelling…\n\nHosted by Edit Lobby
+LOCATION:Edit Lobby, 455, 17th Cross Service Rd, Sector 6, HSR Layout, Beng
+ aluru, Karnataka 560102, India
+GEO:12.9125288;77.63186499999999
+SEQUENCE:214291074
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261017T083000Z
+DTEND:20261017T103000Z
+DTSTAMP:20261016T051754Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-rAVXjJgIsIvoqOg@events.lu.ma
+SUMMARY:Lossfunk Research Mixers, Vol. 5
+DESCRIPTION:Get up-to-date information at: https://luma.com/ilh3vrwi\n\nAdd
+ ress:\nCheck event page for more details.\n\n"Can a Machine Learn a Cell?"
+ \nLossfunk Research Mixers are intimate, topic-first roundtables for peopl
+ e in Bengaluru with a real knack for research, whether they are researcher
+ s, engineers, writers, philosophers, artists, interdisciplinary thinkers, 
+ or independent tinkerers.\nIn this mixer, our exploration is inspired by H
+ ost 29 Quill's essay, Can a Biologist Fix a Radio?, which has reflections 
+ of the anxieties of working in an accelerating scientific field that many 
+ of us would resonate with today.\n\nFew fields are moving faster today tha
+ n machine learning. The pace can feel almost absurd:…\n\nHosted by Team 
+ Lossfunk & 4 others
+LOCATION:https://luma.com/event/evt-rAVXjJgIsIvoqOg
+GEO:12.981576669133792;77.6381848825015
+SEQUENCE:214291074
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261017T110000Z
+DTEND:20261017T123000Z
+DTSTAMP:20261016T051754Z
+ORGANIZER;CN="Host 8 Quill":MAILTO:organiser@example.com
+UID:evt-iBbKk7njngv6R77@events.lu.ma
+SUMMARY:Explanet Social · Bangalore Tech · Indiranagar Side (#10)
+DESCRIPTION:Get up-to-date information at: https://luma.com/jenv5r7j\n\nAdd
+ ress:\nCheck event page for more details.\n\nTen editions in and the recip
+ e hasn't changed: good people, a big house and nothing on the agenda.\nExp
+ lanet Social is a casual monthly meetup at Explanet House for people build
+ ing interesting things, whether you're deep into a startup or still workin
+ g out what to build. Come for the conversations you planned and stay for t
+ he ones you didn't.\nThere's no stage, no panel and nobody handing out nam
+ e tags. Just a house near Indiranagar, some pizza and a room full of peopl
+ e worth talking to.\nWho You'll Meet\nThe room looks a little different ev
+ ery month. Last time it was fintech founders, pure math…\n\nHosted by Ho
+ st 8 Quill & 3 others
+LOCATION:https://luma.com/event/evt-iBbKk7njngv6R77
+GEO:13.00365651334165;77.661843487642
+SEQUENCE:214291074
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261017T123000Z
+DTEND:20261017T153000Z
+DTSTAMP:20261016T051754Z
+ORGANIZER;CN="The Product Folks 🚀":MAILTO:organiser@example.com
+UID:evt-VvZaZQ3SfnCj7QW@events.lu.ma
+SUMMARY:Beyond the Hype - TPF x Ether by Zomato
+DESCRIPTION:Get up-to-date information at: https://luma.com/f7pyxzop\n\nAdd
+ ress:\nCheck event page for more details.\n\nAn Invite-Only Mixer for Prod
+ uct, Growth & Marketing Leaders\nHosted by The Product Folks x Ether by Zo
+ mato\n🗓 Date: Saturday, October 17, 2026 \n⏰ Time: 6:00 PM – 9:00 P
+ M\nMost of what's actually happening in tech gets said off the record. Thi
+ s is that room.\nAn invite-only mixer bringing together a curated group of
+  people across Product, Growth, and Marketing for an evening of great conv
+ ersations, fresh perspectives, and meaningful connections.\nNo panels, no 
+ pitches, no formal agenda. Just good drinks, great company, and a room ful
+ l of people building, experimenting, and figuring out what's…\n\nHosted 
+ by The Product Folks 🚀, Host 9 Quill & Host 10 Quill
+LOCATION:https://luma.com/event/evt-VvZaZQ3SfnCj7QW
+GEO:12.935136936760697;77.62882497114694
+SEQUENCE:214291074
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261018T063000Z
+DTEND:20261018T090000Z
+DTSTAMP:20261016T051754Z
+ORGANIZER;CN="Host 11 Quill":MAILTO:organiser@example.com
+UID:evt-ee3VRt7RTfODVKC@events.lu.ma
+SUMMARY:Slow weekends: ft AOH
+DESCRIPTION:Get up-to-date information at: https://luma.com/rvlcwypu\n\nAdd
+ ress:\nCheck event page for more details.\n\nSundays were made for doing v
+ ery little, and we're doing it in style. Slow Weekends is back with a midd
+ ay hangout hosted by Host 11 Quill & Host 12. Think easy energy, good comp
+ any, and a one-hour reset before the week starts creeping back into your h
+ ead.\nCome as you are. Roll in, find a spot, say hi to someone new or sett
+ le in with the people you came with. The mood is relaxed, the kind of part
+ y where nobody's checking the clock (even though it's only an hour, so mak
+ e it count). Bring your good vibes and your best Sunday-mode self.\nThe lo
+ cation is still to be announced, so keep an eye on…\n\nHosted by Host 11
+  Quill & Host 12 Quill
+LOCATION:https://luma.com/event/evt-ee3VRt7RTfODVKC
+GEO:12.970548622866461;77.64125877890972
+SEQUENCE:214291074
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261018T083000Z
+DTEND:20261018T123000Z
+DTSTAMP:20261016T051754Z
+ORGANIZER;CN="AI Garage":MAILTO:organiser@example.com
+UID:evt-8Ij7Q6QwWB96Vlk@events.lu.ma
+SUMMARY:Voice AI Buildathon: Build an AI That Can Interview
+DESCRIPTION:Get up-to-date information at: https://luma.com/jmp402e7\n\nAdd
+ ress:\nCheck event page for more details.\n\nPaytm × AI Garage | Bengalur
+ u\nMost Voice AI demos stop at having a conversation.\nIn this buildathon,
+  we’ll go one step further: build Voice AI agents that interview people,
+  understand what they’re saying, and turn conversations into useful stru
+ ctured outcomes.\nWe’ll start with a walkthrough of a real AI hiring aut
+ omation built by AI Garage. Then, you’ll choose one of two challenges an
+ d build your own interviewer agent.\nNo slide-deck hackathon. We end with 
+ working demos.\nPart 1 | Host Walkthrough: AI Hiring Automation\nWe’ll s
+ tart by breaking down a real workflow:\nCandidate applies → AI voice…\
+ n\nHosted by AI Garage, Paytm Community & Host 13 Quill
+LOCATION:https://luma.com/event/evt-8Ij7Q6QwWB96Vlk
+GEO:12.919007239251881;77.66721119455345
+SEQUENCE:214291074
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261018T103000Z
+DTEND:20261018T133000Z
+DTSTAMP:20261016T051754Z
+ORGANIZER;CN="Host 14 Quill":MAILTO:organiser@example.com
+UID:evt-phqEvy7cX2cs8PO@events.lu.ma
+SUMMARY:Variance: Demo Day
+DESCRIPTION:Get up-to-date information at: https://luma.com/izcu5rw2\n\nAdd
+ ress:\nCheck event page for more details.\n\nVariance is a one-month deep-
+ tech residency in Bengaluru - free, equity-free, and built for people who 
+ want to spend every waking hour on hard problems. From 750+ applications, 
+ we selected 14 founders working across foundational AI, robotics, aerospac
+ e, and biotech, and for the last month they've been living and building to
+ gether under one roof.\n\nOn Sunday, October 18, the cohort presents what 
+ they've built. Expect live demos, honest conversations about what worked a
+ nd what didn't, and a room full of people who care about deep tech in Indi
+ a.\nPresenting:\n- Host 28 Quill - India's First…\n\nHosted by Host 14 Q
+ uill & Host 15 Quill
+LOCATION:https://luma.com/event/evt-phqEvy7cX2cs8PO
+GEO:12.935456798945195;77.69553496423637
+SEQUENCE:214291074
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261021T130000Z
+DTEND:20261021T140000Z
+DTSTAMP:20261016T051754Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-8Mu36DRxrQV4ttX@events.lu.ma
+SUMMARY:The KV Cache Bottleneck: Architectural Alternatives
+DESCRIPTION:Get up-to-date information at: https://luma.com/587afpgo\n\nAdd
+ ress:\nCheck event page for more details.\n\nIn autoregressive decoding, e
+ ach new token recomputes the keys and values for all preceding tokens. Thi
+ s cache grows linearly with context length, and in long-context serving it
+  becomes the dominant memory and bandwidth cost - quite often more limitin
+ g than raw compute itself.\nIn this session, Host 27 Quill, co-founder of 
+ FrontiersMind, shall walk through the main architectural responses to this
+  problem and what each one costs us. Grouped-query and multi-query attenti
+ on bring down the number of KV heads. Cross-layer sharing Cross-Layer Atte
+ ntion and the shared KV cache in the recent Gemma…\n\nHosted by Team Los
+ sfunk, Host 2 Quill & Host 3 Quill
+LOCATION:https://luma.com/event/evt-8Mu36DRxrQV4ttX
+GEO:12.980070469169066;77.64139348744976
+SEQUENCE:214291074
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261024T040000Z
+DTEND:20261024T073000Z
+DTSTAMP:20261016T051754Z
+ORGANIZER;CN="Swift Bengaluru":MAILTO:organiser@example.com
+UID:evt-oxv8SmChZ9OK18g@events.lu.ma
+SUMMARY:Embedded Swift: From Code to Hardware
+DESCRIPTION:Get up-to-date information at: https://luma.com/lbm2afcr\n\nAdd
+ ress:\nPrestige Minsk Square\nBengaluru, India\n\nEmbedded Swift: From Cod
+ e to Hardware\nJoin us for a hands-on Embedded Swift workshop where we exp
+ lore how Swift can go beyond app development and interact with real hardwa
+ re.\nIn this session, participants will learn the basics of Embedded Swift
+  and build small projects using a Raspberry Pi Pico 2 W along with sensors
+  and actuators.\nDate & Time\nSaturday, 24 October 2026\n9:30 AM – 1:00 
+ PM\nWhat we’ll cover\nIntroduction to Embedded Swift\nSetting up the Emb
+ edded Swift development environment on macOS\nUnderstanding GPIO and hardw
+ are interaction\nControlling an LED\nReading input from an LDR/light…\n\
+ nHosted by Swift Bengaluru & 5 others
+LOCATION:Prestige Minsk Square, VV Towers, Dr Ambedkar Rd, Vasanth Nagar, B
+ engaluru, Karnataka 560001, India
+GEO:12.9818435;77.59590779999999
+SEQUENCE:214291074
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261024T053000Z
+DTEND:20261024T103000Z
+DTSTAMP:20261016T051754Z
+ORGANIZER;CN="Host 16 Quill":MAILTO:organiser@example.com
+UID:evt-7RIPNqiYmoKjKmM@events.lu.ma
+SUMMARY:RSI Research Mixer
+DESCRIPTION:Get up-to-date information at: https://luma.com/ja1fbt9r\n\nAdd
+ ress:\nCheck event page for more details.\n\nAbout the Event\nA curated ga
+ thering for researchers, engineers, founders, and technical builders explo
+ ring recursive self-improvement and self-learning AI systems.\nAI agents a
+ re becoming more capable, but the harder question is how they learn from e
+ xperience, retain useful knowledge, evaluate their own work, and improve s
+ afely over time.\nThe RSI Research Mixer brings together people working ac
+ ross research, infrastructure, developer tools, reinforcement learning, ev
+ aluations, memory, and agentic systems for an evening of practical convers
+ ations and shared learning.\nThis is not a pitch night.…\n\nHosted by Ho
+ st 16 Quill, Paytm Community & Host 17 Quill
+LOCATION:https://luma.com/event/evt-7RIPNqiYmoKjKmM
+GEO:12.918243117757468;77.67052055891885
+SEQUENCE:214291074
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261024T100000Z
+DTEND:20261024T140000Z
+DTSTAMP:20261016T051754Z
+ORGANIZER;CN="Host 18 Quill":MAILTO:organiser@example.com
+UID:evt-sAAM7t4xPhiGJtV@events.lu.ma
+SUMMARY:BitGo x Giottus: Crypto Custody in Action
+DESCRIPTION:Get up-to-date information at: https://luma.com/39txuq8y\n\nAdd
+ ress:\nBitGo\nBengaluru, India\n\nJoin us for an evening with the CEO of G
+ iottus, one of India's longest-running crypto exchanges, built for Indian 
+ traders and investors\nGiottus secures user funds with BitGo custody, and 
+ the two have been long-standing partners.\nHear how they built Giottus fro
+ m scratch, scaled it in India, and how custody works under the hood.\n\nAg
+ enda:\nCheck-in & Welcome\nIntroduction to BitGo - Engg Director, BitGo\nT
+ he Giottus Story & BitGo Partnership - CEO, Giottus\nAudience Q&A\nNetwork
+ ing & Pizza\nWho should attend?\n🔹 Traders and investors\n🔹 Engineer
+ s, developers & product managers\n🔹 Web3 founders and…\n\nHosted by H
+ ost 18 Quill
+LOCATION:BitGo, Incubex KRM5, 450, 8th Main Rd, 4th Block, Koramangala, Ben
+ galuru, Karnataka 560034, India
+GEO:12.9319385;77.6282543
+SEQUENCE:214291074
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261028T113000Z
+DTEND:20261028T140000Z
+DTSTAMP:20261016T051754Z
+ORGANIZER;CN="South Park Commons":MAILTO:organiser@example.com
+UID:evt-OgUUGHKNWGICWtY@events.lu.ma
+SUMMARY:Physical AI Demo Night (SPC in partnership with Elevation Capital)
+DESCRIPTION:Get up-to-date information at: https://luma.com/physicalaidemon
+ ight\n\nAddress:\nCheck event page for more details.\n\nAI is leaving the 
+ screen. It's starting to move, sense, build, navigate and operate in the r
+ eal world.\nJoin us at South Park Commons India in partnership with Elevat
+ ion Capital for an AWS powered evening of live demos from the people build
+ ing it.\n\nWhat you'll see:\nLive demos across -\nPhysical AI and robotics
+ \nHardware and autonomy\nDrones and spacetech\nComputer vision and industr
+ ial intelligence\nAdvanced manufacturing\n\nTwo ways to join:\nApply to de
+ mo:\nBuilding something in the physical world? Show us the thing that work
+ s, and why it is hard.\nWe'll select 8 to 10 teams\n5 minutes each, no…\
+ n\nHosted by South Park Commons & 3 others
+LOCATION:https://luma.com/event/evt-OgUUGHKNWGICWtY
+GEO:12.91510184849126;77.643157635886
+SEQUENCE:214291074
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261029T100000Z
+DTEND:20261029T123000Z
+DTSTAMP:20261016T051754Z
+ORGANIZER;CN="South Park Commons":MAILTO:organiser@example.com
+UID:evt-sMlNhQh0OFr6ezY@events.lu.ma
+SUMMARY:-1 to Host 23 Quill | South Park Commons (BLR)
+DESCRIPTION:Get up-to-date information at: https://luma.com/host\n\nAddress
+ :\nCheck event page for more details.\n\nSouth Park Commons India is excit
+ ed to host Host 23 Quill, Co-founder of Flipkart, as part of our -1 to Now
+  series.\nEvent Details:\n3:30 PM: Doors Open\n4:00 PM – 5:00 PM: Firesi
+ de Chat + Q&A\n5:00 PM – 6:00 PM: Mixer\nHost 23 Quill is co-founder of 
+ Flipkart, the Bengaluru company that began as an online bookstore run out 
+ of a two-room apartment and grew into one of India's largest e-commerce pl
+ atforms.\nAn IIT Delhi computer science graduate, Host 23 started out as a
+  software engineer at Sarnoff and then Amazon before co-founding Flipkart 
+ in 2007 with Host 24 Quill. He served as COO, CEO and Group…\n\nHosted b
+ y South Park Commons
+LOCATION:https://luma.com/event/evt-sMlNhQh0OFr6ezY
+GEO:12.915303971877222;77.64681878165793
+SEQUENCE:214291074
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261031T083000Z
+DTEND:20261031T113000Z
+DTSTAMP:20261016T051754Z
+ORGANIZER;CN="Lottie Community":MAILTO:organiser@example.com
+UID:evt-xK6kZ1HeyWPKAyR@events.lu.ma
+SUMMARY:Code Meets Animation - Bangalore
+DESCRIPTION:Get up-to-date information at: https://luma.com/okk23geo\n\nAdd
+ ress:\nZepto HQ Bangalore\nBengaluru, India\n\nWhen Code Meets Animation\n
+ AI can now turn a single sentence into a production-ready animation. That 
+ part is getting easy. The hard part is everything that comes after: keepin
+ g motion consistent across a product, turning it into a system with tokens
+  and rules, making sure it performs on every device, and actually shipping
+  it.\nThat gap is what Code Meets Animation is about, and it's what we're 
+ digging into for an evening in Bangalore.\nLottieFiles is teaming up with 
+ Zepto and Friends of Figma Bangalore for a night of talks, a hands-on live
+  challenge, and plenty of time to meet people building…\n\nHosted by Lot
+ tie Community & 3 others
+LOCATION:Zepto HQ Bangalore, First Floor, 773, Sarjapur Main Rd, Haralur, A
+ mbalipura, Kaikondrahalli, Bengaluru, Karnataka 560103, India
+GEO:12.9165668;77.6712397
+SEQUENCE:214291074
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261104T060000Z
+DTEND:20261104T123000Z
+DTSTAMP:20261016T051754Z
+ORGANIZER;CN="Host 19 Quill":MAILTO:organiser@example.com
+UID:evt-C5ViFnvB23UN1iy@events.lu.ma
+SUMMARY:Okta Developer Connect Bengaluru
+DESCRIPTION:Get up-to-date information at: https://luma.com/2mgw9sne\n\nAdd
+ ress:\nCheck event page for more details.\n\nOkta Developer Connect Bengal
+ uru 2026\nIdentity as the Control Plane for AI Agents\n\nOkta Developer Co
+ nnect Bengaluru is back, bringing together developers, platform and securi
+ ty engineers, architects, engineering leaders, and builders to explore wha
+ t it takes to securely bring AI agents into the enterprise.\nAI agents are
+  beginning to work across applications, APIs, data, and enterprise workflo
+ ws, retrieving information, taking actions, and increasingly operating on 
+ behalf of users. As these systems become more capable, identity becomes th
+ e control plane for determining who or what can access…\n\nHosted by Hos
+ t 19 Quill, Host 20 Quill & Host 21 Quill
+LOCATION:https://luma.com/event/evt-C5ViFnvB23UN1iy
+GEO:12.922528575334608;77.68620208014516
+SEQUENCE:214291074
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261106T093000Z
+DTEND:20261106T113000Z
+DTSTAMP:20261016T051754Z
+ORGANIZER;CN="QuantumX":MAILTO:organiser@example.com
+UID:evt-y8WQuw7CWeGKjYO@events.lu.ma
+SUMMARY:QFF 2026: Quantum and Qiskit 101
+DESCRIPTION:Get up-to-date information at: https://luma.com/hczdve5y\n\nAdd
+ ress:\nStartup Park Bengaluru\nBengaluru, India\n\nAs part of Qiskit Fall 
+ Fest 2026, QuantumX is bringing together students, researchers, profession
+ als, and technology enthusiasts for an engaging introduction to the world 
+ of quantum computing and Qiskit.\nThis expert talk is designed to provide 
+ a clear and accessible starting point for anyone interested in understandi
+ ng how quantum computing works, why it is becoming increasingly important,
+  and how tools like Qiskit are enabling learners and developers to explore
+  this emerging technology. Participants will gain insights into the curren
+ t state of the quantum ecosystem, real-world applications…\n\nHosted by 
+ QuantumX
+LOCATION:Startup Park Bengaluru, Total Mall, Police Station, opposite to Ma
+ diwala, Sidharata Colony, Santhosapuram, 2nd Block, Koramangala, Bengaluru
+ , Karnataka 560068, India
+GEO:12.9218575;77.6201801
+SEQUENCE:214291074
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261116T043000Z
+DTEND:20261116T083000Z
+DTSTAMP:20261016T051754Z
+ORGANIZER;CN="QuantumX":MAILTO:organiser@example.com
+UID:evt-iPAqBamDHLcZJUH@events.lu.ma
+SUMMARY:QFF 2026: Hands-On Quantum Programming with Qiskit
+DESCRIPTION:Get up-to-date information at: https://luma.com/79i0vamg\n\nAdd
+ ress:\nHKBK COLLEGE OF ENGINEERING\nBengaluru, India\n\nGet started with q
+ uantum programming through a practical, beginner-friendly workshop using Q
+ iskit and IBM Quantum Platform.\n\nThis event is exclusively for students 
+ and is open to participants from all academic institutions.\n\nAbout the E
+ vent\nReady to move beyond theory and start building with quantum computer
+ s?\nJoin the QuantumX Qiskit Workshop, a hands-on session designed to intr
+ oduce you to the world's most widely used quantum computing SDK. Through g
+ uided demonstrations and practical exercises, you'll learn how to create a
+ nd execute quantum circuits using Qiskit and explore the IBM Quantum…\n\
+ nHosted by QuantumX
+LOCATION:HKBK COLLEGE OF ENGINEERING, Nagavara, Bengaluru, Karnataka 560045
+ , India
+GEO:13.0364303;77.6201399
+SEQUENCE:214291074
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261205T123000Z
+DTEND:20261205T143000Z
+DTSTAMP:20261016T051754Z
+ORGANIZER;CN="Host 22 Quill":MAILTO:organiser@example.com
+UID:evt-1J5sVzP9ZLKuQ0C@events.lu.ma
+SUMMARY:Bangalore Product Mixer #4 | Product Reactor
+DESCRIPTION:Get up-to-date information at: https://luma.com/232qy3xn\n\nAdd
+ ress:\nCheck event page for more details.\n\nProduct Managers Connect is a
+  relaxed, high value networking meetup created exclusively for product man
+ agers.\nThe goal is simple: connect, exchange experiences, and build profe
+ ssional relationships with peers in the product community.\nWhat to expect
+ \nA casual, conversation driven environment.\nDedicated space to meet fell
+ ow product managers from diverse industries.\nDiscussions around product c
+ hallenges, tools, workflows, and career growth.\nOpportunities to discover
+  collaborators, and mentors.\nWho should attend\nProduct managers of all l
+ evels who want to expand their network and engage with a…\n\nHosted by H
+ ost 22 Quill
+LOCATION:https://luma.com/event/evt-1J5sVzP9ZLKuQ0C
+GEO:12.912228031101217;77.65279864808575
+SEQUENCE:214291074
+STATUS:TENTATIVE
+END:VEVENT
+END:VCALENDAR

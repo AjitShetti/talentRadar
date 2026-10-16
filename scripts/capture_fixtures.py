@@ -6,6 +6,7 @@ Record real source responses so the contract tests can replay them offline.
     python scripts/capture_fixtures.py                  # every source
     python scripts/capture_fixtures.py --source foundit # just one
     python scripts/capture_fixtures.py --company-map    # company-map importers
+    python scripts/capture_fixtures.py --events         # Events: the Luma iCal feeds
 
 Rather than guessing each scraper's request URLs, this wraps
 ``ScraplingManager.fetch_html_or_json`` and records every call the scraper
@@ -24,12 +25,15 @@ import argparse
 import asyncio
 import gzip
 import json
+import re
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from ingestion.scrapling_manager import ScraplingManager
 from ingestion.sources.registry import LiveSource, live_source_registry
+from scripts.fixture_privacy import pseudonymise_ics
 
 if TYPE_CHECKING:
     import httpx
@@ -234,15 +238,87 @@ async def capture_company_map() -> int:
     return 0
 
 
+# ── Events ───────────────────────────────────────────────────────────────────
+
+EVENTS_DIR = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "events"
+EVENT_SOURCES = Path(__file__).resolve().parent.parent / "data" / "events" / "sources.json"
+_LUMA_CALENDARS_RECORDED = 2  # the first calendars in sources.json; the rest are not replayed
+_LUMA_GAP_S = 1.0  # one request a second
+
+
+def _slug(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+
+
+async def capture_events_luma(redact: Sequence[str] = ()) -> int:
+    """
+    Record the Luma iCal feeds the tests replay: the Bengaluru Discover feed and
+    the first two curated calendars in ``data/events/sources.json``. Each is
+    fetched once through the same ``fetch_feed`` the app uses (one request a
+    second), checked to parse, pseudonymised, and written. Returns a process
+    exit code: 0 when every planned file was written.
+
+    People are pseudonymised on the way in (see :func:`pseudonymise_ics`), so a
+    real host's name never reaches the repository. Review the diff for people
+    the rules cannot see, such as a speaker named in a description, and re-run
+    with ``--redact "Full Name"`` for each.
+    """
+    import httpx
+
+    from services.events import luma
+
+    sources = json.loads(EVENT_SOURCES.read_text(encoding="utf-8"))["luma"]
+    plan: list[tuple[str, Literal["discover", "calendar"], str]] = [
+        (f"luma_discover_{_slug(entry['name'])}.ics", "discover", entry["id"])
+        for entry in sources["discover"][:1]
+    ] + [
+        (f"luma_calendar_{_slug(entry['name'])}.ics", "calendar", entry["id"])
+        for entry in sources["calendars"][:_LUMA_CALENDARS_RECORDED]
+    ]
+    EVENTS_DIR.mkdir(parents=True, exist_ok=True)
+    written = 0
+    async with httpx.AsyncClient() as client:
+        for index, (filename, kind, ident) in enumerate(plan):
+            if index:
+                await asyncio.sleep(_LUMA_GAP_S)
+            try:
+                data = await luma.fetch_feed(client, luma.feed_url(kind, ident))
+            except (httpx.HTTPError, ValueError) as exc:
+                print(f"  luma {kind:8} {ident} FAILED: {type(exc).__name__}: {exc}")
+                continue
+            events = await asyncio.to_thread(luma.parse_feed, data)
+            if not events:
+                print(f"  luma {kind:8} {ident} parsed to 0 events - not writing a fixture")
+                continue
+            text = pseudonymise_ics(data.decode("utf-8-sig", errors="replace"), extra_names=redact)
+            (EVENTS_DIR / filename).write_text(text, encoding="utf-8", newline="\n")
+            print(f"  luma {kind:8} {len(events):>3} events, {len(text) // 1024} KB -> {filename}")
+            written += 1
+    print(f"\nWrote {written} of {len(plan)} Luma fixture(s).")
+    return 0 if written == len(plan) else 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Record live source responses as test fixtures.")
     parser.add_argument("--source", action="append", help="Capture only this source (repeatable)")
     parser.add_argument(
         "--company-map", action="store_true", help="Record the company-map importer fixtures"
     )
+    parser.add_argument(
+        "--events", action="store_true", help="Record the Events fixtures (Luma iCal feeds)"
+    )
+    parser.add_argument(
+        "--redact",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="With --events: also rename this person wherever a recording names them (repeatable)",
+    )
     args = parser.parse_args()
     if args.company_map:
         return asyncio.run(capture_company_map())
+    if args.events:
+        return asyncio.run(capture_events_luma(args.redact))
     return asyncio.run(main_async(args))
 
 
