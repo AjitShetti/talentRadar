@@ -818,7 +818,7 @@ def _nonce_base() -> JudgeInput:
     )
 
 
-def test_nonce_is_twelve_hex_characters_and_the_same_for_the_same_input() -> None:
+def test_nonce_is_sixteen_hex_characters_and_the_same_for_the_same_input() -> None:
     nonce = fence_nonce(_input())
     assert re.fullmatch(r"[0-9a-f]{16}", nonce)
     assert fence_nonce(_input()) == nonce
@@ -1347,3 +1347,28 @@ def _interview_flat() -> Callable[[object, int], str]:
 @pytest.mark.parametrize("limit", [0, 1, 7, 40, 120, 1_000])
 def test_flat_line_agrees_with_the_interview_flatten(value: Any, limit: int) -> None:
     assert flat_line(value, limit) == _interview_flat()(value, limit)
+
+
+def test_nonce_binds_which_field_each_text_came_from() -> None:
+    """Moving a text from one list to the next, or renaming a write-up field, changes the code."""
+    one = _commit(1, "M")
+    pairs = [
+        (_input(commits=[one], tree=["T"]), _input(commits=[], tree=["M", "T"])),
+        (_input(files=[("p", "c")], tree=[]), _input(files=[], tree=["p", "c"])),
+        (_input(writeup={"decisions": "P"}), _input(writeup={"decisions2": "P"})),
+        (_input(readme="R", files=[]), _input(readme="", files=[("R", "")])),
+    ]
+    for left, right in pairs:
+        assert fence_nonce(left) != fence_nonce(right)
+
+
+def test_nonce_binds_how_many_pieces_each_section_has() -> None:
+    nonces = {
+        fence_nonce(_input(writeup={})),
+        fence_nonce(_input(writeup={"decisions": ""})),
+        fence_nonce(_input(commits=[], tree=[])),
+        fence_nonce(_input(commits=[_commit(1, "")], tree=[])),
+        fence_nonce(_input(commits=[], tree=[""])),
+        fence_nonce(_input(commits=[_commit(1, ""), _commit(2, "")], tree=[])),
+    }
+    assert len(nonces) == 6

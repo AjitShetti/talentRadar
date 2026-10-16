@@ -348,18 +348,49 @@ def _candidate_texts(inp: JudgeInput) -> list[str]:
 
 def fence_nonce(inp: JudgeInput) -> str:
     """The code every fence marker of this submission carries: the first 16 hex characters of a
-    SHA-256 over all the candidate's text (``_candidate_texts``).
+    SHA-256 over all the candidate's text, all that was given and not only what fits in the prompt.
 
-    Each piece is hashed with its length in front, so no text can be moved across a boundary
-    without changing the code. A candidate cannot write the hash of their own text into that
-    text, so they cannot write a marker that carries the code, whatever characters they use.
-    The same input always gives the same code, so the prompt, and ``input_sha256``, are stable.
+    Five sections are hashed in a fixed order: the write-up, the README, the key files, the
+    commit messages, the tree paths. Each section starts with its ASCII tag and its piece count
+    (8 bytes, big-endian), and every piece, tag included, is hashed with its length in front.
+    The write-up's pieces are a field's name then its value, for each field in sorted order (so
+    the mapping's own order does not matter); the key files' pieces are a path then its content.
+    So no text can move across a boundary, between pieces or between lists, nor a write-up field
+    be renamed, without changing the code. (``_candidate_texts`` lists the same texts without
+    the structure, for ``input_markers``, which only reads them.)
+
+    A candidate cannot write the hash of their own text into that text, so they cannot write a
+    marker that carries the code, whatever characters they use. The same input always gives the
+    same code, so the prompt, and ``input_sha256``, are stable.
     """
     digest = hashlib.sha256()
-    for text in _candidate_texts(inp):
-        data = text.encode("utf-8", "surrogatepass")
+
+    def frame(data: bytes) -> None:
         digest.update(len(data).to_bytes(8, "big"))
         digest.update(data)
+
+    sections: tuple[tuple[str, list[str]], ...] = (
+        (
+            "writeup",
+            [
+                piece
+                for name in sorted(inp.writeup)
+                for piece in (str(name), str(inp.writeup[name] or ""))
+            ],
+        ),
+        ("readme", [str(inp.readme or "")]),
+        (
+            "files",
+            [str(piece or "") for path, content in inp.files for piece in (path, content)],
+        ),
+        ("commits", [str(commit.message or "") for commit in inp.commits]),
+        ("tree", [str(path or "") for path in inp.tree]),
+    )
+    for tag, pieces in sections:
+        frame(tag.encode("ascii"))
+        digest.update(len(pieces).to_bytes(8, "big"))
+        for piece in pieces:
+            frame(piece.encode("utf-8", "surrogatepass"))
     return digest.hexdigest()[:16]
 
 
