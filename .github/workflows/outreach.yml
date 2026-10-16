@@ -40,7 +40,7 @@ jobs:
         id: gate
         run: |
           if [ -z "$CRON_TOKEN" ]; then
-            echo "::notice::CRON_TOKEN secret is not set; skipping the re-check."
+            echo "::notice::CRON_TOKEN secret is not set; skipping the outreach pull."
             echo "run=false" >> "$GITHUB_OUTPUT"
           else
             echo "run=true" >> "$GITHUB_OUTPUT"
@@ -53,7 +53,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       # The instance is usually asleep when this fires; wake it first so the
-      # re-check itself is not what pays the cold start.
+      # pull itself is not what pays the cold start.
       - name: Wake the API
         if: steps.gate.outputs.run == 'true'
         env:
