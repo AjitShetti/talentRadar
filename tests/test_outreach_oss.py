@@ -546,7 +546,9 @@ async def test_refresh_error_keeps_previous_issues(outreach_db: Factory, no_toke
     assert after.status == "error"
     assert after.issues == [OLD_ISSUE]
     assert after.total_count == before.total_count
-    assert after.fetched_at == before.fetched_at
+    # The list stays, but the attempt counts as a check: the company waits its interval.
+    assert after.fetched_at.replace(tzinfo=UTC) == NOW
+    assert after.fetched_at != before.fetched_at
 
 
 async def test_refresh_error_for_a_new_company_records_an_empty_error_row(
@@ -987,17 +989,56 @@ async def test_a_thread_company_is_not_due_again_within_a_day(
     assert result == expected()
 
 
-async def test_a_failed_check_leaves_the_company_due(outreach_db: Factory, no_token: None) -> None:
-    # A run that errors leaves ``fetched_at`` alone, so the same company comes up again.
+async def test_a_failed_check_waits_its_interval_like_any_other(
+    outreach_db: Factory, no_token: None
+) -> None:
+    # An error moves ``fetched_at`` to now, so the company is not asked again at once.
     async with outreach_db() as session:
         fernhill = await listed(session, "Fernhill", "fernhill-dev")
     await store_snapshot(outreach_db, fernhill, age=timedelta(days=5), org="fernhill-dev")
 
     async with github(status_answer(500)) as (client, seen):
-        await refresh_issues(20, client=client, sleep=Sleeps(), now=NOW)
-        await refresh_issues(20, client=client, sleep=Sleeps(), now=NOW + timedelta(hours=1))
+        for later in (timedelta(0), timedelta(hours=1), timedelta(days=2), timedelta(days=3)):
+            await refresh_issues(20, client=client, sleep=Sleeps(), now=NOW + later)
 
+    # Asked at once, not again an hour or two days later, and again after the 3-day interval.
     assert seen.orgs == ["fernhill-dev", "fernhill-dev"]
+
+
+@pytest.mark.parametrize(
+    ("in_a_thread", "later"),
+    [(False, timedelta(days=1)), (True, timedelta(hours=12))],
+    ids=["listed: 3-day interval", "open thread: 1-day interval"],
+)
+async def test_failing_orgs_at_the_front_do_not_starve_a_healthy_one(
+    outreach_db: Factory, no_token: None, in_a_thread: bool, later: timedelta
+) -> None:
+    async with outreach_db() as session:
+        bad = [await listed(session, f"Bad {n}", f"bad-{n}") for n in range(5)]
+        good = await listed(session, "Good", "good")
+    for company in bad:
+        await store_snapshot(
+            outreach_db, company, age=timedelta(days=10), org=str(company.github_org)
+        )
+    # The healthy one was checked more recently, so it sorts after all five.
+    await store_snapshot(outreach_db, good, age=timedelta(days=5), org="good")
+    if in_a_thread:
+        for company in (*bad, good):
+            await open_thread(outreach_db, company)
+
+    def answer(org: str, request: httpx.Request) -> httpx.Response:
+        return ok_answer(org, request) if org == "good" else status_answer(503)(org, request)
+
+    async with github(answer) as (client, seen):
+        first = await refresh_issues(20, client=client, sleep=Sleeps(), now=NOW)
+        assert seen.orgs == [f"bad-{n}" for n in range(5)]
+        assert first == expected(checked=5, errors=5, stopped="errors")
+
+        # Within their interval the five are not due, so the run reaches the healthy org.
+        second = await refresh_issues(20, client=client, sleep=Sleeps(), now=NOW + later)
+
+    assert seen.orgs[5:] == ["good"]
+    assert second == expected(checked=1, ok=1)
 
 
 async def test_a_limit_of_zero_does_nothing(outreach_db: Factory, no_token: None) -> None:

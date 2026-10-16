@@ -29,10 +29,13 @@ Rules the step keeps:
   stops at a 401 (a revoked token) without recording anything for that company.
   The result's ``stopped`` says which: ``budget``, ``rate_limited``, ``auth``,
   ``errors`` or ``None`` for a run that finished its list.
-* **A failed check keeps what was known.** A 404 or 422 (no such organisation)
-  is recorded as ``not_found`` with no issues. Any other failure marks the row
-  ``error`` and leaves its issues, total and ``fetched_at`` alone, so the drawer
-  can still show the last good list and say when it was read.
+* **A failed check keeps what was known, but still counts as a check.** A 404 or
+  422 (no such organisation) is recorded as ``not_found`` with no issues. Any other
+  failure marks the row ``error`` and leaves its issues and total, so the drawer
+  can still show the last good list; ``fetched_at`` moves to now, so a company that
+  keeps failing waits its normal interval (a day in a thread, three otherwise)
+  instead of sitting first in the queue. A refusal (``rate_limited``) leaves the
+  date alone, so the company is first in line once the limit lifts.
 * **Each company is written in its own transaction**, so one company that cannot
   be stored loses nothing found for the others.
 * **An issue is only a link if it is in the organisation.** The URL must be an
@@ -344,11 +347,12 @@ async def _search(client: httpx.AsyncClient, org: str, today: date) -> _Outcome:
 async def _record(company_id: uuid.UUID, org: str, outcome: _Outcome, now: datetime) -> None:
     """Store one company's outcome in its own transaction.
 
-    ``ok`` and ``not_found`` replace the list and the date. ``error`` and
-    ``rate_limited`` change only the status, so the last good list and the date it
-    was read stay. A company with no row yet gets an empty ``error`` row (so a
-    failing organisation yields to others) but no ``rate_limited`` row (so it stays
-    first in line once the limit lifts).
+    ``ok`` and ``not_found`` replace the list and the date. ``error`` keeps the
+    last good list and total but moves the date to now: the attempt was a check, so
+    a company that keeps failing waits its interval instead of heading the queue
+    every run. ``rate_limited`` changes only the status and leaves the date, and a
+    company with no row yet gets no ``rate_limited`` row, so either stays first in
+    line once the limit lifts. A company with no row gets an empty ``error`` row.
     """
     async with AsyncSessionLocal() as session:
         row = await session.get(OssIssueSnapshot, company_id)
@@ -369,7 +373,9 @@ async def _record(company_id: uuid.UUID, org: str, outcome: _Outcome, now: datet
             row.org, row.total_count, row.issues, row.fetched_at = org, 0, [], now
         row.status = outcome.status
         if outcome.status in ("ok", "not_found"):
-            row.total_count, row.issues, row.fetched_at = outcome.total, outcome.issues, now
+            row.total_count, row.issues = outcome.total, outcome.issues
+        if outcome.status != "rate_limited":
+            row.fetched_at = now
         await session.commit()
 
 
