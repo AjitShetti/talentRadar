@@ -27,6 +27,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import delete, func, select
 from sqlalchemy import event as sa_event
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from domain.areas import in_bengaluru
@@ -1169,3 +1170,212 @@ async def test_a_database_error_is_not_swallowed(
     monkeypatch.setattr(session, "flush", boom)
     with pytest.raises(RuntimeError, match="database is gone"):
         await upsert_event(session, make_facts(), LUMA, now=NOW)
+
+
+# ── fix round 1: races, reasons, hosts, event links, sticky flags, retained pins ─
+
+
+async def test_a_lost_insert_race_takes_the_update_path(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Another run stored the event between our lookup and our insert."""
+    first = stored(await upsert(session, make_facts()))
+
+    real = store._find_stored
+    lookups = 0
+
+    async def blind_once(db: AsyncSession, source: str, external_id: str) -> Event | None:
+        nonlocal lookups
+        lookups += 1
+        return None if lookups == 1 else await real(db, source, external_id)
+
+    monkeypatch.setattr(store, "_find_stored", blind_once)
+    renamed = make_facts(title="Swift Bengaluru × Okta, renamed")
+    result = await upsert(session, renamed, now=NOW + timedelta(hours=1))
+
+    assert result.skipped is None and result.created is False
+    assert stored(result).id == first.id
+    assert stored(result).title == "Swift Bengaluru × Okta, renamed"
+    assert as_utc(stored(result).last_seen_at) == NOW + timedelta(hours=1)
+    assert await count(session, Event) == 1
+    assert lookups == 2  # the miss, then the re-select after the unique violation
+
+
+async def test_an_integrity_error_that_is_not_a_race_propagates(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def ghost(*args: Any, **kwargs: Any) -> Event:
+        return Event(id=uuid.uuid4())  # a primary that is not in the database
+
+    monkeypatch.setattr(store, "find_duplicate", ghost)
+    with pytest.raises(IntegrityError):
+        await upsert_event(session, make_facts(), LUMA, now=NOW)
+
+    await session.rollback()
+    assert await count(session, Event) == 0  # the session is still usable
+
+
+async def test_reasons_are_cleaned_and_clamped(session: AsyncSession) -> None:
+    """``assess`` writes "hosted by <organiser>" from the facts, so the facts are cleaned first."""
+    await add_company(session, "Okta", domain="okta.com")
+    nul = chr(0)
+    facts = make_facts(
+        title="Okta Walk-in Drive: backend engineers",
+        external_id="evt-drive",
+        hosts=("Okta",),
+        organiser_name="Org" + nul + "A" * 5000,
+    )
+    row = stored(await upsert(session, facts))
+
+    assert row.listed is True  # a hiring event whose host is a listed company
+    reasons = list(row.reasons or [])
+    assert reasons and all(len(reason) <= 200 and nul not in reason for reason in reasons)
+    hosted = [reason for reason in reasons if reason.startswith("hosted by")]
+    assert len(hosted) == 1
+    assert hosted[0].startswith("hosted by OrgAAA") and len(hosted[0]) == 200
+    assert row.organiser_name is not None
+    assert nul not in row.organiser_name and len(row.organiser_name) == 200
+
+
+def _count_lookups(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    names: list[str] = []
+    real = store.find_existing
+
+    async def counting(db: AsyncSession, **kwargs: Any) -> Company | None:
+        names.append(kwargs["name"])
+        return await real(db, **kwargs)
+
+    monkeypatch.setattr(store, "find_existing", counting)
+    return names
+
+
+async def test_hosts_are_capped_deduplicated_and_cleaned(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lookups = _count_lookups(monkeypatch)
+    nul = chr(0)
+    hosts = (
+        "Host Co 0",
+        "host co 0",  # the same name in another case
+        " ",
+        "",
+        f"Host{nul} Co 1",
+        *(f"Host Co {number}" for number in range(50)),
+    )
+    facts = make_facts(title="Swift Meetup", organiser_name=None, hosts=hosts)
+    row = stored(await upsert(session, facts))
+
+    assert list(row.hosts or []) == [f"Host Co {number}" for number in range(10)]
+    assert len(lookups) <= 10
+
+
+async def test_resolving_looks_up_at_most_ten_hosts(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lookups = _count_lookups(monkeypatch)
+    many = make_facts(
+        title="Swift Meetup",
+        organiser_name=None,
+        hosts=tuple(f"Host Co {number}" for number in range(50)),
+    )
+    await resolve_companies(session, many)
+    assert len(lookups) == 10
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://luma.com/okta-swift",
+        "javascript:alert(1)",
+        "ftp://luma.com/x",
+        "//luma.com/x",
+        "luma.com/x",
+        "https://",
+        "   ",
+    ],
+)
+async def test_an_event_link_that_is_not_https_is_dropped_not_the_event(
+    session: AsyncSession, url: str
+) -> None:
+    result = await upsert(session, make_facts(url=url))
+    row = stored(result)
+    assert result.created is True and row.url is None
+    assert row.listed is True
+
+
+async def test_https_links_are_kept_and_a_later_bad_one_does_not_erase_them(
+    session: AsyncSession,
+) -> None:
+    first = stored(await upsert(session, make_facts(url="HTTPS://luma.com/okta-swift")))
+    assert first.url == "HTTPS://luma.com/okta-swift"
+
+    later = stored(await upsert(session, make_facts(url="javascript:alert(1)")))
+    assert later.url == "HTTPS://luma.com/okta-swift"
+
+
+async def test_address_withheld_only_moves_to_true(session: AsyncSession) -> None:
+    phrase = "The exact location will be shared once the invite is accepted."
+
+    never = stored(await upsert(session, make_facts(external_id="evt-never")))
+    assert (never.extra_metadata or {})["address_withheld"] is False
+
+    first = stored(await upsert(session, make_facts(snippet=f"Doors at 6. {phrase}")))
+    assert (first.extra_metadata or {})["address_withheld"] is True
+
+    again = stored(await upsert(session, make_facts(snippet="Doors at 6.")))
+    assert (again.extra_metadata or {})["address_withheld"] is True  # the phrase is gone
+
+    flagged = stored(
+        await upsert(session, make_facts(external_id="evt-never", address_withheld=True))
+    )
+    assert (flagged.extra_metadata or {})["address_withheld"] is True
+    unflagged = stored(await upsert(session, make_facts(external_id="evt-never")))
+    assert (unflagged.extra_metadata or {})["address_withheld"] is True
+
+
+def _online(facts: EventFacts) -> EventFacts:
+    return replace(facts, is_online=True, lat=None, lng=None, address=None, venue_name=None)
+
+
+def _no_position(facts: EventFacts) -> EventFacts:
+    return replace(facts, lat=None, lng=None, address="Bellandur, Bengaluru")
+
+
+async def test_precision_follows_the_retained_pin(session: AsyncSession) -> None:
+    twin = eventbrite_twin()
+    row = stored(await upsert(session, twin, EVENTBRITE))
+    pin = (row.lat, row.lng)
+    assert row.geo_precision == "exact"
+
+    online = stored(await upsert(session, _online(twin), EVENTBRITE, now=NOW + timedelta(hours=1)))
+    assert online.geo_precision == "none" and (online.lat, online.lng) == pin
+
+    # Back in person, no position stated: the pin it kept is Eventbrite's own again.
+    back = stored(
+        await upsert(session, _no_position(twin), EVENTBRITE, now=NOW + timedelta(hours=2))
+    )
+    assert (back.lat, back.lng) == pin and back.geo_precision == "exact"
+
+    # The listing now says the exact location comes later: the pin is only near.
+    phrase = "The exact location will be shared once the invite is accepted."
+    withheld = replace(_no_position(twin), snippet=phrase)
+    near = stored(await upsert(session, withheld, EVENTBRITE, now=NOW + timedelta(hours=3)))
+    assert (near.lat, near.lng) == pin and near.geo_precision == "area"
+
+    # ... and stays so once the sentence is gone.
+    later = stored(
+        await upsert(session, _no_position(twin), EVENTBRITE, now=NOW + timedelta(hours=4))
+    )
+    assert later.geo_precision == "area"
+
+
+async def test_a_placed_pin_never_becomes_exact_by_coming_back(session: AsyncSession) -> None:
+    """An Eventbrite event with only an address was placed by us: that pin is never "exact"."""
+    twin = replace(_no_position(eventbrite_twin()), external_id="1002")
+    row = stored(await upsert(session, twin, EVENTBRITE))
+    pin = (row.lat, row.lng)
+    assert pin != (None, None) and row.geo_precision == "area"
+
+    stored(await upsert(session, _online(twin), EVENTBRITE, now=NOW + timedelta(hours=1)))
+    back = stored(await upsert(session, twin, EVENTBRITE, now=NOW + timedelta(hours=2)))
+    assert (back.lat, back.lng) == pin and back.geo_precision == "area"

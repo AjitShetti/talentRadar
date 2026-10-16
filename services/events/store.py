@@ -40,18 +40,28 @@ Rules that hold throughout:
 Callers own the transaction: nothing here commits, and a database error is *not*
 caught. The refresh steps call :func:`upsert_event` inside a wrapper that never
 raises, and that wrapper rolls the session back; swallowing the error here would
-leave a half-written event in the transaction.
+leave a half-written event in the transaction. The one exception is a lost insert
+race: the insert runs in a savepoint, and when another run stored the same
+``(source, external_id)`` first, the savepoint is rolled back and the sighting becomes
+an update of the winner.
+
+Every text field is cleaned before anything reads it (NUL removed, cut to its column,
+hosts capped at :data:`MAX_HOSTS`, an event link that is not ``https://`` emptied), so
+the verdict, the company lookups and the row all see the same text, and the reasons
+``assess`` builds from it are bounded too.
 """
 
 from __future__ import annotations
 
 import re
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import delete, insert, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from domain.areas import centroid, jitter
@@ -89,8 +99,16 @@ _SCOPE_KEY_MAX = 120
 _TAXONOMY_MAX = 32
 _TIMEZONE_MAX = 64
 _LOCALITY_MAX = 120
+#: A reason is a short phrase; ``assess`` builds some from the facts, so it is cut too.
+_REASON_MAX = 200
+
+#: An event is hosted by a handful of companies. Past this many, a feed is padding.
+MAX_HOSTS = 10
 
 _NUL = chr(0)
+_HTTPS = "https://"
+_STATED = "stated"  # a pin the source gave
+_PLACED = "placed"  # a pin we put at the centre of the address's area
 
 #: Refining reads at most this much of any one field, however much a parser handed over.
 _SCAN_LIMIT = 3_000
@@ -208,10 +226,14 @@ async def _resolve(
     session: AsyncSession,
     organiser_name: str | None,
     organiser_url: str | None,
-    hosts: tuple[str, ...],
+    hosts: Iterable[str],
     title: str,
 ) -> list[tuple[Company, CompanyCandidate]]:
-    candidates = company_candidates(organiser_name, hosts, title)
+    # Whoever calls this (a refresh step, the link step), the names are cleaned and the
+    # hosts capped here: each candidate costs a lookup, and a NUL fails the whole query.
+    candidates = company_candidates(
+        _text(organiser_name, _ORGANISER_MAX), _hosts(hosts), _clean(title, _TITLE_MAX)
+    )
     if not candidates:
         return []
     organiser_domain = _organiser_domain(organiser_url)
@@ -293,7 +315,7 @@ async def link_companies(session: AsyncSession, event: Event) -> int:
     round). It reads the organiser, hosts and title *as stored*.
     """
     resolved = await _resolve(
-        session, event.organiser_name, event.organiser_url, tuple(event.hosts or ()), event.title
+        session, event.organiser_name, event.organiser_url, event.hosts or (), event.title
     )
     return await _replace_links(session, event.id, resolved)
 
@@ -411,6 +433,49 @@ def _link(value: str | None, width: int) -> str | None:
     return trimmed if trimmed is not None and len(trimmed) <= width else None
 
 
+def _https_url(value: str | None, width: int) -> str | None:
+    """``value`` if it is an ``https://`` link that fits, else ``None``."""
+    link = _link(value, width)
+    if link is None or len(link) <= len(_HTTPS) or link[: len(_HTTPS)].lower() != _HTTPS:
+        return None
+    return link
+
+
+def _hosts(names: Iterable[str]) -> tuple[str, ...]:
+    """At most :data:`MAX_HOSTS` distinct names, cleaned, in the order they came."""
+    kept: dict[str, str] = {}
+    for name in names:
+        cleaned = _text(name, _HOST_MAX)
+        if cleaned is not None:
+            kept.setdefault(cleaned.casefold(), cleaned)
+        if len(kept) == MAX_HOSTS:
+            break
+    return tuple(kept.values())
+
+
+def _sanitise(facts: EventFacts) -> EventFacts:
+    """``facts`` with every text field cleaned, bounded and fit for its column.
+
+    Text loses NUL and is cut to its column; the event link must be ``https://`` and
+    fit, else it is empty (the event is stored without a link, not dropped); the
+    organiser's website is dropped if it does not fit; hosts are capped. This happens
+    before :func:`assess`, which writes some reasons ("hosted by ...") from these very
+    fields, so what it says is what is stored.
+    """
+    return replace(
+        facts,
+        title=_clean(facts.title, _TITLE_MAX),
+        url=_https_url(facts.url, _URL_MAX) or "",
+        snippet=_text(facts.snippet, _SNIPPET_MAX),
+        venue_name=_text(facts.venue_name, _VENUE_MAX),
+        address=_text(facts.address, _ADDRESS_MAX),
+        locality=_text(facts.locality, _LOCALITY_MAX),
+        organiser_name=_text(facts.organiser_name, _ORGANISER_MAX),
+        organiser_url=_link(facts.organiser_url, _ORGANISER_URL_MAX),
+        hosts=_hosts(facts.hosts),
+    )
+
+
 def _stated_position(facts: EventFacts) -> tuple[float, float] | None:
     return None if facts.lat is None or facts.lng is None else (facts.lat, facts.lng)
 
@@ -423,30 +488,44 @@ def _placed_position(facts: EventFacts, area: str | None) -> tuple[float, float]
     return jitter(f"{facts.source}:{facts.external_id}", *centre)
 
 
-def _locate(row: Event, facts: EventFacts, area: str | None) -> None:
+def _precision(source: str, pin: str, withheld: bool) -> str:
+    """A pin's precision: only a venue's own Eventbrite coordinates are exact."""
+    return "exact" if source == "eventbrite" and pin == _STATED and not withheld else "area"
+
+
+def _locate(row: Event, facts: EventFacts, area: str | None, meta: dict[str, Any]) -> None:
     """Where to draw the event and how precisely (spec 6.4).
 
     * ``exact``: Eventbrite's venue coordinates, the only ones a source states for a
-      venue it names.
+      venue it names, unless the listing says the exact location comes later.
     * ``area``: any other stated position (Luma's pin may be only near the venue), or a
       postal address placed at its area's centroid (:func:`_placed_position`).
     * ``none``: online, or nothing placeable.
 
-    A pin is replaced only by a position the source *states*. A sighting with just an
-    address never moves a pin the row already has.
+    A pin is replaced only by a position the source *states*; a sighting with just an
+    address never moves a pin the row already has. The precision always follows the pin
+    the row ends up with: ``meta["pin"]`` remembers whether it was stated or placed by
+    us, and ``meta["address_withheld"]`` (which only ever turns on) whether it is only
+    near, so an event that comes back in person after an online sighting gets its pin's
+    own precision back rather than staying ``none``.
     """
-    stated = _stated_position(facts)
     if facts.is_online:
-        row.geo_precision = "none"
-    elif stated is not None:
+        row.geo_precision = "none"  # the pin, if any, is kept for when it is in person again
+        return
+    stated = _stated_position(facts)
+    if stated is not None:
         row.lat, row.lng = stated
-        exact = facts.source == "eventbrite" and not facts.address_withheld
-        row.geo_precision = "exact" if exact else "area"
-    elif row.lat is None:
+        meta["pin"] = _STATED
+    elif row.lat is None or row.lng is None:
         placed = _placed_position(facts, area)
-        if placed is not None:
-            row.lat, row.lng = placed
-        row.geo_precision = "area" if placed is not None else "none"
+        if placed is None:
+            row.geo_precision = "none"
+            return
+        row.lat, row.lng = placed
+        meta["pin"] = _PLACED
+    row.geo_precision = _precision(
+        row.source, str(meta.get("pin", _STATED)), bool(meta.get("address_withheld"))
+    )
 
 
 def _metadata(
@@ -475,33 +554,37 @@ def _metadata(
     locality = _text(facts.locality, _LOCALITY_MAX)
     if locality:
         meta["locality"] = locality
-    meta["address_withheld"] = bool(facts.address_withheld)
+    # Only ever on: a later sighting that no longer carries the sentence does not mean
+    # the address was published.
+    meta["address_withheld"] = bool(facts.address_withheld) or bool(meta.get("address_withheld"))
     return meta
 
 
 def _write(
     row: Event, facts: EventFacts, verdict: Verdict, scope: SourceScope, now: datetime
 ) -> None:
-    """Put one sighting on ``row`` (new or stored). A field the facts leave empty keeps its value."""
-    row.title = _text(facts.title, _TITLE_MAX) or row.title
-    row.url = _link(facts.url, _URL_MAX) or row.url
+    """Put one sighting on ``row`` (new or stored). A field the facts leave empty keeps its value.
+
+    ``facts`` have been through :func:`_sanitise`.
+    """
+    row.title = facts.title or row.title
+    row.url = facts.url or row.url
     row.starts_at = as_utc(facts.starts_at)
     if facts.ends_at is not None:
         row.ends_at = as_utc(facts.ends_at)
 
     for column, value in (
-        ("snippet", _text(facts.snippet, _SNIPPET_MAX)),
-        ("venue_name", _text(facts.venue_name, _VENUE_MAX)),
-        ("address", _text(facts.address, _ADDRESS_MAX)),
-        ("organiser_name", _text(facts.organiser_name, _ORGANISER_MAX)),
-        ("organiser_url", _link(facts.organiser_url, _ORGANISER_URL_MAX)),
+        ("snippet", facts.snippet),
+        ("venue_name", facts.venue_name),
+        ("address", facts.address),
+        ("organiser_name", facts.organiser_name),
+        ("organiser_url", facts.organiser_url),
         ("is_free", facts.is_free),
     ):
         if value is not None:
             setattr(row, column, value)
-    hosts = [name for name in (_text(host, _HOST_MAX) for host in facts.hosts) if name]
-    if hosts:
-        row.hosts = hosts
+    if facts.hosts:
+        row.hosts = list(facts.hosts)
 
     # Flags and the verdict are restated by every sighting.
     row.is_online = facts.is_online
@@ -509,13 +592,13 @@ def _write(
     row.format = verdict.format
     row.topics = list(verdict.topics)
     row.listed = verdict.listed
-    row.reasons = list(verdict.reasons)
+    row.reasons = [r for r in (_clean(reason, _REASON_MAX) for reason in verdict.reasons) if r]
     if verdict.area:
         row.area = verdict.area[:_AREA_MAX]
 
-    _locate(row, facts, verdict.area)
-
-    row.extra_metadata = _metadata(row.extra_metadata, facts, scope)
+    meta = _metadata(row.extra_metadata, facts, scope)
+    _locate(row, facts, verdict.area, meta)
+    row.extra_metadata = meta
     row.last_seen_at = now
 
 
@@ -527,6 +610,34 @@ def _usable(value: object, width: int) -> bool:
     return (
         isinstance(value, str) and bool(value.strip()) and len(value) <= width and _NUL not in value
     )
+
+
+async def _find_stored(session: AsyncSession, source: str, external_id: str) -> Event | None:
+    found = await session.execute(
+        select(Event).where(Event.source == source, Event.external_id == external_id).limit(1)
+    )
+    return found.scalars().first()
+
+
+async def _insert(session: AsyncSession, row: Event) -> Event:
+    """Insert ``row``, or return the row another run stored first.
+
+    The insert runs in a savepoint: two runs can both miss the lookup and both insert,
+    and the unique ``(source, external_id)`` then fails one of them. That one is not an
+    error. Its savepoint is rolled back (the transaction and everything the caller has
+    done in it stand), and the winner is returned for it to update. An integrity error
+    with no such row behind it is something else, and propagates.
+    """
+    try:
+        async with session.begin_nested():
+            session.add(row)
+            await session.flush()
+    except IntegrityError:
+        winner = await _find_stored(session, row.source, row.external_id)
+        if winner is None:
+            raise
+        return winner
+    return row
 
 
 async def upsert_event(
@@ -541,8 +652,10 @@ async def upsert_event(
     end, is before ``now``), or that is not in Bengaluru or online from India
     (``location``). A skipped sighting leaves a stored row as it was.
 
-    Text longer than its column is cut; a link that does not fit is dropped. Nothing is
-    committed, and a database error propagates: the caller's step wrapper rolls back.
+    Text longer than its column is cut and loses NUL; a link that does not fit is
+    dropped; an event link that is not ``https://`` is stored as no link, not as a
+    skipped event. Nothing is committed, and a database error propagates (the caller's
+    step wrapper rolls back), except a lost insert race, which becomes an update.
     """
     if not (
         _usable(facts.source, _SOURCE_MAX)
@@ -554,7 +667,7 @@ async def upsert_event(
     if not _plausible(facts.starts_at):
         return _skipped("bad_time")
 
-    facts = refine_facts(facts)
+    facts = refine_facts(_sanitise(facts))
     current = as_utc(now)
     starts = as_utc(facts.starts_at)
     if starts > current + timedelta(days=HORIZON_DAYS):
@@ -565,17 +678,7 @@ async def upsert_event(
     if over < current:
         return _skipped("ended")
 
-    stored = (
-        (
-            await session.execute(
-                select(Event)
-                .where(Event.source == facts.source, Event.external_id == facts.external_id)
-                .limit(1)
-            )
-        )
-        .scalars()
-        .first()
-    )
+    stored = await _find_stored(session, facts.source, facts.external_id)
 
     # Whether the event is in Bengaluru does not depend on its host, so the lookups below
     # are not spent on an event that is not stored.
@@ -589,33 +692,33 @@ async def upsert_event(
         session,
         facts.organiser_name or (stored.organiser_name if stored else None),
         facts.organiser_url or (stored.organiser_url if stored else None),
-        facts.hosts or tuple((stored.hosts if stored else None) or ()),
+        facts.hosts or (stored.hosts if stored else None) or (),
         facts.title,
     )
     if resolved:  # a hiring event is listed only when its host is a listed company
         verdict = assess(facts, scope, host_is_listed_company=True)
 
-    created = stored is None
-    if stored is None:
-        row = Event(
+    row = stored
+    created = False
+    if row is None:
+        fresh = Event(
             id=uuid.uuid4(),
             source=facts.source,
             external_id=facts.external_id,
-            title=_text(facts.title, _TITLE_MAX) or "",
+            title=facts.title,
             starts_at=starts,
             first_seen_at=current,
         )
-    else:
-        row = stored
-    _write(row, facts, verdict, scope, current)
-
-    if created:
+        _write(fresh, facts, verdict, scope, current)
         duplicate = await find_duplicate(session, facts, verdict.area)
-        row.duplicate_of = duplicate.id if duplicate is not None else None
-        session.add(row)
-    elif row.duplicate_of is None:
-        await _rematch(session, row, facts)
-    await session.flush()
+        fresh.duplicate_of = duplicate.id if duplicate is not None else None
+        row = await _insert(session, fresh)
+        created = row is fresh
+    if not created:  # a stored row, or the winner of an insert race
+        _write(row, facts, verdict, scope, current)
+        if row.duplicate_of is None:
+            await _rematch(session, row, facts)
+        await session.flush()
 
     await _replace_links(session, row.id, resolved)
     return UpsertResult(event=row, created=created, duplicate_of=row.duplicate_of, skipped=None)
