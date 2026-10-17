@@ -102,3 +102,91 @@ class PracticeHistorySchema(BaseModel):
     days: list[HistoryDaySchema]
     counts: HistoryCountsSchema
     topics: list[TopicCountSchema]
+
+
+# --------------------------------------------------------------------------- challenges
+
+#: A request field is capped well above its real bound, so the service can say which bound
+#: and by how much; only an absurd body is turned away here.
+_WRITEUP_FIELD_CAP = 10_000
+
+AttemptStatus = Literal[
+    "started", "submitted", "queued", "judged", "rejected", "judge_failed", "missed"
+]
+
+
+class WriteupSchema(BaseModel):
+    """The four write-up fields, as stored and as sent."""
+
+    decisions: str = Field(max_length=_WRITEUP_FIELD_CAP)
+    tradeoffs: str = Field(max_length=_WRITEUP_FIELD_CAP)
+    ai_usage: str = Field(max_length=_WRITEUP_FIELD_CAP)
+    next_steps: str = Field(max_length=_WRITEUP_FIELD_CAP)
+
+
+class SubmissionRequestSchema(BaseModel):
+    """Save, or replace, the submission. The service holds the real bounds."""
+
+    repo_url: str = Field(max_length=300)
+    writeup: WriteupSchema
+    video_url: str | None = Field(default=None, max_length=1000)
+
+
+class ChallengeBriefSchema(BaseModel):
+    """A brief as the challenge page shows it: plain fields, no Markdown."""
+
+    slug: str
+    title: str
+    track: str
+    hours: Literal[24, 48]
+    summary: str
+    context: list[str]
+    must_have: list[str]
+    nice_to_have: list[str]
+    constraints: list[str]
+    deliverables: list[str]
+    judge_focus: list[str]
+    bengaluru_context: str
+
+
+class AttemptSchema(BaseModel):
+    """The signed-in user's own attempt. The proof code is shown to its owner and no one else."""
+
+    status: AttemptStatus
+    started_at: str
+    deadline_at: str
+    proof_code: str
+    repo_url: str | None
+    writeup: WriteupSchema | None
+    video_url: str | None
+    submitted_at: str | None
+    editable_until: str
+    total: float | None
+
+
+class ChallengeSchema(BaseModel):
+    """One edition, its brief and the signed-in user's attempt at it."""
+
+    slug: str
+    opens_at: str
+    closes_at: str
+    last_start_at: str
+    brief: ChallengeBriefSchema
+    attempt: AttemptSchema | None
+
+
+class PastChallengeSchema(BaseModel):
+    """A closed edition with the signed-in user's own status and total."""
+
+    slug: str
+    title: str
+    track: str
+    opens_at: str
+    status: AttemptStatus | None
+    total: float | None
+
+
+class ChallengesOverviewSchema(BaseModel):
+    current: ChallengeSchema | None
+    next_opens_at: str | None
+    past: list[PastChallengeSchema]

@@ -9,9 +9,15 @@ PATCH  /practice/today/feel     - rate the question marked done
 DELETE /practice/today/done     - undo a misclicked done (today only)
 POST   /practice/today/swap     - a different question; one a day, then 409
 GET    /practice/history        - the calendar and its counts (weeks 1-26)
+GET    /practice/challenges            - the open build, when the next opens, the last twelve
+GET    /practice/challenges/{slug}     - one build's brief and the caller's own attempt
+POST   /practice/challenges/{slug}/start        - press Start: the clock and the proof code
+PUT    /practice/challenges/{slug}/submission   - save or replace the submission
 
 The services raise ``PracticeConflict``, ``PracticeInvalid`` and ``PracticeNotFound``; each
 becomes the status below, carrying a message written for the person using the page.
+``PracticeRateLimited`` (raised only by a submission save) is a ``PracticeConflict`` that
+becomes 429 with ``Retry-After``; every other ``PracticeConflict`` is 409.
 """
 
 from __future__ import annotations
@@ -20,16 +26,25 @@ from collections.abc import Awaitable
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import Path as PathParam
 
 from api.auth import get_current_user
 from api.schemas.practice_schemas import (
+    ChallengeSchema,
+    ChallengesOverviewSchema,
     DoneRequestSchema,
     FeelRequestSchema,
     PracticeHistorySchema,
     PracticeTodaySchema,
+    SubmissionRequestSchema,
 )
-from services.practice import daily
-from services.practice.errors import PracticeConflict, PracticeInvalid, PracticeNotFound
+from services.practice import challenges, daily
+from services.practice.errors import (
+    PracticeConflict,
+    PracticeInvalid,
+    PracticeNotFound,
+    PracticeRateLimited,
+)
 
 router = APIRouter(prefix="/practice", tags=["Practice"])
 
@@ -44,12 +59,17 @@ async def get_current_user_id(user: Annotated[dict[str, Any], Depends(get_curren
 
 
 CurrentUserId = Annotated[str, Depends(get_current_user_id)]
+Slug = Annotated[str, PathParam(min_length=1, max_length=96)]
 
 
 async def _answer(call: Awaitable[dict[str, Any]]) -> dict[str, Any]:
     """Await a Practice service call, turning its errors into HTTP statuses."""
     try:
         return await call
+    except PracticeRateLimited as exc:  # before PracticeConflict, which it subclasses
+        raise HTTPException(
+            status_code=429, detail=str(exc), headers={"Retry-After": "60"}
+        ) from exc
     except PracticeConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except PracticeInvalid as exc:
@@ -96,3 +116,38 @@ async def get_history(
 ) -> dict[str, Any]:
     """The calendar of practised days and three neutral counts."""
     return await _answer(daily.history(user_id, weeks=weeks))
+
+
+@router.get("/challenges", response_model=ChallengesOverviewSchema)
+async def get_challenges(user_id: CurrentUserId) -> dict[str, Any]:
+    """The open build with the caller's attempt, when the next opens, and the last twelve."""
+    return await _answer(challenges.challenges_overview(user_id))
+
+
+@router.get("/challenges/{slug}", response_model=ChallengeSchema)
+async def get_challenge(user_id: CurrentUserId, slug: Slug) -> dict[str, Any]:
+    """One build's brief and the caller's own attempt. 404 until it has opened."""
+    return await _answer(challenges.challenge_detail(user_id, slug))
+
+
+@router.post("/challenges/{slug}/start", response_model=ChallengeSchema)
+async def start_challenge(user_id: CurrentUserId, slug: Slug) -> dict[str, Any]:
+    """Press Start. 409 if already started, 422 if too little of the week is left."""
+    return await _answer(challenges.start(user_id, slug))
+
+
+@router.put("/challenges/{slug}/submission", response_model=ChallengeSchema)
+async def put_submission(
+    user_id: CurrentUserId, slug: Slug, body: SubmissionRequestSchema
+) -> dict[str, Any]:
+    """Save or replace the submission. 422 on the link, bounds or repo; 409 once the grace hour
+    is over; 429 above ten saves a minute."""
+    return await _answer(
+        challenges.save_submission(
+            user_id,
+            slug,
+            repo_url=body.repo_url,
+            writeup=body.writeup.model_dump(),
+            video_url=body.video_url,
+        )
+    )
