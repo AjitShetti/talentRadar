@@ -400,7 +400,7 @@ async def _has_user_data(session: AsyncSession, event_id: uuid.UUID) -> bool:
     return noted.first() is not None
 
 
-async def _rematch(session: AsyncSession, row: Event, facts: EventFacts) -> None:
+async def rematch(session: AsyncSession, row: Event, facts: EventFacts) -> None:
     """A stored primary meets an earlier-stored primary of the same event: it joins it.
 
     This happens when the primary a row sat behind was deleted (``ON DELETE SET NULL``
@@ -742,7 +742,7 @@ async def upsert_event(
     if not created:  # a stored row, or the winner of an insert race
         _write(row, facts, verdict, scope, current)
         if row.duplicate_of is None:
-            await _rematch(session, row, facts)
+            await rematch(session, row, facts)
         await session.flush()
 
     await _replace_links(session, row.id, resolved)

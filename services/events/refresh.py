@@ -781,7 +781,7 @@ def _reassess_batch(ids: list[uuid.UUID], now: datetime) -> Work:
             if row.listed and row.duplicate_of is None:
                 # A stray (its primary was deleted, or it was not listed when it arrived) may
                 # be a second listing of an event stored before it. Never a private one's.
-                await store._rematch(session, row, facts)
+                await store.rematch(session, row, facts)
                 counts["merged"] += row.duplicate_of is not None
                 await session.flush()
         return counts
