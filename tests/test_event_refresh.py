@@ -1547,7 +1547,7 @@ async def test_link_step_is_bounded_and_skips_private_events(world: World) -> No
 
 async def test_prune_step_runs_the_retention_rule(monkeypatch: pytest.MonkeyPatch) -> None:
     prune = AsyncMock(return_value=7)
-    monkeypatch.setattr(job_retention, "prune_events", prune, raising=False)
+    monkeypatch.setattr(job_retention, "prune_events", prune)
 
     result = await refresh.run_step("prune", 1)
 
@@ -1555,21 +1555,25 @@ async def test_prune_step_runs_the_retention_rule(monkeypatch: pytest.MonkeyPatc
     assert prune.await_count == 1
 
 
-async def test_prune_step_without_the_retention_rule_says_so(
-    monkeypatch: pytest.MonkeyPatch,
+async def test_prune_step_deletes_what_the_rule_deletes_and_keeps_what_a_user_kept(
+    world: World,
 ) -> None:
-    monkeypatch.delattr(job_retention, "prune_events", raising=False)
+    user = await add_user(world)
+    when = datetime.now(UTC) - timedelta(days=30)
+    old = make_row(starts_at=when, ends_at=when + timedelta(hours=2), listed=True)
+    saved = make_row(starts_at=when, ends_at=when + timedelta(hours=2), listed=True)
+    await seed(world, old, saved)
+    await seed(world, EventSave(user_id=user.id, event_id=saved.id, status="saved"))
 
     result = await refresh.run_step("prune", 1)
 
-    assert result["step"] == "prune"
-    assert "skipped" in result and "error" not in result
+    assert result == {"step": "prune", "deleted": 1}
+    async with world.factory() as db:
+        assert set((await db.execute(select(Event.id))).scalars()) == {saved.id}
 
 
 async def test_a_failing_prune_is_an_error_not_a_raise(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        job_retention, "prune_events", AsyncMock(side_effect=RuntimeError("disk")), raising=False
-    )
+    monkeypatch.setattr(job_retention, "prune_events", AsyncMock(side_effect=RuntimeError("disk")))
     result = await refresh.run_step("prune", 1)
     assert result["step"] == "prune" and "RuntimeError" in str(result["error"])
 

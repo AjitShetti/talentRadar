@@ -862,12 +862,9 @@ async def _step_relevance(report: _Report, limit: int, now: datetime) -> None:
 
 
 async def _prune() -> dict[str, int | str]:
-    prune = getattr(job_retention, "prune_events", None)
-    if prune is None:
-        return {"step": "prune", "skipped": "no retention rule for events"}
+    """The retention rule. ``prune_events`` commits for itself and answers 0 if it failed."""
     async with AsyncSessionLocal() as session:
-        deleted = int(await prune(session))
-        await session.commit()
+        deleted = await job_retention.prune_events(session)
     return {"step": "prune", "deleted": deleted}
 
 

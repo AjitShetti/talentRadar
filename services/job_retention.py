@@ -25,14 +25,21 @@ LLM-enriched, which cost quota to produce.
 ``NEWS_RETENTION_DAYS``, a funding item after ``FUNDING_NEWS_RETENTION_DAYS``
 (phase 2's funding radar reads them for longer). An item's age is its
 publish date, or when we stored it if the feed gave none.
+
+``events`` is pruned there too (:func:`prune_events`): a past event goes once it is
+over, unless somebody saved it or noted people at it, which is their history and
+outlives every window here.
 """
 
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import text
+
+from domain.event_time import DEFAULT_DURATION
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +59,12 @@ NEWS_RETENTION_DAYS = 180
 
 #: Funding news is kept two years.
 FUNDING_NEWS_RETENTION_DAYS = 730
+
+#: An event nobody saved is kept this long after it ends.
+EVENT_RETENTION_DAYS = 14
+
+#: A cancelled event nobody saved is kept this long after it was due to start.
+CANCELLED_EVENT_RETENTION_DAYS = 2
 
 
 async def database_size_bytes(session: Any) -> int:
@@ -108,6 +121,70 @@ async def prune_company_news(session: Any) -> int:
         return 0
 
 
+async def prune_events(session: Any) -> int:
+    """
+    Delete expired ``events`` rows; returns how many went.
+
+    An event that has an ``event_saves`` or ``event_contacts`` row is never touched,
+    whatever its age: it is that user's history, and goes only when the last of those
+    rows does. Of the rest, three kinds go: one that was never listed, as soon as it is
+    over; one that is over by :data:`EVENT_RETENTION_DAYS`; and a cancelled one
+    :data:`CANCELLED_EVENT_RETENTION_DAYS` after it was due to start. An event with no
+    stated end is over two hours after it starts. Oldest first, and at most
+    :data:`MAX_DELETIONS_PER_RUN`.
+
+    Its own step with its own rollback, like the news prune: a database that predates
+    the events migration has no such tables, and that must not stop the job prune.
+
+    The cut-offs are computed here and bound as timestamps, rather than written as
+    ``NOW() - make_interval(...)``: the statement then has nothing PostgreSQL-specific in
+    it, and the tests run the statement itself. Deleting an event cascades to its company
+    links and sets ``duplicate_of`` to NULL on its duplicates.
+    """
+    now = datetime.now(UTC)
+    aged = now - timedelta(days=EVENT_RETENTION_DAYS)
+    try:
+        result = await session.execute(
+            text(
+                """
+                DELETE FROM events
+                WHERE id IN (
+                    SELECT e.id FROM events e
+                    WHERE NOT EXISTS (SELECT 1 FROM event_saves s WHERE s.event_id = e.id)
+                      AND NOT EXISTS (SELECT 1 FROM event_contacts c WHERE c.event_id = e.id)
+                      AND (
+                          (NOT e.listed AND (
+                              e.ends_at < :unlisted_end
+                              OR (e.ends_at IS NULL AND e.starts_at < :unlisted_start)
+                          ))
+                          OR e.ends_at < :aged_end
+                          OR (e.ends_at IS NULL AND e.starts_at < :aged_start)
+                          OR (e.is_cancelled AND e.starts_at < :cancelled_start)
+                      )
+                    ORDER BY COALESCE(e.ends_at, e.starts_at) ASC
+                    LIMIT :cap
+                )
+                """
+            ),
+            {
+                # "Over" is the stated end, else two hours after the start: for a row with
+                # no end, the start must be earlier than the cut-off by that much.
+                "unlisted_end": now,
+                "unlisted_start": now - DEFAULT_DURATION,
+                "aged_end": aged,
+                "aged_start": aged - DEFAULT_DURATION,
+                "cancelled_start": now - timedelta(days=CANCELLED_EVENT_RETENTION_DAYS),
+                "cap": MAX_DELETIONS_PER_RUN,
+            },
+        )
+        await session.commit()
+        return int(result.rowcount or 0)
+    except Exception as exc:
+        logger.warning("Event retention step failed: %s", exc)
+        await session.rollback()
+        return 0
+
+
 async def prune_stale_jobs() -> dict[str, Any]:
     """
     Delete expired structural rows, and more if the database is under pressure.
@@ -119,6 +196,7 @@ async def prune_stale_jobs() -> dict[str, Any]:
         "deleted_by_age": 0,
         "deleted_by_pressure": 0,
         "deleted_news": 0,
+        "deleted_events": 0,
         "size_before": 0,
         "size_after": 0,
         "ran": False,
@@ -154,8 +232,10 @@ async def prune_stale_jobs() -> dict[str, Any]:
             await session.commit()
 
             # News ages out on its own clock, before the size check so the
-            # space it frees counts.
+            # space it frees counts. Past events do too; each is its own step
+            # with its own rollback, so neither can stop the other or the jobs.
             summary["deleted_news"] = await prune_company_news(session)
+            summary["deleted_events"] = await prune_events(session)
 
             # Rule 2: pressure.
             size = await database_size_bytes(session)
@@ -196,6 +276,6 @@ async def prune_stale_jobs() -> dict[str, Any]:
         return summary
 
     total = summary["deleted_by_age"] + summary["deleted_by_pressure"]
-    if total or summary["deleted_news"]:
+    if total or summary["deleted_news"] or summary["deleted_events"]:
         logger.info("Retention: removed %d stale job(s) — %s", total, summary)
     return summary
