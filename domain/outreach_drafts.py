@@ -57,6 +57,10 @@ FORMATS: dict[str, FormatSpec] = {
 
 SUBJECT_MAX = 80
 
+#: A cut at a sentence end must keep at least this share of the limit (0.25 is exact in
+#: binary, so a sentence of exactly a quarter is kept).
+MIN_SENTENCE_SHARE = 0.25
+
 _FALLBACK_ROLE = "software engineer"
 
 
@@ -116,8 +120,10 @@ def fit_to_limit(text: str, limit: int) -> str:
 
     Text that fits is returned as it came. Otherwise it is cut at the last
     sentence end inside the limit (``.``, ``!`` or ``?`` followed by whitespace,
-    so ``3.5`` is not one), and failing that at the last word. No ellipsis or
-    other punctuation is added.
+    so ``3.5`` is not one), and failing that at the last word. A sentence end
+    that would keep less than a quarter of ``limit`` ("Hi Asha." out of 200) is
+    not used: that throws the message away, so the last word is the cut. No
+    ellipsis or other punctuation is added.
     """
     if limit <= 0:
         return ""
@@ -125,7 +131,9 @@ def fit_to_limit(text: str, limit: int) -> str:
         return text
     for i in range(limit - 1, 0, -1):
         if text[i] in ".!?" and text[i + 1].isspace():
-            return text[: i + 1]
+            if i + 1 >= limit * MIN_SENTENCE_SHARE:
+                return text[: i + 1]
+            break  # every earlier sentence end is shorter still
     return _word_cut(text, limit)
 
 

@@ -116,6 +116,23 @@ def test_fit_to_limit_keeps_the_last_sentence_that_fits() -> None:
     assert fit_to_limit("Done! And then some more words", 8) == "Done!"
 
 
+def test_fit_to_limit_does_not_keep_a_sentence_that_leaves_almost_nothing() -> None:
+    # "Hi Asha." is 8 characters of a 200 limit: a message that stops there has thrown
+    # the rest away, so the cut falls back to the last whole word.
+    text = "Hi Asha. " + "I build payment systems and would love to hear how your team works, " * 6
+    cut = fit_to_limit(text, 200)
+    assert 150 < len(cut) <= 200
+    assert cut.startswith("Hi Asha. I build")
+    assert text.startswith(cut)
+    assert text[len(cut)].isspace()  # cut on a whole word
+
+    # A sentence that keeps at least a quarter of the limit is still preferred.
+    quarter = "x" * 49 + "."  # 50 characters: exactly a quarter of 200
+    assert fit_to_limit(quarter + " " + "y" * 300, 200) == quarter
+    short = "x" * 48 + "."  # 49 characters: one short of a quarter
+    assert fit_to_limit(short + " " + "y " * 150, 200) != short
+
+
 def test_fit_to_limit_cuts_on_a_whole_word() -> None:
     assert fit_to_limit("alpha beta gamma", 10) == "alpha beta"  # the limit lands on a space
     assert fit_to_limit("alpha beta gamma", 11) == "alpha beta"  # ... and one past it
