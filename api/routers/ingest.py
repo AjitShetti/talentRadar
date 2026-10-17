@@ -250,6 +250,28 @@ async def refresh_company_map(
     return await refresh.run_step(step, limit)
 
 
+RefreshEventsStep = Literal["luma", "gdg", "eventbrite", "link", "relevance", "prune", "purge"]
+
+
+@router.post("/events/refresh", dependencies=[Depends(require_cron_or_admin)])
+async def refresh_events(
+    step: RefreshEventsStep,
+    limit: int = Query(default=30, ge=1, le=2000),
+    source: str | None = Query(default=None, max_length=32),
+) -> dict[str, int | str]:
+    """
+    Run one bounded Events refresh step (Luma, GDG, Eventbrite, link, relevance, prune).
+
+    Called twice a day by ``.github/workflows/events.yml`` - there is no worker.
+    ``run_step`` caps ``limit`` per step (each source's polite rate) and never raises:
+    a failed step comes back as ``{"error": ...}``. ``source`` is read by ``purge`` only,
+    which needs ``source=eventbrite``.
+    """
+    from services.events import refresh
+
+    return await refresh.run_step(step, limit, source=source)
+
+
 @router.post("/news", dependencies=[Depends(require_cron_or_admin)])
 async def ingest_startup_news() -> dict[str, int | str]:
     """

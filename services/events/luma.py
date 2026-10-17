@@ -25,9 +25,12 @@ What a feed states, and what becomes of it:
   and a closing ``Hosted by A, B & C``. The snippet is the host's text alone.
   Only a *closing* ``Hosted by`` line names hosts; the same words inside the
   host's text are theirs.
-* Luma withholds the street address ("Check event page for more details");
-  ``GEO`` is still given, so ``address_withheld`` tells a reader the pin may
-  only be near the venue.
+* Luma withholds the street address ("Check event page for more details", or an
+  ``Address:`` block of an area and "The exact location will be shared once the
+  invite is accepted"); ``GEO`` is still given, so ``address_withheld`` tells a
+  reader the pin may only be near the venue. The second sentence is kept, after
+  the host's own words, in the snippet: it tells a reader why there is no street
+  address, and it is the text ``services.events.store.refine_facts`` looks for.
 * ``STATUS`` is ``TENTATIVE`` on every live event; only ``CANCELLED`` counts.
 """
 
@@ -53,6 +56,7 @@ VENUE_MAX = 200
 ADDRESS_MAX = 300
 ORGANISER_MAX = 200
 HOST_MAX = 200
+NOTICE_MAX = 160
 HOSTS_MAX = 10
 EXTERNAL_ID_MAX = 160
 URL_MAX = 1024
@@ -79,6 +83,10 @@ _MEETING_LINK = re.compile(
 _UP_TO_DATE = "get up-to-date information at"
 _ADDRESS_HEADER = "address:"
 _WITHHELD = "check event page for more details"
+# A line of the address block that talks about the exact location ("The exact location
+# will be shared once the invite is accepted"). Matched on its subject, not its verbs:
+# a host's typo in "shared" must not make the address look public.
+_LOCATION_NOTICE = re.compile(r"\bexact\s+(?:location|address|venue)\b", re.IGNORECASE)
 _HOSTED_BY = "Hosted by "
 _HOST_SEPARATOR = re.compile(r"\s*,\s*|\s+&\s+")
 _OTHERS_COUNT = re.compile(r"\d+\s+others?", re.IGNORECASE)
@@ -120,6 +128,7 @@ class _Description:
     venue: str | None
     hosts: tuple[str, ...]
     withheld: bool
+    notice: str | None  # the address block's "exact location will be shared …" sentence
 
 
 def _hosts(listed: str) -> tuple[str, ...]:
@@ -165,12 +174,24 @@ def _split_description(description: str) -> _Description:
     # A place is named only when the block gives a name and then where it is.
     withheld_block = bool(block) and block[0].lower().startswith(_WITHHELD)
     venue = flatten(block[0], VENUE_MAX) if len(block) >= 2 and not withheld_block else None
+    notice = flatten(
+        " ".join(line for line in block[1:] if _LOCATION_NOTICE.search(line)), NOTICE_MAX
+    )
     return _Description(
         text="\n".join(lines[index:]),
         venue=venue,
         hosts=hosts,
-        withheld=_WITHHELD in description.lower(),
+        withheld=_WITHHELD in description.lower() or notice is not None,
+        notice=notice,
     )
+
+
+def _snippet(parts: _Description) -> str | None:
+    """The host's words, then the address notice if the block had one; at most ``SNIPPET_MAX``."""
+    if parts.notice is None:
+        return flatten(parts.text, SNIPPET_MAX)
+    body = flatten(parts.text, SNIPPET_MAX - len(parts.notice) - 1)
+    return f"{body} {parts.notice}" if body else parts.notice
 
 
 def _event_url(description: str, location: str | None) -> str | None:
@@ -214,7 +235,7 @@ def _to_facts(event: IcalEvent) -> EventFacts | None:
         title=title,
         starts_at=event.dtstart,
         ends_at=event.dtend,
-        snippet=flatten(parts.text, SNIPPET_MAX),
+        snippet=_snippet(parts),
         venue_name=parts.venue,
         address=address,
         lat=lat,

@@ -75,6 +75,8 @@ YEAR_MIN = 2000
 YEAR_MAX = 2100
 
 _LIST_QUERY = f"status=live&order_by=start_asc&expand={EXPAND}"
+# The venue endpoint's order_by is unconfirmed: the refresh step asks again without it on a 400.
+_UNORDERED_LIST_QUERY = f"status=live&expand={EXPAND}"
 
 # ASCII digits only: str.isdigit() and \d also accept "٣" and "²".
 _ID = re.compile(rf"[0-9]{{1,{EXTERNAL_ID_MAX}}}")
@@ -309,8 +311,15 @@ def _checked_continuation(value: object) -> str:
     return value
 
 
-def _list_url(kind: Literal["organizers", "venues"], ident: str, continuation: str | None) -> str:
-    url = f"{API}/{kind}/{_checked_id(kind[:-1], ident)}/events/?{_LIST_QUERY}"
+def _list_url(
+    kind: Literal["organizers", "venues"],
+    ident: str,
+    continuation: str | None,
+    *,
+    ordered: bool = True,
+) -> str:
+    query = _LIST_QUERY if ordered else _UNORDERED_LIST_QUERY
+    url = f"{API}/{kind}/{_checked_id(kind[:-1], ident)}/events/?{query}"
     if continuation is not None:
         url += f"&continuation={quote(_checked_continuation(continuation), safe='')}"
     return url
@@ -368,8 +377,19 @@ async def organizer_events(
 
 
 async def venue_events(
-    client: httpx.AsyncClient, token: str, venue_id: str, continuation: str | None = None
+    client: httpx.AsyncClient,
+    token: str,
+    venue_id: str,
+    continuation: str | None = None,
+    *,
+    ordered: bool = True,
 ) -> dict[str, Any]:
-    """``GET /venues/<id>/events/?status=live&order_by=start_asc&expand=…`` (one page)."""
+    """``GET /venues/<id>/events/?status=live&order_by=start_asc&expand=…`` (one page).
+
+    ``ordered=False`` leaves out ``order_by``: the venue endpoint's support for it is
+    unconfirmed, and the refresh step asks again without it when the API answers 400.
+    """
     token = _checked_token(token)
-    return await _get_object(client, token, _list_url("venues", venue_id, continuation))
+    return await _get_object(
+        client, token, _list_url("venues", venue_id, continuation, ordered=ordered)
+    )

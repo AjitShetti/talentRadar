@@ -11,7 +11,9 @@ Every person in an inline feed is fictional; the recorded feeds under
 
 from __future__ import annotations
 
+import re
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from pathlib import Path
 
 import httpx
@@ -21,6 +23,7 @@ from domain.event_facts import EventFacts
 from domain.ical import IcalEvent, parse_ical
 from services.events.http import MAX_BYTES, TIMEOUT_S, USER_AGENT, get_bounded
 from services.events.luma import FEED_BASE, feed_url, fetch_feed, parse_feed
+from services.events.store import refine_facts
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "events"
 DISCOVER = FIXTURES / "luma_discover_bengaluru.ics"
@@ -194,6 +197,71 @@ def test_address_withheld_flag() -> None:
     ]
     assert withheld_in_feed, "the recorded feed has no withheld address to check"
     assert all(parsed[uid].address_withheld for uid in withheld_in_feed)
+
+
+EXACT_LOCATION_BLOCK = (
+    "Indiranagar\nThe exact location will be shared once the invite is accepted\n"
+    "Bengaluru, Karnataka\nIndia"
+)
+
+
+def test_exact_location_sentence_reaches_the_facts() -> None:
+    event = _one(description=_described("Bring a laptop.", address=EXACT_LOCATION_BLOCK))
+    # The area stays the venue hint; the sentence is kept after the host's own words
+    # so a reader is told why there is no street address, and refine_facts can see it.
+    assert event.venue_name == "Indiranagar"
+    assert event.snippet == (
+        "Bring a laptop. The exact location will be shared once the invite is accepted"
+    )
+    assert event.address_withheld is True
+    assert refine_facts(replace(event, address_withheld=False)).address_withheld is True
+
+
+def test_exact_location_sentence_alone_is_the_snippet() -> None:
+    event = _one(description=_described("", address=EXACT_LOCATION_BLOCK))
+    assert event.snippet == "The exact location will be shared once the invite is accepted"
+    assert event.address_withheld is True
+
+
+def test_exact_location_sentence_never_crowds_out_the_cap() -> None:
+    event = _one(description=_described("Word " * 400, address=EXACT_LOCATION_BLOCK))
+    assert event.snippet is not None
+    assert len(event.snippet) <= 600
+    assert event.snippet.endswith("shared once the invite is accepted")
+
+
+def test_an_address_block_without_the_sentence_is_unchanged() -> None:
+    event = _one(description=_described("Body.", address="Quill Hall\nBengaluru, India"))
+    assert event.snippet == "Body."
+    assert event.address_withheld is False
+
+
+def test_exact_location_events_in_the_recordings_are_withheld() -> None:
+    raw: dict[str, IcalEvent] = {}
+    parsed: dict[str, EventFacts] = {}
+    for path in sorted(FIXTURES.glob("luma_*.ics")):
+        raw.update(_raw_by_id(path))
+        parsed.update({e.external_id: e for e in parse_feed(path.read_bytes())})
+
+    carrying = [uid for uid, e in raw.items() if "exact location" in (e.description or "").lower()]
+    # Four recorded events print "The exact location will be shared …"; one of them has the
+    # host's own typo ("shred"), which is why the parser reads the block's structure and not
+    # only the verbs refine_facts knows.
+    assert len(carrying) >= 4
+    for uid in carrying:
+        assert parsed[uid].address_withheld is True, uid
+        assert "exact location" in (parsed[uid].snippet or "").lower(), uid
+        assert parsed[uid].venue_name == "Indiranagar", uid
+
+    well_formed = [
+        uid
+        for uid in carrying
+        if re.search(r"exact location will be shared (?:once|after)", raw[uid].description or "")
+    ]
+    assert len(well_formed) >= 3
+    for uid in well_formed:  # refine_facts alone recovers the flag from what the parser kept
+        bare = replace(parsed[uid], address_withheld=False)
+        assert refine_facts(bare).address_withheld is True, uid
 
 
 def test_location_is_an_address_unless_it_is_a_luma_link() -> None:

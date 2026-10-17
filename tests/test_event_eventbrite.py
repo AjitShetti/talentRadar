@@ -690,6 +690,18 @@ async def test_venue_events_requests_the_venue_endpoint() -> None:
     assert parse_qs(request.url.query.decode())["expand"] == [EXPAND]
 
 
+async def test_venue_events_can_be_asked_for_without_order_by() -> None:
+    # The venue endpoint's order_by is unconfirmed; the refresh step retries without it on a 400.
+    recorder = _Recorder(LIST)
+    async with recorder.client() as client:
+        await venue_events(client, TOKEN, "45678901234", None, ordered=False)
+        await venue_events(client, TOKEN, "45678901234", "eyJwYWdlIjogMn0", ordered=False)
+    first, second = recorder.requests
+    assert parse_qs(first.url.query.decode()) == {"status": ["live"], "expand": [EXPAND]}
+    assert "order_by" not in str(second.url)
+    assert parse_qs(second.url.query.decode())["continuation"] == ["eyJwYWdlIjogMn0"]
+
+
 async def test_a_continuation_is_url_encoded_and_sent_as_one_parameter() -> None:
     recorder = _Recorder(LIST)
     async with recorder.client() as client:
