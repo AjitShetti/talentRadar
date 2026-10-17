@@ -584,15 +584,20 @@ async def draft(
             reason = REASON_MODEL_UNAVAILABLE
 
     generated = reason is None
+    template_subject, template_message = fallback_draft(
+        fmt=spec.key,
+        kind=ctx.kind,
+        recipient_name=ctx.recipient_name,
+        company=ctx.company_name or "",
+        role=ctx.target_role,
+        last_sent_on=gathered.last_sent_on,
+    )
     if not generated:
-        subject, message = fallback_draft(
-            fmt=spec.key,
-            kind=ctx.kind,
-            recipient_name=ctx.recipient_name,
-            company=ctx.company_name or "",
-            role=ctx.target_role,
-            last_sent_on=gathered.last_sent_on,
-        )
+        subject, message = template_subject, template_message
+    elif spec.key == "email" and not subject:
+        # An email always goes out with a subject: a model that wrote only the body
+        # gets the template's, and its body stands.
+        subject = template_subject
 
     logger.info(
         "outreach draft for thread %s: format=%s generated=%s reason=%s",
