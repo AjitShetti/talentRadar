@@ -1,0 +1,108 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Keep the Bengaluru events list fresh, a bounded batch at a time
+# ─────────────────────────────────────────────────────────────────────────────
+# Each step is one call to POST /api/v1/ingest/events/refresh?step=…&limit=…,
+# which never raises and leaves the last good data on failure:
+#
+#   every run   luma (26 feeds) → gdg (30 requests) → eventbrite (60 calls)
+#               → link (500 rows) → relevance (2000 rows)
+#   23:xx UTC   prune (once a day: the retention rule, after the other steps)
+#
+# The two runs are 23:20 UTC (04:50 IST) and 11:20 UTC (16:50 IST), so the
+# listings are refreshed twice in each Indian day. The limits are the ceilings
+# the API applies anyway (services/events/refresh.py, MAX_LIMIT): Luma at one
+# request a second and each feed at most every 11 hours, GDG at two seconds
+# between requests, Eventbrite at one call a second. The Eventbrite step needs
+# EVENTBRITE_TOKEN on the API; without it the step is skipped and makes no
+# request.
+#
+# prune runs only when the run starts in the 23:xx UTC hour. GitHub's scheduled
+# runs are best-effort and can start late, so a run that starts after midnight
+# UTC skips the prune for that day. Dispatch step=prune to run it by hand.
+#
+# Needs the CRON_TOKEN secret, like company-map.yml and reverify.yml; without it
+# the run exits cleanly and does nothing.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: events
+
+on:
+  schedule:
+    - cron: "20 23 * * *"
+    - cron: "20 11 * * *"
+  workflow_dispatch:
+    inputs:
+      step:
+        description: "One step to run (luma, gdg, eventbrite, link, relevance, prune) or 'all'"
+        required: false
+        default: all
+
+concurrency:
+  group: events
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      API_BASE: ${{ vars.API_BASE_URL || 'https://talentradar-api.onrender.com' }}
+      CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
+      STEP_INPUT: ${{ github.event.inputs.step || 'all' }}
+    steps:
+      - name: Skip when no token is configured
+        id: gate
+        run: |
+          if [ -z "$CRON_TOKEN" ]; then
+            echo "::notice::CRON_TOKEN secret is not set; skipping the events refresh."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'true'
+        with:
+          sparse-checkout: scripts/keepalive.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Wake the API
+        if: steps.gate.outputs.run == 'true'
+        env:
+          URL: ${{ env.API_BASE }}/health
+          DEADLINE_SECONDS: "480"
+        run: bash scripts/keepalive.sh
+
+      - name: Run refresh steps
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          refresh() {
+            echo "::group::$1 (limit $2)"
+            curl --fail-with-body --silent --show-error --max-time 600 \
+              -X POST "$API_BASE/api/v1/ingest/events/refresh?step=$1&limit=$2" \
+              -H "X-Cron-Token: $CRON_TOKEN" || echo "::warning::step $1 failed"
+            echo
+            echo "::endgroup::"
+          }
+          run_one() {
+            case "$1" in
+              luma)       refresh luma 26 ;;
+              gdg)        refresh gdg 30 ;;
+              eventbrite) refresh eventbrite 60 ;;
+              link)       refresh link 500 ;;
+              relevance)  refresh relevance 2000 ;;
+              prune)      refresh prune 1 ;;
+              *) echo "::error::unknown events step '$1'"; exit 1 ;;
+            esac
+          }
+          if [ "$STEP_INPUT" != "all" ]; then
+            run_one "$STEP_INPUT"
+            exit 0
+          fi
+          run_one luma
+          run_one gdg
+          run_one eventbrite
+          run_one link
+          run_one relevance
+          # 23:20 UTC is the only run in the 23:xx hour; the 11:20 run skips the prune.
+          if [ "$(date -u +%H)" = "23" ]; then run_one prune; fi

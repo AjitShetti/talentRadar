@@ -34,6 +34,10 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+# Run as a file (``python scripts/capture_fixtures.py``) the script's own folder is sys.path[0],
+# so the repository root is added here, as scripts/refresh_events.py does.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from ingestion.scrapling_manager import ScraplingManager
 from ingestion.sources.registry import LiveSource, live_source_registry
 from scripts.fixture_privacy import (
