@@ -32,6 +32,16 @@ Rules that hold throughout:
   event page, an API page, a batch of rows), each in a session of its own: a database error
   rolls that unit back, is counted in ``errors`` and the step goes on; anything else is
   reported as ``error`` after the step has gone on too, so one bad feed cannot lose the rest.
+* **A step keeps to a deadline.** Once :data:`STEP_BUDGET_SECONDS` of wall clock have passed
+  it starts no new unit (feed, page, API call, batch); what it committed stays, and the result
+  says ``"stopped": "budget"``. The workflow's ``curl --max-time`` is above it, so the caller
+  hears the answer instead of timing out.
+* **A parser that raises costs its item, not the step.** The parse of a feed, a chapter page,
+  an event page or an API page runs behind a guard: a failure is logged, counted in ``errors``
+  and recorded against the source's health like a failed read, and the step reads on.
+* **An error names its class.** What the caller sees (``error``, ``errors``) holds the
+  exception's class and never its text, which can quote SQL or its parameters; the detail
+  goes to the log.
 * **Each source sits behind its own breaker** (``events:luma``, ``events:gdg``,
   ``events:eventbrite`` in :class:`~services.source_health.SourceHealthService`). Every read
   is recorded with ``job_count=len(events)``; three failures open it and the step answers
@@ -43,7 +53,7 @@ Rules that hold throughout:
 * **The token is never logged or returned**; an error names the status or the exception type,
   never its text.
 * **Private events are not touched.** ``owner_user_id`` marks a user's own event: no step
-  re-judges, re-links or re-points one, and one is never another event's primary.
+  re-judges, re-links, re-points or purges one, and one is never another event's primary.
 """
 
 from __future__ import annotations
@@ -55,7 +65,8 @@ import uuid
 from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Any, cast
+from functools import partial
+from typing import Any, Generic, TypeVar, cast
 
 import httpx
 from sqlalchemy import ColumnElement, and_, delete, exists, or_, select
@@ -92,6 +103,11 @@ MAX_LIMIT = {
     "prune": 1,
     "purge": 1,
 }
+
+#: Wall-clock seconds a step may spend before it starts no new unit of work. The workflow's
+#: ``curl --max-time`` is 600: the last unit begun inside the budget (a 15 s fetch, a 2 s
+#: crawl delay, a commit) still finishes well before it.
+STEP_BUDGET_SECONDS = 480
 
 #: Luma's iCal feeds declare ``REFRESH-INTERVAL: PT12H``; a feed is read at most this often.
 LUMA_MIN_INTERVAL = timedelta(hours=11)
@@ -132,6 +148,21 @@ def _now() -> datetime:
 # ── the report ───────────────────────────────────────────────────────────────
 
 
+@dataclass(frozen=True)
+class _Budget:
+    """The wall clock a step has for starting new work: ``ends_at`` on ``clock``'s scale."""
+
+    clock: Callable[[], float]
+    ends_at: float
+
+    @classmethod
+    def start(cls, clock: Callable[[], float]) -> _Budget:
+        return cls(clock, clock() + STEP_BUDGET_SECONDS)
+
+    def spent(self) -> bool:
+        return self.clock() >= self.ends_at
+
+
 @dataclass
 class _Report:
     """What a step did so far, and what went wrong on the way."""
@@ -140,14 +171,27 @@ class _Report:
     counts: dict[str, int]
     problems: list[str] = field(default_factory=list)
     fault: str | None = None
+    stopped: str | None = None
+    budget: _Budget | None = None
 
     @classmethod
-    def for_source(cls, step: str, unit: str) -> _Report:
-        return cls(step, {unit: 0, **dict.fromkeys(_COUNT_KEYS, 0)})
+    def for_source(cls, step: str, unit: str, budget: _Budget | None = None) -> _Report:
+        return cls(step, {unit: 0, **dict.fromkeys(_COUNT_KEYS, 0)}, budget=budget)
 
     @classmethod
-    def of(cls, step: str, *keys: str) -> _Report:
-        return cls(step, dict.fromkeys(keys, 0))
+    def of(cls, step: str, *keys: str, budget: _Budget | None = None) -> _Report:
+        return cls(step, dict.fromkeys(keys, 0), budget=budget)
+
+    def out_of_time(self) -> bool:
+        """``True`` once the step's wall-clock budget is spent; then it starts nothing new.
+
+        Asked at the point where a unit would begin, so the step is only marked as stopped
+        when there was something left to do.
+        """
+        if self.budget is None or not self.budget.spent():
+            return False
+        self.stopped = "budget"
+        return True
 
     def add(self, counts: Mapping[str, int]) -> None:
         for key, value in counts.items():
@@ -158,8 +202,12 @@ class _Report:
         self.problems.append(text)
 
     def broke(self, exc: BaseException) -> None:
-        """An unexpected failure: the first is reported as ``error``, the rest as problems."""
-        text = f"{type(exc).__name__}: {exc}"[:_FAULT_MAX]
+        """An unexpected failure: the first is reported as ``error``, the rest as problems.
+
+        Only the exception's class is kept: its text can quote SQL and parameters. The caller
+        has already logged the detail.
+        """
+        text = type(exc).__name__[:_FAULT_MAX]
         if self.fault is None:
             self.fault = text
         else:
@@ -172,6 +220,8 @@ class _Report:
             if len(self.problems) > _MAX_REPORTED_ERRORS:
                 shown += f"; (+{len(self.problems) - _MAX_REPORTED_ERRORS} more)"
             result["errors"] = shown[:_ERRORS_MAX]
+        if self.stopped is not None:
+            result["stopped"] = self.stopped
         if self.fault is not None:
             result["error"] = self.fault
         return result
@@ -193,7 +243,7 @@ async def _unit(report: _Report, label: str, work: Work) -> bool:
             await session.commit()
         except SQLAlchemyError as exc:
             await session.rollback()
-            logger.warning("events %s: database error %s", label, type(exc).__name__)
+            logger.warning("events %s: database error %s", label, type(exc).__name__, exc_info=True)
             report.problem(f"{label}: {type(exc).__name__}")
             return False
         except Exception as exc:
@@ -268,6 +318,34 @@ async def _record(
     )
 
 
+_T = TypeVar("_T")
+
+
+@dataclass(frozen=True)
+class _Parsed(Generic[_T]):
+    """What a parser returned; its absence (``None``) means the parser raised."""
+
+    value: _T
+
+
+async def _parse(
+    report: _Report, key: str, label: str, started: float, parser: Callable[[], _T]
+) -> _Parsed[_T] | None:
+    """Run ``parser`` off the event loop; ``None`` if it raised.
+
+    A parser is written against a source's markup and meets odd input in the field. When one
+    raises, that item (a feed, a page) is a failed read: logged with its class, recorded
+    against the source's health, counted in ``errors``. The caller moves on to the next item.
+    """
+    try:
+        return _Parsed(await asyncio.to_thread(parser))
+    except Exception as exc:
+        await _record(key, 0, started, exc)
+        logger.warning("%s did not parse: %s", label, type(exc).__name__, exc_info=True)
+        report.problem(f"{label}: unparseable ({type(exc).__name__})")
+        return None
+
+
 # ── luma ─────────────────────────────────────────────────────────────────────
 
 
@@ -301,6 +379,8 @@ async def _step_luma(report: _Report, limit: int, now: datetime) -> None:
                 break
             if await _luma_read_recently(feed.id):
                 continue  # does not use up the cap: the next feed is read instead
+            if report.out_of_time():
+                break
             if not await SourceHealthService.is_available(LUMA_KEY):
                 report.problem("luma: circuit open")
                 break
@@ -316,7 +396,12 @@ async def _step_luma(report: _Report, limit: int, now: datetime) -> None:
                 logger.warning("Luma feed %s unavailable: %s", feed.name, _describe(exc))
                 report.problem(f"luma {feed.name}: {_describe(exc)}")
                 continue
-            facts = await asyncio.to_thread(luma.parse_feed, body)
+            parsed = await _parse(
+                report, LUMA_KEY, f"luma {feed.name}", started, partial(luma.parse_feed, body)
+            )
+            if parsed is None:
+                continue
+            facts = parsed.value
             await _record(LUMA_KEY, len(facts), started)
             report.counts["seen"] += len(facts)
             if await _unit(report, f"luma {feed.name}", _upserts(facts, scope_for(feed), now)):
@@ -399,13 +484,19 @@ async def _step_gdg(report: _Report, limit: int, now: datetime) -> None:
         # Every chapter page first, so a short budget never starves a chapter.
         upcoming: list[tuple[GdgChapter, gdg.GdgListing]] = []
         for chapter in load_sources().gdg:
-            if halted or requests >= limit:
+            if halted or requests >= limit or report.out_of_time():
                 break
-            page = await read(gdg.chapter_url(chapter.slug))
+            url = gdg.chapter_url(chapter.slug)
+            page = await read(url)
             if page is None:
                 continue
             body, started = page
-            listings = await asyncio.to_thread(gdg.parse_chapter, body)
+            parsed = await _parse(
+                report, GDG_KEY, f"gdg {_path_of(url)}", started, partial(gdg.parse_chapter, body)
+            )
+            if parsed is None:
+                continue
+            listings = parsed.value
             await _record(GDG_KEY, len(listings), started)
             upcoming.extend((chapter, listing) for listing in listings)
 
@@ -416,17 +507,31 @@ async def _step_gdg(report: _Report, limit: int, now: datetime) -> None:
                 continue
             done.add(listing.slug)
             report.counts["seen"] += 1
-            if halted or requests >= limit or await _gdg_read_recently(listing, now):
+            if (
+                halted
+                or requests >= limit
+                or report.out_of_time()
+                or await _gdg_read_recently(listing, now)
+            ):
                 report.counts["skipped"] += 1
                 continue
-            page = await read(gdg.event_page_url(listing.slug))
+            url = gdg.event_page_url(listing.slug)
+            page = await read(url)
             if page is None:
                 report.counts["skipped"] += 1
                 continue
             body, started = page
-            facts = await asyncio.to_thread(
-                gdg.parse_event_page, body, slug=listing.slug, chapter=chapter.name
+            parsed_page = await _parse(
+                report,
+                GDG_KEY,
+                f"gdg {_path_of(url)}",
+                started,
+                partial(gdg.parse_event_page, body, slug=listing.slug, chapter=chapter.name),
             )
+            if parsed_page is None:  # our parser failed, not the page: it is read again
+                report.counts["skipped"] += 1
+                continue
+            facts = parsed_page.value
             await _record(GDG_KEY, 0 if facts is None else 1, started)
             if facts is None:  # a page that states no event is not asked for again for days
                 report.counts["skipped"] += 1
@@ -457,6 +562,9 @@ async def _step_eventbrite(report: _Report, limit: int, now: datetime, token: st
             continuation: str | None = None
             used: set[str] = set()
             while calls < limit and not halted:
+                if report.out_of_time():
+                    halted = True
+                    break
                 if not await SourceHealthService.is_available(EVENTBRITE_KEY):
                     report.problem("eventbrite: circuit open")
                     halted = True
@@ -501,7 +609,16 @@ async def _step_eventbrite(report: _Report, limit: int, now: datetime, token: st
                     ]
                     dropped = len(raw) - len(kept)
                     payload = {**payload, "events": kept}
-                facts, cursor = await asyncio.to_thread(eventbrite.parse_event_list, payload)
+                parsed = await _parse(
+                    report,
+                    EVENTBRITE_KEY,
+                    label,
+                    started,
+                    partial(eventbrite.parse_event_list, payload),
+                )
+                if parsed is None:
+                    break  # its continuation cannot be trusted either: on to the next target
+                facts, cursor = parsed.value
                 await _record(EVENTBRITE_KEY, len(facts), started)
                 report.counts["seen"] += len(facts) + dropped
                 report.counts["skipped"] += dropped
@@ -560,6 +677,8 @@ def _link_batch(ids: list[uuid.UUID]) -> Work:
 async def _step_link(report: _Report, limit: int, now: datetime) -> None:
     ids = await _upcoming_ids(limit, now, judged_first=False)
     for number, batch in enumerate(_chunks(ids, BATCH), start=1):
+        if report.out_of_time():
+            break
         report.counts["seen"] += len(batch)
         await _unit(report, f"link batch {number}", _link_batch(batch))
 
@@ -728,10 +847,14 @@ def _promote(primary_id: uuid.UUID) -> Work:
 async def _step_relevance(report: _Report, limit: int, now: datetime) -> None:
     ids = await _upcoming_ids(limit, now, judged_first=True)
     for number, batch in enumerate(_chunks(ids, BATCH), start=1):
+        if report.out_of_time():
+            break
         report.counts["seen"] += len(batch)
         await _unit(report, f"relevance batch {number}", _reassess_batch(batch, now))
     # After the verdicts, so it sees every primary the loop (or a sighting) took off the list.
     for primary_id in await _stranded_primaries(limit, now):
+        if report.out_of_time():
+            break
         await _unit(report, "promote duplicates", _promote(primary_id))
 
 
@@ -756,7 +879,7 @@ async def _purge() -> dict[str, int | str]:
         )
         doomed = (
             select(Event.id)
-            .where(Event.source == _PURGE_SOURCE, ~wanted)
+            .where(Event.source == _PURGE_SOURCE, _public(), ~wanted)
             .order_by(Event.starts_at, Event.id)
             .limit(PURGE_CAP)
         )
@@ -770,11 +893,18 @@ async def _purge() -> dict[str, int | str]:
 # ── the entry point ──────────────────────────────────────────────────────────
 
 
-async def run_step(step: str, limit: int, *, source: str | None = None) -> dict[str, int | str]:
+async def run_step(
+    step: str,
+    limit: int,
+    *,
+    source: str | None = None,
+    clock: Callable[[], float] = time.monotonic,
+) -> dict[str, int | str]:
     """Run one refresh step; never raises.
 
     ``limit`` is clamped to :data:`MAX_LIMIT`. ``source`` matters only to ``purge``, which
-    needs ``source="eventbrite"``.
+    needs ``source="eventbrite"``. ``clock`` is the monotonic clock the step's
+    :data:`STEP_BUDGET_SECONDS` is measured on; tests replace it.
     """
     if step not in STEPS:
         return {"error": f"unknown step {step!r}; expected one of {', '.join(STEPS)}"}
@@ -782,23 +912,26 @@ async def run_step(step: str, limit: int, *, source: str | None = None) -> dict[
     try:
         bounded = max(1, min(int(limit), MAX_LIMIT[step]))
         now = _now()
+        budget = _Budget.start(clock)
         if step == "luma":
-            report = _Report.for_source(step, "feeds")
+            report = _Report.for_source(step, "feeds", budget)
             await _step_luma(report, bounded, now)
         elif step == "gdg":
-            report = _Report.for_source(step, "pages")
+            report = _Report.for_source(step, "pages", budget)
             await _step_gdg(report, bounded, now)
         elif step == "eventbrite":
             token = get_settings().eventbrite_token
             if not token:
                 return {"step": step, "skipped": "no token"}
-            report = _Report.for_source(step, "calls")
+            report = _Report.for_source(step, "calls", budget)
             await _step_eventbrite(report, bounded, now, token)
         elif step == "link":
-            report = _Report.of(step, "seen", "linked")
+            report = _Report.of(step, "seen", "linked", budget=budget)
             await _step_link(report, bounded, now)
         elif step == "relevance":
-            report = _Report.of(step, "seen", "updated", "listed", "unlisted", "merged", "promoted")
+            report = _Report.of(
+                step, "seen", "updated", "listed", "unlisted", "merged", "promoted", budget=budget
+            )
             await _step_relevance(report, bounded, now)
         elif step == "prune":
             return await _prune()

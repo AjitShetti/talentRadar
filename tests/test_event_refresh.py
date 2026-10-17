@@ -31,7 +31,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import event as sa_event
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from config.settings import get_settings
@@ -1620,3 +1620,356 @@ async def test_purge_is_bounded(monkeypatch: pytest.MonkeyPatch, world: World) -
     while (await refresh.run_step("purge", 1, source="eventbrite"))["deleted"]:
         pass
     assert await count(world, Event) == 0
+
+
+async def test_purge_never_deletes_a_private_event(world: World) -> None:
+    # A pasted Eventbrite link is stored as an eventbrite row that belongs to its user.
+    user = await add_user(world)
+    mine = make_row(source="eventbrite", external_id="9001", owner_user_id=user.id)
+    public = make_row(source="eventbrite", external_id="9002")
+    await seed(world, mine, public)
+
+    result = await refresh.run_step("purge", 1, source="eventbrite")
+
+    assert result == {"step": "purge", "deleted": 1}
+    assert [row.external_id for row in await events_in(world)] == ["9001"]
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# the wall-clock budget
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+class Clock:
+    """A monotonic clock the test moves by hand."""
+
+    def __init__(self) -> None:
+        self.t = 0.0
+
+    def __call__(self) -> float:
+        return self.t
+
+
+def tick_on(
+    monkeypatch: pytest.MonkeyPatch, owner: Any, name: str, clock: Clock, seconds: float
+) -> None:
+    """Make every call of ``owner.name`` take ``seconds`` of ``clock`` (wrap it after stubbing)."""
+    genuine = getattr(owner, name)
+
+    async def slow(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return await genuine(*args, **kwargs)
+        finally:
+            clock.t += seconds
+
+    monkeypatch.setattr(owner, name, slow)
+
+
+def tick_per_batch(
+    monkeypatch: pytest.MonkeyPatch, name: str, clock: Clock, seconds: float
+) -> list[int]:
+    """Make each unit built by ``refresh.<name>`` take ``seconds``; the sizes of the batches run."""
+    genuine = getattr(refresh, name)
+    ran: list[int] = []
+
+    def build(ids: list[uuid.UUID], *rest: Any) -> Any:
+        work = genuine(ids, *rest)
+
+        async def timed(session: AsyncSession) -> dict[str, int]:
+            ran.append(len(ids))
+            clock.t += seconds
+            counts: dict[str, int] = await work(session)
+            return counts
+
+        return timed
+
+    monkeypatch.setattr(refresh, name, build)
+    return ran
+
+
+def test_the_step_budget_is_eight_minutes_and_sits_under_the_workflows_timeout() -> None:
+    workflow = (Path(__file__).resolve().parent.parent / ".github/workflows/events.yml").read_text(
+        "utf-8"
+    )
+    assert refresh.STEP_BUDGET_SECONDS == 480
+    assert "--max-time 600" in workflow
+
+
+async def test_luma_stops_starting_feeds_once_the_budget_is_spent(
+    monkeypatch: pytest.MonkeyPatch, world: World
+) -> None:
+    clock = Clock()
+    calls = stub_luma(monkeypatch)
+    tick_on(monkeypatch, luma, "fetch_feed", clock, 100)
+    monkeypatch.setattr(refresh, "STEP_BUDGET_SECONDS", 150)
+
+    result = await refresh.run_step("luma", 26, clock=clock)
+
+    assert calls == [luma.feed_url(feed.kind, feed.id) for feed in SOURCES.luma[:2]]
+    assert result["feeds"] == 2
+    assert result["stopped"] == "budget"
+    assert "error" not in result
+    # What was committed before the stop stays, and is not read again.
+    assert 0 < int(result["created"]) == await count(world, Event)
+    second = await refresh.run_step("luma", 26, clock=Clock())
+    assert second["feeds"] == 1
+    assert "stopped" not in second
+
+
+@pytest.mark.parametrize(("budget", "pages"), [(150, 2), (50, 1)])
+async def test_gdg_stops_starting_requests_once_the_budget_is_spent(
+    monkeypatch: pytest.MonkeyPatch, budget: float, pages: int
+) -> None:
+    clock = Clock()
+    fetched = stub_gdg(monkeypatch)
+    tick_on(monkeypatch, gdg, "fetch_page", clock, 100)
+    monkeypatch.setattr(refresh, "STEP_BUDGET_SECONDS", budget)
+
+    result = await refresh.run_step("gdg", 30, clock=clock)
+
+    # Chapter pages first; the event page (and a second chapter) wait for the next run.
+    assert fetched == [gdg.chapter_url(c.slug) for c in SOURCES.gdg][:pages]
+    assert result["pages"] == pages
+    assert result["stopped"] == "budget"
+
+
+async def test_eventbrite_stops_starting_calls_once_the_budget_is_spent(
+    monkeypatch: pytest.MonkeyPatch, world: World
+) -> None:
+    monkeypatch.setattr(get_settings(), "eventbrite_token", TOKEN)
+    follows = {None: "c1", "c1": "c2", "c2": None}
+    ids = {None: ("1001",), "c1": ("1002",), "c2": ("1003",)}
+
+    def organizers(call: EventbriteCall) -> dict[str, Any]:
+        return eventbrite_page(ids[call.continuation], cursor=follows[call.continuation])
+
+    clock = Clock()
+    calls = stub_eventbrite(monkeypatch, organizers, lambda call: {"events": []})
+    tick_on(monkeypatch, eventbrite, "organizer_events", clock, 100)
+    monkeypatch.setattr(refresh, "STEP_BUDGET_SECONDS", 150)
+
+    result = await refresh.run_step("eventbrite", 60, clock=clock)
+
+    assert [(c.kind, c.continuation) for c in calls] == [("organizers", None), ("organizers", "c1")]
+    assert result["calls"] == 2
+    assert result["stopped"] == "budget"
+    assert 0 < int(result["created"]) == await count(world, Event)
+
+
+@pytest.mark.parametrize(
+    ("step", "builder"), [("link", "_link_batch"), ("relevance", "_reassess_batch")]
+)
+async def test_link_and_relevance_stop_between_batches_once_the_budget_is_spent(
+    monkeypatch: pytest.MonkeyPatch, world: World, step: str, builder: str
+) -> None:
+    monkeypatch.setattr(refresh, "BATCH", 1)
+    await seed(world, *(make_row(starts_at=NOW + timedelta(days=3 + i)) for i in range(4)))
+    clock = Clock()
+    ran = tick_per_batch(monkeypatch, builder, clock, 100)
+    monkeypatch.setattr(refresh, "STEP_BUDGET_SECONDS", 150)
+
+    result = await refresh.run_step(step, 100, clock=clock)
+
+    assert ran == [1, 1]
+    assert result["seen"] == 2
+    assert result["stopped"] == "budget"
+
+
+async def test_relevance_stops_promoting_once_the_budget_is_spent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = Clock()
+    promoted: list[uuid.UUID] = []
+
+    def promote(primary_id: uuid.UUID) -> Any:
+        async def work(_session: AsyncSession) -> dict[str, int]:
+            promoted.append(primary_id)
+            clock.t += 100
+            return {"promoted": 0}
+
+        return work
+
+    strays = [uuid.uuid4() for _ in range(3)]
+    monkeypatch.setattr(refresh, "_stranded_primaries", AsyncMock(return_value=strays))
+    monkeypatch.setattr(refresh, "_promote", promote)
+    monkeypatch.setattr(refresh, "STEP_BUDGET_SECONDS", 150)
+
+    result = await refresh.run_step("relevance", 50, clock=clock)
+
+    assert promoted == strays[:2]
+    assert result["stopped"] == "budget"
+
+
+@pytest.mark.parametrize("step", ["luma", "gdg", "eventbrite", "link", "relevance"])
+async def test_a_spent_budget_starts_nothing(
+    monkeypatch: pytest.MonkeyPatch, world: World, step: str
+) -> None:
+    monkeypatch.setattr(get_settings(), "eventbrite_token", TOKEN)
+    monkeypatch.setattr(refresh, "STEP_BUDGET_SECONDS", 0)
+    asked = [stub_luma(monkeypatch), stub_gdg(monkeypatch), stub_eventbrite(monkeypatch)]
+    await seed(world, make_row())
+
+    result = await refresh.run_step(step, 100)  # the real clock: a budget of 0 is over at once
+
+    assert result["stopped"] == "budget"
+    assert asked == [[], [], []]
+    assert all(value == 0 for value in result.values() if isinstance(value, int))
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# one bad item does not cost the rest
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+async def test_a_luma_feed_the_parser_chokes_on_costs_that_feed_only(
+    monkeypatch: pytest.MonkeyPatch, world: World, caplog: pytest.LogCaptureFixture
+) -> None:
+    use_sources(monkeypatch, SourceList((DISCOVER, SWIFT), (), (), ()))
+    stub_luma(monkeypatch)
+    genuine = luma.parse_feed
+
+    def parse(body: bytes) -> Any:
+        if body == FEEDS[DISCOVER.id]:
+            raise ValueError("odd input SECRET-DETAIL")
+        return genuine(body)
+
+    monkeypatch.setattr(luma, "parse_feed", parse)
+    with caplog.at_level(logging.WARNING):
+        result = await refresh.run_step("luma", 26)
+
+    assert result["feeds"] == 2
+    assert "error" not in result  # a known kind of trouble, not a crash of the step
+    assert f"luma {DISCOVER.name}: " in str(result["errors"])
+    assert "ValueError" in str(result["errors"])
+    assert "SECRET-DETAIL" not in json.dumps(result)
+    assert "ValueError" in caplog.text
+    # The other feed was stored whole.
+    wanted = {fact.external_id for fact in genuine(FEEDS[SWIFT.id])}
+    stored = {row.external_id for row in await events_in(world)}
+    assert stored and stored <= wanted
+    assert int(result["created"]) == len(stored)
+    # It counts against the source's health like any other failed read.
+    health = await SourceHealthService.get("events:luma")
+    assert (health.attempts, health.successes) == (2, 1)
+    assert health.last_error == "error: ValueError"
+
+
+async def test_a_gdg_chapter_the_parser_chokes_on_does_not_stop_the_others(
+    monkeypatch: pytest.MonkeyPatch, world: World
+) -> None:
+    pages = gdg_pages()
+    stub_gdg(monkeypatch, pages)
+    genuine = gdg.parse_chapter
+
+    def parse(body: bytes) -> Any:
+        if body == pages[gdg.chapter_url(GDG_BLR.slug)]:
+            raise KeyError("odd input")
+        return genuine(body)
+
+    monkeypatch.setattr(gdg, "parse_chapter", parse)
+
+    result = await refresh.run_step("gdg", 30)
+
+    assert "KeyError" in str(result["errors"])
+    assert "error" not in result
+    assert result["created"] == 1  # the other chapter's event
+    health = await SourceHealthService.get("events:gdg")
+    assert (health.attempts, health.successes) == (3, 2)  # the chapter that failed, then two reads
+    assert health.last_error == "error: KeyError"
+
+
+async def test_a_gdg_event_page_the_parser_chokes_on_is_counted_and_the_run_goes_on(
+    monkeypatch: pytest.MonkeyPatch, world: World
+) -> None:
+    fetched = stub_gdg(monkeypatch)
+
+    def parse(body: bytes, **kwargs: Any) -> Any:
+        raise TypeError("odd input")
+
+    monkeypatch.setattr(gdg, "parse_event_page", parse)
+
+    first = await refresh.run_step("gdg", 30)
+    fetched.clear()
+    await refresh.run_step("gdg", 30)
+
+    assert "TypeError" in str(first["errors"]) and "error" not in first
+    assert first["created"] == 0 and first["skipped"] == 1
+    # Our parser's failure is not a page that states no event: it is read again once fixed.
+    assert gdg.event_page_url(DEVFEST) in fetched
+
+
+async def test_an_eventbrite_page_the_parser_chokes_on_does_not_stop_the_venues(
+    monkeypatch: pytest.MonkeyPatch, world: World
+) -> None:
+    monkeypatch.setattr(get_settings(), "eventbrite_token", TOKEN)
+    calls = stub_eventbrite(
+        monkeypatch,
+        lambda call: eventbrite_page(("1001", "1002"), cursor="more"),
+        lambda call: eventbrite_page(("2001",)),
+    )
+    genuine = eventbrite.parse_event_list
+
+    def parse(payload: dict[str, Any]) -> Any:
+        ids = [str(e["id"]) for e in payload["events"]]
+        if "1001" in ids:
+            raise ValueError("odd input")
+        return genuine(payload)
+
+    monkeypatch.setattr(eventbrite, "parse_event_list", parse)
+
+    result = await refresh.run_step("eventbrite", 60)
+
+    assert [(c.kind, c.continuation) for c in calls] == [("organizers", None), ("venues", None)]
+    assert "ValueError" in str(result["errors"]) and "error" not in result
+    assert [row.external_id for row in await events_in(world)] == ["2001"]
+    health = await SourceHealthService.get("events:eventbrite")
+    assert (health.attempts, health.successes) == (2, 1)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# an error names its class and nothing else
+# ═════════════════════════════════════════════════════════════════════════════
+
+FAKE_SQL = "SELECT users.hashed_password FROM users WHERE users.email = 'ada@example.test'"
+LEAKS = ("SELECT", "hashed_password", "ada@example.test", "connection string")
+
+
+def test_a_fault_carries_the_exception_class_and_not_its_text() -> None:
+    report = refresh._Report.of("link")
+    report.broke(SQLAlchemyError(FAKE_SQL))
+    report.broke(OperationalError(FAKE_SQL, {"email": "ada@example.test"}, Exception("conn")))
+
+    result = report.as_dict()
+
+    assert result["error"] == "SQLAlchemyError"
+    assert result["errors"] == "OperationalError"
+
+
+async def test_a_database_error_outside_a_unit_reports_its_class_and_logs_the_detail(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    boom = OperationalError(FAKE_SQL, {"email": "ada@example.test"}, Exception("connection string"))
+    monkeypatch.setattr(refresh, "_upcoming_ids", AsyncMock(side_effect=boom))
+
+    with caplog.at_level(logging.WARNING):
+        result = await refresh.run_step("link", 10)
+
+    assert result == {"step": "link", "seen": 0, "linked": 0, "error": "OperationalError"}
+    for leak in LEAKS:
+        assert leak not in json.dumps(result)
+    assert "hashed_password" in caplog.text  # the detail is for the log
+
+
+async def test_a_database_error_in_a_unit_reports_its_class_and_logs_the_detail(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    stub_luma(monkeypatch)
+    monkeypatch.setattr(refresh, "upsert_event", AsyncMock(side_effect=SQLAlchemyError(FAKE_SQL)))
+
+    with caplog.at_level(logging.WARNING):
+        result = await refresh.run_step("luma", 26)
+
+    assert "SQLAlchemyError" in str(result["errors"])
+    for leak in LEAKS:
+        assert leak not in json.dumps(result)
+    assert "hashed_password" in caplog.text
