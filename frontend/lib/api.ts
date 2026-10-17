@@ -117,6 +117,33 @@ export type ChatReply = { intent: string; reply: string; jobs: ChatJob[]; data?:
 export type AgentMemory = { id: string; memory_type: string; content: string; metadata?: Record<string, unknown> | null; created_at?: string | null }
 export type LearningTask = { skill_name: string; title: string; description?: string | null; resources?: string[] | null; priority?: number | null }
 export type LearningPlan = { tasks: LearningTask[]; total: number }
+// Outreach (services/outreach, api/routers/outreach.py). Each shape is what the route returns, built with explicit keys on the server.
+export type OutreachChannelName = 'linkedin' | 'email' | 'x' | 'github' | 'call' | 'event' | 'other'
+// A way to reach a person: a stored LinkedIn profile (direct) or a search link, or a mailto.
+export type OutreachChannel = { channel: 'linkedin' | 'email' | 'x' | 'github'; url: string; label: string; direct: boolean; source_host: string | null }
+export type PersonState = 'planned' | 'waiting' | 'replied' | 'cold' | 'dropped'
+export type OutreachPerson = { id: string; contact_id: string | null; name: string; title: string | null; kind: string; state: PersonState; verified: boolean; user_saved: boolean; source_url: string | null; source_host: string | null; channels: OutreachChannel[]; first_sent_at: string | null; last_outbound_at: string | null; follow_ups_sent: number; next_follow_up_at: string | null; replied_at: string | null; draft: 'first' | 'follow_up' | null }
+// A company contact the thread does not hold yet, ranked for the company's size. `reason` is a short phrase from the server.
+export type SuggestedPerson = { contact_id: string; name: string; title: string | null; kind: string; verified: boolean; user_saved: boolean; source_host: string | null; reason: string; score: number }
+export type OutreachTouch = { id: string; person_id: string | null; person_name: string | null; channel: OutreachChannelName; direction: 'out' | 'in'; kind: 'first' | 'follow_up' | 'reply' | 'other'; note: string | null; body: string | null; happened_at: string }
+// The open-source snapshot for a company: good-first-issues, refreshed by the scheduled step, never on a page load.
+export type IssueSnapshot = { org: string; status: string; total_count: number; issues: Array<{ repo: string; number: number; title: string; url: string; labels: string[]; updated_at: string | null; comments: number }>; fetched_at: string }
+export type ThreadStage = 'planned' | 'waiting' | 'replied' | 'cold' | 'closed'
+export type OutreachOutcome = 'referred' | 'interviewing' | 'offer' | 'not_now' | 'not_a_fit' | 'other'
+export type OutreachSource = 'suggestion' | 'drawer' | 'list' | 'typed' | 'overview'
+export type ThreadSummary = { id: string; company_id: string | null; company_name: string; company_summary: string | null; stage: ThreadStage; outcome: OutreachOutcome | null; people_count: number; lead: { name: string; state: PersonState } | null; due: boolean; next_due_at: string | null; last_touch_at: string | null; job: { id: string | null; title: string | null } | null; application: { id: string; status: string | null } | null; source: OutreachSource; created_at: string }
+export type ThreadDetail = ThreadSummary & { note: string | null; next_step: string | null; next_step_at: string | null; closed_at: string | null; company: { stage: string | null; sector: string | null; area: string | null; last_funding_at: string | null; linkedin_url: string | null } | null; people: OutreachPerson[]; suggested_people: SuggestedPerson[]; touches: OutreachTouch[]; issues: IssueSnapshot | null; careers_url: string | null; linkedin_links: LinkedInLink[]; pacing_note: string | null }
+export type DueItem = { thread_id: string; person_id: string | null; kind: 'follow_up' | 'next_step'; due_at: string; company_name: string; person_name: string | null; follow_up_number: number | null; last_outbound_at: string | null; next_step: string | null }
+export type OutreachHome = { target: { daily: number; reached_today: number }; conversations_started: number; due: DueItem[]; threads: ThreadSummary[] }
+export type Suggestion = { company_id: string; name: string; summary: string | null; area: string | null; stage: string | null; sector: string | null; score: number; reasons: string[]; top_person: { name: string; title: string | null; kind: string } | null }
+export type Suggestions = { suggestions: Suggestion[]; profile_complete: boolean }
+// One stored company matched by name, for "Add a company". Returned as a bare array.
+export type OutreachCompanyMatch = { id: string; name: string; summary: string | null; area: string | null }
+export type DraftFormat = 'linkedin_note' | 'linkedin_message' | 'email' | 'x_dm' | 'github_comment'
+// `reason` is null for a model draft; otherwise the template was used and says why. `subject` is set only for email.
+export type OutreachDraft = { format: DraftFormat; message: string; subject: string | null; generated: boolean; reason: 'daily_cap' | 'budget' | 'model_unavailable' | null; remaining_today: number; max_chars: number }
+// The PATCH body. An absent key is left alone; `close` closes the thread with an outcome.
+export type OutreachThreadPatch = { note?: string | null; next_step?: string | null; next_step_at?: string | null; job_id?: string | null; application_id?: string | null; close?: { outcome: OutreachOutcome }; reopen?: boolean }
 
 export function token() { return typeof window === 'undefined' ? null : localStorage.getItem(TOKEN_KEY) }
 
@@ -246,8 +273,8 @@ export const api = {
   },
   roles: {
     dossier: (jobId: string) => request<Dossier>(`/api/v1/roles/${encodeURIComponent(jobId)}/dossier`, {}, true),
-    // Returns a draft for the user to edit and send themselves; generated=false means a template was returned because the model was unavailable.
-    referralAsk: (jobId: string, payload: { recipient_name?: string; recipient_title?: string; relationship?: string }) => request<{ message: string; generated: boolean }>(`/api/v1/roles/${encodeURIComponent(jobId)}/referral-ask`, { method: 'POST', body: JSON.stringify(payload) }, true),
+    // Returns a draft for the user to edit and send themselves; generated=false means a template was returned, and `reason` says why (null for a model draft).
+    referralAsk: (jobId: string, payload: { recipient_name?: string; recipient_title?: string; relationship?: string }) => request<{ message: string; generated: boolean; reason: 'daily_cap' | 'model_unavailable' | null }>(`/api/v1/roles/${encodeURIComponent(jobId)}/referral-ask`, { method: 'POST', body: JSON.stringify(payload) }, true),
   },
   interview: {
     // track is the round style (technical | coding | system_design | behavioral); topic is free text.
@@ -303,5 +330,32 @@ export const api = {
     memories: () => request<{ memories: AgentMemory[]; count: number }>('/api/v1/agent/memories', {}, true),
     remember: (content: string, memory_type = 'preference') => request<AgentMemory>('/api/v1/agent/memories', { method: 'POST', body: JSON.stringify({ content, memory_type }) }, true),
     forget: (id: string) => request<void>(`/api/v1/agent/memories/${encodeURIComponent(id)}`, { method: 'DELETE' }, true),
+  },
+  outreach: {
+    // The page: today's target, what is due, and every thread.
+    home: () => request<OutreachHome>('/api/v1/outreach', {}, true),
+    settings: {
+      get: () => request<{ daily_target: number }>('/api/v1/outreach/settings', {}, true),
+      save: (daily_target: number) => request<{ daily_target: number }>('/api/v1/outreach/settings', { method: 'PUT', body: JSON.stringify({ daily_target }) }, true),
+    },
+    // Ranked from stored facts; no model. `limit` must be 1 to 25 (the server answers anything else with a 422).
+    suggestions: (limit = 10) => request<Suggestions>(`/api/v1/outreach/suggestions?limit=${limit}`, {}, true),
+    dismissSuggestion: (companyId: string) => request<void>(`/api/v1/outreach/suggestions/${encodeURIComponent(companyId)}/dismiss`, { method: 'POST' }, true),
+    searchCompanies: (q: string) => request<OutreachCompanyMatch[]>(`/api/v1/outreach/companies/search?q=${encodeURIComponent(q)}`, {}, true),
+    // The caller's thread with this company (open or closed), or null.
+    forCompany: (companyId: string) => request<{ thread: ThreadSummary | null }>(`/api/v1/outreach/companies/${encodeURIComponent(companyId)}`, {}, true),
+    // 201 when a thread is opened, 200 with the existing one when it was already there (`created` says which).
+    create: (payload: { company_id?: string; company_name?: string; job_id?: string; source: OutreachSource }) => request<{ thread: ThreadSummary; created: boolean }>('/api/v1/outreach/threads', { method: 'POST', body: JSON.stringify(payload) }, true),
+    thread: (id: string) => request<ThreadDetail>(`/api/v1/outreach/threads/${encodeURIComponent(id)}`, {}, true),
+    update: (id: string, payload: OutreachThreadPatch) => request<ThreadDetail>(`/api/v1/outreach/threads/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(payload) }, true),
+    remove: (id: string) => request<void>(`/api/v1/outreach/threads/${encodeURIComponent(id)}`, { method: 'DELETE' }, true),
+    addPerson: (id: string, payload: { contact_id?: string | null; name?: string | null; title?: string | null; email?: string | null; linkedin_url?: string | null }) => request<ThreadDetail>(`/api/v1/outreach/threads/${encodeURIComponent(id)}/people`, { method: 'POST', body: JSON.stringify(payload) }, true),
+    // Snooze a follow-up by 1 to 14 days, or drop the person. Exactly one of the two.
+    updatePerson: (id: string, personId: string, payload: { snooze_days?: number; state?: 'dropped' }) => request<ThreadDetail>(`/api/v1/outreach/threads/${encodeURIComponent(id)}/people/${encodeURIComponent(personId)}`, { method: 'PATCH', body: JSON.stringify(payload) }, true),
+    removePerson: (id: string, personId: string) => request<ThreadDetail>(`/api/v1/outreach/threads/${encodeURIComponent(id)}/people/${encodeURIComponent(personId)}`, { method: 'DELETE' }, true),
+    // Records what the user did. Nothing is sent; a closed thread takes touches too.
+    touch: (id: string, payload: { person_id?: string | null; channel: OutreachChannelName; direction: 'out' | 'in'; note?: string | null; body?: string | null; happened_at?: string | null; next_step?: string | null; next_step_at?: string | null }) => request<ThreadDetail>(`/api/v1/outreach/threads/${encodeURIComponent(id)}/touches`, { method: 'POST', body: JSON.stringify(payload) }, true),
+    // The only outreach call that may use the model. Nothing is sent or stored.
+    draft: (id: string, payload: { person_id?: string; format: DraftFormat; relationship?: string; issue_url?: string }) => request<OutreachDraft>(`/api/v1/outreach/threads/${encodeURIComponent(id)}/draft`, { method: 'POST', body: JSON.stringify(payload) }, true),
   },
 }
