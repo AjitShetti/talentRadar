@@ -10,7 +10,9 @@ already keep, and a person's LinkedIn link is a search URL built from what the u
 Who sees what
 -------------
 * **A public event** is seen by everyone, in lists only when it is *listed* and is not a
-  cross-source duplicate (the primary carries the listing and an "also on" link).
+  cross-source duplicate (the primary carries the listing and an "also on" link). The
+  Saved and Going views are the exception: they list every event the caller saved, listed or
+  not, because the caller chose it (a pasted link need not be a listed event).
 * **A private event** (``owner_user_id`` set: one a user added by hand) is seen by its
   owner alone, whether or not it is "listed", and every other user gets ``None`` for its
   id exactly as for an id that does not exist.
@@ -20,7 +22,8 @@ Time
 ----
 A window is half-open, ``[lo, hi)``, and an event is in it when it *overlaps* it and has
 not ended: a hackathon that began yesterday is still listed today. ``from``/``to`` are IST
-dates and ``to`` is inclusive. An unstated end is start + 2 h
+dates and ``to`` is inclusive. With no ``to`` the window is :data:`DEFAULT_DAYS` days
+counting the first, so today and the 29 days after it. An unstated end is start + 2 h
 (:func:`domain.event_time.effective_end`); the same rule is written in SQL by
 :func:`_ends_after`, so a list never shows an event the card would call over.
 """
@@ -57,6 +60,7 @@ from storage.models import Company, Event, EventCompany, EventContact, EventSave
 logger = logging.getLogger(__name__)
 
 MAX_LIMIT = 100
+MAX_OFFSET = 10_000  # deep paging is not a feature; a huge OFFSET is a 500 on Postgres
 DEFAULT_DAYS = 30
 SNIPPET_SHOWN = 200
 SOURCES: tuple[Literal["luma", "gdg", "eventbrite"], ...] = ("luma", "gdg", "eventbrite")
@@ -102,7 +106,7 @@ def _bounds(query: EventQuery, now: datetime) -> tuple[datetime, datetime]:
     if query.when is not None:
         return window(query.when, now)
     first = query.start or ist_date(now)
-    last = query.end or first + timedelta(days=DEFAULT_DAYS)
+    last = query.end or first + timedelta(days=DEFAULT_DAYS - 1)
     return _midnight(first), _midnight(last + timedelta(days=1))
 
 
@@ -123,6 +127,11 @@ def _ends_after(moment: datetime) -> ColumnElement[bool]:
 def _in_window(lo: datetime, hi: datetime, now: datetime) -> ColumnElement[bool]:
     """Overlaps ``[lo, hi)`` and has not ended."""
     return and_(Event.starts_at < hi, _ends_after(max(as_utc(now), lo)))
+
+
+def _readable(me: uuid.UUID) -> ColumnElement[bool]:
+    """Public events, listed or not, plus the caller's own private ones; never another's."""
+    return or_(Event.owner_user_id.is_(None), Event.owner_user_id == me)
 
 
 def _visible(me: uuid.UUID) -> ColumnElement[bool]:
@@ -150,7 +159,8 @@ def _filters(
     query: EventQuery, me: uuid.UUID, now: datetime, dialect: str
 ) -> list[ColumnElement[bool]]:
     lo, hi = _bounds(query, now)
-    where = [_visible(me), _in_window(lo, hi, now)]
+    # What the caller saved is theirs to see whether or not the relevance verdict listed it.
+    where = [_readable(me) if query.saved != "all" else _visible(me), _in_window(lo, hi, now)]
     if query.mode == "in_person":
         where.append(Event.is_online.is_(False))
     elif query.mode == "online":
@@ -300,19 +310,20 @@ async def _counts(session: AsyncSession, me: uuid.UUID, now: datetime) -> dict[s
     leaving out what is over or cancelled.
     """
     _, week_end = window("week", now)
-    live = and_(_visible(me), Event.is_cancelled.is_(False), _ends_after(now))
+    not_over = and_(Event.is_cancelled.is_(False), _ends_after(now))
     upcoming, this_week = (
         await session.execute(
             select(
                 func.count(Event.id),
                 func.count(case((Event.starts_at < week_end, Event.id))),
-            ).where(live)
+            ).where(_visible(me), not_over)
         )
     ).one()
+    # The Going view lists everything the caller is going to, so its count does too.
     going = await session.scalar(
         select(func.count(Event.id))
         .join(EventSave, EventSave.event_id == Event.id)
-        .where(live, EventSave.user_id == me, EventSave.status == "going")
+        .where(_readable(me), not_over, EventSave.user_id == me, EventSave.status == "going")
     )
     return {"upcoming": int(upcoming), "this_week": int(this_week), "going": int(going or 0)}
 
@@ -350,9 +361,12 @@ async def list_events(
     """
     me = uuid.UUID(user_id)
     instant = as_utc(now)
+    # The cache first: the session takes its connection at its first query, and that
+    # connection must not wait on Redis round trips.
+    sources = await _sources()
     where = _filters(query, me, instant, session.get_bind().dialect.name)
     limit = max(1, min(query.limit, MAX_LIMIT))
-    offset = max(0, query.offset)
+    offset = max(0, min(query.offset, MAX_OFFSET))
 
     total = int(await session.scalar(select(func.count(Event.id)).where(*where)) or 0)
     events = (
@@ -378,7 +392,7 @@ async def list_events(
             _card(event, companies.get(event.id, []), statuses.get(event.id)) for event in events
         ],
         "counts": await _counts(session, me, instant),
-        "sources": await _sources(),
+        "sources": sources,
     }
 
 
@@ -389,11 +403,7 @@ async def list_events(
 
 async def _visible_event(session: AsyncSession, me: uuid.UUID, event_id: uuid.UUID) -> Event | None:
     """The event, unless it does not exist or is another user's private event."""
-    result = await session.execute(
-        select(Event).where(
-            Event.id == event_id, or_(Event.owner_user_id.is_(None), Event.owner_user_id == me)
-        )
-    )
+    result = await session.execute(select(Event).where(Event.id == event_id, _readable(me)))
     return result.scalar_one_or_none()
 
 

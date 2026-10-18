@@ -198,6 +198,32 @@ async def test_list_defaults_to_in_person_next_30_days(
     assert body["total"] == 1
 
 
+async def test_default_window_is_thirty_days_counting_today(
+    client: AsyncClient, add: Callable[..., Any]
+) -> None:
+    # Thu 15 Oct is day one, so Fri 13 Nov is day thirty and Sat 14 Nov is outside.
+    await add(
+        make_event(days(29), title="Day thirty"),
+        make_event(days(30), title="Day thirty-one"),
+    )
+
+    assert titles(await listing(client)) == ["Day thirty"]
+
+
+async def test_a_lone_from_opens_a_thirty_day_window_too(
+    client: AsyncClient, add: Callable[..., Any]
+) -> None:
+    await add(
+        make_event(datetime(2026, 11, 30, 6, 30, tzinfo=UTC), title="Last day, 12:00 IST"),
+        make_event(datetime(2026, 11, 30, 19, 0, tzinfo=UTC), title="Next day, 00:30 IST"),
+        make_event(datetime(2026, 11, 1, 6, 30, tzinfo=UTC), title="First day"),
+    )
+
+    body = await listing(client, **{"from": "2026-11-01"})
+
+    assert titles(body) == ["First day", "Last day, 12:00 IST"]
+
+
 async def test_a_running_event_is_listed_and_an_unstated_end_means_two_hours(
     client: AsyncClient, add: Callable[..., Any]
 ) -> None:
@@ -427,6 +453,7 @@ async def test_topic_format_and_hide_paid(client: AsyncClient, add: Callable[...
         {"limit": 101},
         {"limit": 0},
         {"offset": -1},
+        {"offset": 10_001},
         {"when": "fortnight"},
         {"mode": "everywhere"},
         {"saved": "maybe"},
@@ -456,6 +483,29 @@ async def test_pagination_total_counts_every_match(
     assert titles(first) == ["Night 0", "Night 1"]
     assert titles(second) == ["Night 2", "Night 3"]
     assert titles(last) == ["Night 4"]
+
+
+async def test_the_largest_allowed_offset_is_an_empty_page_not_an_error(
+    client: AsyncClient, add: Callable[..., Any]
+) -> None:
+    await add(make_event(days(1)))
+
+    body = await listing(client, offset=10_000)
+
+    assert body["events"] == []
+    assert body["total"] == 1
+
+
+async def test_the_service_bounds_an_offset_the_router_would_have_refused(
+    factory: Factory, add: Callable[..., Any], me: User
+) -> None:
+    await add(make_event(days(1)))
+
+    async with factory() as session:
+        body = await read.list_events(session, str(me.id), read.EventQuery(offset=2**70), now=NOW)
+
+    assert body["events"] == []
+    assert body["total"] == 1
 
 
 async def test_cancelled_event_is_listed_with_the_flag(
@@ -512,6 +562,37 @@ async def test_saved_and_going_filters_and_my_status(
     }
     assert titles(await listing(client, saved="saved")) == ["Saved", "Going"]
     assert titles(await listing(client, saved="going")) == ["Going"]
+
+
+async def test_saved_and_going_views_list_everything_the_caller_saved(
+    client: AsyncClient, add: Callable[..., Any], me: User
+) -> None:
+    stranger = await new_user(add)
+    primary = make_event(days(1), title="Primary")
+    unlisted = make_event(days(2), title="Saved, unlisted", listed=False)
+    duplicate = make_event(days(3), title="Going, a duplicate", duplicate_of=primary.id)
+    theirs = make_event(
+        days(4), title="Someone else's dinner", source="user", owner_user_id=stranger.id
+    )
+    mine = make_event(days(5), title="My dinner", source="user", owner_user_id=me.id)
+    unsaved = make_event(days(6), title="Unlisted, not saved", listed=False)
+    await add(primary, unlisted, theirs, mine, unsaved)
+    await add(duplicate)
+    await add(
+        EventSave(user_id=me.id, event_id=unlisted.id, status="saved"),
+        EventSave(user_id=me.id, event_id=duplicate.id, status="going"),
+        EventSave(user_id=me.id, event_id=theirs.id, status="going"),
+        EventSave(user_id=me.id, event_id=mine.id, status="going"),
+    )
+
+    assert titles(await listing(client)) == ["Primary", "My dinner"]
+    assert titles(await listing(client, saved="saved")) == [
+        "Saved, unlisted",
+        "Going, a duplicate",
+        "My dinner",
+    ]
+    assert titles(await listing(client, saved="going")) == ["Going, a duplicate", "My dinner"]
+    assert (await listing(client))["counts"]["going"] == 2
 
 
 async def test_counts(client: AsyncClient, add: Callable[..., Any], me: User) -> None:
@@ -640,6 +721,34 @@ async def test_a_dead_cache_does_not_break_the_list(
     assert [s["status"] for s in body["sources"]] == ["unknown", "unknown", "off"]
 
 
+async def test_the_sources_are_read_before_the_session_runs_its_first_query(
+    factory: Factory, add: Callable[..., Any], me: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await add(make_event(days(1)))
+    seen: list[str] = []
+
+    async def _sources() -> list[dict[str, Any]]:
+        seen.append("cache")
+        return []
+
+    monkeypatch.setattr(read, "_sources", _sources)
+    engine = factory.kw["bind"]
+
+    @sa_event.listens_for(engine.sync_engine, "before_cursor_execute")
+    def _queried(*_args: Any) -> None:
+        seen.append("query")
+
+    try:
+        async with factory() as session:
+            await read.list_events(session, str(me.id), read.EventQuery(), now=NOW)
+    finally:
+        sa_event.remove(engine.sync_engine, "before_cursor_execute", _queried)
+
+    assert seen[0] == "cache"
+    assert seen.count("cache") == 1
+    assert "query" in seen
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # detail
 # ═════════════════════════════════════════════════════════════════════════════
@@ -652,6 +761,25 @@ async def test_detail_unknown_404(client: AsyncClient) -> None:
 
 async def test_detail_with_a_malformed_id_is_422(client: AsyncClient) -> None:
     assert (await client.get(f"{LIST}/not-a-uuid")).status_code == 422
+
+
+@pytest.mark.parametrize("suffix", ["", "/ics"])
+async def test_another_users_private_event_is_indistinguishable_from_an_unknown_id(
+    client: AsyncClient, add: Callable[..., Any], suffix: str
+) -> None:
+    stranger = await new_user(add)
+    theirs = make_event(
+        days(1), title="Their private dinner", source="user", owner_user_id=stranger.id
+    )
+    await add(theirs)
+
+    private = await client.get(f"{LIST}/{theirs.id}{suffix}")
+    unknown = await client.get(f"{LIST}/{uuid.uuid4()}{suffix}")
+
+    assert private.status_code == unknown.status_code == 404
+    assert private.json() == unknown.json()
+    assert private.headers["content-type"] == unknown.headers["content-type"]
+    assert "Their private dinner" not in private.text
 
 
 async def test_detail_carries_the_card_and_the_rest(
@@ -822,6 +950,22 @@ async def test_ics_download(client: AsyncClient, add: Callable[..., Any]) -> Non
     assert "URL:https://luma.com/rust-night" in body
     assert "STATUS:CANCELLED" not in body
     assert body.count("BEGIN:VEVENT") == 1
+
+
+async def test_ics_title_cannot_close_the_event_and_open_another(
+    client: AsyncClient, add: Callable[..., Any]
+) -> None:
+    hostile = "Rust Night\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nSUMMARY:Planted"
+    event = make_event(days(1), title=hostile, snippet=hostile, venue_name=hostile)
+    await add(event)
+
+    response = await client.get(f"{LIST}/{event.id}/ics")
+
+    assert response.status_code == 200
+    lines = response.text.split("\r\n")
+    assert lines.count("BEGIN:VEVENT") == 1
+    assert lines.count("END:VEVENT") == 1
+    assert not any(line.startswith("SUMMARY:Planted") for line in lines)
 
 
 async def test_ics_end_and_location_when_the_source_stated_neither(

@@ -82,7 +82,10 @@ async def list_events(
     ] = None,
     end: Annotated[
         date | None,
-        Query(alias="to", description="Last day, inclusive, an IST date. Default: 30 days on."),
+        Query(
+            alias="to",
+            description="Last day, inclusive, an IST date. Default: a 30-day window from `from`.",
+        ),
     ] = None,
     mode: Annotated[Literal["in_person", "online", "any"], Query()] = "in_person",
     topic: Annotated[str | None, Query(max_length=32)] = None,
@@ -92,7 +95,7 @@ async def list_events(
     company_id: Annotated[uuid.UUID | None, Query()] = None,
     q: Annotated[str | None, Query(max_length=100, description="Title or organiser")] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
-    offset: Annotated[int, Query(ge=0)] = 0,
+    offset: Annotated[int, Query(ge=0, le=read.MAX_OFFSET)] = 0,
 ) -> dict[str, Any]:
     """Upcoming listed events, soonest first, with the ledger counts and the sources strip."""
     _check_date("from", start)
