@@ -15,6 +15,11 @@ POST   /practice/challenges/{slug}/start        - press Start: the clock and the
 PUT    /practice/challenges/{slug}/submission   - save or replace the submission
 GET    /practice/challenges/{slug}/result       - the caller's scores, notes, signals and appeal
 POST   /practice/challenges/{slug}/appeal       - one appeal, within seven days of the result
+GET    /practice/challenges/{slug}/leaderboard  - one build's board: top 25 and the caller's row
+GET    /practice/leaderboard    - the overall board: best four of the last twelve builds
+GET    /practice/settings       - leaderboard name, repo link and contest reminder switches
+PUT    /practice/settings       - save all three (422 for a name that is not allowed)
+GET    /practice/admin/attempts/held            - admin: attempts the judge held
 POST   /practice/admin/attempts/{id}/clear      - admin: release a hold
 POST   /practice/admin/attempts/{id}/requeue    - admin: back in the judge's queue
 POST   /practice/admin/attempts/{id}/override   - admin: set the scores by hand
@@ -38,16 +43,21 @@ from api.auth import get_current_user, require_role
 from api.schemas.practice_schemas import (
     AppealRequestSchema,
     AttemptResultSchema,
+    ChallengeBoardSchema,
     ChallengeSchema,
     ChallengesOverviewSchema,
     DoneRequestSchema,
     FeelRequestSchema,
+    HeldAttemptsSchema,
+    OverallBoardSchema,
     OverrideRequestSchema,
     PracticeHistorySchema,
+    PracticeSettingsSchema,
     PracticeTodaySchema,
+    SettingsRequestSchema,
     SubmissionRequestSchema,
 )
-from services.practice import challenges, daily, judge
+from services.practice import board, challenges, daily, judge
 from services.practice.errors import (
     PracticeConflict,
     PracticeInvalid,
@@ -178,6 +188,39 @@ async def appeal_result(
     return await _answer(judge.request_appeal(user_id, slug, body.reason))
 
 
+@router.get("/challenges/{slug}/leaderboard", response_model=ChallengeBoardSchema)
+async def get_challenge_board(user_id: CurrentUserId, slug: Slug) -> dict[str, Any]:
+    """One build's board: the top 25, the caller's own row, and whether it is still provisional.
+    Names are handles unless a person chose one. 404 until the build has opened."""
+    return await _answer(board.challenge_board(user_id, slug))
+
+
+@router.get("/leaderboard", response_model=OverallBoardSchema)
+async def get_overall_board(user_id: CurrentUserId) -> dict[str, Any]:
+    """The overall board: the top 50 by best four totals of the last twelve builds, and the
+    caller's own row."""
+    return await _answer(board.overall_board(user_id))
+
+
+@router.get("/settings", response_model=PracticeSettingsSchema)
+async def get_settings(user_id: CurrentUserId) -> dict[str, Any]:
+    """The caller's leaderboard name, repo link and contest reminder switches."""
+    return await _answer(board.get_settings(user_id))
+
+
+@router.put("/settings", response_model=PracticeSettingsSchema)
+async def put_settings(user_id: CurrentUserId, body: SettingsRequestSchema) -> dict[str, Any]:
+    """Save the three switches. A blank name goes by the handle; 422 for a name that is not allowed."""
+    return await _answer(
+        board.put_settings(
+            user_id,
+            display_name=body.display_name,
+            show_repo=body.show_repo,
+            contest_reminder=body.contest_reminder,
+        )
+    )
+
+
 async def _acknowledged(call: Awaitable[None]) -> dict[str, Any]:
     """Await an admin action that returns nothing, and answer ``{"ok": true}``."""
 
@@ -189,6 +232,12 @@ async def _acknowledged(call: Awaitable[None]) -> dict[str, Any]:
 
 
 AdminOnly = Depends(require_role("admin"))
+
+
+@router.get("/admin/attempts/held", response_model=HeldAttemptsSchema, dependencies=[AdminOnly])
+async def list_held_attempts() -> dict[str, Any]:
+    """The attempts the judge held, with the id ``clear`` takes. No candidate text."""
+    return await _answer(board.held_attempts())
 
 
 @router.post("/admin/attempts/{attempt_id}/clear", dependencies=[AdminOnly])

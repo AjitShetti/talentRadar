@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, StrictInt
+from pydantic import BaseModel, Field, StrictBool, StrictInt
 
 from domain.practice_pick import Difficulty, Feel
 
@@ -249,3 +249,90 @@ class AttemptResultSchema(BaseModel):
     snapshot_url: str | None
     appeal: AppealStateSchema
     rejudged: bool
+
+
+# --------------------------------------------------------------------------- the leaderboards
+
+#: Capped well above the real bound (32), as the write-up fields are: the service says which rule.
+_NAME_CAP = 200
+
+
+class BoardRowSchema(BaseModel):
+    """One ranked attempt on a challenge board. ``repo_url`` is set only for someone who chose
+    to show their repo; ``you`` marks the signed-in person's own row."""
+
+    rank: int
+    name: str
+    total: float
+    hours_used: float | None
+    repo_url: str | None
+    you: bool
+
+
+class ChallengeBoardSchema(BaseModel):
+    """One edition's board: the top rows, how many are ranked, how many wait to be judged, and
+    the signed-in person's own row wherever it falls."""
+
+    provisional: bool
+    total_entries: int
+    queued: int
+    rows: list[BoardRowSchema]
+    me: BoardRowSchema | None
+
+
+class OverallRowSchema(BaseModel):
+    rank: int
+    name: str
+    score: float
+    entries: int
+    you: bool
+
+
+class OverallMeSchema(BaseModel):
+    rank: int
+    name: str
+    score: float
+    entries: int
+
+
+class OverallBoardSchema(BaseModel):
+    """Each person's best four totals over the last twelve editions."""
+
+    window_challenges: int
+    rows: list[OverallRowSchema]
+    me: OverallMeSchema | None
+
+
+class SettingsRequestSchema(BaseModel):
+    """All three switches at once. ``display_name`` may be null (or blank) to go by the handle."""
+
+    display_name: str | None = Field(max_length=_NAME_CAP)
+    show_repo: StrictBool
+    contest_reminder: StrictBool
+
+
+class PracticeSettingsSchema(BaseModel):
+    """The person's Practice settings, and the handle they appear under without a name."""
+
+    display_name: str | None
+    show_repo: bool
+    contest_reminder: bool
+    handle: str
+
+
+class HeldAttemptSchema(BaseModel):
+    """An attempt the judge held, for an admin: enough to find it and clear it, nothing the
+    candidate wrote."""
+
+    id: str
+    challenge: str
+    title: str
+    status: AttemptStatus
+    flags: list[str]
+    held: bool
+    cleared: bool
+    submitted_at: str | None
+
+
+class HeldAttemptsSchema(BaseModel):
+    attempts: list[HeldAttemptSchema]
