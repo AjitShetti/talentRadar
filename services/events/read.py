@@ -129,7 +129,7 @@ def _in_window(lo: datetime, hi: datetime, now: datetime) -> ColumnElement[bool]
     return and_(Event.starts_at < hi, _ends_after(max(as_utc(now), lo)))
 
 
-def _readable(me: uuid.UUID) -> ColumnElement[bool]:
+def readable(me: uuid.UUID) -> ColumnElement[bool]:
     """Public events, listed or not, plus the caller's own private ones; never another's."""
     return or_(Event.owner_user_id.is_(None), Event.owner_user_id == me)
 
@@ -160,7 +160,7 @@ def _filters(
 ) -> list[ColumnElement[bool]]:
     lo, hi = _bounds(query, now)
     # What the caller saved is theirs to see whether or not the relevance verdict listed it.
-    where = [_readable(me) if query.saved != "all" else _visible(me), _in_window(lo, hi, now)]
+    where = [readable(me) if query.saved != "all" else _visible(me), _in_window(lo, hi, now)]
     if query.mode == "in_person":
         where.append(Event.is_online.is_(False))
     elif query.mode == "online":
@@ -323,7 +323,7 @@ async def _counts(session: AsyncSession, me: uuid.UUID, now: datetime) -> dict[s
     going = await session.scalar(
         select(func.count(Event.id))
         .join(EventSave, EventSave.event_id == Event.id)
-        .where(_readable(me), not_over, EventSave.user_id == me, EventSave.status == "going")
+        .where(readable(me), not_over, EventSave.user_id == me, EventSave.status == "going")
     )
     return {"upcoming": int(upcoming), "this_week": int(this_week), "going": int(going or 0)}
 
@@ -401,9 +401,16 @@ async def list_events(
 # ═════════════════════════════════════════════════════════════════════════════
 
 
-async def _visible_event(session: AsyncSession, me: uuid.UUID, event_id: uuid.UUID) -> Event | None:
+async def event_card(session: AsyncSession, me: uuid.UUID, event: Event) -> dict[str, Any]:
+    """The list card for one event the caller can read, with their own status."""
+    companies = (await _companies(session, [event.id])).get(event.id, [])
+    status = (await _statuses(session, me, [event.id])).get(event.id)
+    return _card(event, companies, status)
+
+
+async def visible_event(session: AsyncSession, me: uuid.UUID, event_id: uuid.UUID) -> Event | None:
     """The event, unless it does not exist or is another user's private event."""
-    result = await session.execute(select(Event).where(Event.id == event_id, _readable(me)))
+    result = await session.execute(select(Event).where(Event.id == event_id, readable(me)))
     return result.scalar_one_or_none()
 
 
@@ -413,7 +420,7 @@ async def event_detail(
     """The card plus snippet, reasons, hosts, other sources, companies, the caller's save and
     the caller's people. ``None`` for an unknown event or another user's private one."""
     me = uuid.UUID(user_id)
-    event = await _visible_event(session, me, event_id)
+    event = await visible_event(session, me, event_id)
     if event is None:
         return None
 
@@ -483,7 +490,7 @@ async def event_ics(
     session: AsyncSession, user_id: str, event_id: uuid.UUID, *, now: datetime
 ) -> tuple[str, str] | None:
     """``(filename, body)`` of a one-event calendar file, or ``None`` as for :func:`event_detail`."""
-    event = await _visible_event(session, uuid.UUID(user_id), event_id)
+    event = await visible_event(session, uuid.UUID(user_id), event_id)
     if event is None:
         return None
     body = build_ics(
