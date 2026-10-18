@@ -27,7 +27,7 @@ export type OutreachTone = 'due' | 'replied' | 'waiting' | 'idle'
 
 // The clock's two constants, as in domain/outreach.py. The server already sends the
 // derived state, so these only keep a page that has been left open honest.
-const MAX_FOLLOW_UPS = 2
+export const MAX_FOLLOW_UPS = 2
 const COLD_AFTER_DAYS = 10
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -122,5 +122,37 @@ export function channelActionLabel(fmt: DraftFormat): string {
       return 'Copy and open X'
     case 'github_comment':
       return 'Copy and open the issue'
+  }
+}
+
+/** The two letters on a row's mark: the first letters of the first two words, or the first two letters of one word. */
+export function initials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean)
+  if (!words.length) return '?'
+  const letters = words.length > 1 ? words[0][0] + words[1][0] : words[0].slice(0, 2)
+  return letters.toUpperCase()
+}
+
+// Which thread the /outreach page has open, and what the drawer shows first.
+// It lives in the URL (?thread=&person=&draft=1 or &reply=1) so the Overview can deep-link into it.
+export type ThreadTarget = { threadId: string; personId: string | null; mode: 'draft' | 'reply' | null }
+
+/** The /outreach URL that opens `target`. */
+export function threadHref(target: ThreadTarget): string {
+  const q = new URLSearchParams({ thread: target.threadId })
+  if (target.personId) q.set('person', target.personId)
+  if (target.mode === 'draft') q.set('draft', '1')
+  if (target.mode === 'reply') q.set('reply', '1')
+  return `/outreach?${q.toString()}`
+}
+
+/** The inverse of threadHref: null when the URL names no thread. */
+export function parseThreadTarget(params: { get(name: string): string | null }): ThreadTarget | null {
+  const threadId = params.get('thread')
+  if (!threadId) return null
+  return {
+    threadId,
+    personId: params.get('person') || null,
+    mode: params.get('draft') === '1' ? 'draft' : params.get('reply') === '1' ? 'reply' : null,
   }
 }
