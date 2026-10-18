@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictInt
 
 from domain.practice_pick import Difficulty, Feel
 
@@ -190,3 +190,62 @@ class ChallengesOverviewSchema(BaseModel):
     current: ChallengeSchema | None
     next_opens_at: str | None
     past: list[PastChallengeSchema]
+
+
+# --------------------------------------------------------------------------- the result
+
+#: Capped well above the real bound (500), as the write-up fields are: the service says by how much.
+_REASON_CAP = 5_000
+
+
+class AppealRequestSchema(BaseModel):
+    """The owner's reason for an appeal. An admin reads it; the model never does."""
+
+    reason: str = Field(max_length=_REASON_CAP)
+
+
+class OverrideRequestSchema(BaseModel):
+    """An admin's scores, whole numbers 0 to 10 for each criterion, and the note saying why."""
+
+    scores: dict[str, StrictInt]
+    note: str = Field(max_length=_REASON_CAP)
+
+
+class ResultNotesSchema(BaseModel):
+    """The judge's words: a note per criterion, then strengths, improvements and a summary."""
+
+    thinking: str
+    tradeoffs: str
+    ai_usage: str
+    build_process: str
+    meets_brief: str
+    code_quality: str
+    strengths: list[str]
+    improvements: list[str]
+    summary: str
+
+
+class AppealStateSchema(BaseModel):
+    """Whether the owner may still appeal, whether they have, and until when."""
+
+    available: bool
+    used: bool
+    until: str | None
+
+
+class AttemptResultSchema(BaseModel):
+    """The owner's result: scores and notes once judged, the reason if rejected, and whether it is
+    held for review. ``reject_reason`` is a sentence for the owner, not a code."""
+
+    status: AttemptStatus
+    held: bool
+    reject_reason: str | None
+    total: float | None
+    scores: dict[str, float] | None
+    weights: dict[str, int]
+    notes: ResultNotesSchema | None
+    signals: dict[str, int | float | bool] | None
+    snapshot_sha: str | None
+    snapshot_url: str | None
+    appeal: AppealStateSchema
+    rejudged: bool

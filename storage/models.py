@@ -1977,7 +1977,7 @@ class PracticeAttempt(Base):
     notes: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB, nullable=True, comment="Per-criterion notes, strengths, improvements, summary"
     )
-    judge_runs: Mapped[dict[str, Any] | None] = mapped_column(
+    judge_runs: Mapped[list[dict[str, Any]] | None] = mapped_column(
         JSONB, nullable=True, comment="At most two runs: scores, model, prompt version, time"
     )
     judge_input_sha256: Mapped[str | None] = mapped_column(

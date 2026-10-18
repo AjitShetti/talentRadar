@@ -19,8 +19,10 @@ steering the request or filling the server.
   and the request can only ever reach ``api.github.com``.
 * **Every body is read in a bounded way.** The reply is streamed and reading stops at the
   limit; a body is never read whole and then cut. A JSON document over its cap is
-  :class:`GitHubUnavailable`; a text file is simply cut at ``limit`` bytes (a character split
-  by the cut is dropped, not turned into a replacement character).
+  :class:`ReplyTooLarge` (a :class:`GitHubUnavailable`, so a caller that does not care still
+  backs off, and one that does can tell "too big, ever" from "try later"); a text file is
+  simply cut at ``limit`` bytes (a character split by the cut is dropped, not turned into a
+  replacement character).
 * **Failures are two kinds.** ``RepoGone`` is GitHub saying the thing is not there (404, 410,
   451, or a redirect). ``GitHubUnavailable`` is anything that may pass: a rate limit, a 5xx, a
   network error, a timeout, an unreadable reply. Callers back off on the second and reject on
@@ -80,6 +82,10 @@ _MAX_CURSOR_CHARS = 500
 
 class GitHubUnavailable(Exception):  # noqa: N818 - names the condition, as RateLimited does
     """GitHub could not answer right now (rate limit, 5xx, network, timeout, unreadable reply)."""
+
+
+class ReplyTooLarge(GitHubUnavailable):
+    """A JSON reply is over its size cap. Asking again will not shrink it: the repo is too big."""
 
 
 class RepoGone(Exception):  # noqa: N818 - names the condition, as RateLimited does
@@ -201,10 +207,10 @@ async def _answer(response: httpx.Response, *, limit: int, hard_limit: bool) -> 
         raise GitHubUnavailable(f"GitHub answered {code}")
     declared = response.headers.get("Content-Length", "")
     if hard_limit and declared.isdigit() and int(declared) > limit:
-        raise GitHubUnavailable("GitHub's reply is too large to read")
+        raise ReplyTooLarge("GitHub's reply is too large to read")
     body, truncated = await _read(response, limit)
     if hard_limit and truncated:
-        raise GitHubUnavailable("GitHub's reply is too large to read")
+        raise ReplyTooLarge("GitHub's reply is too large to read")
     return _Reply(body=body, truncated=truncated, links=response.links)
 
 

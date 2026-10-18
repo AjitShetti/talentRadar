@@ -13,6 +13,11 @@ GET    /practice/challenges            - the open build, when the next opens, th
 GET    /practice/challenges/{slug}     - one build's brief and the caller's own attempt
 POST   /practice/challenges/{slug}/start        - press Start: the clock and the proof code
 PUT    /practice/challenges/{slug}/submission   - save or replace the submission
+GET    /practice/challenges/{slug}/result       - the caller's scores, notes, signals and appeal
+POST   /practice/challenges/{slug}/appeal       - one appeal, within seven days of the result
+POST   /practice/admin/attempts/{id}/clear      - admin: release a hold
+POST   /practice/admin/attempts/{id}/requeue    - admin: back in the judge's queue
+POST   /practice/admin/attempts/{id}/override   - admin: set the scores by hand
 
 The services raise ``PracticeConflict``, ``PracticeInvalid`` and ``PracticeNotFound``; each
 becomes the status below, carrying a message written for the person using the page.
@@ -22,23 +27,27 @@ becomes 429 with ``Retry-After``; every other ``PracticeConflict`` is 409.
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Awaitable
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi import Path as PathParam
 
-from api.auth import get_current_user
+from api.auth import get_current_user, require_role
 from api.schemas.practice_schemas import (
+    AppealRequestSchema,
+    AttemptResultSchema,
     ChallengeSchema,
     ChallengesOverviewSchema,
     DoneRequestSchema,
     FeelRequestSchema,
+    OverrideRequestSchema,
     PracticeHistorySchema,
     PracticeTodaySchema,
     SubmissionRequestSchema,
 )
-from services.practice import challenges, daily
+from services.practice import challenges, daily, judge
 from services.practice.errors import (
     PracticeConflict,
     PracticeInvalid,
@@ -151,3 +160,49 @@ async def put_submission(
             video_url=body.video_url,
         )
     )
+
+
+@router.get("/challenges/{slug}/result", response_model=AttemptResultSchema)
+async def get_result(user_id: CurrentUserId, slug: Slug) -> dict[str, Any]:
+    """The caller's own result for a build. 404 if they have no attempt at it."""
+    return await _answer(judge.attempt_result(user_id, slug))
+
+
+@router.post("/challenges/{slug}/appeal", response_model=AttemptResultSchema)
+async def appeal_result(
+    user_id: CurrentUserId, slug: Slug, body: AppealRequestSchema
+) -> dict[str, Any]:
+    """Appeal a result once, within seven days. The reason goes to a person, never the model.
+    409 before a result, after the first appeal or after the window; 422 on the reason."""
+    return await _answer(judge.request_appeal(user_id, slug, body.reason))
+
+
+async def _acknowledged(call: Awaitable[None]) -> dict[str, Any]:
+    """Await an admin action that returns nothing, and answer ``{"ok": true}``."""
+
+    async def done() -> dict[str, Any]:
+        await call
+        return {"ok": True}
+
+    return await _answer(done())
+
+
+AdminOnly = Depends(require_role("admin"))
+
+
+@router.post("/admin/attempts/{attempt_id}/clear", dependencies=[AdminOnly])
+async def clear_hold(attempt_id: uuid.UUID) -> dict[str, Any]:
+    """Release a hold and put the attempt back in the judge's queue."""
+    return await _acknowledged(judge.admin_clear(attempt_id))
+
+
+@router.post("/admin/attempts/{attempt_id}/requeue", dependencies=[AdminOnly])
+async def requeue_attempt(attempt_id: uuid.UUID) -> dict[str, Any]:
+    """Give an attempt a fresh set of judge tries, whatever became of it."""
+    return await _acknowledged(judge.admin_requeue(attempt_id))
+
+
+@router.post("/admin/attempts/{attempt_id}/override", dependencies=[AdminOnly])
+async def override_attempt(attempt_id: uuid.UUID, body: OverrideRequestSchema) -> dict[str, Any]:
+    """Set the final scores by hand, with a note saying why."""
+    return await _acknowledged(judge.admin_override(attempt_id, body.scores, body.note))
