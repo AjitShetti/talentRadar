@@ -1,7 +1,8 @@
 // Pure display helpers for /outreach, the thread drawer and the company-drawer block.
 // No fetching, no storage, no sending: a channel action only builds a link the
 // browser opens in a new tab. Types come from lib/api.ts, which mirrors the server.
-import type { DraftFormat, OutreachPerson, PersonState, ThreadStage, ThreadSummary } from '@/lib/api'
+import type { DraftFormat, OutreachChannelName, OutreachOutcome, OutreachPerson, PersonState, ThreadStage, ThreadSummary } from '@/lib/api'
+import { externalHref } from '@/lib/safe-url'
 
 export const STAGE_LABEL: Record<ThreadStage, string> = {
   planned: 'Not started',
@@ -155,4 +156,81 @@ export function parseThreadTarget(params: { get(name: string): string | null }):
     personId: params.get('person') || null,
     mode: params.get('draft') === '1' ? 'draft' : params.get('reply') === '1' ? 'reply' : null,
   }
+}
+
+// The server's bounds on free text (domain/outreach.py), so a field can say how much is left.
+export const NOTE_MAX = 500
+export const NEXT_STEP_MAX = 140
+export const BODY_MAX = 2000
+
+// Drafts a user may write in one IST day (PER_USER_DAILY_DRAFTS). The referral ask counts against the same cap.
+export const DAILY_DRAFTS = 20
+
+export const OUTCOMES: ReadonlyArray<{ value: OutreachOutcome; label: string }> = [
+  { value: 'referred', label: 'Got a referral' },
+  { value: 'interviewing', label: 'Interviewing' },
+  { value: 'offer', label: 'Offer' },
+  { value: 'not_now', label: 'Not now' },
+  { value: 'not_a_fit', label: 'Not a fit' },
+  { value: 'other', label: 'Other' },
+]
+
+export const CHANNEL_LABEL: Record<OutreachChannelName, string> = {
+  linkedin: 'LinkedIn',
+  email: 'Email',
+  x: 'X',
+  github: 'GitHub',
+  call: 'Call',
+  event: 'Event',
+  other: 'Other',
+}
+
+// Company codes as the map names them. The map page keeps its own copy, which a page file cannot export.
+const COMPANY_STAGE_LABEL: Record<string, string> = {
+  bootstrapped: 'Bootstrapped', pre_seed: 'Pre-seed', seed: 'Seed', series_a: 'Series A', series_b: 'Series B',
+  series_c_plus: 'Series C+', public: 'Public', acquired: 'Acquired',
+}
+const COMPANY_SECTOR_LABEL: Record<string, string> = {
+  ai: 'AI', saas: 'SaaS', fintech: 'Fintech', consumer: 'Consumer', d2c: 'D2C', deeptech: 'Deeptech', edtech: 'Edtech',
+  healthtech: 'Healthtech', logistics: 'Logistics & mobility', gaming: 'Gaming', devtools: 'Developer tools',
+  it_services: 'IT services', other: 'Other',
+}
+
+const spaced = (code: string) => code.replace(/_/g, ' ')
+
+export const companyStageLabel = (code: string): string => COMPANY_STAGE_LABEL[code] ?? spaced(code)
+export const companySectorLabel = (code: string): string => COMPANY_SECTOR_LABEL[code] ?? spaced(code)
+
+// The formats a draft can take, in the order domain/outreach_drafts.py::FORMATS lists them.
+export type FormatSpec = { key: DraftFormat; channel: 'linkedin' | 'email' | 'x' | 'github'; label: string; maxChars: number }
+
+export const FORMATS: readonly FormatSpec[] = [
+  { key: 'linkedin_note', channel: 'linkedin', label: 'LinkedIn note', maxChars: 200 },
+  { key: 'linkedin_message', channel: 'linkedin', label: 'LinkedIn message', maxChars: 700 },
+  { key: 'email', channel: 'email', label: 'Email', maxChars: 1200 },
+  { key: 'x_dm', channel: 'x', label: 'X message', maxChars: 280 },
+  { key: 'github_comment', channel: 'github', label: 'GitHub comment', maxChars: 500 },
+]
+
+export const formatSpec = (key: DraftFormat): FormatSpec => FORMATS.find(f => f.key === key) ?? FORMATS[0]
+
+/** The formats a person can be written to in, given the channels held for them, in FORMATS order. */
+export function formatsForChannels(channels: Iterable<string>): FormatSpec[] {
+  const wanted = new Set(channels)
+  return FORMATS.filter(f => wanted.has(f.channel))
+}
+
+/** The format to open on: the short note for a first LinkedIn message, the longer one for a follow-up. */
+export function defaultFormat(specs: readonly FormatSpec[], kind: 'first' | 'follow_up'): DraftFormat | null {
+  const linkedin = specs.filter(f => f.channel === 'linkedin')
+  if (linkedin.length) return (kind === 'first' ? linkedin[0] : linkedin[linkedin.length - 1]).key
+  return specs[0]?.key ?? null
+}
+
+/** The channel a touch with this person is recorded on: the first way we can reach them. */
+export const touchChannel = (p: OutreachPerson): OutreachChannelName => p.channels[0]?.channel ?? 'other'
+
+/** A link that is safe to render or open: an http(s) URL, or a mailto: naming one plain address. Otherwise null. */
+export function channelHref(url: string): string | null {
+  return /^mailto:[^\s?#&,;<>"]+$/i.test(url) ? url : externalHref(url)
 }

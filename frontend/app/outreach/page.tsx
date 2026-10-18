@@ -9,6 +9,7 @@ import RequireAuth from '@/components/RequireAuth'
 import AddCompany, { AddChoice } from '@/components/outreach/AddCompany'
 import DueList from '@/components/outreach/DueList'
 import SuggestionList from '@/components/outreach/SuggestionList'
+import ThreadDrawer from '@/components/outreach/ThreadDrawer'
 import ThreadList from '@/components/outreach/ThreadList'
 import { track } from '@/lib/analytics'
 import { api, DueItem, OutreachChannelName, OutreachHome, OutreachSource, Suggestion, Suggestions } from '@/lib/api'
@@ -27,12 +28,19 @@ type ThreadDrawerSlotProps = {
   onChanged: () => void
 }
 
-// TASK 17 SLOT: the thread drawer renders here. Replace this body with
-// <ThreadDrawer target={target} onClose={onClose} onChanged={onChanged} /> from
-// '@/components/outreach/ThreadDrawer'. Until then a ?thread= link opens nothing.
-function ThreadDrawerSlot(props: ThreadDrawerSlotProps): null {
-  void props
-  return null
+// The drawer is keyed by thread, so opening another thread starts it afresh (focus, load, the first-open draft or reply).
+function ThreadDrawerSlot({ target, onClose, onChanged }: ThreadDrawerSlotProps) {
+  if (!target) return null
+  return <ThreadDrawer
+    key={target.threadId}
+    threadId={target.threadId}
+    focusPersonId={target.personId}
+    openDraft={target.mode === 'draft'}
+    openReply={target.mode === 'reply'}
+    onClose={onClose}
+    onChanged={onChanged}
+    onDeleted={onChanged}
+  />
 }
 
 function OutreachBoard() {
@@ -132,6 +140,7 @@ function OutreachBoard() {
       const person = detail.people.find(p => p.id === item.person_id)
       const channel: OutreachChannelName = person?.channels[0]?.channel ?? 'other'
       await api.outreach.touch(item.thread_id, { person_id: item.person_id, channel, direction: 'out' })
+      track('outreach_sent', { channel })
       await loadHome()
     } catch (err) {
       setError(messageOf(err, 'Could not record that.'))

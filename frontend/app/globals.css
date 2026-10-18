@@ -1802,9 +1802,9 @@ button.or-row:hover{transform:translateX(10px);background:var(--line-soft)}
 .or-pacing{font-size:12px;line-height:1.55;color:var(--warning-dark);background:var(--warning-soft);border:1px solid var(--warning-border);border-radius:6px;padding:8px 10px;margin:0 0 10px}
 .or-draft{grid-column:1/-1;display:grid;gap:10px;margin-top:12px;padding:12px 0 4px 14px;border-left:1px solid var(--accent-border)}
 .or-draft label{display:grid;gap:6px;font:10px 'Fragment Mono',monospace;letter-spacing:.8px;text-transform:uppercase;color:var(--faint)}
-.or-draft select,.or-draft textarea{font:13px/1.6 'Public Sans',sans-serif;letter-spacing:0;text-transform:none;color:var(--ink);background:var(--surface-2);border:1px solid var(--line);border-radius:7px;padding:9px 11px}
+.or-draft select,.or-draft textarea,.or-draft input[type=text],.or-foot select{font:13px/1.6 'Public Sans',sans-serif;letter-spacing:0;text-transform:none;color:var(--ink);background:var(--surface-2);border:1px solid var(--line);border-radius:7px;padding:9px 11px}
 .or-draft textarea{resize:vertical;min-height:150px}
-.or-draft select:focus-visible,.or-draft textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.or-draft select:focus-visible,.or-draft textarea:focus-visible,.or-draft input[type=text]:focus-visible,.or-foot select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .or-draft-pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .or-draft-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .or-count{margin-left:auto;font:10px 'Fragment Mono',monospace;letter-spacing:.5px;color:var(--faint);font-variant-numeric:tabular-nums}

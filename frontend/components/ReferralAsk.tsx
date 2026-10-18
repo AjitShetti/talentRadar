@@ -5,8 +5,10 @@ import { PenLine } from 'lucide-react'
 import CopyButton from '@/components/CopyButton'
 import { api } from '@/lib/api'
 import { track } from '@/lib/analytics'
+import { DAILY_DRAFTS } from '@/lib/outreach'
 
-const RELATIONSHIPS: Array<{ key: string; label: string }> = [
+// The four answers to "how do you know them?", shared with the outreach draft panel.
+export const RELATIONSHIPS: Array<{ key: string; label: string }> = [
   { key: 'former_colleague', label: 'We have worked together' },
   { key: 'alumni', label: 'Same college or past employer' },
   { key: 'acquaintance', label: 'We have met or spoken' },
@@ -26,6 +28,7 @@ export default function ReferralAsk({ jobId, recipientName, recipientTitle }: { 
   const [relationship, setRelationship] = useState('stranger')
   const [message, setMessage] = useState('')
   const [generated, setGenerated] = useState(true)
+  const [reason, setReason] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -34,7 +37,7 @@ export default function ReferralAsk({ jobId, recipientName, recipientTitle }: { 
     setBusy(true); setError('')
     try {
       const result = await api.roles.referralAsk(jobId, { recipient_name: recipientName || undefined, recipient_title: recipientTitle || undefined, relationship })
-      setMessage(result.message); setGenerated(result.generated)
+      setMessage(result.message); setGenerated(result.generated); setReason(result.reason)
       track('referral_drafted', { generated: result.generated, relationship })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'The draft could not be written.')
@@ -59,7 +62,9 @@ export default function ReferralAsk({ jobId, recipientName, recipientTitle }: { 
         <CopyButton text={message} />
         <span className="referral-ask-note">{generated
           ? 'Written from your saved resume and this posting. Fill any [bracketed] gap — we do not guess how you know someone.'
-          : 'The writing model is busy, so this is a template. Fill the [bracketed] parts yourself.'}</span>
+          : reason === 'daily_cap'
+            ? `You've used today's ${DAILY_DRAFTS} drafts, so this is a template. Fill the [bracketed] parts yourself.`
+            : 'The writing model is busy, so this is a template. Fill the [bracketed] parts yourself.'}</span>
       </div>
     </>}
   </div>
