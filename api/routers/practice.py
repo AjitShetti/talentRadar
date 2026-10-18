@@ -173,7 +173,8 @@ async def appeal_result(
     user_id: CurrentUserId, slug: Slug, body: AppealRequestSchema
 ) -> dict[str, Any]:
     """Appeal a result once, within seven days. The reason goes to a person, never the model.
-    409 before a result, after the first appeal or after the window; 422 on the reason."""
+    409 before a result, once a person has reviewed it, after the first appeal or after the
+    window; 422 on the reason."""
     return await _answer(judge.request_appeal(user_id, slug, body.reason))
 
 
@@ -204,5 +205,6 @@ async def requeue_attempt(attempt_id: uuid.UUID) -> dict[str, Any]:
 
 @router.post("/admin/attempts/{attempt_id}/override", dependencies=[AdminOnly])
 async def override_attempt(attempt_id: uuid.UUID, body: OverrideRequestSchema) -> dict[str, Any]:
-    """Set the final scores by hand, with a note saying why."""
+    """Set the final scores by hand, with a note saying why. 409 for a build that is not yet
+    submitted or was missed."""
     return await _acknowledged(judge.admin_override(attempt_id, body.scores, body.note))

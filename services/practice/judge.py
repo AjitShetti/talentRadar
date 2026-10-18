@@ -25,7 +25,9 @@ What ``judge_attempt`` does with a ``queued`` attempt, in this order:
    (``input_markers`` over the original strings, never the cleaned prompt copies). A held
    attempt stays ``queued`` with ``held`` set and is not taken again until an admin clears it
    (``admin_clear``); text that merely discusses prompts, as in a repo built for an AI brief,
-   can be held falsely, and the clear is how that is put right.
+   can be held falsely, and the clear is how that is put right. A clear is for the input that
+   was held (its hash): the same input goes ahead, changed text is checked again. Every tree
+   path is scanned, though the prompt is built from the first 2,000.
 4. **Spend one unit of the day's budget**, then ask the model once and read its reply strictly.
 5. **Store** the scores, total, notes, the run (model, prompt version, input hash) and the
    snapshot facts in one conditional UPDATE.
@@ -37,7 +39,9 @@ a failure and does not count. There is never a fallback score.
 
 An appeal (``request_appeal``) stores the owner's reason for an admin, which never reaches the
 model, and marks the attempt for a second blind reading of the same input. That reading is made
-by the scheduled step, like every other model call; the two readings are averaged.
+by the scheduled step, like every other model call; the two readings are averaged. The second
+reading is checked like a first one (text aimed at the grader holds the attempt) and is made
+only of the input the first reading saw; a result a person has reviewed cannot be appealed.
 
 Logs carry attempt ids, flag names and exception class names. Candidate text, exception messages
 (which can echo it) and appeal reasons are never logged.
@@ -124,15 +128,18 @@ MAX_JUDGE_ATTEMPTS = 6
 #: Reasoning tokens are billed against ``max_tokens``; 900 truncated the verdict.
 JUDGE_MAX_TOKENS = 3_000
 JUDGE_REASONING_EFFORT = "medium"
-JUDGE_SEED = 7
 
 APPEAL_WINDOW = timedelta(days=7)
 APPEAL_REASON_CHARS = 500
 OVERRIDE_NOTE_CHARS = 500
 
 INJECTION_FLAG = "injection_text"
-#: Added by ``admin_clear``: an admin has read the text that was flagged, so it is not held again.
+#: Added by ``admin_clear`` as ``hold_cleared:<input hash>``: an admin has read the input that
+#: was held, so exactly that input is not held again. Any other input is checked afresh.
 HOLD_CLEARED_FLAG = "hold_cleared"
+#: Added when an appeal's second reading would have been of a different input from the first:
+#: the two are never averaged, so the appeal is left for an admin and the first score stands.
+APPEAL_INPUT_CHANGED_FLAG = "appeal_input_changed"
 
 _BUDGET_KEY_PREFIX = "tr:budget:judge:"
 _BUDGET_TTL_SECONDS = 48 * 3600
@@ -146,6 +153,8 @@ _INPUT_TREE_PATHS = 2_000
 
 _QUEUED = "queued"
 _JUDGED = "judged"
+#: Where an admin override makes sense: the attempt has reached the judge, or been through it.
+_OVERRIDABLE = (_QUEUED, _JUDGED, "judge_failed", "rejected")
 
 #: What the owner reads for each ``reject_reason`` code.
 REJECT_MESSAGES: dict[str, str] = {
@@ -168,6 +177,8 @@ _NO_ACCOUNT = "We could not find your account."
 _NOTHING_TO_APPEAL = "You can appeal once your build has been judged."
 _APPEALED_ALREADY = "You have already used your appeal for this build."
 _APPEAL_CLOSED = "The appeal window for this result has closed."
+_REVIEWED_ALREADY = "A person has already reviewed this result."
+_NOT_READY_TO_OVERRIDE = "This build has not reached the judge yet, so it cannot be scored by hand."
 _NEEDS_REASON = "Say, in a sentence or two, what you think the judge got wrong."
 _REASON_TOO_LONG = f"Keep your reason to {APPEAL_REASON_CHARS} characters or fewer."
 _NEEDS_NOTE = "An override needs a note saying why."
@@ -274,6 +285,7 @@ class _Work:
     held: bool
     runs: list[dict[str, Any]]
     appealed: bool
+    override_note: str | None
     brief: dict[str, Any]
 
 
@@ -338,6 +350,7 @@ def _work_of(attempt: PracticeAttempt, challenge: PracticeChallenge) -> _Work:
         runs=_list_of_dicts(attempt.judge_runs),
         held=bool(attempt.held),
         appealed=attempt.appealed_at is not None,
+        override_note=attempt.override_note or None,
         brief=_brief_for_judge(challenge),
     )
 
@@ -444,6 +457,8 @@ async def _read_first(client: httpx.AsyncClient, ref: RepoRef, work: _Work) -> _
 
     try:
         pushes = await fetch_pushes(client, ref, branch)
+    except ReplyTooLarge as exc:  # before GitHubUnavailable, which it subclasses: not a retry
+        raise _Reject("repo_too_large") from exc
     except RepoGone as exc:
         raise _Reject("repo_gone") from exc
     pushed, late = snapshot(pushes, work.deadline_at)
@@ -467,18 +482,27 @@ async def _read_first(client: httpx.AsyncClient, ref: RepoRef, work: _Work) -> _
 
 
 def _judge_input(work: _Work, material: _Material, signals: Mapping[str, Any]) -> JudgeInput:
-    """What the model may read. The recording's link is part of the write-up mapping, so it is
-    in the fence code and the input hash, but it is not one of the four fields the prompt shows;
-    there is no field for an appeal reason."""
+    """What the model may read, and everything that is scanned for text aimed at it, in full:
+    every tree path is here, however many the prompt keeps (see :func:`_prompt_of`). The
+    recording's link is part of the write-up mapping, so it is in the fence code and the input
+    hash, but it is not one of the four fields the prompt shows; there is no field for an
+    appeal reason."""
     return JudgeInput(
         brief=work.brief,
         writeup={**work.fields, "video_url": work.video_url or ""},
         readme=material.readme,
-        tree=[entry.path for entry in material.tree][:_INPUT_TREE_PATHS],
+        tree=[entry.path for entry in material.tree],
         commits=material.commits,
         files=material.files,
         signals=signals,
     )
+
+
+def _prompt_of(inp: JudgeInput) -> tuple[str, str, str]:
+    """``(system, user, input hash)`` for ``inp``. The prompt builder is handed the first
+    ``_INPUT_TREE_PATHS`` tree paths (it shows 250); the caller scans ``inp`` itself, all of it."""
+    system, user = build_judge_prompt(replace(inp, tree=list(inp.tree)[:_INPUT_TREE_PATHS]))
+    return system, user, input_sha256(user)
 
 
 # ---------------------------------------------------------------------------
@@ -578,8 +602,9 @@ async def _ask(system: str, user: str, model: str) -> Verdict | None:
             max_tokens=JUDGE_MAX_TOKENS,
             json_mode=True,
             reasoning_effort=JUDGE_REASONING_EFFORT,
-            seed=JUDGE_SEED,
         )
+        # A length and nothing of the reply: enough to tell a verdict cut off at max_tokens.
+        logger.info("practice: the judge's reply was %d characters", len(raw))
         return parse_verdict(raw)
     except VerdictError:
         logger.warning("practice: the judge's reply could not be read")
@@ -643,22 +668,41 @@ def _snapshot_values(read: _FirstRead, signals: Mapping[str, Any]) -> dict[str, 
     }
 
 
+def _cleared_flag(input_hash: str) -> str:
+    return f"{HOLD_CLEARED_FLAG}:{input_hash}"
+
+
+def _must_hold(work: _Work, markers: list[str], input_hash: str) -> bool:
+    """Text aimed at the grader holds the attempt, unless an admin has cleared a hold for exactly
+    this input (its hash); an input that has changed since is checked again."""
+    return bool(markers) and _cleared_flag(input_hash) not in work.flags
+
+
 async def _hold(
-    work: _Work, read: _FirstRead, signals: Mapping[str, Any], markers: list[str]
+    work: _Work,
+    markers: list[str],
+    input_hash: str,
+    values: Mapping[str, Any] | None = None,
 ) -> _Outcome:
-    """Keep the attempt off the leaderboard and away from the model until an admin clears it."""
+    """Keep the attempt off the leaderboard and away from the model until an admin clears it.
+
+    The hash of the held input is stored (``judge_input_sha256``), which is what ``admin_clear``
+    ties the clear to. ``values`` are written with it (the snapshot facts, for a first judgement).
+    The attempt keeps its status: ``queued`` for a first judgement, ``judged`` for an appeal.
+    """
     flags = work.flags if INJECTION_FLAG in work.flags else [*work.flags, INJECTION_FLAG]
     logger.info("practice: attempt %s held (%s)", work.id, ",".join(markers))
     return await _apply(
         work.id,
-        {"status": _QUEUED},
+        {"status": work.status},
         {
-            **_snapshot_values(read, signals),
+            **(values or {}),
+            "judge_input_sha256": input_hash,
             "held": True,
             "flags": flags,
             "next_judge_at": None,
         },
-        _Outcome(_QUEUED, "held"),
+        _Outcome(work.status, "held"),
     )
 
 
@@ -688,8 +732,7 @@ async def _first_judgement(work: _Work, moment: datetime) -> _Outcome:
         proof_found=True,
     )
     inp = _judge_input(work, read.material, signals)
-    system, user = build_judge_prompt(inp)
-    input_hash = input_sha256(user)
+    system, user, input_hash = _prompt_of(inp)
     model = get_settings().groq_model
 
     if _reusable(work.runs, input_hash, model):
@@ -708,8 +751,8 @@ async def _first_judgement(work: _Work, moment: datetime) -> _Outcome:
         )
 
     markers = input_markers(inp)  # over the original text, not the cleaned prompt copies
-    if markers and HOLD_CLEARED_FLAG not in work.flags:
-        return await _hold(work, read, signals, markers)
+    if _must_hold(work, markers, input_hash):
+        return await _hold(work, markers, input_hash, _snapshot_values(read, signals))
 
     if not await _consume_budget(moment):
         return _Outcome(_QUEUED, "budget")
@@ -737,8 +780,20 @@ async def _appeal_rerun(work: _Work, moment: datetime) -> _Outcome:
     """The second, blind reading after an appeal: the same snapshot, the same input, no reason.
 
     Repo content is never stored, so the files are read again at the stored snapshot SHA and the
-    stored signals are reused as they were. The two readings are averaged.
+    stored signals are reused as they were. The two readings are averaged, and only ever when
+    they are readings of the same input; before the model is called the rebuilt input is held
+    to the same checks as a first judgement:
+
+    * a person has already reviewed the result (an override): nothing is read, the row is left
+      as it is;
+    * the original text reads as aimed at the grader and no hold was cleared for exactly this
+      input: the attempt is held and the model is not called;
+    * the input's hash is not the first reading's: the readings would not be of the same thing,
+      so the appeal is refused (``appeal_input_changed``), the first score stands, and an admin
+      decides (``admin_requeue`` judges the current input afresh).
     """
+    if work.override_note:  # a person has decided: a model must not overwrite that
+        return _Outcome(work.status, "idle")
     if not (work.repo_owner and work.repo_name and work.snapshot_sha and work.signals is not None):
         return await _fail(work.id, moment)
     ref = RepoRef(work.repo_owner, work.repo_name)
@@ -750,7 +805,20 @@ async def _appeal_rerun(work: _Work, moment: datetime) -> _Outcome:
         logger.info("practice: attempt %s: appeal read failed (%s)", work.id, type(exc).__name__)
         return await _fail(work.id, moment)
 
-    system, user = build_judge_prompt(_judge_input(work, material, work.signals))
+    inp = _judge_input(work, material, work.signals)
+    system, user, input_hash = _prompt_of(inp)
+    markers = input_markers(inp)  # over the original text, as for a first judgement
+    if _must_hold(work, markers, input_hash):
+        return await _hold(work, markers, input_hash)
+    if work.runs[0].get("input_sha256") != input_hash:
+        logger.info("practice: attempt %s: the appeal's input is not the first reading's", work.id)
+        return await _apply(
+            work.id,
+            {"status": _JUDGED},
+            {"flags": [*work.flags, APPEAL_INPUT_CHANGED_FLAG], "next_judge_at": None},
+            _Outcome(_JUDGED, "idle"),
+        )
+
     if not await _consume_budget(moment):
         return _Outcome(_JUDGED, "budget")
     model = get_settings().groq_model
@@ -758,7 +826,7 @@ async def _appeal_rerun(work: _Work, moment: datetime) -> _Outcome:
     if verdict is None:
         return replace(await _fail(work.id, moment), llm=True)
 
-    runs = [work.runs[0], _run_record(verdict, model, input_sha256(user), moment)]
+    runs = [work.runs[0], _run_record(verdict, model, input_hash, moment)]
     values = _result_values(runs)
     return await _apply(
         work.id,
@@ -774,7 +842,12 @@ async def _judge(attempt_id: uuid.UUID, moment: datetime) -> _Outcome:
         return _Outcome(work.status, "idle")
     if work.status == _QUEUED:
         return await _first_judgement(work, moment)
-    if work.status == _JUDGED and work.appealed and len(work.runs) == 1:
+    if (
+        work.status == _JUDGED
+        and work.appealed
+        and len(work.runs) == 1
+        and APPEAL_INPUT_CHANGED_FLAG not in work.flags  # refused once, left for an admin
+    ):
         return await _appeal_rerun(work, moment)
     return _Outcome(work.status, "idle")
 
@@ -1014,8 +1087,10 @@ async def request_appeal(
     The reason is stored for an admin and never reaches the model. The appeal marks the attempt
     for a second blind reading of the same input, made by the scheduled judge step; the owner
     keeps the first score until it arrives. Raises :class:`PracticeConflict` when the attempt is
-    not judged, the appeal is used or the window has closed, :class:`PracticeInvalid` for a
-    reason that is empty or too long, and :class:`PracticeNotFound` for someone else's attempt.
+    not judged, a person has already reviewed it (an admin's override, or a result with no
+    stored reading of the model to re-read), the appeal is used or the window has closed,
+    :class:`PracticeInvalid` for a reason that is empty or too long, and
+    :class:`PracticeNotFound` for someone else's attempt.
     """
     moment = _moment(now)
     user = _user(user_id)
@@ -1023,6 +1098,8 @@ async def request_appeal(
         attempt = await _own_attempt(session, user, slug)
         if attempt.status != _JUDGED or attempt.judged_at is None:
             raise PracticeConflict(_NOTHING_TO_APPEAL)
+        if attempt.override_note or not _list_of_dicts(attempt.judge_runs):
+            raise PracticeConflict(_REVIEWED_ALREADY)
         if attempt.appealed_at is not None:
             raise PracticeConflict(_APPEALED_ALREADY)
         if moment > _aware(attempt.judged_at) + APPEAL_WINDOW:
@@ -1036,13 +1113,19 @@ async def request_appeal(
                 PracticeAttempt.id == attempt_id,
                 PracticeAttempt.status == _JUDGED,
                 PracticeAttempt.appealed_at.is_(None),
+                PracticeAttempt.override_note.is_(None),  # an override may land since the read
             )
             .values(appeal_reason=text, appealed_at=moment, next_judge_at=moment, judge_attempts=0)
             .execution_options(synchronize_session=False)
         )
         if not _matched(changed):
             await session.rollback()
-            raise PracticeConflict(_APPEALED_ALREADY)
+            reviewed = (
+                await session.execute(
+                    select(PracticeAttempt.override_note).where(PracticeAttempt.id == attempt_id)
+                )
+            ).scalar_one_or_none()
+            raise PracticeConflict(_REVIEWED_ALREADY if reviewed else _APPEALED_ALREADY)
         await session.commit()
     return await attempt_result(user_id, slug, now=moment)
 
@@ -1060,21 +1143,34 @@ async def _admin_attempt(session: AsyncSession, attempt_id: uuid.UUID) -> Practi
 
 
 async def admin_clear(attempt_id: uuid.UUID, *, now: datetime | None = None) -> None:
-    """Release a hold: the attempt may be ranked, and a queued one is due at once.
+    """Release a hold: the attempt may be ranked, and a queued one, or a judged one whose
+    appeal is waiting for its second reading, is due at once.
 
-    The flag ``injection_text`` stays as history, and ``hold_cleared`` is added so the same text
-    is not held a second time. This is how a repo built for an AI brief, held falsely, is put
-    right.
+    The flag ``injection_text`` stays as history, and ``hold_cleared:<hash>`` is added, with the
+    hash of the input the hold was for (stored when it was held). Only an input with exactly
+    that hash goes ahead unheld; if the text has changed since, it is checked again. A hold with
+    no stored hash is released all the same, but the clear covers no input and is recorded as a
+    bare ``hold_cleared``. This is how a repo built for an AI brief, held falsely, is put right.
     """
     moment = _moment(now)
     async with AsyncSessionLocal() as session:
         attempt = await _admin_attempt(session, attempt_id)
-        flags = list(attempt.flags or [])
-        if HOLD_CLEARED_FLAG not in flags:
-            flags.append(HOLD_CLEARED_FLAG)
+        # One clear at a time: an earlier one was for an input that is no longer this one.
+        flags = [flag for flag in (attempt.flags or []) if not flag.startswith(HOLD_CLEARED_FLAG)]
+        flags.append(
+            _cleared_flag(attempt.judge_input_sha256)
+            if attempt.judge_input_sha256
+            else HOLD_CLEARED_FLAG
+        )
         attempt.flags = flags
         attempt.held = False
-        if attempt.status == _QUEUED:
+        waiting_appeal = (
+            attempt.status == _JUDGED
+            and attempt.appealed_at is not None
+            and len(_list_of_dicts(attempt.judge_runs)) == 1
+            and APPEAL_INPUT_CHANGED_FLAG not in flags
+        )
+        if attempt.status == _QUEUED or waiting_appeal:
             attempt.next_judge_at = moment
         await session.commit()
 
@@ -1113,8 +1209,11 @@ async def admin_override(
     now: datetime | None = None,
 ) -> None:
     """Set the final scores by hand, with a note saying why. The attempt becomes ``judged`` and
-    leaves any hold; the model's readings are kept as they are. Raises :class:`PracticeInvalid`
-    for a missing or out-of-range score or a missing or over-long note."""
+    leaves any hold; the model's readings are kept as they are. Only an attempt that is queued,
+    judged, ``judge_failed`` or rejected can be overridden. Raises :class:`PracticeInvalid` for
+    a missing or out-of-range score or a missing or over-long note, and
+    :class:`PracticeConflict` for an attempt in any other status (not yet submitted, or missed).
+    """
     moment = _moment(now)
     checked = _checked_scores(scores)
     text = _printable(note)
@@ -1124,6 +1223,8 @@ async def admin_override(
         raise PracticeInvalid(_NOTE_TOO_LONG)
     async with AsyncSessionLocal() as session:
         attempt = await _admin_attempt(session, attempt_id)
+        if attempt.status not in _OVERRIDABLE:
+            raise PracticeConflict(_NOT_READY_TO_OVERRIDE)
         attempt.scores = checked
         attempt.total = Decimal(str(total(checked)))
         attempt.override_note = text

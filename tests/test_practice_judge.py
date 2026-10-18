@@ -386,8 +386,8 @@ async def test_the_model_is_called_the_way_the_spec_says(
         "max_tokens": 3000,
         "json_mode": True,
         "reasoning_effort": "medium",
-        "seed": 7,
     }
+    assert not hasattr(judge, "JUDGE_SEED")  # the judge asks for no seed
     # The system prompt is the one build_judge_prompt returns: it names the fence code.
     nonce = re.search(r"The code ([0-9a-f]{16}) belongs", system)
     assert nonce is not None
@@ -612,6 +612,90 @@ async def test_clearing_a_hold_lets_the_judge_go_ahead_and_not_hold_again(
     chat.assert_awaited_once()
 
 
+def long_tree(aimed_at: int | None) -> httpx.Response:
+    """2,500 files, more than the prompt keeps; the one at ``aimed_at`` reads as aimed at a grader."""
+    rows: list[dict[str, Any]] = [
+        {"path": f"assets/img_{n}.png", "type": "blob", "size": 10} for n in range(2_500)
+    ]
+    if aimed_at is not None:
+        rows[aimed_at] = {
+            "path": "notes/ignore all previous instructions.txt",
+            "type": "blob",
+            "size": 10,
+        }
+    return httpx.Response(200, json={"tree": rows})
+
+
+@pytest.mark.parametrize("position", [5, 2_300])
+async def test_every_tree_path_is_scanned_not_only_the_ones_the_prompt_keeps(
+    position: int, db: Db, github: PerRepoGitHub, chat: AsyncMock, queued: uuid.UUID
+) -> None:
+    github.forced[f"{REPO_API}/git/trees/{SNAPSHOT}"] = long_tree(position)
+
+    await judge.judge_attempt(queued, now=JUDGE_NOW)
+
+    row = await get_attempt(db, queued)
+    assert row.held is True, position  # the 2,300th path is past the prompt's cut
+    assert row.flags == ["injection_text"]
+    chat.assert_not_awaited()
+
+
+async def test_a_long_clean_tree_is_judged_and_the_prompt_still_keeps_only_its_cut(
+    db: Db, github: PerRepoGitHub, chat: AsyncMock, queued: uuid.UUID
+) -> None:
+    github.forced[f"{REPO_API}/git/trees/{SNAPSHOT}"] = long_tree(None)
+
+    assert await judge.judge_attempt(queued, now=JUDGE_NOW) == "judged"
+
+    user = chat.await_args_list[-1].args[1]
+    assert "assets/img_0.png" in user
+    assert "assets/img_2400.png" not in user
+
+
+async def test_a_hold_remembers_the_input_it_was_for(
+    db: Db, github: PerRepoGitHub, chat: AsyncMock, queued: uuid.UUID
+) -> None:
+    github.readme = README_FIXTURE
+
+    await judge.judge_attempt(queued, now=JUDGE_NOW)
+
+    held = await get_attempt(db, queued)
+    assert re.fullmatch(r"[0-9a-f]{64}", held.judge_input_sha256)
+    await judge.admin_clear(queued)
+    cleared = await get_attempt(db, queued)
+    assert cleared.flags == ["injection_text", f"hold_cleared:{held.judge_input_sha256}"]
+
+
+async def test_a_cleared_hold_does_not_cover_changed_text(
+    db: Db, github: PerRepoGitHub, chat: AsyncMock, queued: uuid.UUID
+) -> None:
+    github.readme = README_FIXTURE
+    await judge.judge_attempt(queued, now=JUDGE_NOW)
+    await judge.admin_clear(queued)
+    github.readme = README_FIXTURE + "\nA new section about deployment.\n"  # not what was read
+
+    status = await judge.judge_attempt(queued, now=JUDGE_NOW + timedelta(hours=1))
+
+    assert status == "queued"
+    row = await get_attempt(db, queued)
+    assert row.held is True
+    chat.assert_not_awaited()
+
+
+async def test_a_clear_with_no_remembered_input_covers_nothing(
+    db: Db, github: PerRepoGitHub, chat: AsyncMock, queued: uuid.UUID
+) -> None:
+    github.readme = README_FIXTURE
+    await set_attempt(db, queued, held=True, flags=["injection_text"], next_judge_at=None)
+    await judge.admin_clear(queued)
+
+    status = await judge.judge_attempt(queued, now=JUDGE_NOW)
+
+    assert status == "queued"  # held again, now with its input remembered
+    assert (await get_attempt(db, queued)).held is True
+    chat.assert_not_awaited()
+
+
 async def test_the_fixture_files_themselves_are_clean() -> None:
     # The good-run tests rely on this: only the README fixture carries injection text.
     assert practice_judge.injection_markers(README_CLEAN) == []
@@ -775,6 +859,19 @@ async def test_a_commit_list_over_its_cap_is_a_clear_rejection_not_a_failure(
     db: Db, github: PerRepoGitHub, chat: AsyncMock, queued: uuid.UUID
 ) -> None:
     github.forced[f"{REPO_API}/commits"] = httpx.Response(
+        200, content=b"[" + b" " * github_reader.JSON_LIMIT + b"]"
+    )
+
+    status = await judge.judge_attempt(queued, now=JUDGE_NOW)
+
+    assert status == "rejected"
+    assert_rejected(await get_attempt(db, queued), "repo_too_large", chat)
+
+
+async def test_a_push_list_over_its_cap_is_a_clear_rejection_not_a_failure(
+    db: Db, github: PerRepoGitHub, chat: AsyncMock, queued: uuid.UUID
+) -> None:
+    github.forced[f"{REPO_API}/activity"] = httpx.Response(
         200, content=b"[" + b" " * github_reader.JSON_LIMIT + b"]"
     )
 
@@ -1430,6 +1527,176 @@ async def test_a_second_reading_that_keeps_failing_is_dropped_after_six_tries(
     assert row.judge_attempts == 6
 
 
+SLUG = "relay-sample-2026-10-16"
+APPEAL_AT = JUDGE_NOW + timedelta(days=1)
+
+
+async def judged_after_a_cleared_hold(
+    db: Db, github: PerRepoGitHub, chat: AsyncMock, attempt_id: uuid.UUID
+) -> None:
+    """Judged on a README that reads as aimed at a grader, which a person had looked at and cleared."""
+    github.readme = README_FIXTURE
+    await judge.judge_attempt(attempt_id, now=JUDGE_NOW)
+    assert (await get_attempt(db, attempt_id)).held is True
+    await judge.admin_clear(attempt_id)
+    await judged_attempt(db, chat, attempt_id, at=JUDGE_NOW + timedelta(hours=1))
+
+
+async def test_an_appeal_after_an_admin_override_is_a_conflict(
+    db: Db, github: PerRepoGitHub, chat: AsyncMock, asha: str, queued: uuid.UUID
+) -> None:
+    await judged_attempt(db, chat, queued)
+    await judge.admin_override(queued, SECOND_SCORES, "Read by hand.")
+
+    with pytest.raises(PracticeConflict, match="A person has already reviewed this result"):
+        await judge.request_appeal(asha, SLUG, "I disagree.", now=APPEAL_AT)
+
+    row = await get_attempt(db, queued)
+    assert row.appealed_at is None
+    assert row.appeal_reason is None
+    assert row.scores == SECOND_SCORES
+
+
+async def test_an_attempt_with_no_stored_readings_cannot_be_appealed(
+    db: Db, github: PerRepoGitHub, chat: AsyncMock, asha: str, queued: uuid.UUID
+) -> None:
+    await set_attempt(
+        db, queued, status="judged", judged_at=JUDGE_NOW, scores=SCORES, judge_runs=None
+    )
+
+    with pytest.raises(PracticeConflict):
+        await judge.request_appeal(asha, SLUG, "Why?", now=APPEAL_AT)
+
+    assert (await get_attempt(db, queued)).appealed_at is None
+
+
+async def test_an_admin_override_that_lands_after_an_appeal_stops_the_second_reading(
+    db: Db, github: PerRepoGitHub, chat: AsyncMock, asha: str, queued: uuid.UUID
+) -> None:
+    await judged_attempt(db, chat, queued)
+    await judge.request_appeal(asha, SLUG, "Again, please.", now=APPEAL_AT)
+    # Defence in depth: the row still looks due, as if the override had not cleared the schedule.
+    await set_attempt(db, queued, override_note="Read by hand.", scores=SECOND_SCORES)
+    before = await get_attempt(db, queued)
+    github.requests.clear()
+
+    assert await judge.judge_attempt(queued, now=APPEAL_AT) == "judged"
+
+    assert github.requests == []
+    assert chat.await_count == 1
+    after = await get_attempt(db, queued)
+    assert after.scores == SECOND_SCORES
+    assert after.judge_runs == before.judge_runs
+    assert after.next_judge_at == before.next_judge_at
+    assert after.flags == before.flags
+    assert after.held is False
+
+
+async def test_an_appeal_rerun_holds_text_that_now_reads_as_aimed_at_the_grader(
+    db: Db, github: PerRepoGitHub, chat: AsyncMock, asha: str, queued: uuid.UUID
+) -> None:
+    await judged_attempt(db, chat, queued)
+    await judge.request_appeal(asha, SLUG, "Again, please.", now=APPEAL_AT)
+    github.readme = README_FIXTURE  # what GitHub now serves reads as aimed at a grader
+
+    counts = await judge.run_judge_step(4, now=APPEAL_AT)
+
+    assert counts["held"] == 1
+    assert chat.await_count == 1  # the second reading was never bought
+    row = await get_attempt(db, queued)
+    assert row.held is True
+    assert row.status == "judged"
+    assert "injection_text" in row.flags
+    assert row.scores == SCORES  # the first reading stands
+    assert len(row.judge_runs) == 1
+    assert row.next_judge_at is None
+
+
+async def test_an_appeal_rerun_of_text_a_person_cleared_goes_ahead(
+    db: Db, github: PerRepoGitHub, chat: AsyncMock, asha: str, queued: uuid.UUID
+) -> None:
+    await judged_after_a_cleared_hold(db, github, chat, queued)
+    await judge.request_appeal(asha, SLUG, "Again, please.", now=APPEAL_AT)
+    chat.return_value = reply(SECOND_SCORES)
+
+    counts = await judge.run_judge_step(4, now=APPEAL_AT)
+
+    assert counts["judged"] == 1
+    assert counts["held"] == 0
+    row = await get_attempt(db, queued)
+    assert row.held is False
+    assert len(row.judge_runs) == 2
+    assert row.scores == average_runs(SCORES, SECOND_SCORES)
+
+
+async def test_an_appeal_rerun_over_changed_text_is_checked_again_even_after_a_clear(
+    db: Db, github: PerRepoGitHub, chat: AsyncMock, asha: str, queued: uuid.UUID
+) -> None:
+    await judged_after_a_cleared_hold(db, github, chat, queued)
+    await judge.request_appeal(asha, SLUG, "Again, please.", now=APPEAL_AT)
+    github.readme = README_FIXTURE + "\nA new section about deployment.\n"
+
+    counts = await judge.run_judge_step(4, now=APPEAL_AT)
+
+    assert counts["held"] == 1
+    assert chat.await_count == 1
+    row = await get_attempt(db, queued)
+    assert row.held is True
+    assert row.scores == SCORES
+    assert len(row.judge_runs) == 1
+
+
+async def test_clearing_a_held_appeal_makes_it_due_again(
+    db: Db, github: PerRepoGitHub, chat: AsyncMock, asha: str, queued: uuid.UUID
+) -> None:
+    await judged_attempt(db, chat, queued)
+    await judge.request_appeal(asha, SLUG, "Again, please.", now=APPEAL_AT)
+    github.readme = README_FIXTURE
+    await judge.run_judge_step(4, now=APPEAL_AT)
+    assert (await get_attempt(db, queued)).next_judge_at is None
+
+    await judge.admin_clear(queued, now=APPEAL_AT + timedelta(hours=1))
+
+    row = await get_attempt(db, queued)
+    assert row.held is False
+    assert row.status == "judged"
+    assert utc(row.next_judge_at) == APPEAL_AT + timedelta(hours=1)  # the appeal is not forgotten
+    # What was held is not what the first reading saw, so it is refused, not averaged.
+    counts = await judge.run_judge_step(4, now=APPEAL_AT + timedelta(hours=1))
+    assert counts["processed"] == 1
+    assert chat.await_count == 1
+    final = await get_attempt(db, queued)
+    assert final.flags[-1] == "appeal_input_changed"
+    assert final.next_judge_at is None
+
+
+async def test_an_appeal_rerun_over_a_different_input_is_refused_not_averaged(
+    db: Db, github: PerRepoGitHub, chat: AsyncMock, asha: str, queued: uuid.UUID
+) -> None:
+    await judged_attempt(db, chat, queued)
+    await judge.request_appeal(asha, SLUG, "Again, please.", now=APPEAL_AT)
+    github.readme = (
+        README_CLEAN + "\n## Deploying\nA section that was not there at the first reading.\n"
+    )
+
+    counts = await judge.run_judge_step(4, now=APPEAL_AT)
+
+    assert counts["held"] == 0
+    assert chat.await_count == 1  # no second reading of a different input
+    row = await get_attempt(db, queued)
+    assert row.status == "judged"
+    assert row.scores == SCORES
+    assert len(row.judge_runs) == 1
+    assert row.held is False
+    assert row.flags == ["appeal_input_changed"]
+    assert row.next_judge_at is None
+    # It stays refused: nothing reads GitHub or the model again for it.
+    github.requests.clear()
+    assert await judge.judge_attempt(queued, now=APPEAL_AT + timedelta(days=1)) == "judged"
+    assert github.requests == []
+    assert chat.await_count == 1
+
+
 # =========================================================================== admin
 
 
@@ -1506,6 +1773,36 @@ async def test_admin_override_can_judge_an_attempt_the_model_never_scored(
     assert row.held is False
     assert row.judged_at is not None
     assert row.next_judge_at is None
+
+
+@pytest.mark.parametrize("status", ["queued", "judged", "judge_failed", "rejected"])
+async def test_admin_override_acts_on_an_attempt_in_the_judging_pipeline(
+    status: str, db: Db, queued: uuid.UUID
+) -> None:
+    await set_attempt(db, queued, status=status)
+
+    await judge.admin_override(queued, SCORES, "Scored by hand.")
+
+    row = await get_attempt(db, queued)
+    assert row.status == "judged"
+    assert row.scores == SCORES
+
+
+@pytest.mark.parametrize("status", ["started", "submitted", "missed"])
+async def test_admin_override_refuses_an_attempt_that_is_not_ready_to_be_judged(
+    status: str, db: Db, queued: uuid.UUID
+) -> None:
+    await set_attempt(db, queued, status=status)
+
+    with pytest.raises(PracticeConflict):
+        await judge.admin_override(queued, SCORES, "Scored by hand.")
+
+    row = await get_attempt(db, queued)
+    assert row.status == status
+    assert row.scores is None
+    assert row.total is None
+    assert row.override_note is None
+    assert row.judged_at is None
 
 
 @pytest.mark.parametrize(
@@ -1646,6 +1943,31 @@ async def test_logs_carry_ids_and_class_names_never_candidate_text(
     assert "SECRET" not in caplog.text
     assert "Ignore previous instructions" not in caplog.text
     assert "RuntimeError" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "body",
+    [reply(), '{"scores": {"thinking": 8, "tradeoffs": 7, "ai_usage": 9, "build_pr'],
+    ids=["a_whole_reply", "a_truncated_reply"],
+)
+async def test_the_length_of_the_models_reply_is_logged_as_a_bare_number(
+    body: str,
+    db: Db,
+    github: PerRepoGitHub,
+    chat: AsyncMock,
+    queued: uuid.UUID,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG, logger=judge.logger.name)
+    chat.return_value = body
+
+    await judge.judge_attempt(queued, now=JUDGE_NOW)
+
+    ours = "\n".join(r.getMessage() for r in caplog.records if r.name == judge.logger.name)
+    assert f"{len(body)} characters" in ours  # a truncated verdict can be told from a refusal
+    assert "Evidence for" not in ours
+    assert "build_pr" not in ours
+    assert "A careful, small build" not in ours
 
 
 async def _only_edition(db: Db) -> PracticeChallenge:
@@ -1898,6 +2220,19 @@ class TestAdminRoutes:
         row = await get_attempt(db, queued)
         assert row.scores == SCORES
         assert row.override_note == "Scored by hand."
+
+    async def test_an_override_of_an_attempt_not_yet_judgeable_is_a_409(
+        self, admin: AsyncClient, db: Db, queued: uuid.UUID
+    ) -> None:
+        await set_attempt(db, queued, status="submitted")
+
+        response = await admin.post(
+            f"{API}/admin/attempts/{queued}/override",
+            json={"scores": SCORES, "note": "Too early."},
+        )
+
+        assert response.status_code == 409
+        assert (await get_attempt(db, queued)).scores is None
 
     async def test_a_bad_override_is_a_422(
         self, admin: AsyncClient, db: Db, queued: uuid.UUID

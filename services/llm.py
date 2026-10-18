@@ -90,9 +90,9 @@ async def _chat(
     # less of it; left unset, the provider default applies.
     if reasoning_effort:
         kwargs["reasoning_effort"] = reasoning_effort
-    # Best-effort repeatability for callers that want the same answer to the same
-    # question (the Practice judge). Sent only when asked for, so every other call
-    # is exactly what it was.
+    # Best-effort repeatability for a caller that wants the same answer to the same
+    # question. No caller asks for it today (the Practice judge no longer does). Sent
+    # only when asked for, so every other call is exactly what it was.
     if seed is not None:
         kwargs["seed"] = seed
     response = await client.chat.completions.create(**kwargs)
