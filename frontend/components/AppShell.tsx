@@ -3,12 +3,13 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { BriefcaseBusiness, FileText, LayoutDashboard, LogOut, MessageSquare, Search, Sparkles, UserRound } from 'lucide-react'
+import { BriefcaseBusiness, FileText, Handshake, LayoutDashboard, LogOut, MessageSquare, Search, Sparkles, UserRound } from 'lucide-react'
 import { currentEmail, signOut } from '@/lib/api'
 
 const nav = [
   ['Overview', '/dashboard', LayoutDashboard],
   ['Find roles', '/search', Search],
+  ['Outreach', '/outreach', Handshake],
   ['Applications', '/applications', BriefcaseBusiness],
   ['Interview lab', '/interview', MessageSquare],
   ['Resume studio', '/resume-studio', FileText],
