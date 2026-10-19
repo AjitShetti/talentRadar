@@ -70,6 +70,21 @@ IN_FLIGHT_STAGES = (
 )
 #: Memory type used for preferences the copilot infers from conversation.
 PREFERENCE_TYPE = "preference"
+#: The briefing card kinds whose title and detail may be sent to the model. An
+#: allowlist on purpose: a card kind added later (Outreach, Events, Practice) holds
+#: what the user typed or whom they are talking to, so it stays out of the prompt
+#: until someone decides it may go in. The Outreach follow-up card holds a person's
+#: name and the user's typed next step; it contributes a count and nothing else.
+MODEL_VISIBLE_CARD_KINDS = frozenset({
+    "closed_role",
+    "interview_momentum",
+    "priority",
+    "saved_backlog",
+    "scheduled_interview",
+    "stale_application",
+})
+#: The kind of the one Outreach card for everything owed today.
+FOLLOWUP_CARD_KIND = "outreach_followup"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -413,6 +428,21 @@ async def build_briefing(*, user_id: str) -> dict[str, Any]:
     }
 
 
+def _follow_ups_due(cards: list[dict[str, Any]]) -> int:
+    """How many Outreach follow-ups the briefing says are owed today (0 when none).
+
+    The count is read from the card's ``meta`` and nothing else, so it is safe to
+    show anywhere, including in the prompt of ``_general_reply``.
+    """
+    card = next((c for c in cards if c["kind"] == FOLLOWUP_CARD_KIND), None)
+    if card is None:
+        return 0
+    try:
+        return max(int(card["meta"].get("count", 1)), 1)
+    except (TypeError, ValueError):
+        return 1
+
+
 def _headline(cards: list[dict[str, Any]], context: dict[str, Any]) -> str:
     """One line summarising the state of the queue."""
     today = [
@@ -424,6 +454,9 @@ def _headline(cards: list[dict[str, Any]], context: dict[str, Any]) -> str:
     urgent = sum(1 for c in cards if c["tone"] == "warning")
     if urgent:
         return f"{urgent} thing(s) need chasing today."
+    owed = _follow_ups_due(cards)
+    if owed:
+        return f"{owed} follow-up{'s' if owed != 1 else ''} due on Outreach."
     if len(cards) <= 1:
         return "You're on top of things — nothing is going stale."
     total = context.get("total_applications", 0)
@@ -601,19 +634,20 @@ async def _general_reply(
     briefing = await build_briefing(user_id=user_id)
     memories = await get_memories(user_id=user_id, memory_type=PREFERENCE_TYPE, limit=10)
 
+    # Only cleared kinds go in by title and detail; Outreach adds a count, never a name.
+    visible = [c for c in briefing["cards"] if c["kind"] in MODEL_VISIBLE_CARD_KINDS]
+    context: dict[str, Any] = {
+        "intent": "general",
+        "stats": briefing["stats"],
+        "open_items": [{"title": c["title"], "detail": c["detail"]} for c in visible[:4]],
+        "known_preferences": [m.get("content") for m in memories],
+        "recent_turns": (history or [])[-4:],
+    }
+    if owed := _follow_ups_due(briefing["cards"]):
+        context["outreach_follow_ups_due"] = owed
+
     try:
-        return await generate_copilot_reply(
-            question=message,
-            context={
-                "intent": "general",
-                "stats": briefing["stats"],
-                "open_items": [
-                    {"title": c["title"], "detail": c["detail"]} for c in briefing["cards"][:4]
-                ],
-                "known_preferences": [m.get("content") for m in memories],
-                "recent_turns": (history or [])[-4:],
-            },
-        )
+        return await generate_copilot_reply(question=message, context=context)
     except Exception as exc:
         logger.warning("General reply failed: %s", exc)
         cards = briefing["cards"]

@@ -552,13 +552,16 @@ async def update_person(
     return await get_thread(user_id, thread_id, now=now)
 
 
-async def remove_person(user_id: str, thread_id: str, person_id: str) -> dict[str, Any]:
+async def remove_person(
+    user_id: str, thread_id: str, person_id: str, *, now: datetime | None = None
+) -> dict[str, Any]:
     """Take a person out of the caller's thread. Returns the ``ThreadDetail``.
 
     Their touches stay on the timeline: the database detaches them
     (``ON DELETE SET NULL``), so they read as thread-level entries afterwards.
+    ``now`` is what the detail's pacing note counts "this week" from; for tests.
     """
-    now = datetime.now(UTC)
+    moment = datetime.now(UTC) if now is None else aware(now)
     async with AsyncSessionLocal() as session:
         thread = await load_owned_thread(session, user_id, thread_id)
         person = _find_person(thread, person_id)
@@ -566,7 +569,7 @@ async def remove_person(user_id: str, thread_id: str, person_id: str) -> dict[st
         await session.delete(person)
         await session.commit()
         logger.info("outreach person %s removed", person_uuid)
-    return await get_thread(user_id, thread_id, now=now)
+    return await get_thread(user_id, thread_id, now=moment)
 
 
 # --- the detail --------------------------------------------------------------------

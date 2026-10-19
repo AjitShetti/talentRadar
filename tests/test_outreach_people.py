@@ -1034,8 +1034,8 @@ async def test_pacing_survives_removing_the_people_written_to(outreach_db: Facto
     await _store_touch(outreach_db, thread_id, user.id, asha.id, NOW - timedelta(days=3))
     await _store_touch(outreach_db, thread_id, user.id, dev.id, NOW - timedelta(days=2))
 
-    await remove_person(str(user.id), thread_id, str(asha.id))
-    detail = await remove_person(str(user.id), thread_id, str(dev.id))
+    await remove_person(str(user.id), thread_id, str(asha.id), now=NOW)
+    detail = await remove_person(str(user.id), thread_id, str(dev.id), now=NOW)
 
     assert [t["person_id"] for t in detail["touches"]] == [None, None]
     assert detail["pacing_note"] == pacing_note("Tessel AI", 2)
@@ -1050,7 +1050,7 @@ async def test_pacing_counts_a_removed_person_and_a_thread_level_touch(
     thread_id = await _open(user, company)
     asha = await _waiting(outreach_db, thread_id, "Asha Rao")
     await _store_touch(outreach_db, thread_id, user.id, asha.id, NOW - timedelta(days=3))
-    quiet = await remove_person(str(user.id), thread_id, str(asha.id))
+    quiet = await remove_person(str(user.id), thread_id, str(asha.id), now=NOW)
     assert quiet["pacing_note"] is None
 
     await _store_touch(

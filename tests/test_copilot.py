@@ -14,6 +14,7 @@ Everything runs without a database or a network.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -72,6 +73,35 @@ def test_headline_leads_with_urgency() -> None:
 def test_headline_is_calm_when_nothing_is_stale() -> None:
     cards = [_card(card_id="p", kind="priority", title="t", detail="d", tone="primary")]
     assert "on top of things" in _headline(cards, {"total_applications": 2})
+
+
+def _followup_card(count: int = 1) -> dict[str, Any]:
+    return _card(card_id="outreach_followup", kind="outreach_followup", title="Follow up",
+                 detail="d", tone="primary", meta={"count": count, "thread_id": "t1"},
+                 dismissible=False)
+
+
+def test_headline_is_never_calm_while_a_follow_up_is_due() -> None:
+    """A lone due follow-up is still something to do: the queue is not empty."""
+    headline = _headline([_followup_card()], {"total_applications": 0})
+
+    assert "on top of things" not in headline
+    assert "1 follow-up" in headline
+
+
+def test_headline_counts_every_follow_up_due() -> None:
+    headline = _headline([_followup_card(3)], {"total_applications": 0})
+
+    assert "3 follow-ups" in headline
+
+
+def test_a_follow_up_does_not_hide_an_interview_today() -> None:
+    interview = _card(card_id="scheduled_interview:1", kind="scheduled_interview", title="t",
+                      detail="d", tone="warning", meta={"days_away": 0})
+
+    headline = _headline([interview, _followup_card()], {"total_applications": 2})
+
+    assert "interview" in headline
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -390,6 +420,122 @@ async def test_general_reply_survives_a_dead_llm(monkeypatch: pytest.MonkeyPatch
 
     reply = await copilot._general_reply("u1", "what now?", None)
     assert "Chase Swiggy" in reply
+
+
+async def _capture_model_context(
+    monkeypatch: pytest.MonkeyPatch, cards: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Run ``_general_reply`` over ``cards`` and return what the model was handed."""
+    seen: dict[str, Any] = {}
+
+    async def fake_briefing(*, user_id: str) -> dict[str, Any]:
+        return {"headline": "h", "cards": cards, "stats": {"saved": 6}}
+
+    async def fake_memories(**kwargs: object) -> list[Any]:
+        return []
+
+    async def fake_reply(**kwargs: Any) -> str:
+        seen.update(kwargs)
+        return "ok"
+
+    monkeypatch.setattr(copilot, "build_briefing", fake_briefing)
+    monkeypatch.setattr(copilot, "get_memories", fake_memories)
+    monkeypatch.setattr("services.llm.generate_copilot_reply", fake_reply)
+
+    assert await copilot._general_reply("u1", "what now?", None) == "ok"
+    return seen
+
+
+async def test_outreach_cards_never_reach_the_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The follow-up card carries a typed next step and a person's name; the suggestion
+    names a company. Neither may be sent to the model, in any field of the call."""
+    marker = "ZQ7-ASHA-RAO-CALL-VIKRAM"
+    cards = [
+        _card(card_id="outreach_followup", kind="outreach_followup",
+              title=f"Next step with Ledgerline: {marker}", detail=f"detail {marker}",
+              tone="primary", meta={"count": 2, "thread_id": marker}, dismissible=False),
+        _card(card_id="outreach_suggestion:c1", kind="outreach_suggestion",
+              title=f"Reach out to {marker}", detail=f"reasons {marker}",
+              meta={"company_id": marker, "reasons": [marker]}),
+        _card(card_id="priority:apply_saved", kind="priority", title="Apply to your saved jobs",
+              detail="You have 6 saved job(s).", tone="primary"),
+    ]
+
+    seen = await _capture_model_context(monkeypatch, cards)
+
+    assert marker not in json.dumps(seen, default=str)
+    assert seen["context"]["open_items"] == [
+        {"title": "Apply to your saved jobs", "detail": "You have 6 saved job(s)."}
+    ]
+
+
+async def test_outreach_contributes_a_count_to_the_model_and_nothing_else(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cards = [
+        _card(card_id="outreach_followup", kind="outreach_followup", title="secret-title",
+              detail="secret-detail", tone="primary",
+              meta={"count": 2, "thread_id": "secret-thread"}, dismissible=False),
+    ]
+
+    seen = await _capture_model_context(monkeypatch, cards)
+
+    assert seen["context"]["outreach_follow_ups_due"] == 2
+    assert "secret" not in json.dumps(seen, default=str)
+    assert seen["context"]["open_items"] == []
+
+
+async def test_a_kind_nobody_has_cleared_stays_out_of_the_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An allowlist, not a denylist: a card kind added later (an event, a practice nudge)
+    is withheld until someone decides it may be sent."""
+    marker = "ZQ7-FUTURE-KIND"
+    cards = [
+        _card(card_id="e1", kind="events_upcoming", title=marker, detail=marker),
+        _card(card_id="p1", kind="practice_streak", title=marker, detail=marker),
+    ]
+
+    seen = await _capture_model_context(monkeypatch, cards)
+
+    assert marker not in json.dumps(seen, default=str)
+
+
+async def test_every_card_kind_the_briefing_had_before_outreach_still_reaches_the_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kinds = [
+        "priority",
+        "scheduled_interview",
+        "stale_application",
+        "saved_backlog",
+        "closed_role",
+        "interview_momentum",
+    ]
+    cards = [_card(card_id=kind, kind=kind, title=f"title {kind}", detail="d") for kind in kinds[:4]]
+
+    seen = await _capture_model_context(monkeypatch, cards)
+    assert [item["title"] for item in seen["context"]["open_items"]] == [
+        f"title {kind}" for kind in kinds[:4]
+    ]
+    assert set(kinds) == copilot.MODEL_VISIBLE_CARD_KINDS
+
+
+async def test_outreach_cards_do_not_use_up_the_models_four_open_items(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cards = [
+        _card(card_id="outreach_followup", kind="outreach_followup", title="x", detail="x",
+              meta={"count": 1}),
+        *[_card(card_id=f"stale_application:{n}", kind="stale_application", title=f"cold {n}",
+                detail="d") for n in range(4)],
+    ]
+
+    seen = await _capture_model_context(monkeypatch, cards)
+
+    assert [item["title"] for item in seen["context"]["open_items"]] == [
+        f"cold {n}" for n in range(4)
+    ]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
