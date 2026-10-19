@@ -61,11 +61,12 @@ def valid_display_name(name: str) -> bool:
     letter or digit. ``@`` is outside that set, so an email cannot be shown, and neither can
     ``/``, ``:`` or ``<``; a word shaped like a host name (``ajit.dev``) is refused too, so a
     name cannot be a link, and so is one that starts with ``builder-`` in any case, so a name
-    cannot pass for somebody's handle.
+    cannot pass for somebody's handle. That prefix is checked after NFKC normalising, so
+    fullwidth look-alikes of its letters are refused too.
     """
     if not NAME_MIN_CHARS <= len(name) <= NAME_MAX_CHARS or name != name.strip():
         return False
-    if name.casefold().startswith(HANDLE_PREFIX):
+    if unicodedata.normalize("NFKC", name).casefold().startswith(HANDLE_PREFIX):
         return False
     has_base = False
     after_letter = False  # the last character was a letter, a digit or a mark on one

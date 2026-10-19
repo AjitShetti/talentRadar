@@ -60,7 +60,7 @@ from services.base import parse_uuid
 from services.practice.catalogue import load_catalogue
 from services.practice.errors import PracticeConflict, PracticeInvalid, PracticeNotFound
 from storage.database import AsyncSessionLocal
-from storage.models import PracticeDay, Profile
+from storage.models import PracticeDay, PracticeSettings, Profile
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +100,8 @@ class _Day:
     years: float | None
     history: tuple[HistoryItem, ...]
     row: PracticeDay | None
+    #: The person's Practice setting for the weekly contest card; on until they turn it off.
+    contest_reminder: bool
 
 
 @dataclass(frozen=True)
@@ -170,6 +172,11 @@ async def _load(session: AsyncSession, user_id: str, moment: datetime) -> _Day:
             select(Profile.target_roles, Profile.years_experience).where(Profile.user_id == user)
         )
     ).first()
+    reminder = (
+        await session.execute(
+            select(PracticeSettings.contest_reminder).where(PracticeSettings.user_id == user)
+        )
+    ).scalar_one_or_none()
     rows = (
         (
             await session.execute(
@@ -204,6 +211,7 @@ async def _load(session: AsyncSession, user_id: str, moment: datetime) -> _Day:
             if row.day < day
         ),
         row=next((row for row in rows if row.day == day), None),
+        contest_reminder=True if reminder is None else bool(reminder),
     )
 
 
@@ -267,7 +275,7 @@ def _payload(state: _Day) -> dict[str, Any]:
         "contest": {
             "starts_at": window.starts_at.isoformat(),
             "ends_at": window.ends_at.isoformat(),
-            "show": window.show,
+            "show": window.show and state.contest_reminder,
             "live": window.live,
             "url": CONTEST_URL,
         },

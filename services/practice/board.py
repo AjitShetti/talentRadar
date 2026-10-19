@@ -66,6 +66,9 @@ OVERALL_WINDOW = 12
 BOARD_TTL_SECONDS = 600
 #: The most attempts the admin list returns: holds in force first, then newest first.
 HELD_LIMIT = 200
+#: The query reads at most this many times ``HELD_LIMIT`` rows, however many rows carry text that
+#: only looks like a flag, so the list stays cheap whatever has been stored.
+HELD_SCAN_FACTOR = 10
 
 _BOARD_KEY = "tr:practice:board:"
 _OVERALL_KEY = f"{_BOARD_KEY}overall"
@@ -526,7 +529,8 @@ async def held_attempts() -> dict[str, Any]:
     ``judge.admin_clear`` takes.
 
     The database only matches the injection flag as text, so the rows are checked here and the
-    list is cut to ``HELD_LIMIT`` afterwards: a row that is dropped never uses up a place.
+    list is cut to ``HELD_LIMIT`` afterwards: a row that is dropped never uses up a place. The
+    query itself reads at most ``HELD_SCAN_FACTOR`` times ``HELD_LIMIT`` rows.
     """
     async with AsyncSessionLocal() as session:
         rows = (
@@ -554,6 +558,7 @@ async def held_attempts() -> dict[str, Any]:
                     PracticeAttempt.submitted_at.desc().nulls_last(),
                     PracticeAttempt.id,
                 )
+                .limit(HELD_LIMIT * HELD_SCAN_FACTOR)
             )
         ).all()
     attempts: list[dict[str, Any]] = []

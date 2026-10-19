@@ -166,6 +166,13 @@ class TestDisplayName:
             "BUILDER-ABCD",
             "builder-",
             "bUiLdEr-x",
+            # ... nor do fullwidth look-alikes of its letters: NFKC folds them to ASCII first
+            "\N{FULLWIDTH LATIN SMALL LETTER B}uilder-7f3a",
+            "\N{FULLWIDTH LATIN SMALL LETTER B}\N{FULLWIDTH LATIN SMALL LETTER U}"
+            "\N{FULLWIDTH LATIN SMALL LETTER I}\N{FULLWIDTH LATIN SMALL LETTER L}"
+            "\N{FULLWIDTH LATIN SMALL LETTER D}\N{FULLWIDTH LATIN SMALL LETTER E}"
+            "\N{FULLWIDTH LATIN SMALL LETTER R}-7f3a",
+            "\N{FULLWIDTH LATIN CAPITAL LETTER B}UILDER-7f3a",
         ],
     )
     def test_a_bad_name_is_refused(self, name: str) -> None:
@@ -1340,6 +1347,60 @@ class TestHeldAttempts:
         listed = [row["id"] for row in (await board.held_attempts())["attempts"]]
 
         assert listed == [str(cleared)]
+
+    async def test_the_query_reads_at_most_ten_times_the_cap(
+        self, db: Db, edition: PracticeChallenge, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(board, "HELD_LIMIT", 3)
+        statements: list[tuple[str, Any]] = []
+
+        @event.listens_for(db.engine.sync_engine, "before_cursor_execute")
+        def _record(_conn: Any, _cursor: Any, statement: str, parameters: Any, *_rest: Any) -> None:
+            statements.append((statement, parameters))
+
+        await board.held_attempts()
+
+        (selected,) = [(sql, args) for sql, args in statements if "practice_attempts" in sql]
+        assert "LIMIT" in selected[0]
+        assert 30 in tuple(selected[1])
+
+    async def test_a_lookalike_flood_cannot_make_the_query_unbounded(
+        self, db: Db, edition: PracticeChallenge, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Ten rows the post-filter will drop are newer than a real, cleared hold: with a cap of 1
+        # the scan stops at ten rows, so the older hold is not read. Nine of them leave room.
+        monkeypatch.setattr(board, "HELD_LIMIT", 1)
+        cleared = await add_attempt(
+            db,
+            await add_user(db, "cleared"),
+            edition,
+            held=False,
+            flags=["injection_text", "hold_cleared"],
+            submitted_at=STARTED,
+        )
+        for hours in range(1, 10):
+            await add_attempt(
+                db,
+                await add_user(db, f"lookalike{hours}"),
+                edition,
+                held=False,
+                flags=["not_injection_text_at_all"],
+                submitted_at=STARTED + timedelta(hours=hours),
+            )
+
+        within = [row["id"] for row in (await board.held_attempts())["attempts"]]
+        await add_attempt(
+            db,
+            await add_user(db, "lookalike10"),
+            edition,
+            held=False,
+            flags=["not_injection_text_at_all"],
+            submitted_at=STARTED + timedelta(hours=10),
+        )
+        beyond = [row["id"] for row in (await board.held_attempts())["attempts"]]
+
+        assert within == [str(cleared)]
+        assert beyond == []
 
 
 # =========================================================================== the routes

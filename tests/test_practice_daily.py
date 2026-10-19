@@ -36,11 +36,13 @@ from services.practice import daily
 from services.practice.catalogue import load_catalogue
 from services.practice.errors import PracticeConflict, PracticeInvalid, PracticeNotFound
 from storage.database import Base
-from storage.models import PracticeDay, Profile, User
+from storage.models import PracticeDay, PracticeSettings, Profile, User
 
 # Thursday 11:30 IST. The coming Sunday's contest has not started and its card is not showing.
 NOW = datetime(2026, 10, 15, 6, 0, tzinfo=UTC)
 TODAY = date(2026, 10, 15)
+#: Sunday 08:30 IST: the weekly contest is running, so its card is showing.
+CONTEST_RUNNING = datetime(2026, 10, 18, 3, 0, tzinfo=UTC)
 
 TOPICS = ("array", "hash-table", "string", "two-pointers", "tree", "graph", "dynamic-programming")
 LEVELS = ("easy", "medium", "hard")
@@ -125,7 +127,8 @@ async def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[D
         cursor.close()
 
     tables = [
-        Base.metadata.tables[name] for name in ("users", "resumes", "profiles", "practice_days")
+        Base.metadata.tables[name]
+        for name in ("users", "resumes", "profiles", "practice_days", "practice_settings")
     ]
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all, tables=tables)
@@ -178,6 +181,12 @@ async def add_day(
                 feel=feel,
             )
         )
+        await session.commit()
+
+
+async def add_settings(db: Db, user_id: uuid.UUID, *, contest_reminder: bool) -> None:
+    async with db.factory() as session:
+        session.add(PracticeSettings(user_id=user_id, contest_reminder=contest_reminder))
         await session.commit()
 
 
@@ -312,6 +321,49 @@ class TestToday:
         assert (before["show"], before["live"]) == (False, False)
         assert before["url"] == CONTEST_URL
         assert (during["show"], during["live"]) == (True, True)
+
+    async def test_contest_is_not_shown_when_the_reminder_is_off(self, db: Db, asha: str) -> None:
+        await add_settings(db, uuid.UUID(asha), contest_reminder=False)
+
+        contest = (await daily.today(asha, now=CONTEST_RUNNING))["contest"]
+
+        assert contest["show"] is False
+        assert contest["url"] == CONTEST_URL
+        assert contest["starts_at"] == "2026-10-18T02:30:00+00:00"
+
+    async def test_contest_is_shown_when_the_reminder_is_on(self, db: Db, asha: str) -> None:
+        await add_settings(db, uuid.UUID(asha), contest_reminder=True)
+
+        assert (await daily.today(asha, now=CONTEST_RUNNING))["contest"]["show"] is True
+
+    async def test_no_settings_row_means_the_reminder_is_on(self, asha: str) -> None:
+        assert (await daily.today(asha, now=CONTEST_RUNNING))["contest"]["show"] is True
+
+    async def test_the_reminder_off_hides_the_contest_before_it_starts_too(
+        self, db: Db, asha: str
+    ) -> None:
+        await add_settings(db, uuid.UUID(asha), contest_reminder=False)
+        saturday_evening = datetime(2026, 10, 17, 15, 30, tzinfo=UTC)  # 21:00 IST
+
+        assert (await daily.today(asha, now=saturday_evening))["contest"]["show"] is False
+
+    async def test_someone_elses_reminder_setting_does_not_hide_it(
+        self, db: Db, asha: str
+    ) -> None:
+        bina = await add_user(db, "bina")
+        await add_settings(db, bina, contest_reminder=False)
+
+        assert (await daily.today(asha, now=CONTEST_RUNNING))["contest"]["show"] is True
+        assert (await daily.today(str(bina), now=CONTEST_RUNNING))["contest"]["show"] is False
+
+    async def test_every_answer_that_carries_the_contest_honours_the_reminder(
+        self, db: Db, asha: str
+    ) -> None:
+        await add_settings(db, uuid.UUID(asha), contest_reminder=False)
+
+        done = await daily.mark_done(asha, None, now=CONTEST_RUNNING)
+
+        assert done["contest"]["show"] is False
 
     async def test_ist_day_rolls_at_ist_midnight_not_utc(self, asha: str) -> None:
         # 2026-10-14 23:59Z is 05:29 IST and 2026-10-15 00:01Z is 05:31 IST: one IST day,

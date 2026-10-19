@@ -37,6 +37,7 @@ from sqlalchemy import select
 from domain.practice_pick import topic_label
 from domain.practice_schedule import (
     CONTEST_URL,
+    GRACE,
     IST,
     ContestWindow,
     contest_window,
@@ -397,14 +398,26 @@ async def _practice_deadline_cards(
             ):
                 continue
             due = _ist_clock(deadline)
+            if moment > deadline:
+                # The deadline has passed: only the write-up hour is left, and "submit by <due>"
+                # would name a time that is already gone.
+                closes = _ist_clock(deadline + GRACE)
+                card_title = f'Finish the write-up for "{title}" by {closes}'
+                card_detail = (
+                    f"Your {hours}-hour build closed at {due} IST. "
+                    f"Pushes after that are not read; the write-up closes at {closes} IST."
+                )
+            else:
+                card_title = f'Submit "{title}" by {due}'
+                card_detail = (
+                    f"Your {hours}-hour build closes at {due} IST. "
+                    "Pushes after that are not read."
+                )
             cards.append(_card(
                 card_id=f"practice_deadline:{attempt_id}",
                 kind="practice_deadline",
-                title=f'Submit "{title}" by {due}',
-                detail=(
-                    f"Your {hours}-hour build closes at {due} IST. "
-                    "Pushes after that are not read."
-                ),
+                title=card_title,
+                detail=card_detail,
                 tone="warning",
                 actions=[{
                     "label": "Open submission",

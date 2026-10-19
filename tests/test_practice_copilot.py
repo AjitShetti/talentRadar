@@ -312,6 +312,40 @@ class TestDeadlineCards:
         assert len(inside) == 1
         assert outside == []
 
+    async def test_after_the_deadline_the_card_names_when_the_write_up_closes(
+        self, db: Db, asha: str, edition: PracticeChallenge
+    ) -> None:
+        await add_attempt(db, asha, edition)
+
+        (card,) = await _practice_deadline_cards(asha, now=DEADLINE + timedelta(minutes=10))
+
+        assert card["title"] == 'Finish the write-up for "Idempotent webhook relay" by 19:40'
+        assert card["detail"] == (
+            "Your 24-hour build closed at 18:40 IST. Pushes after that are not read; "
+            "the write-up closes at 19:40 IST."
+        )
+        assert "Submit" not in card["title"]
+        assert card["tone"] == "warning"
+        assert card["meta"]["deadline_at"] == DEADLINE.isoformat()
+
+    async def test_the_last_minute_of_the_write_up_hour_still_says_the_write_up(
+        self, db: Db, asha: str, edition: PracticeChallenge
+    ) -> None:
+        await add_attempt(db, asha, edition)
+
+        (card,) = await _practice_deadline_cards(asha, now=DEADLINE + timedelta(minutes=59))
+
+        assert card["title"].startswith("Finish the write-up for")
+
+    async def test_at_the_deadline_itself_the_build_is_not_yet_over(
+        self, db: Db, asha: str, edition: PracticeChallenge
+    ) -> None:
+        await add_attempt(db, asha, edition)
+
+        (card,) = await _practice_deadline_cards(asha, now=DEADLINE)
+
+        assert card["title"] == 'Submit "Idempotent webhook relay" by 18:40'
+
     async def test_another_persons_build_is_not_shown(
         self, db: Db, asha: str, edition: PracticeChallenge
     ) -> None:
