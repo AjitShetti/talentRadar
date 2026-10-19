@@ -64,7 +64,7 @@ OVERALL_TOP = 50
 OVERALL_WINDOW = 12
 #: How long a built board is kept.
 BOARD_TTL_SECONDS = 600
-#: The most held attempts the admin list returns, newest first.
+#: The most attempts the admin list returns: holds in force first, then newest first.
 HELD_LIMIT = 200
 
 _BOARD_KEY = "tr:practice:board:"
@@ -78,7 +78,7 @@ _NO_ACCOUNT = "We could not find your account."
 _NO_BUILD = "We could not find that build."
 _BAD_NAME = (
     "A leaderboard name is 2 to 32 letters, digits, spaces, dots, hyphens or underscores. "
-    "It cannot hold an @ or a link."
+    "It cannot hold an @ or a link, or start with builder-."
 )
 _TRY_AGAIN = "We could not save your settings just now. Try again."
 
@@ -443,20 +443,27 @@ async def get_settings(user_id: str) -> dict[str, Any]:
 
 
 async def _forget_boards(user: uuid.UUID) -> None:
-    """Drop the cached boards the person is on, so a changed name or repo setting shows at once."""
-    async with AsyncSessionLocal() as session:
-        slugs = list(
-            (
-                await session.execute(
-                    select(PracticeChallenge.slug)
-                    .join(PracticeAttempt, PracticeAttempt.challenge_id == PracticeChallenge.id)
-                    .where(PracticeAttempt.user_id == user)
-                )
-            ).scalars()
-        )
-    await CacheBackend.delete(_OVERALL_KEY)
-    for slug in slugs:
-        await CacheBackend.delete(f"{_BOARD_KEY}{slug}")
+    """Drop the cached boards the person is on, so a changed name or repo setting shows at once.
+
+    It runs after the settings are committed, so it never raises: a failure is logged and the
+    boards catch up when their ten minutes are over.
+    """
+    try:
+        async with AsyncSessionLocal() as session:
+            slugs = list(
+                (
+                    await session.execute(
+                        select(PracticeChallenge.slug)
+                        .join(PracticeAttempt, PracticeAttempt.challenge_id == PracticeChallenge.id)
+                        .where(PracticeAttempt.user_id == user)
+                    )
+                ).scalars()
+            )
+        await CacheBackend.delete(_OVERALL_KEY)
+        for slug in slugs:
+            await CacheBackend.delete(f"{_BOARD_KEY}{slug}")
+    except Exception as exc:
+        logger.warning("practice: could not forget the cached boards (%s)", type(exc).__name__)
 
 
 async def put_settings(
@@ -508,13 +515,18 @@ def _flag_names(flags: list[str]) -> list[str]:
 
 
 async def held_attempts() -> dict[str, Any]:
-    """Attempts the judge held for text aimed at the grader, newest submission first.
+    """Attempts the judge held for text aimed at the grader: holds in force first, newest first.
 
     Each row is the attempt's id, the edition (slug and title), its status, the flags it
     carries, whether it is held now and whether an admin has cleared a hold on it. A cleared
-    hold stays in the list, so it can be told apart from one nobody has read. ``submitted_at``
-    is the nearest time the row keeps: the hold itself is not timestamped. Nothing the
-    candidate wrote, no repo and no user is included; the id is what ``judge.admin_clear`` takes.
+    hold stays in the list, so it can be told apart from one nobody has read, and comes after
+    every hold still in force, so a cleared one can never push an unread one off the page.
+    ``submitted_at`` is the nearest time the row keeps: the hold itself is not timestamped.
+    Nothing the candidate wrote, no repo and no user is included; the id is what
+    ``judge.admin_clear`` takes.
+
+    The database only matches the injection flag as text, so the rows are checked here and the
+    list is cut to ``HELD_LIMIT`` afterwards: a row that is dropped never uses up a place.
     """
     async with AsyncSessionLocal() as session:
         rows = (
@@ -537,8 +549,11 @@ async def held_attempts() -> dict[str, Any]:
                         ),
                     )
                 )
-                .order_by(PracticeAttempt.submitted_at.desc().nulls_last(), PracticeAttempt.id)
-                .limit(HELD_LIMIT)
+                .order_by(
+                    PracticeAttempt.held.desc(),
+                    PracticeAttempt.submitted_at.desc().nulls_last(),
+                    PracticeAttempt.id,
+                )
             )
         ).all()
     attempts: list[dict[str, Any]] = []
@@ -546,6 +561,8 @@ async def held_attempts() -> dict[str, Any]:
         flags = [str(flag) for flag in (stored_flags or [])]
         if not held and INJECTION_FLAG not in flags:
             continue
+        if len(attempts) == HELD_LIMIT:
+            break
         attempts.append(
             {
                 "id": str(attempt_id),

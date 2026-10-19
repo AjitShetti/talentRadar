@@ -5,7 +5,7 @@ The rules of the Practice leaderboards, as pure functions over plain values.
 
 * **Names.** Everyone has a handle, ``builder-`` and four hex characters of the SHA-256 of
   their user id. A display name is opt-in; ``valid_display_name`` says what one may be (2 to 32
-  letters, digits, spaces and ``. - _``; no ``@``, no link).
+  letters, digits, spaces and ``. - _``; no ``@``, no link, nothing that starts like a handle).
 * **A challenge board** ranks judged, unheld attempts by total, highest first. Equal totals
   share a rank (1, 1, 3) and are listed earliest snapshot first; a missing snapshot time comes
   after a known one, and the user id settles anything left, so the order never depends on the
@@ -43,6 +43,8 @@ _MAX_STACKED_MARKS = 3
 #: One word that reads as a host name: dot-separated, the last part letters only ("ajit.dev").
 #: "Ajit S." and "J.R." do not match, because the last part is empty or a single letter.
 _LOOKS_LIKE_A_HOST = re.compile(r"[\w-]+(?:\.[\w-]+)*\.[^\W\d_]{2,}")
+#: A word is checked without these around it: "ajit.dev." and ".ajit.dev" read as "ajit.dev".
+_WORD_EDGE = ".-_"
 
 
 def handle(user_id: str) -> str:
@@ -58,9 +60,12 @@ def valid_display_name(name: str) -> bool:
     ``.``, ``-``, ``_`` only; it must start and end without a space and contain at least one
     letter or digit. ``@`` is outside that set, so an email cannot be shown, and neither can
     ``/``, ``:`` or ``<``; a word shaped like a host name (``ajit.dev``) is refused too, so a
-    name cannot be a link.
+    name cannot be a link, and so is one that starts with ``builder-`` in any case, so a name
+    cannot pass for somebody's handle.
     """
     if not NAME_MIN_CHARS <= len(name) <= NAME_MAX_CHARS or name != name.strip():
+        return False
+    if name.casefold().startswith(HANDLE_PREFIX):
         return False
     has_base = False
     after_letter = False  # the last character was a letter, a digit or a mark on one
@@ -81,7 +86,8 @@ def valid_display_name(name: str) -> bool:
             return False
     if not has_base:
         return False
-    return not any(_LOOKS_LIKE_A_HOST.fullmatch(word) for word in name.split(" "))
+    words = (word.strip(_WORD_EDGE) for word in name.split(" "))
+    return not any(_LOOKS_LIKE_A_HOST.fullmatch(word) for word in words)
 
 
 @dataclass(frozen=True)

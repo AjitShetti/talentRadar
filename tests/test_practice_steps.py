@@ -21,6 +21,8 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import shutil
+import subprocess
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -532,6 +534,77 @@ def test_workflow_calls_the_two_steps_in_order_with_the_cron_token() -> None:
     calls = re.findall(r"^\s*practice (\w+) (\d+)\s*$", script, flags=re.MULTILINE)
     assert calls == [("challenges", "1"), ("judge", "4")]
     assert script.count('|| echo "::warning::') == 1  # in the one helper both calls go through
+
+
+def test_workflow_warns_when_a_step_answers_200_with_an_error_key() -> None:
+    # A step never raises, so a failed part is a 200 whose body has an "error" key. The script
+    # has to read the body, or the run would look green while the judge never ran.
+    script = _run_script()
+    assert "body=$(curl" in script
+    assert '"error"' in script
+    assert "::warning::practice step $1 reported" in script
+
+
+_STUB_CURL = """export API_BASE=https://api.invalid CRON_TOKEN=token
+curl() {
+  case "$*" in
+    *step=challenges*) $CHALLENGES ;;
+    *step=judge*) $JUDGE ;;
+  esac
+}
+"""
+
+
+def _run_workflow_script(tmp_path: Path, challenges_reply: str, judge_reply: str) -> list[str]:
+    """Run the workflow's script under bash with ``curl`` stubbed; the ``::`` lines it printed.
+
+    Everything the script needs is written into it and it is run by its relative name, so it
+    does not matter which bash this is (a Windows machine may put WSL's first).
+    """
+    stub = _STUB_CURL.replace("$CHALLENGES", challenges_reply).replace("$JUDGE", judge_reply)
+    (tmp_path / "practice.sh").write_text(stub + _run_script(), encoding="utf-8", newline="\n")
+    done = subprocess.run(
+        ["bash", "practice.sh"],
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+        timeout=60,
+        check=True,
+    )
+    return [line for line in done.stdout.splitlines() if line.startswith("::warning::")]
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="needs bash")
+class TestWorkflowScriptWarnings:
+    OK_CHALLENGES = "printf '%s' '{\"queued\":0,\"missed\":0}'"
+    OK_JUDGE = "printf '%s' '{\"processed\":1,\"judged\":1}'"
+
+    def test_clean_replies_print_no_warning(self, tmp_path: Path) -> None:
+        assert _run_workflow_script(tmp_path, self.OK_CHALLENGES, self.OK_JUDGE) == []
+
+    def test_an_error_key_in_a_200_names_the_step(self, tmp_path: Path) -> None:
+        down = "printf '%s' '{\"error\":\"RuntimeError\"}'"
+
+        warnings = _run_workflow_script(tmp_path, self.OK_CHALLENGES, down)
+
+        assert len(warnings) == 1
+        assert "practice step judge" in warnings[0]
+        assert "RuntimeError" in warnings[0]
+
+    def test_a_part_that_failed_beside_counts_names_the_step(self, tmp_path: Path) -> None:
+        partly = 'printf \'%s\' \'{"queued":2,"error":"OperationalError"}\''
+
+        warnings = _run_workflow_script(tmp_path, partly, self.OK_JUDGE)
+
+        assert len(warnings) == 1
+        assert "practice step challenges" in warnings[0]
+
+    def test_a_request_that_failed_still_warns(self, tmp_path: Path) -> None:
+        refused = "printf '%s' 'Bad Gateway'; return 22"
+
+        warnings = _run_workflow_script(tmp_path, self.OK_CHALLENGES, refused)
+
+        assert warnings == ["::warning::practice step judge failed"]
 
 
 def test_workflow_gates_on_the_token_and_wakes_the_api_before_any_call() -> None:

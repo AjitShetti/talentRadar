@@ -123,6 +123,9 @@ class TestDisplayName:
             "Priya 2",
             "अजित",  # a Devanagari name: letters and vowel signs
             "Zoë",
+            "J.R.",  # trailing dot, but not a host name: the last part is one letter
+            "Builder Bob",  # only "builder-" is a handle's prefix
+            "builders-guild",
         ],
     )
     def test_a_good_name_is_accepted(self, name: str) -> None:
@@ -149,6 +152,20 @@ class TestDisplayName:
             "ab\N{GRINNING FACE}",
             "ab;drop",
             "a" + "\N{COMBINING ACUTE ACCENT}" * 6,
+            # a host name hidden behind trailing punctuation is still a host name
+            "ajit.dev.",
+            "ajit.dev-",
+            "ajit.dev_",
+            "www.example.com.",
+            "www.example.com.-_",
+            ".ajit.dev",
+            "Ajit ajit.dev. Rao",
+            # a name that starts like a handle would impersonate one, whatever its case
+            "builder-7f3a",
+            "Builder-7f3a",
+            "BUILDER-ABCD",
+            "builder-",
+            "bUiLdEr-x",
         ],
     )
     def test_a_bad_name_is_refused(self, name: str) -> None:
@@ -1088,6 +1105,51 @@ class TestSettings:
         assert names(await board.challenge_board(bina, edition.slug, now=AFTER)) == [handle(asha)]
         assert names(await board.overall_board(bina, now=AFTER)) == [handle(asha)]
 
+    @pytest.mark.parametrize("broken", ["cache", "database"])
+    async def test_a_failure_forgetting_the_boards_is_logged_and_never_raised(
+        self,
+        db: Db,
+        asha: str,
+        edition: PracticeChallenge,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        broken: str,
+    ) -> None:
+        # It runs after the commit: the settings are saved, so the caller must still get them.
+        await add_attempt(db, asha, edition, total=90.0)
+
+        async def refuse_cache(key: str) -> None:
+            raise RuntimeError("cache is down")
+
+        def refuse_database() -> Any:
+            raise RuntimeError("database is down")
+
+        if broken == "cache":
+            monkeypatch.setattr(CacheBackend, "delete", refuse_cache)
+        else:
+            monkeypatch.setattr(board, "AsyncSessionLocal", refuse_database)
+
+        with caplog.at_level("WARNING", logger=board.logger.name):
+            await board._forget_boards(uuid.UUID(asha))
+
+        assert any("forget" in record.getMessage().lower() for record in caplog.records)
+
+    async def test_saved_settings_are_returned_when_forgetting_the_boards_fails(
+        self, db: Db, asha: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        async def refuse_cache(key: str) -> None:
+            raise RuntimeError("cache is down")
+
+        monkeypatch.setattr(CacheBackend, "delete", refuse_cache)
+
+        saved = await board.put_settings(
+            asha, display_name="Asha", show_repo=True, contest_reminder=False
+        )
+
+        assert saved["display_name"] == "Asha"
+        (row,) = await settings_rows(db)
+        assert (row.display_name, row.show_repo, row.contest_reminder) == ("Asha", True, False)
+
     async def test_a_saved_name_is_never_a_row_for_someone_who_never_competed(
         self, db: Db, asha: str, edition: PracticeChallenge
     ) -> None:
@@ -1209,6 +1271,75 @@ class TestHeldAttempts:
 
     async def test_nothing_held_is_an_empty_list(self, db: Db) -> None:
         assert await board.held_attempts() == {"attempts": []}
+
+    async def test_a_hold_still_in_force_comes_before_a_newer_cleared_one(
+        self, db: Db, asha: str, bina: str, edition: PracticeChallenge
+    ) -> None:
+        held = await add_attempt(
+            db, asha, edition, held=True, flags=["injection_text"], submitted_at=STARTED
+        )
+        cleared = await add_attempt(
+            db,
+            bina,
+            edition,
+            held=False,
+            flags=["injection_text", "hold_cleared"],
+            submitted_at=STARTED + timedelta(hours=3),
+        )
+
+        ids = [row["id"] for row in (await board.held_attempts())["attempts"]]
+
+        assert ids == [str(held), str(cleared)]
+
+    async def test_the_cap_keeps_the_newest_held_rows(
+        self, db: Db, edition: PracticeChallenge, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(board, "HELD_LIMIT", 2)
+        ids: list[str] = []
+        for hours in range(3):
+            user = await add_user(db, f"held{hours}")
+            attempt = await add_attempt(
+                db,
+                user,
+                edition,
+                held=True,
+                flags=["injection_text"],
+                submitted_at=STARTED + timedelta(hours=hours),
+            )
+            ids.append(str(attempt))
+
+        listed = [row["id"] for row in (await board.held_attempts())["attempts"]]
+
+        assert listed == [ids[2], ids[1]]
+
+    async def test_rows_the_filter_drops_do_not_use_up_the_cap(
+        self, db: Db, edition: PracticeChallenge, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The database only matches the flag as text, so a lookalike flag on a row that was never
+        # held comes back from it and is dropped afterwards. Newer ones must not crowd out a
+        # real, cleared hold.
+        monkeypatch.setattr(board, "HELD_LIMIT", 2)
+        cleared = await add_attempt(
+            db,
+            await add_user(db, "cleared"),
+            edition,
+            held=False,
+            flags=["injection_text", "hold_cleared"],
+            submitted_at=STARTED,
+        )
+        for hours in (1, 2):
+            await add_attempt(
+                db,
+                await add_user(db, f"lookalike{hours}"),
+                edition,
+                held=False,
+                flags=["not_injection_text_at_all"],
+                submitted_at=STARTED + timedelta(hours=hours),
+            )
+
+        listed = [row["id"] for row in (await board.held_attempts())["attempts"]]
+
+        assert listed == [str(cleared)]
 
 
 # =========================================================================== the routes
