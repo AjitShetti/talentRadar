@@ -13,7 +13,7 @@ import ThreadDrawer from '@/components/outreach/ThreadDrawer'
 import ThreadList from '@/components/outreach/ThreadList'
 import { track } from '@/lib/analytics'
 import { api, DueItem, OutreachChannelName, OutreachHome, OutreachSource, Suggestion, Suggestions } from '@/lib/api'
-import { parseThreadTarget, threadHref, ThreadTarget } from '@/lib/outreach'
+import { NEXT_STEP_DONE, parseThreadTarget, threadHref, ThreadTarget } from '@/lib/outreach'
 
 const TARGETS = Array.from({ length: 11 }, (_, i) => i) // 0 turns the daily target off; the server caps it at 10
 const SNOOZE_DAYS = 3
@@ -158,6 +158,17 @@ function OutreachBoard() {
     }
   }
 
+  // A next step the user has done: its text and date both go, so it stops being owed.
+  async function finishStep(item: DueItem) {
+    setError('')
+    try {
+      await api.outreach.update(item.thread_id, NEXT_STEP_DONE)
+      await loadHome()
+    } catch (err) {
+      setError(messageOf(err, 'Could not mark that done.'))
+    }
+  }
+
   const due = home?.due ?? []
   const threads = home?.threads ?? []
   const daily = home?.target.daily ?? 0
@@ -197,6 +208,7 @@ function OutreachBoard() {
             onSent={markSent}
             onReplied={item => openThread({ threadId: item.thread_id, personId: item.person_id, mode: 'reply' })}
             onSnooze={snooze}
+            onStepDone={finishStep}
             onOpen={item => openThread({ threadId: item.thread_id, personId: null, mode: null })}
           />
         </section>}

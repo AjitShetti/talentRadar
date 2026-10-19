@@ -10,6 +10,8 @@ type Props = {
   onSent: (item: DueItem) => Promise<void>
   onReplied: (item: DueItem) => void
   onSnooze: (item: DueItem) => Promise<void>
+  /** Clears a thread's next step, so a step the user has done stops being owed. */
+  onStepDone: (item: DueItem) => Promise<void>
   onOpen: (item: DueItem) => void
 }
 
@@ -17,7 +19,7 @@ const keyOf = (item: DueItem) => `${item.thread_id}:${item.person_id ?? 'thread'
 
 // Follow-ups and next steps that are owed today. The row's amber lamp is the only
 // amber here; every action is an outline button, and none of them sends anything.
-export default function DueList({ items, onDraft, onSent, onReplied, onSnooze, onOpen }: Props) {
+export default function DueList({ items, onDraft, onSent, onReplied, onSnooze, onStepDone, onOpen }: Props) {
   // One call at a time per row, so "I sent it" pressed twice is one touch, not two.
   const [pending, setPending] = useState<string | null>(null)
 
@@ -54,6 +56,7 @@ export default function DueList({ items, onDraft, onSent, onReplied, onSnooze, o
             <button type="button" className="outline-button" onClick={() => onReplied(item)}>They replied</button>
             <button type="button" className="outline-button" disabled={pending !== null} onClick={() => run(item, onSnooze)}>Snooze 3 days</button>
           </>}
+          {!isFollowUp && <button type="button" className="outline-button" disabled={pending !== null} onClick={() => run(item, onStepDone)} aria-label={`Done with ${title} at ${item.company_name}`}>Done</button>}
           <button type="button" className="text-button" onClick={() => onOpen(item)}>Open thread</button>
         </div>
       </div>

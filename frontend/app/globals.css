@@ -1797,6 +1797,13 @@ button.or-row:hover{transform:translateX(10px);background:var(--line-soft)}
 .or-state{display:block;margin-top:6px;font:10px 'Fragment Mono',monospace;letter-spacing:.6px;text-transform:uppercase;color:var(--ink-2)}
 [data-tone=due] .or-state{color:var(--accent)}
 .or-person .or-actions{grid-column:3;margin-top:10px}
+.or-wait{font:10px 'Fragment Mono',monospace;letter-spacing:.6px;text-transform:uppercase;color:var(--ink-2)}
+.or-note-form{display:grid;gap:6px;margin-top:14px}
+.or-note-form label{font:10px 'Fragment Mono',monospace;letter-spacing:.8px;text-transform:uppercase;color:var(--faint)}
+.or-note-form textarea{font:13px/1.6 'Public Sans',sans-serif;color:var(--ink);background:var(--surface-2);border:1px solid var(--line);border-radius:7px;padding:9px 11px;resize:vertical;min-height:58px;width:100%}
+.or-note-form textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.or-next{margin:0 0 6px}
+.or-next .or-hint{margin-bottom:8px}
 .or-channels{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .or-channels .ci-link{padding:5px 9px;font-size:10.5px}
 .or-pacing{font-size:12px;line-height:1.55;color:var(--warning-dark);background:var(--warning-soft);border:1px solid var(--warning-border);border-radius:6px;padding:8px 10px;margin:0 0 10px}

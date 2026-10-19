@@ -9,8 +9,9 @@ import {
   api, OutreachChannel, OutreachChannelName, OutreachOutcome, OutreachPerson, OutreachTouch, SuggestedPerson, ThreadDetail,
 } from '@/lib/api'
 import {
-  CHANNEL_LABEL, channelHref, companySectorLabel, companyStageLabel, dayMonth, initials, KIND_LABEL, MAX_FOLLOW_UPS,
-  NEXT_STEP_MAX, NOTE_MAX, OUTCOMES, personLine, personTone, stamp, STAGE_LABEL, touchChannel,
+  canMarkSent, CHANNEL_LABEL, channelHref, companySectorLabel, companyStageLabel, dayMonth, followUpWait, initials, isStaleError,
+  KIND_LABEL, MAX_FOLLOW_UPS, NEXT_STEP_DONE, NEXT_STEP_MAX, nextStepPatch, NOTE_MAX, openSourceNote, OUTCOMES, personLine, personTone,
+  stamp, STAGE_LABEL, touchChannel,
 } from '@/lib/outreach'
 import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 import { useDialog } from '@/lib/use-dialog'
@@ -103,6 +104,25 @@ export default function ThreadDrawer({ threadId, focusPersonId, openDraft, openR
     onChangedRef.current(next)
   }, [])
 
+  // Reads the thread again after a refusal that says this drawer is out of date (the person replied in another tab,
+  // the person was added already, the thread is gone), so the buttons match the server. A panel for someone who
+  // can no longer be written to or answered closes with it; a failed read leaves the refusal on screen as it is.
+  const refresh = useCallback(async () => {
+    try {
+      const next = await api.outreach.thread(threadId)
+      apply(next)
+      setPanel(current => {
+        if (!current || current.kind === 'issue') return current
+        const person = next.people.find(p => p.id === current.personId)
+        const stillOpen = current.kind === 'draft' ? Boolean(person?.draft) : Boolean(person && person.state !== 'replied' && person.state !== 'dropped')
+        return stillOpen ? current : null
+      })
+    } catch { /* gone or unreachable: the message already shown says so */ }
+  }, [threadId, apply])
+
+  // A refusal that means the thread has moved on without this tab keeps its message and reads the thread again.
+  const staleFailure = useCallback((message: string) => { setActionError(message); void refresh() }, [refresh])
+
   // One change at a time, so a double click is one touch and not two. Resolves true when the change was made.
   // A failure is shown at the top of the drawer unless the caller shows it somewhere nearer.
   async function run(key: string, work: () => Promise<ThreadDetail | null>, failure: string, onFail: (message: string) => void = setActionError): Promise<boolean> {
@@ -113,7 +133,9 @@ export default function ThreadDrawer({ threadId, focusPersonId, openDraft, openR
       if (next) apply(next)
       return true
     } catch (err) {
-      onFail(messageOf(err, failure))
+      const message = messageOf(err, failure)
+      onFail(message)
+      if (isStaleError(err)) staleFailure(message)
       return false
     } finally { setPending(null) }
   }
@@ -212,6 +234,10 @@ export default function ThreadDrawer({ threadId, focusPersonId, openDraft, openR
     return api.outreach.update(threadId, { application_id: application.id })
   }, 'Could not track this role.')
 
+  const saveNote = (note: string) => run('note', () => api.outreach.update(threadId, { note: note.trim() || null }), 'Could not save the note.')
+  const saveNextStep = (text: string, date: string) => run('next-step', () => api.outreach.update(threadId, nextStepPatch(text, date)), 'Could not save the next step.')
+  const finishNextStep = () => run('next-step', () => api.outreach.update(threadId, NEXT_STEP_DONE), 'Could not mark that done.')
+
   const closeThread = (outcome: OutreachOutcome) => run('close', () => api.outreach.update(threadId, { close: { outcome } }), 'Could not close this thread.')
   const reopenThread = () => run('reopen', () => api.outreach.update(threadId, { reopen: true }), 'Could not reopen this thread.')
 
@@ -228,6 +254,7 @@ export default function ThreadDrawer({ threadId, focusPersonId, openDraft, openR
   const name = detail?.company_name ?? ''
   const busy = pending !== null
   const issues = detail?.issues?.issues ?? []
+  const ossNote = detail ? openSourceNote(detail) : null
   const noCompany = detail !== null && detail.company_id === null
 
   return <>
@@ -260,6 +287,7 @@ export default function ThreadDrawer({ threadId, focusPersonId, openDraft, openR
             {detail.job?.id && !detail.application && <div className="or-actions" style={{ marginTop: 10 }}>
               <button type="button" className="outline-button" onClick={trackRole} disabled={busy}>Track this role</button>
             </div>}
+            <ThreadNote value={detail.note} busy={busy} onSave={saveNote} />
           </>}
         </div>
         <button type="button" className="ci-close" onClick={requestClose} aria-label="Close" data-autofocus><X size={18} /></button>
@@ -304,6 +332,7 @@ export default function ThreadDrawer({ threadId, focusPersonId, openDraft, openR
                 onSend={sentFromDraft(p.id, () => closePanel(p.id))}
                 onCancel={() => closePanel(p.id)}
                 onDirtyChange={dirty => { dirtyRef.current = dirty }}
+                onStale={staleFailure}
               />}
             />)}
           </section>
@@ -338,9 +367,9 @@ export default function ThreadDrawer({ threadId, focusPersonId, openDraft, openR
             <AddKnownForm busy={busy} onAdd={addKnown} />
           </section>
 
-          {issues.length > 0 && detail.issues && <section className="ci-section" aria-label="Open source">
+          {ossNote && <section className="ci-section" aria-label="Open source">
             <h3>Open source</h3>
-            <p className="or-hint">Good first issues in {detail.issues.org}&apos;s repositories, checked {dayMonth(detail.issues.fetched_at)}. Read the issue first; the comment is yours to post.</p>
+            <p className="or-hint">{ossNote}</p>
             {issues.map(issue => <IssueRow
               key={issue.url}
               issue={issue}
@@ -360,7 +389,7 @@ export default function ThreadDrawer({ threadId, focusPersonId, openDraft, openR
 
           <section className="ci-section" aria-label="Timeline">
             <h3>Timeline</h3>
-            {detail.next_step && <p className="or-hint">Next step: <b>{detail.next_step}</b>{detail.next_step_at ? ` · ${dayMonth(detail.next_step_at)}` : ''}</p>}
+            <NextStep detail={detail} busy={busy} onSave={saveNextStep} onDone={finishNextStep} />
             {detail.touches.length === 0
               ? <p className="ci-empty-small">Nothing recorded yet. Each message you send and each reply lands here.</p>
               : <ol className="or-timeline">
@@ -419,6 +448,7 @@ function PersonRow({ person: p, busy, menuOpen, panel, onDraft, onReplyForm, onS
   const menuId = useId()
   const canReply = p.state !== 'replied' && p.state !== 'dropped'
   const canSnooze = p.state === 'waiting' && p.follow_ups_sent < MAX_FOLLOW_UPS && p.next_follow_up_at !== null
+  const wait = followUpWait(p)
   return <div className="or-person" id={personDomId(p.id)} tabIndex={-1} data-tone={personTone(p)}>
     <span className="or-lamp" aria-hidden />
     <span className="or-avatar" aria-hidden>{initials(p.name)}</span>
@@ -436,7 +466,8 @@ function PersonRow({ person: p, busy, menuOpen, panel, onDraft, onReplyForm, onS
       {p.draft && <button type="button" className="outline-button" onClick={onDraft} disabled={busy} aria-expanded={panel === 'draft'} aria-label={`${p.draft === 'first' ? 'Draft first message' : 'Draft follow-up'} to ${p.name}`}>
         {p.draft === 'first' ? 'Draft first message' : 'Draft follow-up'}
       </button>}
-      {p.draft && <button type="button" className="outline-button" onClick={onSent} disabled={busy} aria-label={`I sent it to ${p.name}`}>I sent it</button>}
+      {wait && <span className="or-wait">{wait}</span>}
+      {canMarkSent(p) && <button type="button" className="outline-button" onClick={onSent} disabled={busy} aria-label={`I sent it to ${p.name}`}>I sent it</button>}
       {canReply && <button type="button" className="outline-button" onClick={onReplyForm} disabled={busy} aria-expanded={panel === 'reply'} aria-label={`They replied (${p.name})`}>They replied</button>}
       <button type="button" className="outline-button" onClick={onMenu} aria-expanded={menuOpen} aria-controls={menuId} aria-label={`More actions for ${p.name}`}><MoreHorizontal size={14} /></button>
     </div>
@@ -529,6 +560,80 @@ function IssueRow({ issue, open, onDraft, panelNode }: { issue: SnapshotIssue; o
       <button type="button" className="outline-button" onClick={onDraft} aria-expanded={open}>Draft a comment</button>
     </div>
     {open && panelNode}
+  </div>
+}
+
+// Why this company: the user's own line, kept on the thread and offered to the draft as context. Saved on request.
+function ThreadNote({ value, busy, onSave }: { value: string | null; busy: boolean; onSave: (note: string) => Promise<boolean> }) {
+  const saved = value ?? ''
+  const [text, setText] = useState(saved)
+  const baseline = useRef(saved)
+  const id = useId()
+  // A thread read again replaces what is shown only if the user has not started typing over it.
+  useEffect(() => {
+    setText(current => (current === baseline.current ? saved : current))
+    baseline.current = saved
+  }, [saved])
+  const dirty = text.trim() !== saved.trim()
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault()
+    if (!busy && dirty) void onSave(text)
+  }
+
+  return <form className="or-note-form" onSubmit={submit} aria-label="Why this company">
+    <label htmlFor={`${id}-note`}>Why this company <span className="ci-empty-small">{text.length} / {NOTE_MAX}</span></label>
+    <textarea id={`${id}-note`} rows={2} maxLength={NOTE_MAX} value={text} onChange={e => setText(e.target.value)} placeholder="Optional. A line in your own words, offered to the draft." />
+    {dirty && <div className="or-actions">
+      <button type="submit" className="outline-button" disabled={busy}>Save note</button>
+      <button type="button" className="text-button" onClick={() => setText(saved)}>Cancel</button>
+    </div>}
+  </form>
+}
+
+// The thread's next step: what the user said happens next, and when. Marking it done or changing it is
+// always possible on an open thread; a reply recorded without one can be given one here.
+function NextStep({ detail, busy, onSave, onDone }: {
+  detail: ThreadDetail
+  busy: boolean
+  onSave: (text: string, date: string) => Promise<boolean>
+  onDone: () => Promise<boolean>
+}) {
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState('')
+  const [date, setDate] = useState('')
+  const id = useId()
+  const open = detail.stage !== 'closed'
+  const has = Boolean(detail.next_step || detail.next_step_at)
+  const when = detail.next_step_at ? dayMonth(detail.next_step_at) : ''
+  if (!has && !(open && detail.stage === 'replied')) return null
+
+  const edit = () => { setText(detail.next_step ?? ''); setDate(detail.next_step_at ?? ''); setEditing(true) }
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (busy || !text.trim()) return
+    if (await onSave(text, date)) setEditing(false)
+  }
+
+  if (editing) {
+    return <form className="ci-contact-form" onSubmit={submit} aria-label="Next step">
+      <input id={`${id}-text`} aria-label="Next step" autoFocus maxLength={NEXT_STEP_MAX} value={text} onChange={e => setText(e.target.value)} placeholder="Next step, e.g. Call on Thursday" />
+      <input aria-label="Next step date" type="date" value={date} onChange={e => setDate(e.target.value)} />
+      <div className="ci-form-actions">
+        <button type="submit" className="outline-button" disabled={busy || !text.trim()}>{busy ? 'Saving…' : 'Save next step'}</button>
+        <button type="button" className="text-button" onClick={() => setEditing(false)}>Cancel</button>
+      </div>
+    </form>
+  }
+
+  return <div className="or-next">
+    {has
+      ? <p className="or-hint">Next step: <b>{detail.next_step || 'Not named'}</b>{when ? ` · ${when}` : ''}</p>
+      : <p className="or-hint">No next step set.</p>}
+    {open && <div className="or-actions">
+      {has && <button type="button" className="outline-button" onClick={() => void onDone()} disabled={busy} aria-label="Mark the next step done">Done</button>}
+      <button type="button" className="text-button" onClick={edit} disabled={busy} aria-label={has ? 'Edit the next step' : 'Add a next step'}>{has ? 'Edit' : 'Add a next step'}</button>
+    </div>}
   </div>
 }
 

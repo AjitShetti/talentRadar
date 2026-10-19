@@ -132,7 +132,7 @@ export type ThreadStage = 'planned' | 'waiting' | 'replied' | 'cold' | 'closed'
 export type OutreachOutcome = 'referred' | 'interviewing' | 'offer' | 'not_now' | 'not_a_fit' | 'other'
 export type OutreachSource = 'suggestion' | 'drawer' | 'list' | 'typed' | 'overview'
 export type ThreadSummary = { id: string; company_id: string | null; company_name: string; company_summary: string | null; stage: ThreadStage; outcome: OutreachOutcome | null; people_count: number; lead: { name: string; state: PersonState } | null; due: boolean; next_due_at: string | null; last_touch_at: string | null; job: { id: string | null; title: string | null } | null; application: { id: string; status: string | null } | null; source: OutreachSource; created_at: string }
-export type ThreadDetail = ThreadSummary & { note: string | null; next_step: string | null; next_step_at: string | null; closed_at: string | null; company: { stage: string | null; sector: string | null; area: string | null; last_funding_at: string | null; linkedin_url: string | null } | null; people: OutreachPerson[]; suggested_people: SuggestedPerson[]; touches: OutreachTouch[]; issues: IssueSnapshot | null; careers_url: string | null; linkedin_links: LinkedInLink[]; pacing_note: string | null }
+export type ThreadDetail = ThreadSummary & { note: string | null; next_step: string | null; next_step_at: string | null; closed_at: string | null; company: { stage: string | null; sector: string | null; area: string | null; last_funding_at: string | null; linkedin_url: string | null; github_org: string | null } | null; people: OutreachPerson[]; suggested_people: SuggestedPerson[]; touches: OutreachTouch[]; issues: IssueSnapshot | null; careers_url: string | null; linkedin_links: LinkedInLink[]; pacing_note: string | null }
 export type DueItem = { thread_id: string; person_id: string | null; kind: 'follow_up' | 'next_step'; due_at: string; company_name: string; person_name: string | null; follow_up_number: number | null; last_outbound_at: string | null; next_step: string | null }
 export type OutreachHome = { target: { daily: number; reached_today: number }; conversations_started: number; due: DueItem[]; threads: ThreadSummary[] }
 export type Suggestion = { company_id: string; name: string; summary: string | null; area: string | null; stage: string | null; sector: string | null; score: number; reasons: string[]; top_person: { name: string; title: string | null; kind: string } | null }
@@ -144,6 +144,16 @@ export type DraftFormat = 'linkedin_note' | 'linkedin_message' | 'email' | 'x_dm
 export type OutreachDraft = { format: DraftFormat; message: string; subject: string | null; generated: boolean; reason: 'daily_cap' | 'budget' | 'model_unavailable' | null; remaining_today: number; max_chars: number }
 // The PATCH body. An absent key is left alone; `close` closes the thread with an outcome.
 export type OutreachThreadPatch = { note?: string | null; next_step?: string | null; next_step_at?: string | null; job_id?: string | null; application_id?: string | null; close?: { outcome: OutreachOutcome }; reopen?: boolean }
+
+/** A refusal from the API. `status` lets a caller tell "not found" or "conflict" from a failure; `message` is the server's own words. */
+export class ApiError extends Error {
+  status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
 
 export function token() { return typeof window === 'undefined' ? null : localStorage.getItem(TOKEN_KEY) }
 
@@ -210,7 +220,7 @@ async function request<T>(path: string, options: RequestInit = {}, authenticated
     if (response.status === 429) {
       throw new Error('You are going a bit fast for us — wait a moment and try again.')
     }
-    throw new Error(errorMessage(body.detail) || body.message || `Request failed (${response.status})`)
+    throw new ApiError(errorMessage(body.detail) || body.message || `Request failed (${response.status})`, response.status)
   }
   if (response.status === 204) return undefined as T
   return response.json() as Promise<T>

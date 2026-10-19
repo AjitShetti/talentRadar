@@ -6,7 +6,8 @@ import { RELATIONSHIPS } from '@/components/ReferralAsk'
 import { track } from '@/lib/analytics'
 import { api, DraftFormat, IssueSnapshot, OutreachChannelName, OutreachDraft, OutreachPerson, ThreadDetail } from '@/lib/api'
 import {
-  BODY_MAX, channelActionLabel, channelHref, DAILY_DRAFTS, defaultFormat, formatSpec, formatsForChannels, FormatSpec, mailtoHref, SUBJECT_MAX,
+  BODY_MAX, channelActionLabel, channelHref, DAILY_DRAFTS, defaultFormat, formatSpec, formatsForChannels, FormatSpec, isStaleError, mailtoHref,
+  SUBJECT_MAX,
 } from '@/lib/outreach'
 
 /** One good-first-issue from a company's open-source snapshot. */
@@ -28,7 +29,16 @@ type Props = {
   onCancel?: () => void
   /** True while an edited draft that has not been sent exists, so the drawer can ask before it closes. */
   onDirtyChange?: (dirty: boolean) => void
+  /**
+   * Called with the server's message when it refuses the draft because the thread has moved on (not found,
+   * or a state that refuses it, such as "They replied"). The drawer keeps the message and reads the thread again.
+   */
+  onStale?: (message: string) => void
 }
+
+// Some mail apps cut a long mailto: link short, so the text is on the clipboard as well.
+const ALSO_COPIED = 'Also copied — paste it if your mail app cut it short.'
+const COPY_FAILED = 'Could not copy to the clipboard. Select the text and copy it yourself.'
 
 const messageOf = (err: unknown, fallback: string) => (err instanceof Error && err.message ? err.message : fallback)
 
@@ -51,7 +61,7 @@ function targetFor(spec: FormatSpec, person: OutreachPerson | null, issue: Snaps
  * channel action copies the text and opens the page (or the user's mail client),
  * and "I sent it" only records that the user did, after they click it.
  */
-export default function DraftPanel({ thread, person, issue, busy, onSend, onCancel, onDirtyChange }: Props) {
+export default function DraftPanel({ thread, person, issue, busy, onSend, onCancel, onDirtyChange, onStale }: Props) {
   const kind = person?.draft ?? 'first'
   // A comment on an issue needs the issue, so it is offered only when one is given.
   const specs = useMemo(
@@ -65,6 +75,7 @@ export default function DraftPanel({ thread, person, issue, busy, onSend, onCanc
   const [subject, setSubject] = useState('')
   const [used, setUsed] = useState(false)
   const [keep, setKeep] = useState(false)
+  const [alsoCopied, setAlsoCopied] = useState(false)
   const [writing, setWriting] = useState(false)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
@@ -104,21 +115,33 @@ export default function DraftPanel({ thread, person, issue, busy, onSend, onCanc
         relationship: person ? relationship : undefined,
         issue_url: format === 'github_comment' ? issue?.url : undefined,
       })
-      setResult(next); setText(next.message); setSubject(next.subject ?? ''); setUsed(false)
+      setResult(next); setText(next.message); setSubject(next.subject ?? ''); setUsed(false); setAlsoCopied(false)
       track('outreach_drafted', { format: next.format, generated: next.generated })
     } catch (err) {
-      setError(messageOf(err, 'The draft could not be written.'))
+      const message = messageOf(err, 'The draft could not be written.')
+      setError(message)
+      if (isStaleError(err)) onStale?.(message)
     } finally { setWriting(false) }
   }
 
   // The copy and the new tab both start inside the click, so the browser lets the tab open.
   async function openChannel() {
     if (!target) return
-    setError('')
+    setError(''); setAlsoCopied(false)
     // An email channel can hold a web page (a contact form) instead of an address: that opens like any other link.
     if (isEmail && /^mailto:/i.test(target)) {
+      // The copy starts first, inside the click; a long body can be cut short by the mail app.
+      let copied: Promise<void> | null = null
+      try { copied = navigator.clipboard.writeText(text) } catch { copied = null }
       window.location.href = mailtoHref(target.replace(/^mailto:/i, ''), subject.trim() || null, text)
       setUsed(true)
+      try {
+        if (!copied) throw new Error('no clipboard')
+        await copied
+        setAlsoCopied(true)
+      } catch {
+        setError(COPY_FAILED)
+      }
       return
     }
     try {
@@ -127,7 +150,7 @@ export default function DraftPanel({ thread, person, issue, busy, onSend, onCanc
       setUsed(true)
       await copied
     } catch {
-      setError('Could not copy to the clipboard. Select the text and copy it yourself.')
+      setError(COPY_FAILED)
     }
   }
 
@@ -181,6 +204,7 @@ export default function DraftPanel({ thread, person, issue, busy, onSend, onCanc
         {(!target || isEmail) && <CopyButton text={text} />}
         <button type="button" className={used ? 'primary-button' : 'outline-button'} onClick={sent} disabled={sending || busy}>{sending ? 'Saving…' : 'I sent it'}</button>
       </div>
+      {alsoCopied && <p className="or-draft-note" role="status">{ALSO_COPIED}</p>}
       <label className="or-keep">
         <input type="checkbox" checked={keep} onChange={e => setKeep(e.target.checked)} />
         Keep a copy in this thread
