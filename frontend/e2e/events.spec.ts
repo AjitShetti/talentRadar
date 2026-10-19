@@ -188,3 +188,21 @@ test('Start a thread hidden while outreach disabled', async ({ page, account, er
   await expect(dialog.getByText('Arjun Rao')).toBeVisible()
   await expect(dialog.locator('a[href*="/outreach"]')).toHaveCount(0)
 })
+
+test('map falls back to list without WebGL', async ({ page, account, errors }) => {
+  void account; void errors
+  // A browser with no WebGL: asking a canvas for any drawing context returns null.
+  await page.addInitScript(() => {
+    ;(HTMLCanvasElement.prototype as unknown as { getContext: () => null }).getContext = () => null
+  })
+  await serveEvents(page)
+  await page.goto('/events')
+
+  const view = page.getByRole('group', { name: 'View' })
+  await expect(view.getByRole('button', { name: 'List' })).toHaveAttribute('aria-pressed', 'true')
+  await view.getByRole('button', { name: 'Map' }).click()
+
+  await expect(page.getByText('Map unavailable — showing the list.')).toBeVisible()
+  await expect(page.locator('.ev-row')).toHaveCount(3)
+  await expect(view.getByRole('button', { name: 'List' })).toHaveAttribute('aria-pressed', 'true')
+})

@@ -1,10 +1,12 @@
 'use client'
 
+import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { FormEvent, ReactNode, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Bookmark, CalendarDays, Check, Download, Loader2, Search, SlidersHorizontal, Trash2, Users, X } from 'lucide-react'
+import { Bookmark, CalendarDays, Check, Download, Info, List, Loader2, Map as MapIcon, Search, SlidersHorizontal, Trash2, Users, X } from 'lucide-react'
 import AppShell from '@/components/AppShell'
+import type { EventMapProps } from '@/components/EventMap'
 import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
 import {
@@ -15,6 +17,19 @@ import { FEATURES } from '@/lib/features'
 import { usePersistentState } from '@/lib/persistent-state'
 import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 import { useDialog } from '@/lib/use-dialog'
+
+/**
+ * The map is its own chunk: its stylesheet and code ship only when someone picks Map.
+ * If even that chunk cannot be fetched the page falls back to the list like any other map failure.
+ */
+function MapChunkFailed({ onUnavailable }: EventMapProps) {
+  useEffect(() => { onUnavailable('The map code could not be loaded.') }, [onUnavailable])
+  return null
+}
+const EventMap = dynamic<EventMapProps>(
+  () => import('@/components/EventMap').catch(() => ({ default: MapChunkFailed })),
+  { ssr: false, loading: () => <div className="cm-plate" role="status"><Loader2 size={16} className="spin" />Loading map…</div> },
+)
 
 const PAGE_SIZE = 100
 /** Workflow reads (`.github/workflows/events.yml`): 04:50 and 16:50 IST. */
@@ -43,6 +58,7 @@ const WHEN_OPTIONS: ReadonlyArray<readonly [When, string]> = [
   ['today', 'Today'], ['week', 'This week'], ['weekend', 'This weekend'], ['month', 'Next 30 days'],
 ]
 type Rail = 'all' | 'saved' | 'going'
+type View = 'list' | 'map'
 
 type Filters = { q: string; when: When; topic: string; format: string; online: boolean; hidePaid: boolean; rail: Rail }
 type SetFilter = <K extends keyof Filters>(key: K, value: Filters[K]) => void
@@ -176,6 +192,9 @@ function EventsView() {
   const [online, setOnline] = usePersistentState('events.online', false)
   const [hidePaid, setHidePaid] = usePersistentState('events.hidePaid', false)
   const [rail, setRail] = usePersistentState<Rail>('events.rail', 'all')
+  const [storedView, setStoredView] = usePersistentState<View>('events.view', 'list')
+  // Set when the map cannot be drawn (no WebGL, style or tiles down); the list stands in for it.
+  const [mapDown, setMapDown] = useState('')
 
   const [events, setEvents] = useState<EventCard[]>([])
   const [meta, setMeta] = useState<Pick<EventPage, 'total' | 'counts' | 'sources'> | null>(null)
@@ -297,6 +316,19 @@ function EventsView() {
   const groups = useMemo(() => groupByDay(events), [events])
   const selectedCard = selectedId ? events.find(e => e.id === selectedId) : undefined
 
+  // The user's choice, except that a map that cannot be drawn is always the list.
+  const view: View = mapDown ? 'list' : storedView
+  const chooseView = useCallback((next: View) => {
+    if (next === 'map' && mapDown) return
+    setStoredView(next)
+  }, [mapDown, setStoredView])
+  const showList = useCallback(() => setStoredView('list'), [setStoredView])
+  // The map lights the events the user is going to (never a cancelled one) and the open one; a stable Set so the map is not redrawn for nothing.
+  const goingIds = useMemo(() => new Set(events.filter(e => e.my_status === 'going' && !e.is_cancelled).map(e => e.id)), [events])
+  const moreButton = meta && meta.total > events.length
+    ? <button type="button" className="outline-button ev-more" onClick={() => void load({ append: true })}>Show more · {meta.total - events.length} left</button>
+    : null
+
   const addLink = (variant: 'inline' | 'sheet') => <AddByLink variant={variant} onSubmit={importLink} />
 
   return <>
@@ -315,12 +347,16 @@ function EventsView() {
       set={set}
       counts={meta?.counts ?? null}
       activeCount={activeCount}
+      view={view}
+      mapDown={Boolean(mapDown)}
+      onView={chooseView}
       onOpenSheet={() => setSheetOpen(true)}
       addLink={addLink('inline')}
     />
 
     {manual && <ManualForm draft={manual} onCancel={() => setManual(null)} onAdded={manualAdded} />}
     {notice && <p className={notice.kind === 'error' ? 'form-error' : 'ci-empty-small'} role={notice.kind === 'error' ? 'alert' : 'status'}>{notice.text}</p>}
+    {mapDown && <p className="cm-fallback" role="status"><Info size={15} aria-hidden="true" /><span>Map unavailable — showing the list.</span><small>{mapDown}</small></p>}
 
     {loadState === 'loading' && !events.length
       ? <div className="loading-state"><Loader2 className="spin" /> Loading events…</div>
@@ -336,18 +372,30 @@ function EventsView() {
               onClear={clearFilters}
               onOnline={() => setOnline(true)}
             />
-          : <div className="ev-list">
-              {groups.map(group => <DayGroup
-                key={group.key}
-                group={group}
-                now={now}
-                selectedId={selectedId}
-                onToggleSave={toggleSave}
-              />)}
-              {meta && meta.total > events.length && <button type="button" className="outline-button ev-more" onClick={() => void load({ append: true })}>
-                Show more · {meta.total - events.length} left
-              </button>}
-            </div>}
+          : view === 'map'
+            ? <>
+                <section className="ev-map" aria-label="Events map" data-testid="events-map-stage">
+                  <EventMap
+                    events={events}
+                    selectedId={selectedId}
+                    goingIds={goingIds}
+                    onSelect={openEvent}
+                    onUnavailable={setMapDown}
+                    onShowList={showList}
+                  />
+                </section>
+                {moreButton}
+              </>
+            : <div className="ev-list">
+                {groups.map(group => <DayGroup
+                  key={group.key}
+                  group={group}
+                  now={now}
+                  selectedId={selectedId}
+                  onToggleSave={toggleSave}
+                />)}
+                {moreButton}
+              </div>}
 
     {selectedId && <>
       <button type="button" className="ci-backdrop cm-over" onClick={closeDrawer} aria-label="Close event details" />
@@ -425,11 +473,14 @@ function ToggleChip({ pressed, onToggle, children }: { pressed: boolean; onToggl
 
 const RAIL: ReadonlyArray<readonly [Rail, string]> = [['all', 'All'], ['saved', 'Saved'], ['going', 'Going']]
 
-function Toolbar({ filters, set, counts, activeCount, onOpenSheet, addLink }: {
+function Toolbar({ filters, set, counts, activeCount, view, mapDown, onView, onOpenSheet, addLink }: {
   filters: Filters
   set: SetFilter
   counts: EventPage['counts'] | null
   activeCount: number
+  view: View
+  mapDown: boolean
+  onView: (view: View) => void
   onOpenSheet: () => void
   addLink: ReactNode
 }) {
@@ -454,6 +505,14 @@ function Toolbar({ filters, set, counts, activeCount, onOpenSheet, addLink }: {
       <button type="button" className="ci-chip ev-filterbtn" aria-haspopup="dialog" onClick={onOpenSheet}>
         <SlidersHorizontal size={13} aria-hidden="true" />{activeCount > 0 ? `Filters (${activeCount})` : 'Filters'}
       </button>
+      <div className="ev-viewswitch" role="group" aria-label="View" data-testid="view-switch">
+        <button type="button" aria-pressed={view === 'list'} onClick={() => onView('list')}>
+          <List size={13} aria-hidden="true" />List
+        </button>
+        <button type="button" aria-pressed={view === 'map'} aria-disabled={mapDown} title={mapDown ? 'Map unavailable' : undefined} onClick={() => onView('map')}>
+          <MapIcon size={13} aria-hidden="true" />Map
+        </button>
+      </div>
     </div>
     <div className="status-tabs ev-rail" role="group" aria-label="Your events">
       {RAIL.map(([id, label]) => {

@@ -1831,6 +1831,13 @@ body::before{content:'';position:fixed;inset:0;z-index:2000;pointer-events:none;
 .ev-form input[type=checkbox]{width:auto;padding:0}
 .ev-form .ev-form-actions{align-items:center;gap:10px}
 
+/* the map view: the List | Map switch, and the stage the map fills (its floating parts are the company map's .cm-* rules) */
+.ev-viewswitch button{cursor:pointer}
+.ev-viewswitch button:hover{color:var(--ink)}
+.ev-viewswitch button:focus-visible{outline-offset:-2px}
+.ev-viewswitch button[aria-disabled=true]{color:var(--ghost);cursor:not-allowed}
+.ev-map{--cm-gap:14px;position:relative;isolation:isolate;height:clamp(420px,calc(100vh - var(--nav-h) - 120px),860px);height:clamp(420px,calc(100dvh - var(--nav-h) - 120px),860px);margin-top:18px;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--paper)}
+
 /* 375 px: a row is two lines; filters live in the sheet */
 @media(max-width:700px){
   .ev-ledger{margin-top:-6px;column-gap:14px}
