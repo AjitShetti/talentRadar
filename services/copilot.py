@@ -439,7 +439,7 @@ def _follow_ups_due(cards: list[dict[str, Any]]) -> int:
         return 0
     try:
         return max(int(card["meta"].get("count", 1)), 1)
-    except (TypeError, ValueError):
+    except (AttributeError, TypeError, ValueError):
         return 1
 
 
@@ -650,7 +650,8 @@ async def _general_reply(
         return await generate_copilot_reply(question=message, context=context)
     except Exception as exc:
         logger.warning("General reply failed: %s", exc)
-        cards = briefing["cards"]
-        if cards:
-            return f"{briefing['headline']} Start with: {cards[0]['title']}."
-        return "I don't have enough activity yet to advise you. Save a few roles and ask again."
+        # The fallback reply is replayed as history, so it names only allowlisted cards.
+        headline = str(briefing["headline"])
+        if visible and visible[0]["title"]:
+            return f"{headline} Start with: {visible[0]['title']}."
+        return headline or "I don't have enough activity yet to advise you. Save a few roles and ask again."

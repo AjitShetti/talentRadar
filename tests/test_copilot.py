@@ -538,6 +538,43 @@ async def test_outreach_cards_do_not_use_up_the_models_four_open_items(
     ]
 
 
+async def test_fallback_reply_never_names_an_outreach_card(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With the model down, the fallback reply is replayed as chat history on the next
+    turn, so it may name only what the model is allowed to see."""
+    marker = "ZZ_MARKER_ZZ"
+    cards = [
+        _card(card_id="outreach_followup", kind="outreach_followup",
+              title=f"Next step with Ledgerline: {marker}", detail="d",
+              tone="primary", meta={"count": 1, "thread_id": marker}, dismissible=False),
+        _card(card_id="priority:apply_saved", kind="priority", title="Apply to your saved jobs",
+              detail="You have 6 saved job(s).", tone="primary"),
+    ]
+
+    async def fake_briefing(*, user_id: str) -> dict[str, Any]:
+        return {"headline": "h", "cards": cards, "stats": {}}
+
+    async def fake_memories(**kwargs: object) -> list[Any]:
+        return []
+
+    async def boom(**kwargs: object) -> str:
+        raise RuntimeError("no api key")
+
+    monkeypatch.setattr(copilot, "build_briefing", fake_briefing)
+    monkeypatch.setattr(copilot, "get_memories", fake_memories)
+    monkeypatch.setattr("services.llm.generate_copilot_reply", boom)
+
+    reply = await copilot._general_reply("u1", "what now?", None)
+
+    assert marker not in reply
+    assert "Apply to your saved jobs" in reply
+
+
+def test_follow_ups_due_survives_a_card_without_meta() -> None:
+    assert copilot._follow_ups_due([{"kind": "outreach_followup", "meta": None}]) == 1
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Preference capture
 # ─────────────────────────────────────────────────────────────────────────────
