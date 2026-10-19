@@ -49,6 +49,7 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures" / "events"
 NOW = datetime(2026, 10, 15, 6, 0, tzinfo=UTC)  # Thu 15 Oct, 11:30 IST
 LIST = "/api/v1/events"
 TOKEN = "TESTTOKEN0123456789ABCDEF"
+BACKSLASH = chr(92)
 
 EVENTBRITE_LINK = (
     "https://www.eventbrite.com/e/async-rust-in-production-bengaluru-meetup-tickets-712345678901"
@@ -168,6 +169,51 @@ def auth(person: User) -> dict[str, str]:
 async def rows_of(factory: Factory, model: Any, *where: Any) -> list[Any]:
     async with factory() as session:
         return list((await session.execute(select(model).where(*where))).scalars())
+
+
+def manual_row(owner: User, number: int) -> Event:
+    """A private event the user added by hand (what ``POST /manual`` stores), for seeding."""
+    event_id = uuid.uuid4()
+    return make_event(
+        days(1 + number / 1000),
+        id=event_id,
+        source="user",
+        external_id=str(event_id),
+        url=None,
+        title=f"Mine {number}",
+        owner_user_id=owner.id,
+        geo_precision="none",
+    )
+
+
+def met_row(owner: User, event_id: uuid.UUID, number: int) -> EventContact:
+    """A person the user met, for seeding."""
+    return EventContact(
+        id=uuid.uuid4(),
+        user_id=owner.id,
+        event_id=event_id,
+        name=f"Person {number}",
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+
+def an_online_gdg_page(description: str) -> bytes:
+    """A GDG event page for an online event; ``description`` is the only place a signal can hide."""
+    block = {
+        "@context": "https://schema.org",
+        "@type": "Event",
+        "name": "Cloud Study Jam",
+        "startDate": "2026-10-22T13:30:00+00:00",
+        "endDate": "2026-10-22T15:30:00+00:00",
+        "description": description,
+        "eventStatus": "https://schema.org/EventScheduled",
+        "eventAttendanceMode": "https://schema.org/OnlineEventAttendanceMode",
+        "organizer": {"@type": "Organization", "name": "Google Developer Groups"},
+        "location": {"@type": "VirtualLocation", "url": "https://meet.example.test/jam"},
+    }
+    page = f'<html><head><script type="application/ld+json">{json.dumps(block)}</script></head>'
+    return (page + "<body></body></html>").encode()
 
 
 @pytest.fixture(autouse=True)
@@ -690,6 +736,40 @@ async def test_import_gdg_page_that_cannot_be_read(
         quiet_outside["record"].assert_not_awaited()
 
 
+ONLINE_GDG_SLUG = "gdg-cloud-study-jam-online"
+ONLINE_GDG_LINK = f"https://gdg.community.dev/events/details/{ONLINE_GDG_SLUG}/"
+
+
+async def test_pasted_online_gdg_page_without_an_india_signal_is_not_stored(
+    factory: Factory, me: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A pasted page names no chapter and GDG is worldwide, so "online" alone vouches for nothing."""
+    page = an_online_gdg_page("A hands-on study jam, online. Bring a laptop and a question.")
+    monkeypatch.setattr(gdg, "fetch_page", AsyncMock(return_value=page))
+
+    result = await run_import(factory, me, ONLINE_GDG_LINK)
+
+    assert result == {"needs_details": True, "reason": "not_in_bengaluru"}
+    assert await rows_of(factory, Event) == []
+    assert await rows_of(factory, EventSave) == []
+
+
+async def test_pasted_online_gdg_page_with_an_india_signal_is_stored(
+    factory: Factory, me: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    page = an_online_gdg_page("A hands-on study jam, online, at 7 pm IST. Bring a laptop.")
+    monkeypatch.setattr(gdg, "fetch_page", AsyncMock(return_value=page))
+
+    result = await run_import(factory, me, ONLINE_GDG_LINK)
+
+    assert result["event"]["source"] == "gdg"
+    assert result["event"]["is_online"] is True
+    stored = await rows_of(factory, Event)
+    assert [(row.source, row.external_id) for row in stored] == [("gdg", ONLINE_GDG_SLUG)]
+    saves = await rows_of(factory, EventSave)
+    assert [(save.user_id, save.status) for save in saves] == [(me.id, "saved")]
+
+
 async def test_import_daily_cap(
     factory: Factory, add: Callable[..., Any], me: User, quiet_outside: dict[str, Any]
 ) -> None:
@@ -854,6 +934,7 @@ async def test_manual_event_text_is_made_safe(client: AsyncClient) -> None:
         {"url": "javascript:alert(1)"},
         {"url": "https://user:pw@example.test/dinner"},
         {"url": "https://exa mple.test/dinner"},
+        {"url": f"https://evil.io{BACKSLASH}.example.test/dinner"},
         {"venue_name": "v" * 201},
     ],
     ids=lambda changes: "-".join(f"{k}={str(v)[:18]}" for k, v in changes.items()),
@@ -862,6 +943,72 @@ async def test_manual_event_is_validated(client: AsyncClient, changes: dict[str,
     response = await client.post(f"{LIST}/manual", json={**MANUAL, **changes})
 
     assert response.status_code == 422, response.text
+
+
+async def test_manual_events_are_capped_per_user(
+    client: AsyncClient, factory: Factory, add: Callable[..., Any], me: User
+) -> None:
+    assert user.MAX_MANUAL_EVENTS == 200
+    await add(*[manual_row(me, number) for number in range(200)])
+
+    over = await client.post(f"{LIST}/manual", json=MANUAL)
+
+    assert over.status_code == 422
+    assert over.json() == {"detail": "You've added 200 events. Remove one to add another."}
+    assert len(await rows_of(factory, Event)) == 200
+
+    stranger = await new_user(add)
+    elsewhere = await client.post(f"{LIST}/manual", json=MANUAL, headers=auth(stranger))
+    assert elsewhere.status_code == 201, elsewhere.text
+
+    first = (await rows_of(factory, Event, Event.owner_user_id == me.id))[0]
+    assert (await client.delete(f"{LIST}/{first.id}")).status_code == 204
+    again = await client.post(f"{LIST}/manual", json=MANUAL)
+    assert again.status_code == 201, again.text
+
+
+EARLIER = {"title": "Founders dinner", "starts_at": "2026-10-15T04:30:00Z"}  # before NOW
+
+
+async def test_delete_own_manual_event_takes_its_save_and_people_with_it(
+    client: AsyncClient, factory: Factory
+) -> None:
+    created = (await client.post(f"{LIST}/manual", json=EARLIER)).json()
+    event_id = created["id"]
+    assert (await client.post(f"{LIST}/{event_id}/people", json=PERSON)).status_code == 201
+    assert len(await rows_of(factory, EventSave)) == 1
+    assert len(await rows_of(factory, EventContact)) == 1
+
+    removed = await client.delete(f"{LIST}/{event_id}")
+
+    assert removed.status_code == 204
+    assert removed.content == b""
+    assert await rows_of(factory, Event) == []
+    assert await rows_of(factory, EventSave) == []
+    assert await rows_of(factory, EventContact) == []
+    assert (await client.get(f"{LIST}/{event_id}")).status_code == 404
+    assert (await client.delete(f"{LIST}/{event_id}")).status_code == 404
+
+
+async def test_delete_is_for_your_own_manual_event_only(
+    client: AsyncClient, factory: Factory, add: Callable[..., Any]
+) -> None:
+    stranger = await new_user(add)
+    theirs = (await client.post(f"{LIST}/manual", json=MANUAL, headers=auth(stranger))).json()
+    public = make_event(days(2))
+    await add(public)
+    assert (
+        await client.put(f"{LIST}/{public.id}/save", json={"status": "going"})
+    ).status_code == 200
+
+    unknown = await client.delete(f"{LIST}/{uuid.uuid4()}")
+    foreign = await client.delete(f"{LIST}/{theirs['id']}")
+    listed = await client.delete(f"{LIST}/{public.id}")
+
+    assert unknown.status_code == foreign.status_code == listed.status_code == 404
+    assert unknown.json() == foreign.json() == listed.json() == {"detail": "Event not found"}
+    assert {str(row.id) for row in await rows_of(factory, Event)} == {theirs["id"], str(public.id)}
+    assert len(await rows_of(factory, EventSave)) == 2
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1001,6 +1148,11 @@ async def test_a_person_is_linked_only_to_a_tech_company_on_the_map(
         {"linkedin_url": "https://user@www.linkedin.com/in/x"},
         {"linkedin_url": "https://www.linkedin.com:8443/in/x"},
         {"linkedin_url": "https://www.linkedin.com/in/x y"},
+        {"linkedin_url": f"https://evil.io{BACKSLASH}.linkedin.com/in/x"},
+        {"linkedin_url": "https://evil.io%2e.linkedin.com/in/x"},
+        {"linkedin_url": "https://evil.io;.linkedin.com/in/x"},
+        {"x_url": f"https://evil.io{BACKSLASH}.x.com/asha"},
+        {"github_url": "https://evil.io%2e.github.com/asha"},
         {"linkedin_url": "javascript:alert(1)"},
         {"linkedin_url": "https://x.com/asha"},
         {"x_url": "https://www.linkedin.com/in/x"},
@@ -1130,6 +1282,60 @@ async def test_delete_person(client: AsyncClient, add: Callable[..., Any]) -> No
     assert (await client.delete(f"{LIST}/people/{created['id']}")).status_code == 404
 
 
+async def test_people_are_capped_per_event(
+    client: AsyncClient, factory: Factory, add: Callable[..., Any], me: User
+) -> None:
+    assert user.MAX_PEOPLE_PER_EVENT == 100
+    event, other = started_event(), started_event()
+    await add(event, other)
+    await add(*[met_row(me, event.id, number) for number in range(100)])
+
+    over = await client.post(f"{LIST}/{event.id}/people", json=PERSON)
+
+    assert over.status_code == 422
+    assert over.json() == {
+        "detail": "You've added 100 people to this event. Remove one to add another."
+    }
+    assert len(await rows_of(factory, EventContact, EventContact.event_id == event.id)) == 100
+    assert await rows_of(factory, EventSave) == []  # refused before anything was written
+
+    # Another event of the caller's, and another user at the full event, are unaffected.
+    assert (await client.post(f"{LIST}/{other.id}/people", json=PERSON)).status_code == 201
+    stranger = await new_user(add)
+    theirs = auth(stranger)
+    assert (
+        await client.post(f"{LIST}/{event.id}/people", json=PERSON, headers=theirs)
+    ).status_code == 201
+
+    mine = await rows_of(
+        factory, EventContact, EventContact.event_id == event.id, EventContact.user_id == me.id
+    )
+    assert (await client.delete(f"{LIST}/people/{mine[0].id}")).status_code == 204
+    assert (await client.post(f"{LIST}/{event.id}/people", json=PERSON)).status_code == 201
+
+
+async def test_people_met_are_capped_per_user(
+    client: AsyncClient, factory: Factory, add: Callable[..., Any], me: User
+) -> None:
+    assert user.MAX_PEOPLE_TOTAL == 2000
+    events = [started_event() for _ in range(20)]
+    fresh = started_event()
+    await add(*events, fresh)
+    await add(*[met_row(me, event.id, number) for event in events for number in range(100)])
+
+    over = await client.post(f"{LIST}/{fresh.id}/people", json=PERSON)
+
+    assert over.status_code == 422
+    assert over.json() == {
+        "detail": "You've added 2,000 people in total. Remove one to add another."
+    }
+    assert await rows_of(factory, EventContact, EventContact.event_id == fresh.id) == []
+
+    stranger = await new_user(add)
+    elsewhere = await client.post(f"{LIST}/{fresh.id}/people", json=PERSON, headers=auth(stranger))
+    assert elsewhere.status_code == 201, elsewhere.text
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # the router itself
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1169,6 +1375,7 @@ def test_the_new_routes_are_mounted_and_authenticated() -> None:
         "/api/v1/events/people/{person_id}",
         "/api/v1/events/people-met",
     } <= set(documented)
+    assert set(documented["/api/v1/events/{event_id}"]) == {"get", "delete"}
     assert set(documented["/api/v1/events/{event_id}/save"]) == {"put", "delete"}
     assert set(documented["/api/v1/events/{event_id}/people"]) == {"get", "post"}
     assert set(documented["/api/v1/events/people/{person_id}"]) == {"patch", "delete"}
@@ -1181,6 +1388,7 @@ async def test_every_new_route_needs_a_signed_in_user(
     await add(event)
     someone = uuid.uuid4()
     calls = [
+        anonymous.delete(f"{LIST}/{event.id}"),
         anonymous.put(f"{LIST}/{event.id}/save", json={"status": "going"}),
         anonymous.delete(f"{LIST}/{event.id}/save"),
         anonymous.post(f"{LIST}/import", json={"url": "https://luma.com/x-y-z"}),

@@ -32,7 +32,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 import httpx
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -54,6 +54,12 @@ logger = logging.getLogger(__name__)
 
 IMPORT_DAILY_CAP = 10
 _IMPORT_TTL_S = 48 * 3600
+
+#: What one user may keep. Soft limits: they are counted before the insert, not enforced by the
+#: database, so two simultaneous requests can overshoot by one.
+MAX_MANUAL_EVENTS = 200
+MAX_PEOPLE_PER_EVENT = 100
+MAX_PEOPLE_TOTAL = 2000
 
 Reason = Literal[
     "unrecognised",
@@ -78,6 +84,10 @@ _SQLITE_SAVE_KEY = "UNIQUE constraint failed: event_saves.user_id, event_saves.e
 
 class NotStartedError(ValueError):
     """People can be added to an event only once it has started."""
+
+
+class LimitReachedError(ValueError):
+    """The caller has used one of their allowances; the message says which and what to do."""
 
 
 def _needs(reason: Reason) -> dict[str, Any]:
@@ -356,8 +366,18 @@ async def import_link(
 
 
 async def create_manual(session: AsyncSession, user_id: str, payload: ManualEventIn) -> Event:
-    """A private event the caller added by hand, saved as ``going``."""
+    """A private event the caller added by hand, saved as ``going``.
+
+    Raises :class:`LimitReachedError` once they hold :data:`MAX_MANUAL_EVENTS` of them.
+    """
     me = uuid.UUID(user_id)
+    held = await session.scalar(
+        select(func.count()).select_from(Event).where(Event.owner_user_id == me)
+    )
+    if (held or 0) >= MAX_MANUAL_EVENTS:
+        raise LimitReachedError(
+            f"You've added {MAX_MANUAL_EVENTS:,} events. Remove one to add another."
+        )
     event_id = uuid.uuid4()
     event = Event(
         id=event_id,
@@ -379,6 +399,26 @@ async def create_manual(session: AsyncSession, user_id: str, payload: ManualEven
     await session.flush()
     await _create_save(session, me, event_id, "going", None)
     return event
+
+
+async def delete_manual(session: AsyncSession, user_id: str, event_id: uuid.UUID) -> bool:
+    """Remove an event the caller added by hand, with their save and people at it.
+
+    The save and the people go with the row (``ON DELETE CASCADE``). ``False`` for any other
+    event, a source's or another user's, and for an id that does not exist: the three are not
+    told apart.
+    """
+    found = await session.execute(
+        select(Event).where(
+            Event.id == event_id, Event.source == "user", Event.owner_user_id == uuid.UUID(user_id)
+        )
+    )
+    event = found.scalar_one_or_none()
+    if event is None:
+        return False
+    await session.delete(event)
+    await session.flush()
+    return True
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -418,6 +458,29 @@ async def list_contacts(
     return list(found.scalars())
 
 
+async def _check_room_for_a_person(
+    session: AsyncSession, me: uuid.UUID, event_id: uuid.UUID
+) -> None:
+    """Raise :class:`LimitReachedError` if the caller has no room for one more person."""
+    here = await session.scalar(
+        select(func.count())
+        .select_from(EventContact)
+        .where(EventContact.user_id == me, EventContact.event_id == event_id)
+    )
+    if (here or 0) >= MAX_PEOPLE_PER_EVENT:
+        raise LimitReachedError(
+            f"You've added {MAX_PEOPLE_PER_EVENT:,} people to this event. "
+            "Remove one to add another."
+        )
+    overall = await session.scalar(
+        select(func.count()).select_from(EventContact).where(EventContact.user_id == me)
+    )
+    if (overall or 0) >= MAX_PEOPLE_TOTAL:
+        raise LimitReachedError(
+            f"You've added {MAX_PEOPLE_TOTAL:,} people in total. Remove one to add another."
+        )
+
+
 async def add_contact(
     session: AsyncSession,
     user_id: str,
@@ -429,7 +492,8 @@ async def add_contact(
     """Note a person met at an event. ``None`` if the caller cannot see the event.
 
     Raises :class:`NotStartedError` (a ``ValueError``) before the event starts: nobody has been
-    met yet. Marks the caller as going if they had no save.
+    met yet. Raises :class:`LimitReachedError` past :data:`MAX_PEOPLE_PER_EVENT` at this event
+    or :data:`MAX_PEOPLE_TOTAL` overall. Marks the caller as going if they had no save.
     """
     me = uuid.UUID(user_id)
     event = await read.visible_event(session, me, event_id)
@@ -437,6 +501,7 @@ async def add_contact(
         return None
     if as_utc(event.starts_at) > as_utc(now):
         raise NotStartedError("people can be added once the event has started")
+    await _check_room_for_a_person(session, me, event_id)
     await _ensure_save(session, me, event_id, "going")
     stamp = as_utc(now)
     contact = EventContact(

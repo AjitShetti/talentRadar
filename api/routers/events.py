@@ -186,7 +186,10 @@ async def add_manual_event(
     body: ManualEventIn, user_id: CurrentUserId, session: Session
 ) -> dict[str, Any]:
     """An event the caller adds by hand: private to them, and saved as going."""
-    created = await event_user.create_manual(session, user_id, body)
+    try:
+        created = await event_user.create_manual(session, user_id, body)
+    except event_user.LimitReachedError as limit:
+        raise HTTPException(status_code=422, detail=str(limit)) from None
     detail = await read.event_detail(session, user_id, created.id)
     if detail is None:  # unreachable: the caller owns it
         raise HTTPException(status_code=500, detail="Event could not be read back")
@@ -221,6 +224,18 @@ async def get_event(
     if detail is None:
         raise HTTPException(status_code=404, detail="Event not found")
     return detail
+
+
+@router.delete("/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_event(event_id: uuid.UUID, user_id: CurrentUserId, session: Session) -> Response:
+    """Remove an event the caller added by hand, with their save and people at it.
+
+    404 for every other event (a source's, another user's) and for an unknown id, with the same
+    body as ``GET /{event_id}``.
+    """
+    if not await event_user.delete_manual(session, user_id, event_id):
+        raise HTTPException(status_code=404, detail="Event not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{event_id}/ics")
@@ -280,6 +295,8 @@ async def add_person(
         raise HTTPException(
             status_code=409, detail="People can be added once the event has started"
         ) from None
+    except event_user.LimitReachedError as limit:
+        raise HTTPException(status_code=422, detail=str(limit)) from None
     if contact is None:
         raise HTTPException(status_code=404, detail="Event not found")
     return read.contact_out(contact)
