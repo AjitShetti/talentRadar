@@ -69,7 +69,7 @@ from agents.interview.role_context import _flat
 from config.settings import get_settings
 from domain.outreach import aware
 from services.base import parse_uuid
-from services.company_map.read import listed_clause
+from services.company_map.read import AREA_CITY, listed_clause
 from services.github import _headers
 from storage.database import AsyncSessionLocal
 from storage.models import Company, Job, JobStatus, OssIssueSnapshot, OutreachThread
@@ -267,7 +267,7 @@ def _due_statement(now: datetime) -> Select[tuple[uuid.UUID, str | None]]:
         .where(
             Company.github_org.is_not(None),
             Company.github_org != "",
-            or_(in_open_thread, listed_clause(None)),
+            or_(in_open_thread, listed_clause(AREA_CITY)),
             due,
         )
         .order_by(tier, checked.asc().nulls_first(), Company.name, Company.id)
@@ -279,7 +279,8 @@ async def _due_companies(now: datetime) -> list[tuple[uuid.UUID, str]]:
 
     A company needs a ``github_org``. One in somebody's open thread is due once its
     snapshot is a day old, wherever it sits on the map; every other must be a listed
-    tech employer and is due at three days. Never-checked sorts first in each tier.
+    Bengaluru tech employer (suggestions read no other city, so a search for one would
+    help no one) and is due at three days. Never-checked sorts first in each tier.
     """
     async with AsyncSessionLocal() as session:
         rows = (await session.execute(_due_statement(now))).all()

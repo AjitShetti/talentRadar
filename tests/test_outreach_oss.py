@@ -974,6 +974,26 @@ async def test_the_whole_due_order(outreach_db: Factory, no_token: None) -> None
     ]
 
 
+async def test_the_budget_is_spent_on_bengaluru_companies_and_open_threads(
+    outreach_db: Factory, no_token: None
+) -> None:
+    mumbai = {"office_cities": ["Mumbai"], "hq_city": "Mumbai", "area": None}
+    async with outreach_db() as session:
+        await listed(session, "Mumbai Raised", "mumbai-raised", last_funding_at=NOW, **mumbai)
+        hiring_elsewhere = await listed(session, "Mumbai Hiring", "mumbai-hiring", **mumbai)
+        await make_job(session, hiring_elsewhere)
+        threaded_elsewhere = await listed(session, "Mumbai Threaded", "mumbai-threaded", **mumbai)
+        await listed(session, "Fernhill", "fernhill-dev")
+    await open_thread(outreach_db, threaded_elsewhere)
+
+    async with github(ok_answer) as (client, seen):
+        await refresh_issues(60, client=client, sleep=Sleeps(), now=NOW)
+
+    # Suggestions only ever read Bengaluru, so those searches would help no one. A company
+    # someone is already writing to is checked wherever it is.
+    assert seen.orgs == ["mumbai-threaded", "fernhill-dev"]
+
+
 async def test_a_thread_company_is_not_due_again_within_a_day(
     outreach_db: Factory, no_token: None
 ) -> None:
