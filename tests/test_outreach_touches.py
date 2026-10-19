@@ -37,7 +37,7 @@ from domain.outreach import (
 )
 from services.outreach import touches as touches_module
 from services.outreach.errors import Conflict, Invalid, NotFound
-from services.outreach.people import add_person, remove_person, update_person
+from services.outreach.people import add_person, get_thread, remove_person, update_person
 from services.outreach.retention import MAX_THREADS_PER_RUN, prune_outreach, prune_statement
 from services.outreach.threads import create_thread, update_thread
 from services.outreach.touches import (
@@ -286,6 +286,48 @@ async def test_a_next_step_that_is_not_due_yet_is_not_listed(outreach_db: Factor
     assert await due_items(str(user.id), now=NOW) == []
     # It falls due at 00:00 IST on its day.
     assert len(await due_items(str(user.id), now=datetime(2026, 10, 15, 18, 30, tzinfo=UTC))) == 1
+
+
+async def test_finishing_or_moving_a_next_step_after_a_reply_clears_what_is_owed(
+    outreach_db: Factory,
+) -> None:
+    user, thread_id, (asha,) = await _start(outreach_db, "Asha Verma")
+    await _touch(user, thread_id, asha, now=NOW - days(2))
+    await _touch(
+        user,
+        thread_id,
+        asha,
+        now=NOW,
+        direction="in",
+        next_step="Call on Thursday",
+        next_step_at=ist_today(NOW),
+    )
+    uid = str(user.id)
+    assert [i.kind for i in await due_items(uid, now=NOW)] == ["next_step"]
+
+    # Moving it to tomorrow takes it off today's list; the thread keeps the step.
+    await update_thread(uid, thread_id, {"next_step_at": ist_today(NOW) + days(1)})
+    assert await due_items(uid, now=NOW) == []
+    assert (await home(uid, now=NOW))["due"] == []
+    moved = await get_thread(uid, thread_id, now=NOW)
+    assert (moved["next_step"], moved["due"]) == ("Call on Thursday", False)
+
+    # Done is the same PATCH with both fields null: nothing is owed on any day after.
+    await update_thread(uid, thread_id, {"next_step_at": ist_today(NOW)})
+    assert len(await due_items(uid, now=NOW)) == 1
+    await update_thread(uid, thread_id, {"next_step": None, "next_step_at": None})
+    done = await get_thread(uid, thread_id, now=NOW)
+    assert (done["next_step"], done["next_step_at"], done["due"]) == (None, None, False)
+    assert done["stage"] == "replied"  # the conversation itself carries on
+    assert await due_items(uid, now=NOW + days(3)) == []
+    assert (await home(uid, now=NOW))["due"] == []
+
+    # A reply recorded without a step can be given one later.
+    await update_thread(
+        uid, thread_id, {"next_step": "Send the repo link", "next_step_at": ist_today(NOW)}
+    )
+    [item] = await due_items(uid, now=NOW)
+    assert item.next_step == "Send the repo link"
 
 
 async def test_thread_level_github_comment(outreach_db: Factory) -> None:

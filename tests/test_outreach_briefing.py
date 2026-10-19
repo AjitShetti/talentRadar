@@ -26,14 +26,14 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from domain.outreach import DueItem
+from domain.outreach import DueItem, ist_today
 from services.cache_backend import CacheBackend
 from services.copilot import _card
 from services.outreach import briefing
 from services.outreach.briefing import outreach_cards
 from services.outreach.people import add_person
 from services.outreach.suggest import dismiss_suggestion, suggestion_card_id
-from services.outreach.threads import create_thread
+from services.outreach.threads import create_thread, update_thread
 from services.outreach.touches import record_touch
 from tests.outreach_support import (  # noqa: F401
     make_company,
@@ -387,6 +387,46 @@ async def test_followup_card_from_a_stored_thread(outreach_db: Factory) -> None:
     assert followup["meta"] == {"count": 1, "thread_id": thread_id}
     # The company already has a thread, so it is not suggested again.
     assert cards["suggestion"] is None
+
+
+async def test_a_finished_next_step_clears_the_followup_card(outreach_db: Factory) -> None:
+    async with outreach_db() as session:
+        user = await make_user(session)
+        company = await make_company(session, "Tessel AI")
+        contact = await make_contact(session, company, "founder", "Asha Rao")
+    uid = str(user.id)
+    summary, _ = await create_thread(
+        uid, company_id=str(company.id), company_name=None, job_id=None, source="drawer"
+    )
+    thread_id = str(summary["id"])
+    detail = await add_person(uid, thread_id, contact_id=str(contact.id))
+    person_id = detail["people"][0]["id"]
+    await record_touch(
+        uid,
+        thread_id,
+        person_id=person_id,
+        channel="linkedin",
+        direction="out",
+        now=NOW - timedelta(days=2),
+    )
+    await record_touch(
+        uid,
+        thread_id,
+        person_id=person_id,
+        channel="linkedin",
+        direction="in",
+        next_step="Call on Thursday",
+        next_step_at=ist_today(NOW),
+        now=NOW,
+    )
+
+    card = (await outreach_cards(uid, now=NOW))["followup"]
+    assert card is not None
+    assert card["title"] == "Next step with Tessel AI: Call on Thursday"
+
+    await update_thread(uid, thread_id, {"next_step": None, "next_step_at": None})
+
+    assert (await outreach_cards(uid, now=NOW))["followup"] is None
 
 
 async def test_suggestion_card_id_is_what_not_now_dismisses(outreach_db: Factory) -> None:
