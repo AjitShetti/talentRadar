@@ -1097,3 +1097,39 @@ def test_topic_filter_compiles_to_an_array_containment_on_postgres() -> None:
     compiled = str(statement.compile(dialect=postgresql.dialect()))
 
     assert "events.topics @>" in compiled
+
+
+async def test_topic_filter_runs_on_a_text_array_column_in_postgres() -> None:
+    """The migration makes ``events.topics`` ``text[]``; ``text[] @> varchar[]`` is a 500.
+
+    SQLite cannot show this, so it runs on a temporary table of the same shape in the shared
+    Postgres test database: nothing is left behind, and the real tables are not touched.
+    """
+    from sqlalchemy import select, text
+
+    from config.settings import get_settings
+
+    engine = create_async_engine(get_settings().database_url)
+    try:
+        async with engine.connect() as connection:
+            await connection.execute(text("CREATE TEMP TABLE events (id uuid, topics text[])"))
+            await connection.execute(
+                text(
+                    "INSERT INTO events VALUES"
+                    " (CAST(:one AS uuid), ARRAY['ai','web']),"
+                    " (CAST(:two AS uuid), ARRAY['web']),"
+                    " (CAST(:three AS uuid), NULL)"
+                ),
+                {"one": str(uuid.UUID(int=1)), "two": str(uuid.UUID(int=2)),
+                 "three": str(uuid.UUID(int=3))},
+            )
+
+            found = await connection.execute(
+                select(Event.id).where(read.topic_clause("postgresql", "ai"))
+            )
+
+            assert [row[0] for row in found] == [uuid.UUID(int=1)]
+    except OSError:
+        pytest.skip("no Postgres to run against")
+    finally:
+        await engine.dispose()

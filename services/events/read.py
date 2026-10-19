@@ -38,7 +38,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, Literal
 
-from sqlalchemy import String, and_, case, cast, func, not_, or_, select
+from sqlalchemy import ARRAY, String, Text, and_, case, cast, func, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -145,9 +145,14 @@ def _visible(me: uuid.UUID) -> ColumnElement[bool]:
 
 
 def topic_clause(dialect: str, topic: str) -> ColumnElement[bool]:
-    """The event carries ``topic``: array containment on Postgres, JSON text on SQLite."""
+    """The event carries ``topic``: array containment on Postgres, JSON text on SQLite.
+
+    The migration makes ``events.topics`` ``text[]`` while the model says ``varchar[]``, so a
+    bare ``contains([topic])`` binds ``varchar[]`` and Postgres has no ``text[] @> varchar[]``.
+    The value is cast to ``text[]`` to match the column the database really has.
+    """
     if dialect == "postgresql":
-        return Event.topics.contains([topic])
+        return Event.topics.contains(cast([topic], ARRAY(Text)))
     return cast(Event.topics, String).contains(f'"{topic}"', autoescape=True)
 
 
