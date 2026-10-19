@@ -29,11 +29,19 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 
+from domain.practice_pick import topic_label
+from domain.practice_schedule import (
+    CONTEST_URL,
+    IST,
+    ContestWindow,
+    contest_window,
+    submission_open,
+)
 from services.agent_memory import (
     active_dismissals,
     get_memories,
@@ -41,6 +49,7 @@ from services.agent_memory import (
     remember,
 )
 from services.base import parse_uuid
+from services.practice import daily
 from storage.database import AsyncSessionLocal
 from storage.models import (
     ApplicationStatus,
@@ -48,6 +57,9 @@ from storage.models import (
     InterviewSession,
     Job,
     JobApplication,
+    PracticeAttempt,
+    PracticeChallenge,
+    PracticeSettings,
 )
 
 if TYPE_CHECKING:
@@ -61,6 +73,8 @@ STALE_AFTER_DAYS = 10
 SAVED_STALE_AFTER_DAYS = 5
 #: How far ahead a scheduled interview becomes something to act on today.
 SCHEDULED_PREP_WINDOW_DAYS = 3
+#: A started take-home becomes a card this long before its deadline.
+PRACTICE_DEADLINE_WINDOW = timedelta(hours=12)
 #: Stages where silence means "chase it", as opposed to a closed outcome.
 IN_FLIGHT_STAGES = (
     ApplicationStatus.APPLIED,
@@ -332,13 +346,182 @@ async def _interview_card(user_id: str, applied: int) -> dict[str, Any] | None:
         await session.close()
 
 
+def _utc(moment: datetime) -> datetime:
+    """An aware UTC instant; SQLite hands timezone-aware columns back naive, and they are UTC."""
+    return moment.replace(tzinfo=UTC) if moment.tzinfo is None else moment.astimezone(UTC)
+
+
+def _ist_clock(moment: datetime) -> str:
+    """``HH:MM`` on India time, which is how Practice states every deadline."""
+    return moment.astimezone(IST).strftime("%H:%M")
+
+
+async def _practice_deadline_cards(
+    user_id: str, *, now: datetime | None = None
+) -> list[dict[str, Any]]:
+    """
+    Take-homes the user started and has not submitted, due within twelve hours.
+
+    A dated commitment, so it sits right behind the calendar. The card stays through the
+    write-up hour after the deadline, while a write-up can still be saved. A failure here
+    gives no cards and is logged: it must never take the briefing down with it.
+    """
+    moment = _utc(now) if now is not None else datetime.now(UTC)
+    try:
+        user_uuid = parse_uuid(user_id)
+        if not user_uuid:
+            return []
+        async with AsyncSessionLocal() as session:
+            rows = (
+                await session.execute(
+                    select(
+                        PracticeAttempt.id,
+                        PracticeAttempt.deadline_at,
+                        PracticeChallenge.slug,
+                        PracticeChallenge.title,
+                        PracticeChallenge.hours,
+                    )
+                    .join(PracticeChallenge, PracticeChallenge.id == PracticeAttempt.challenge_id)
+                    .where(PracticeAttempt.user_id == user_uuid)
+                    .where(PracticeAttempt.status == "started")
+                )
+            ).all()
+
+        cards: list[dict[str, Any]] = []
+        for attempt_id, deadline_at, slug, title, hours in sorted(
+            rows, key=lambda row: _utc(row[1])
+        ):
+            deadline = _utc(deadline_at)
+            if deadline - moment > PRACTICE_DEADLINE_WINDOW or not submission_open(
+                moment, deadline
+            ):
+                continue
+            due = _ist_clock(deadline)
+            cards.append(_card(
+                card_id=f"practice_deadline:{attempt_id}",
+                kind="practice_deadline",
+                title=f'Submit "{title}" by {due}',
+                detail=(
+                    f"Your {hours}-hour build closes at {due} IST. "
+                    "Pushes after that are not read."
+                ),
+                tone="warning",
+                actions=[{
+                    "label": "Open submission",
+                    "href": f"/practice/challenges/{slug}",
+                    "style": "primary",
+                }],
+                meta={
+                    "attempt_id": str(attempt_id),
+                    "challenge": slug,
+                    "deadline_at": deadline.isoformat(),
+                },
+            ))
+        return cards
+    except Exception as exc:  # a broken card must never break the briefing
+        logger.warning("Practice deadline cards unavailable: %s", exc)
+        return []
+
+
+_WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+
+def _contest_card(window: ContestWindow) -> dict[str, Any]:
+    """The weekly LeetCode contest. Its id carries the date, so a dismissal lasts one week."""
+    starts, ends = window.starts_at.astimezone(IST), window.ends_at.astimezone(IST)
+    return _card(
+        card_id=f"practice_contest:{starts.date().isoformat()}",
+        kind="practice_contest",
+        title=f"LeetCode weekly contest, {_WEEKDAYS[starts.weekday()]} {_ist_clock(starts)} IST",
+        detail=(
+            f"It runs from {_ist_clock(starts)} to {_ist_clock(ends)} IST on leetcode.com, "
+            "timed like an online assessment."
+        ),
+        actions=[{"label": "Open contest", "href": CONTEST_URL, "style": "primary"}],
+        meta={
+            "starts_at": window.starts_at.isoformat(),
+            "ends_at": window.ends_at.isoformat(),
+            "live": window.live,
+        },
+    )
+
+
+def _today_card(today: dict[str, Any]) -> dict[str, Any] | None:
+    """Today's daily question, unless there is none or it is already done."""
+    question = today.get("question")
+    if not isinstance(question, dict) or today.get("done_at") is not None:
+        return None
+    # The pick's reason starts with the topic it drew ("Graph — you last practised it ...").
+    reason = str(today.get("reason") or "")
+    topic, separator, why = reason.partition(" — ")
+    if not separator:
+        topics = question.get("topics") or []
+        topic, why = (topic_label(str(topics[0])) if topics else ""), reason
+    detail = " · ".join(
+        part for part in (str(question["difficulty"]).title(), topic, why) if part
+    )
+    return _card(
+        card_id=f"practice_today:{today['day']}",
+        kind="practice_today",
+        title=f"Solve today's question: {question['title']}",
+        detail=detail,
+        actions=[
+            {"label": "Open on LeetCode", "href": str(question["url"]), "style": "primary"},
+            {"label": "Open Practice", "href": "/practice", "style": "ghost"},
+        ],
+        meta={"slug": question["slug"], "difficulty": question["difficulty"]},
+    )
+
+
+async def _contest_reminder_on(user_id: str) -> bool:
+    """The user's Practice setting; on until they turn it off."""
+    user_uuid = parse_uuid(user_id)
+    if not user_uuid:
+        return False
+    async with AsyncSessionLocal() as session:
+        stored = (
+            await session.execute(
+                select(PracticeSettings.contest_reminder).where(
+                    PracticeSettings.user_id == user_uuid
+                )
+            )
+        ).scalar_one_or_none()
+    return True if stored is None else bool(stored)
+
+
+async def _practice_suggestion_card(
+    user_id: str, *, now: datetime | None = None
+) -> dict[str, Any] | None:
+    """
+    At most one Practice suggestion: the weekly contest, else today's question.
+
+    Only for someone who marked a question done in the last 14 days; a DSA nag to a
+    person who never opened Practice is noise on a day plan. The contest shows from
+    Saturday 20:00 to Sunday 09:30 IST unless they turned the reminder off, and then
+    today's question is offered instead, if it is not done. A failure here gives
+    ``None`` and is logged.
+    """
+    moment = _utc(now) if now is not None else datetime.now(UTC)
+    try:
+        if not await daily.practised_recently(user_id, now=moment):
+            return None
+        window = contest_window(moment)
+        if window.show and await _contest_reminder_on(user_id):
+            return _contest_card(window)
+        return _today_card(await daily.today(user_id, now=moment))
+    except Exception as exc:  # a broken card must never break the briefing
+        logger.warning("Practice suggestion unavailable: %s", exc)
+        return None
+
+
 async def build_briefing(*, user_id: str) -> dict[str, Any]:
     """
     Assemble today's briefing.
 
-    Ordering is deliberate: a dated commitment (an interview on the calendar)
-    outranks everything, then the single next-best action, then anything
-    decaying (stale applications), then the practice nudge. Cards the user
+    Ordering is deliberate: a dated commitment (an interview on the calendar,
+    then a take-home due within hours) outranks everything, then the single
+    next-best action, then anything decaying (stale applications), then the
+    interview-practice nudge, then the one Practice suggestion. Cards the user
     dismissed or snoozed are filtered out at the end so the id-based dismissal
     works no matter which producer emitted the card.
     """
@@ -346,6 +529,7 @@ async def build_briefing(*, user_id: str) -> dict[str, Any]:
     context = next_action.get("context", {}) if isinstance(next_action, dict) else {}
 
     cards: list[dict[str, Any]] = await _scheduled_interview_cards(user_id)
+    cards.extend(await _practice_deadline_cards(user_id))
 
     if next_action.get("recommendation"):
         cards.append(_card(
@@ -368,6 +552,10 @@ async def build_briefing(*, user_id: str) -> dict[str, Any]:
     interview_card = await _interview_card(user_id, int(context.get("applied", 0) or 0))
     if interview_card:
         cards.append(interview_card)
+
+    practice_card = await _practice_suggestion_card(user_id)
+    if practice_card:
+        cards.append(practice_card)
 
     dismissed = await active_dismissals(user_id=user_id)
     visible = [c for c in cards if c["id"] not in dismissed]

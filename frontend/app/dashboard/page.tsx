@@ -2,13 +2,14 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowRight, CheckCircle2, Mic, Search, Sparkles, SquareCheck, X } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, CheckCircle2, Mic, Search, Sparkles, SquareCheck, X } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import BriefingFeed from '@/components/BriefingFeed'
 import CopilotWorkspace from '@/components/CopilotWorkspace'
 import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
 import { ActivityItem, AgendaItem, api, Briefing, JobMatch, SkillsFocus } from '@/lib/api'
+import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 
 type Dimension = { key: string; label: string; score: number; weakest: boolean }
 type TrackStat = { track: string; label: string; score: number; sessions: number }
@@ -138,6 +139,22 @@ function buildActions(
       tags: [{ label: `${matches.length} waiting` }, { label: 'India · from the sweep' }],
       cta: 'Read them',
       href: '#sweep',
+    })
+  }
+
+  // The one Practice suggestion (services/copilot.py): the weekly contest, else today's
+  // question. A suggestion, not a commitment, so it only takes a slot nothing else wanted.
+  // A take-home due within hours is a `practice_deadline` card and already led, above.
+  const practice = briefing?.cards?.find(card => card.kind === 'practice_contest' || card.kind === 'practice_today')
+  if (practice && out.length < 3) {
+    const action = practice.actions?.[0]
+    out.push({
+      key: `briefing-${practice.id}`,
+      title: practice.title,
+      why: practice.detail,
+      tags: [{ label: practice.kind === 'practice_contest' ? 'Weekly contest' : 'Daily question' }],
+      cta: action?.label || 'Open',
+      href: action?.href || '/practice',
     })
   }
 
@@ -382,6 +399,20 @@ function Measure({ fill }: { fill: number }) {
   </span>
 }
 
+/** An absolute http(s) URL opens in a new tab with the safe link props; an in-app path stays a Link. */
+function ActionButton({ action, lead }: { action: Action; lead: boolean }) {
+  const className = `ov-btn ${lead ? 'ov-btn-accent' : 'ov-btn-line'}`
+  const external = externalHref(action.href)
+  if (external) {
+    return <a className={className} href={external} {...EXTERNAL_LINK_PROPS}>
+      {action.cta} <ArrowUpRight size={14} />
+    </a>
+  }
+  return <Link className={className} href={action.href}>
+    {action.cta} <ArrowRight size={14} />
+  </Link>
+}
+
 /**
  * The focus list and its one travelling marker.
  *
@@ -447,9 +478,7 @@ function FocusList({ actions }: { actions: Action[] }) {
             {action.tags.map(tag => <span key={tag.label} data-hot={tag.hot ? 'true' : undefined}>{tag.label}</span>)}
           </div>}
         </div>
-        <Link className={`ov-btn ${i === 0 ? 'ov-btn-accent' : 'ov-btn-line'}`} href={action.href}>
-          {action.cta} <ArrowRight size={14} />
-        </Link>
+        <ActionButton action={action} lead={i === 0} />
       </li>)}
     </ol>
   </div>

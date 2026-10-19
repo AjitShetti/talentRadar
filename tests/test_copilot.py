@@ -89,6 +89,8 @@ def stub_sources(monkeypatch: pytest.MonkeyPatch) -> dict:
         },
         "application_cards": [],
         "interview_card": None,
+        "practice_deadline_cards": [],
+        "practice_suggestion": None,
         "dismissed": set(),
     }
 
@@ -101,12 +103,20 @@ def stub_sources(monkeypatch: pytest.MonkeyPatch) -> dict:
     async def fake_interview(user_id: str, applied: int) -> dict | None:
         return state["interview_card"]
 
+    async def fake_practice_deadlines(user_id: str) -> list:
+        return state["practice_deadline_cards"]
+
+    async def fake_practice_suggestion(user_id: str) -> dict | None:
+        return state["practice_suggestion"]
+
     async def fake_dismissals(*, user_id: str) -> set:
         return state["dismissed"]
 
     monkeypatch.setattr(copilot, "recommend_next_action", fake_next_action)
     monkeypatch.setattr(copilot, "_application_cards", fake_app_cards)
     monkeypatch.setattr(copilot, "_interview_card", fake_interview)
+    monkeypatch.setattr(copilot, "_practice_deadline_cards", fake_practice_deadlines)
+    monkeypatch.setattr(copilot, "_practice_suggestion_card", fake_practice_suggestion)
     monkeypatch.setattr(copilot, "active_dismissals", fake_dismissals)
     return state
 
