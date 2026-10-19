@@ -9,10 +9,7 @@ import type { AddLayerObject, GeoJSONSource, Map as MapLibreMap, Marker } from '
 import { Loader2, Maximize, Minus, Plus } from 'lucide-react'
 import { isApproximate, type GeoPrecision, type MapCompany } from '@/lib/api'
 import { EXTERNAL_LINK_PROPS } from '@/lib/safe-url'
-
-/** domain/areas.py::BENGALURU_BBOX, as (south, west, north, east). */
-const BBOX = { south: 12.80, west: 77.40, north: 13.15, east: 77.80 } as const
-const STYLE_URL = '/map/graphite.json'
+import { BBOX, STYLE_URL, loadMapLibre, reducedMotion, token, webglAvailable, withAlpha } from '@/lib/maplibre'
 
 const SRC_POINTS = 'cm-companies'
 const SRC_LIT = 'cm-lit'
@@ -57,43 +54,6 @@ function toCollection(rows: MapCompany[], selectedId: string | null): PinCollect
   }
   return { type: 'FeatureCollection', features }
 }
-
-/** The colour tokens of globals.css, read live so the map can never drift from them. */
-function token(name: string, fallback: string): string {
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
-  return value || fallback
-}
-
-function withAlpha(hex: string, alpha: number): string {
-  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex)
-  return m ? `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},${alpha})` : hex
-}
-
-function webglAvailable(): boolean {
-  try {
-    const canvas = document.createElement('canvas')
-    return Boolean(canvas.getContext('webgl2') || canvas.getContext('webgl'))
-  } catch {
-    return false
-  }
-}
-
-/**
- * MapLibre 6 finds its web worker from its own `import.meta.url`, which a
- * bundler rewrites to a file: URL, so the worker would never start. The worker
- * and the shared module it imports are copied into public/map/vendor by the
- * `map-worker` script (package.json: predev, prebuild) and served from there.
- * Pinned to an exact version because the two files must match the library.
- */
-const WORKER_URL = '/map/vendor/maplibre-gl-worker.mjs'
-let workerSet = false
-function installWorker(ml: typeof import('maplibre-gl')) {
-  if (workerSet) return
-  ml.setWorkerUrl(new URL(WORKER_URL, window.location.origin).href)
-  workerSet = true
-}
-
-const reducedMotion = () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 const PRECISION_NOTE: Record<GeoPrecision, string> = {
   exact: 'Exact location',
@@ -273,8 +233,7 @@ export default function CompanyMap({ rows, litIds, selectedId, selected, active,
       return
     }
 
-    void import('maplibre-gl').then(ml => {
-      installWorker(ml)
+    void loadMapLibre().then(ml => {
       if (cancelled) return
       try {
         map = new ml.Map({
