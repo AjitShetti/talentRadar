@@ -224,7 +224,7 @@ a{text-decoration:none;color:inherit}
 /* Header-side counter: a live number on the board reads in mono, not display. */
 .tracker-total{display:flex;flex-direction:column;align-items:flex-end;flex-shrink:0}
 .tracker-total strong{font:700 33px 'Fragment Mono',monospace;letter-spacing:-.5px;line-height:1}
-.tracker-total span{font:10px 'Fragment Mono',monospace;letter-spacing:.9px;text-transform:uppercase;color:var(--faint);margin-top:8px}
+.tracker-total>span{font:10px 'Fragment Mono',monospace;letter-spacing:.9px;text-transform:uppercase;color:var(--faint);margin-top:8px}
 .logout-button{color:var(--faint);background:transparent;padding:3px;transition:color .15s}
 .logout-button:hover{color:var(--ink)}
 .small-link{font-size:12px;color:var(--accent-dark);font-weight:700}
@@ -1771,14 +1771,14 @@ body::before{content:'';position:fixed;inset:0;z-index:2000;pointer-events:none;
 .pr-counts>div{padding:2px 26px;border-left:1px solid var(--line-soft)}
 .pr-counts>div:first-child{border-left:0;padding-left:0}
 .pr-counts b{display:block;font:700 28px/1 'Fragment Mono',monospace;letter-spacing:-.5px;font-variant-numeric:tabular-nums}
-.pr-counts span{display:block;margin-top:8px;font:600 10px 'Big Shoulders Text',sans-serif;letter-spacing:.9px;text-transform:uppercase;color:var(--faint)}
+.pr-counts>div>span{display:block;margin-top:8px;font:600 10px 'Big Shoulders Text',sans-serif;letter-spacing:.9px;text-transform:uppercase;color:var(--faint)}
 .pr-cal-note{margin:14px 0 0;font-size:12px;color:var(--muted)}
 
 .pr-build{display:grid;grid-template-columns:9px 92px minmax(0,1fr) 150px auto;gap:16px;align-items:center;padding:18px 4px;border-top:1px solid var(--line-soft)}
 .pr-build h3{font:700 19px/1.2 'Big Shoulders Text',sans-serif;letter-spacing:-.3px;margin:0 0 4px}
 .pr-build p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.55}
 .pr-clock b{display:block;font:700 22px/1 'Fragment Mono',monospace;letter-spacing:-.4px;color:var(--accent);font-variant-numeric:tabular-nums}
-.pr-clock span{display:block;margin-top:6px;font:10px 'Fragment Mono',monospace;letter-spacing:.8px;text-transform:uppercase;color:var(--faint)}
+.pr-clock>span{display:block;margin-top:6px;font:10px 'Fragment Mono',monospace;letter-spacing:.8px;text-transform:uppercase;color:var(--faint)}
 .pr-clock[data-calm] b{color:var(--ink)}
 @media (hover:hover) and (min-width:920px){
   .pr-build:hover,.pr-board-row:hover{transform:translateX(10px);background:var(--line-soft)}
@@ -1829,7 +1829,8 @@ body::before{content:'';position:fixed;inset:0;z-index:2000;pointer-events:none;
 .pr-sig span{display:block;margin-top:5px;font:10px 'Fragment Mono',monospace;letter-spacing:.5px;color:var(--faint)}
 .pr-meta{font:11px 'Fragment Mono',monospace;letter-spacing:.4px;color:var(--muted)}
 .pr-meta a{color:var(--ink-2);border-bottom:1px solid var(--line)}
-.pr-appeal summary{cursor:pointer;font:600 11px 'Big Shoulders Text',sans-serif;letter-spacing:.6px;text-transform:uppercase;color:var(--ink-2)}
+.pr-appeal summary,.pr-settings summary{cursor:pointer;font:600 11px 'Big Shoulders Text',sans-serif;letter-spacing:.6px;text-transform:uppercase;color:var(--ink-2)}
+.pr-settings .card-form{margin-top:14px}
 
 .pr-pill{display:inline-block;font:600 10px 'Big Shoulders Text',sans-serif;letter-spacing:.8px;text-transform:uppercase;padding:4px 9px;border-radius:999px;background:var(--warning-soft);color:var(--warning-dark);border:1px solid var(--warning-border)}
 .pr-board{margin-top:6px}
