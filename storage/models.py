@@ -1901,7 +1901,9 @@ class PracticeChallenge(Base):
 
     __table_args__ = (
         UniqueConstraint("slug", name="uq_practice_challenges_slug"),
-        Index("ix_practice_challenges_opens_at", "opens_at"),
+        # One edition per opening: two scheduled runs that name different briefs get different
+        # slugs, so the slug alone cannot stop a second edition for the same week.
+        Index("uq_practice_challenges_opens_at", "opens_at", unique=True),
     )
 
     def __repr__(self) -> str:

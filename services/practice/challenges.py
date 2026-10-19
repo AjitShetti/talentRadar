@@ -19,8 +19,8 @@ The weekly take-home: editions, a personal clock, a submission, and the status m
   the captured owner and name (``github_reader``); nothing the person typed becomes a URL.
 * **Statuses** move on a schedule, not on a read: ``advance_statuses`` queues what was
   submitted and marks the rest missed once the grace hour is over; ``prune`` applies the
-  retention rules of the spec. Both are scheduled steps: a failure on one row is counted and
-  logged, never raised.
+  retention rules of the spec. Both are scheduled steps (``services/practice/steps.py``): a
+  failure on one row is logged and skipped, never raised.
 
 Concurrency. Every write is safe to repeat: ``start`` is an insert guarded by the unique
 ``(user, challenge)`` index (the loser of a double click gets :class:`PracticeConflict`);
@@ -418,13 +418,43 @@ def _edition_row(brief: dict[str, Any], opens_at: datetime) -> PracticeChallenge
     )
 
 
+#: The constraints that say "this opening already has its edition". The opening itself is
+#: unique; the slug is brief + opening, so a run that chose the same brief breaks both and
+#: PostgreSQL names whichever index it checks first. No other constraint is a lost race.
+_OPENING_CONSTRAINTS = ("uq_practice_challenges_opens_at", "uq_practice_challenges_slug")
+#: SQLite never names a constraint, only the columns.
+_SQLITE_OPENING = (
+    "UNIQUE constraint failed: practice_challenges.opens_at",
+    "UNIQUE constraint failed: practice_challenges.slug",
+)
+
+
+def _is_opening_conflict(error: IntegrityError) -> bool:
+    """The failure is a second edition for an opening that has one, and nothing else.
+
+    asyncpg names the constraint on the exception the driver's was raised from
+    (``constraint_name``) and in its message; psycopg2 in its message; SQLite only gives the
+    columns. A NOT NULL, a foreign key or any other violation is not this one.
+    """
+    constraint = getattr(getattr(error.orig, "__cause__", None), "constraint_name", None)
+    message = str(error.orig)
+    return (
+        constraint in _OPENING_CONSTRAINTS
+        or any(name in message for name in _OPENING_CONSTRAINTS)
+        or any(text in message for text in _SQLITE_OPENING)
+    )
+
+
 async def ensure_editions(*, now: datetime | None = None) -> int:
     """Create this week's edition and next week's if either is missing. Returns how many.
 
     The brief for each is the least recently run one (a brief that never ran first, then file
-    order; once all have run, the cycle starts again). Concurrent runs choose the same brief,
-    so the loser of a race meets the unique slug and creates nothing. An invalid brief file
-    raises :class:`PracticeInvalid`; with no briefs there is nothing to create.
+    order; once all have run, the cycle starts again). Each edition is its own transaction.
+    The opening is unique, so two runs never make two editions for one week, even if they
+    chose different briefs: the loser meets that constraint (:func:`_is_opening_conflict`),
+    rolls back its one edition, and goes on to the next. Any other integrity error propagates.
+    An invalid brief file raises :class:`PracticeInvalid`; with no briefs there is nothing to
+    create.
     """
     moment = _moment(now)
     briefs = load_briefs(BRIEFS_DIR)
@@ -447,9 +477,11 @@ async def ensure_editions(*, now: datetime | None = None) -> int:
             session.add(_edition_row(brief, opens_at))
             try:
                 await session.commit()
-            except IntegrityError:
-                await session.rollback()  # another run created this edition first
-                continue
+            except IntegrityError as error:
+                await session.rollback()
+                if not _is_opening_conflict(error):
+                    raise
+                continue  # another run created this edition first
             created += 1
             logger.info("practice edition created: %s opens %s", brief["slug"], opens_at)
     return created
@@ -788,10 +820,10 @@ async def advance_statuses(*, now: datetime | None = None) -> dict[str, int]:
 
     A queued attempt is due for the judge at ``now``. Each row is moved by a conditional UPDATE
     in its own transaction, so a row the judge or an admin already moved is left alone and a
-    failure on one row is counted in ``errors`` and logged, never raised.
+    failure on one row is logged and skipped (the next run meets it again), never raised.
     """
     moment = _moment(now)
-    counts = {"queued": 0, "missed": 0, "errors": 0}
+    counts = {"queued": 0, "missed": 0}
     for attempt_id, status, deadline_at in await _due_attempts(moment):
         if submission_open(moment, deadline_at):
             continue
@@ -799,7 +831,6 @@ async def advance_statuses(*, now: datetime | None = None) -> dict[str, int]:
             moved = await _advance_one(attempt_id, status, moment)
         except Exception:
             logger.exception("practice: could not advance attempt %s", attempt_id)
-            counts["errors"] += 1
             continue
         if moved:
             counts["queued" if status == "submitted" else "missed"] += 1
@@ -850,11 +881,11 @@ async def _prune_expired(moment: datetime) -> int:
 async def prune(*, now: datetime | None = None) -> dict[str, int]:
     """Delete what the retention rules (spec 5.1 and 5.3) say is old. Editions are kept forever.
 
-    Each rule is one DELETE in its own transaction. A rule that fails is counted in ``errors``
-    and logged, and the others still run.
+    Each rule is one DELETE in its own transaction. A rule that fails is logged and skipped (the
+    next run meets the same rows again), and the others still run.
     """
     moment = _moment(now)
-    counts = {"pruned_days": 0, "pruned_attempts": 0, "errors": 0}
+    counts = {"pruned_days": 0, "pruned_attempts": 0}
     rules = (
         ("pruned_days", _prune_days),
         ("pruned_attempts", _prune_unsubmitted),
@@ -865,5 +896,4 @@ async def prune(*, now: datetime | None = None) -> dict[str, int]:
             counts[key] += await rule(moment)
         except Exception:
             logger.exception("practice: retention rule %s failed", rule.__name__)
-            counts["errors"] += 1
     return counts

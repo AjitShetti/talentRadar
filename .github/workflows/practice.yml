@@ -1,0 +1,76 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Keep Practice moving: editions, statuses, retention, and the take-home judge
+# ─────────────────────────────────────────────────────────────────────────────
+# There is no worker on the free tier, so this workflow is the scheduler. It
+# wakes the API, then makes two calls to POST /api/v1/ingest/practice?step=…,
+# each of which never raises and leaves what it finished committed:
+#
+#   challenges  create this week's and next week's edition, queue what was
+#               submitted and mark the rest missed once the grace hour is
+#               over, and apply the retention rules (no outside request)
+#   judge       judge up to 4 queued take-home attempts, 65 s apart, inside
+#               the day's judge budget (the only step that calls a model)
+#
+# The judge step can run for about 4 x 65 s on its own, so each call is allowed
+# ten minutes (--max-time 600), and the job's timeout covers the wake plus both.
+#
+# Needs the CRON_TOKEN repository secret (same as news.yml). Without it the run
+# exits cleanly and does nothing.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: practice
+
+on:
+  schedule:
+    - cron: "7 */2 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: practice
+  cancel-in-progress: false
+
+jobs:
+  practice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      API_BASE: ${{ vars.API_BASE_URL || 'https://talentradar-api.onrender.com' }}
+      CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
+    steps:
+      - name: Skip when no token is configured
+        id: gate
+        run: |
+          if [ -z "$CRON_TOKEN" ]; then
+            echo "::notice::CRON_TOKEN secret is not set; skipping the Practice steps."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'true'
+        with:
+          sparse-checkout: scripts/keepalive.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Wake the API
+        if: steps.gate.outputs.run == 'true'
+        env:
+          URL: ${{ env.API_BASE }}/health
+          DEADLINE_SECONDS: "480"
+        run: bash scripts/keepalive.sh
+
+      - name: Run Practice steps
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          practice() {
+            echo "::group::$1 (limit $2)"
+            curl --fail-with-body --silent --show-error --max-time 600 \
+              -X POST "$API_BASE/api/v1/ingest/practice?step=$1&limit=$2" \
+              -H "X-Cron-Token: $CRON_TOKEN" || echo "::warning::practice step $1 failed"
+            echo
+            echo "::endgroup::"
+          }
+          # Editions and statuses first: the judge takes what they just queued.
+          practice challenges 1
+          practice judge 4

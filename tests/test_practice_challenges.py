@@ -33,6 +33,7 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import event, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from domain.practice_repo import CommitLine, Push, RepoRef, TreeEntry
@@ -644,6 +645,95 @@ class TestEnsureEditions:
 
         assert created == 0
         assert len(await editions_of(db)) == 2
+
+    async def test_a_run_that_picks_another_brief_for_a_taken_opening_creates_nothing(
+        self, db: Db, briefs_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Two runs whose view of "least recently run" differs would name the same opening with
+        # different slugs; only the unique opening stops the second from becoming a duplicate.
+        await challenges.ensure_editions(now=NOW)
+        first, second = await editions_of(db)
+
+        async def blind(*_args: Any, **_kwargs: Any) -> list[tuple[str, datetime]]:
+            return []  # this run believes no edition exists yet
+
+        def another_brief(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            return BRIEFS[2]  # not the one stored for either opening
+
+        monkeypatch.setattr(challenges, "_scheduled_editions", blind)
+        monkeypatch.setattr(challenges, "_least_recently_run", another_brief)
+
+        created = await challenges.ensure_editions(now=NOW)
+
+        assert created == 0
+        rows = await editions_of(db)
+        assert [row.slug for row in rows] == [first.slug, second.slug]
+
+    async def test_losing_one_opening_does_not_stop_the_next(
+        self, db: Db, briefs_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # This week's edition was created a moment ago by another run; next week's is missing.
+        await add_edition(db, BRIEFS[2], opens_at=datetime(2026, 10, 9, 12, 30, tzinfo=UTC))
+
+        async def blind(*_args: Any, **_kwargs: Any) -> list[tuple[str, datetime]]:
+            return []
+
+        monkeypatch.setattr(challenges, "_scheduled_editions", blind)
+
+        created = await challenges.ensure_editions(now=NOW)
+
+        assert created == 1
+        assert [utc(row.opens_at) for row in await editions_of(db)] == [
+            datetime(2026, 10, 9, 12, 30, tzinfo=UTC),
+            datetime(2026, 10, 16, 12, 30, tzinfo=UTC),
+        ]
+
+    async def test_any_other_integrity_error_still_fails(
+        self, db: Db, briefs_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        real = challenges._edition_row
+
+        def without_a_title(brief: dict[str, Any], opens_at: datetime) -> PracticeChallenge:
+            row = real(brief, opens_at)
+            row.title = None  # type: ignore[assignment]  # NOT NULL, not a lost race
+            return row
+
+        monkeypatch.setattr(challenges, "_edition_row", without_a_title)
+
+        with pytest.raises(IntegrityError):
+            await challenges.ensure_editions(now=NOW)
+        assert await editions_of(db) == []
+
+    def test_a_lost_race_is_told_from_other_integrity_errors_by_constraint(self) -> None:
+        def error(message: str, constraint: str | None = None) -> IntegrityError:
+            driver_error = RuntimeError(message)
+            if constraint is not None:  # asyncpg: the constraint is on the exception it wraps
+                cause = RuntimeError(message)
+                cause.constraint_name = constraint  # type: ignore[attr-defined]
+                driver_error.__cause__ = cause
+            return IntegrityError("INSERT", {}, driver_error)
+
+        for lost in (
+            error("x", "uq_practice_challenges_opens_at"),
+            error(
+                'duplicate key value violates unique constraint "uq_practice_challenges_opens_at"'
+            ),
+            error("UNIQUE constraint failed: practice_challenges.opens_at"),
+            # The same opening named twice: PostgreSQL reports whichever index it checks first.
+            error('duplicate key value violates unique constraint "uq_practice_challenges_slug"'),
+            error("UNIQUE constraint failed: practice_challenges.slug"),
+        ):
+            assert challenges._is_opening_conflict(lost), lost.orig
+        for other in (
+            error("NOT NULL constraint failed: practice_challenges.title"),
+            error('null value in column "title" violates not-null constraint', "title"),
+            error('violates foreign key constraint "practice_attempts_user_id_fkey"'),
+            error("UNIQUE constraint failed: practice_attempts.proof_code"),
+            error(
+                'duplicate key value violates unique constraint "uq_practice_attempts_proof_code"'
+            ),
+        ):
+            assert not challenges._is_opening_conflict(other), other.orig
 
     async def test_the_schedule_is_the_ist_week(self, db: Db, briefs_dir: Path) -> None:
         # Friday 17:59 IST is still last week's edition; 18:00 IST opens the new one.
@@ -1867,7 +1957,7 @@ class TestAdvanceStatuses:
         assert counts["queued"] == 0
         assert (await attempts_of(db, asha))[0].status == "judged"
 
-    async def test_one_failing_row_is_counted_and_the_others_still_move(
+    async def test_one_failing_row_is_skipped_and_the_others_still_move(
         self, db: Db, edition: PracticeChallenge, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         sana = await add_user(db, "sana")
@@ -1887,12 +1977,12 @@ class TestAdvanceStatuses:
 
         counts = await challenges.advance_statuses(now=DEADLINE_48 + timedelta(hours=2))
 
-        assert counts == {"queued": 0, "missed": 1, "errors": 1}
+        assert counts == {"queued": 0, "missed": 1}
         assert (await attempts_of(db, sana))[0].status == "submitted"
         assert (await attempts_of(db, ira))[0].status == "missed"
 
     async def test_with_nothing_due_every_count_is_zero(self, db: Db) -> None:
-        assert await challenges.advance_statuses(now=NOW) == {"queued": 0, "missed": 0, "errors": 0}
+        assert await challenges.advance_statuses(now=NOW) == {"queued": 0, "missed": 0}
 
 
 # =========================================================================== prune
@@ -2041,13 +2131,9 @@ class TestPrune:
         assert counts["pruned_days"] == 1
 
     async def test_nothing_to_prune_is_all_zero(self, db: Db) -> None:
-        assert await challenges.prune(now=NOW) == {
-            "pruned_days": 0,
-            "pruned_attempts": 0,
-            "errors": 0,
-        }
+        assert await challenges.prune(now=NOW) == {"pruned_days": 0, "pruned_attempts": 0}
 
-    async def test_a_failing_rule_is_counted_and_the_others_still_run(
+    async def test_a_failing_rule_is_skipped_and_the_others_still_run(
         self, db: Db, asha: str, edition: PracticeChallenge, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         await add_attempt(db, asha, edition, status="missed")
@@ -2059,7 +2145,7 @@ class TestPrune:
 
         counts = await challenges.prune(now=DEADLINE_48 + timedelta(days=31))
 
-        assert counts == {"pruned_days": 0, "pruned_attempts": 1, "errors": 1}
+        assert counts == {"pruned_days": 0, "pruned_attempts": 1}
 
 
 # =========================================================================== github_reader

@@ -12,7 +12,9 @@ needs four tables and nothing else:
 * ``practice_days``: one row per IST day a user acted on (a swap or a "done"),
   with the question drawn and the one-tap rating;
 * ``practice_challenges``: one row per edition of the weekly take-home, with
-  its brief copied in at creation so later edits to the file change nothing;
+  its brief copied in at creation so later edits to the file change nothing,
+  and one edition per opening (a unique ``opens_at``) so two scheduled runs
+  cannot make two;
 * ``practice_attempts``: one row per user per challenge, holding the start,
   the submission and the judgement, so an attempt is never split across tables;
 * ``practice_settings``: per-user switches, kept out of ``profiles`` so this
@@ -78,8 +80,10 @@ def upgrade() -> None:
             CONSTRAINT uq_practice_challenges_slug UNIQUE (slug)
         );
     """)
+    # One edition per opening. The slug names the brief as well, so two runs that pick
+    # different briefs for the same week would not collide on it.
     op.execute(
-        "CREATE INDEX IF NOT EXISTS ix_practice_challenges_opens_at "
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_practice_challenges_opens_at "
         "ON practice_challenges (opens_at);"
     )
 

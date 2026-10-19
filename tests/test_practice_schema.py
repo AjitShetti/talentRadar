@@ -232,7 +232,7 @@ EXPECTED_UNIQUES: dict[str, dict[str, tuple[str, ...]]] = {
 
 EXPECTED_INDEXES: dict[str, dict[str, tuple[str, ...]]] = {
     "practice_days": {"ix_practice_days_user_done": ("user_id", "done_at")},
-    "practice_challenges": {"ix_practice_challenges_opens_at": ("opens_at",)},
+    "practice_challenges": {"uq_practice_challenges_opens_at": ("opens_at",)},
     "practice_attempts": {
         "ix_practice_attempts_board": ("challenge_id", "status", "total"),
         "ix_practice_attempts_due": ("status", "next_judge_at"),
@@ -317,6 +317,12 @@ def test_uniques_match_the_spec(table: str) -> None:
 @pytest.mark.parametrize("table", PRACTICE_TABLES)
 def test_indexes_match_the_spec(table: str) -> None:
     assert _indexes(table) == EXPECTED_INDEXES[table]
+
+
+def test_an_opening_is_unique_so_two_runs_cannot_make_two_editions() -> None:
+    (index,) = _table("practice_challenges").indexes
+    assert index.name == "uq_practice_challenges_opens_at"
+    assert index.unique is True
 
 
 def test_primary_keys_are_the_spec_keys() -> None:
@@ -418,6 +424,25 @@ def test_upgrade_creates_the_parent_challenges_table_first(migration: ModuleType
     )
     assert created.index("practice_challenges") < created.index("practice_attempts")
     assert set(created) == set(PRACTICE_TABLES)
+
+
+def test_upgrade_makes_the_opening_unique(
+    migration: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    statements: list[str] = []
+    monkeypatch.setattr(migration.op, "execute", lambda sql: statements.append(str(sql)))
+
+    migration.upgrade()
+
+    assert any(
+        re.fullmatch(
+            r"CREATE UNIQUE INDEX IF NOT EXISTS uq_practice_challenges_opens_at "
+            r"ON practice_challenges \(opens_at\);",
+            statement.strip(),
+        )
+        for statement in statements
+    )
+    assert not any("ix_practice_challenges_opens_at" in statement for statement in statements)
 
 
 def test_downgrade_drops_the_child_attempts_table_first(migration: ModuleType) -> None:
@@ -555,6 +580,14 @@ async def test_one_attempt_per_user_per_challenge(session: AsyncSession) -> None
     session.add(_attempt(ravi, challenge.id, "R3AV1PROOF"))
     await session.flush()
     session.add(_attempt(ravi, challenge.id, "R3AV2PROOF"))
+    with pytest.raises(IntegrityError):
+        await session.flush()
+
+
+async def test_one_edition_per_opening(session: AsyncSession) -> None:
+    session.add(_challenge("relay-2026-10-16"))
+    await session.flush()
+    session.add(_challenge("ledger-2026-10-16"))  # another brief, the same opening
     with pytest.raises(IntegrityError):
         await session.flush()
 
