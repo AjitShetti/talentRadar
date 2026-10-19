@@ -129,6 +129,6 @@ in each page. These notes record behaviour. They are not data to copy.
 | Phase | Design doc | Status |
 |---|---|---|
 | 1. Company map (foundation + map UI) | `2026-10-14-company-map-design.md` | in design |
-| 2. Outreach-first job search | to write | — |
+| 2. Outreach-first job search | `2026-10-15-outreach-design.md` | in build |
 | 3. Networking events | to write | — |
 | 4. Daily practice + take-homes | to write | — |
