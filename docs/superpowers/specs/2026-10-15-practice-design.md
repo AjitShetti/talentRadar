@@ -454,7 +454,7 @@ a thin write-up.*
 
 **Determinism.**
 - Model `settings.groq_model` (today `openai/gpt-oss-120b`), temperature 0,
-  `reasoning_effort="medium"`, JSON mode, `seed=7` when Groq accepts it. The
+  `reasoning_effort="medium"`, JSON mode, no seed (the judge passes none). The
   model id, `JUDGE_PROMPT_VERSION` and the input hash are stored on the row.
 - **One run per submission.** **Claude's call (delegated 2026-10-15):** not
   two-and-average. *Reason: a judge input is ~5,500 tokens against a free
@@ -871,7 +871,8 @@ pages. The preview in `.superpowers/sdd/` is approved before any UI code.
   before merge.
 - The judge system prompt's wording, within §4.10's rules, with the rubric
   text verbatim.
-- Whether Groq accepts `seed` for the configured model; drop it if not.
+- Whether Groq accepts `seed` for the configured model. Settled in the build: the
+  judge sends no seed, and `_chat` keeps an optional `seed` keyword that nothing sets.
 - The Groq free-tier limits for `groq_model` on the day of building; adjust
   `DAILY_JUDGE_BUDGET` and the 65 s spacing if they differ from ~8k
   tokens/minute.
