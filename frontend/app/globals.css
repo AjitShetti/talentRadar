@@ -1824,6 +1824,19 @@ button.or-row:hover{transform:translateX(10px);background:var(--line-soft)}
 .or-block{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:14px 0;border-bottom:1px solid var(--line-soft);font-size:12.5px;color:var(--muted)}
 .or-block b{color:var(--ink);font-weight:600}
 .or-block>:last-child{margin-left:auto}
+.or-block .primary-button{margin-top:0}
+.or-block+.form-error{margin:10px 0 0}
+/* The List's row: its button and, beside it, "+ Outreach". A button cannot sit inside a button. */
+.cm-row{display:grid;grid-template-columns:minmax(0,1fr) 96px;align-items:center;border-top:1px solid var(--line-soft)}
+.cm-row:first-child{border-top:0}
+.cm-row>.ci-card{border-top:0}
+.cm-row-outreach{position:relative;z-index:1;justify-self:end;justify-content:flex-end;padding:10px 4px;text-align:right;line-height:1.3;color:var(--muted)}
+.cm-row-outreach:hover{color:var(--ink)}
+.cm-row-outreach[aria-disabled=true]{cursor:default}
+.cm-row-outreach[aria-disabled=true]:hover{color:var(--muted)}
+@media(min-width:1001px){.cm-list-head{padding-right:100px}}
+@media(max-width:1000px){.cm-row{grid-template-columns:minmax(0,1fr)}.cm-row-outreach{justify-self:start;justify-content:flex-start;text-align:left;padding:0 0 12px 56px}}
+@media(max-width:800px){.cm-row-outreach{padding-left:52px}}
 @media(max-width:1050px){.or-layout{grid-template-columns:1fr}.or-side{border-left:0;padding-left:0;margin-left:0;border-top:1px solid var(--line-strong);padding-top:28px}}
 @media(max-width:920px){button.or-row:hover{transform:none}}
 @media(max-width:700px){.or-row{grid-template-columns:9px minmax(0,1fr) auto}.or-row .or-mark{display:none}.or-actions{grid-column:1/-1;padding-left:21px}.or-actions .outline-button{flex:1 1 auto;justify-content:center}.or-person .or-actions{grid-column:1/-1;padding-left:0}.or-draft{padding-left:0;border-left:0}.or-draft-pair{grid-template-columns:1fr}.or-draft-row>.outline-button,.or-draft-row>.primary-button{flex:1 1 100%;justify-content:center}.or-count{margin-left:0}}

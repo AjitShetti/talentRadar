@@ -111,6 +111,30 @@ export function mailtoHref(email: string, subject: string | null, body: string):
   return `mailto:${to}?${parts.join('&')}`
 }
 
+/**
+ * The words after the stage on a thread's one-line status: who the thread is waiting on and what falls
+ * owed next ("Waiting" + " on Asha Rao · follow-up due 17 Oct"). It reads the summary alone, so no
+ * second request is made for a line that names one person.
+ */
+export function threadLead(t: ThreadSummary): string {
+  const who = t.lead?.name ?? null
+  const next = t.next_due_at ? dayMonth(t.next_due_at) : ''
+  switch (t.stage) {
+    case 'waiting':
+      return `${who ? ` on ${who}` : ''}${next ? ` · follow-up due ${next}` : ''}`
+    case 'replied':
+      return `${who ? ` · ${who}` : ''}${next ? ` · next step ${next}` : ''}`
+    case 'cold':
+      return who ? ` · no reply from ${who}` : ''
+    case 'closed': {
+      const outcome = OUTCOMES.find(o => o.value === t.outcome)?.label
+      return outcome ? ` · ${outcome}` : ''
+    }
+    case 'planned':
+      return who ? ` · ${who}` : ' · no one added yet'
+  }
+}
+
 /** The button label for a format. The app copies and opens; the user sends. */
 export function channelActionLabel(fmt: DraftFormat): string {
   switch (fmt) {

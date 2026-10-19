@@ -10,6 +10,7 @@ import AppShell from '@/components/AppShell'
 import CompanyMap from '@/components/CompanyMap'
 import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
+import CompanyOutreachBlock, { ListOutreachButton } from '@/components/outreach/CompanyOutreachBlock'
 import {
   api, CompanyCard, CompanyContact, CompanyDetail, CompanyListFilters, CompanyNewsItem, CompanyPerson,
   ContactCandidate, decodeMapRows, GeoPrecision, isPinned, MapCompany, NewContact, SummarySource,
@@ -773,28 +774,32 @@ function CompanyRow({ company, selected, onPick }: { company: CompanyCard; selec
   const precision: GeoPrecision = company.geo_precision || 'city'
   const stageName = company.stage ? STAGES[company.stage] || company.stage : null
   const sectorName = company.sector ? SECTORS[company.sector] || company.sector : null
-  return <button type="button" className={`ci-card ${selected ? 'selected' : ''}`} aria-pressed={selected} onClick={() => onPick(company.id)}>
-    <div className="ci-card-head">
-      <Logo company={company} />
-      <div className="ci-card-title">
-        <strong>{company.name}</strong>
-        <span>{[sectorName || company.industry || company.hq_city, stageName].filter(Boolean).join(' · ') || '—'}</span>
+  // The row is a button, and a button cannot hold one, so "+ Outreach" is its sibling inside a wrapper.
+  return <div className="cm-row">
+    <button type="button" className={`ci-card ${selected ? 'selected' : ''}`} aria-pressed={selected} onClick={() => onPick(company.id)}>
+      <div className="ci-card-head">
+        <Logo company={company} />
+        <div className="ci-card-title">
+          <strong>{company.name}</strong>
+          <span>{[sectorName || company.industry || company.hq_city, stageName].filter(Boolean).join(' · ') || '—'}</span>
+        </div>
+        <TierBadge tier={company.tier} label={company.tier_label} />
       </div>
-      <TierBadge tier={company.tier} label={company.tier_label} />
-    </div>
-    <p className="ci-card-desc">{company.summary || company.description || 'No summary yet.'}</p>
-    <div className="cm-cell-area">
-      <span><PrecisionGlyph precision={precision} />{company.area || (precision === 'city' ? CITY : company.hq_city) || CITY}</span>
-      <small>{PRECISION_SHORT[precision]}</small>
-    </div>
-    <div className="cm-cell-codes"><span>{stageName || '—'}</span><span>{sectorName || '—'}</span></div>
-    <div className="ci-card-foot">
-      <div className="ci-mini-chips">
-        {company.tech_stack.slice(0, 2).map(tech => <span key={tech}>{tech}</span>)}
+      <p className="ci-card-desc">{company.summary || company.description || 'No summary yet.'}</p>
+      <div className="cm-cell-area">
+        <span><PrecisionGlyph precision={precision} />{company.area || (precision === 'city' ? CITY : company.hq_city) || CITY}</span>
+        <small>{PRECISION_SHORT[precision]}</small>
       </div>
-      {company.open_roles > 0 && <span className="ci-roles">{company.open_roles} open</span>}
-    </div>
-  </button>
+      <div className="cm-cell-codes"><span>{stageName || '—'}</span><span>{sectorName || '—'}</span></div>
+      <div className="ci-card-foot">
+        <div className="ci-mini-chips">
+          {company.tech_stack.slice(0, 2).map(tech => <span key={tech}>{tech}</span>)}
+        </div>
+        {company.open_roles > 0 && <span className="ci-roles">{company.open_roles} open</span>}
+      </div>
+    </button>
+    <ListOutreachButton companyId={company.id} companyName={company.name} />
+  </div>
 }
 
 // ── Drawer ───────────────────────────────────────────────────────────────────
@@ -864,6 +869,7 @@ function CompanyDrawer({ companyId, fallbackName, hiringForYou, docked, closeOnE
       {!detail && !error && <div className="cm-drawer-loading" aria-busy="true"><Loader2 size={16} className="spin" />Loading…</div>}
 
       {detail && <>
+        <CompanyOutreachBlock companyId={detail.id} />
         <Facts detail={detail} />
         <LinkRow detail={detail} />
         <About detail={detail} />
