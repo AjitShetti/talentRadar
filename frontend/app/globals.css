@@ -738,7 +738,7 @@ details.voice-transcript>summary::-webkit-details-marker{display:none}
 .results-closing{font:500 17px/1.5 'Big Shoulders Text';margin:0 0 20px}
 .results-head{display:grid;grid-template-columns:auto 1fr;gap:28px;align-items:center;padding:18px 0;border-top:1px solid var(--line-strong);border-bottom:1px solid var(--line-soft)}
 .results-total strong{font:700 44px 'Fragment Mono',monospace;color:var(--accent);font-variant-numeric:tabular-nums}
-.results-total span{display:block;font:10px 'Fragment Mono',monospace;color:var(--faint);letter-spacing:.4px}
+.results-total>span{display:block;font:10px 'Fragment Mono',monospace;color:var(--faint);letter-spacing:.4px}
 .results-dims{display:flex;flex-direction:column;gap:9px}
 .results-dims>div{display:grid;grid-template-columns:150px 1fr 32px;gap:12px;align-items:center}
 .results-dims span{font:600 10px 'Big Shoulders Text';letter-spacing:.9px;text-transform:uppercase;color:var(--faint)}
@@ -1806,6 +1806,7 @@ body::before{content:'';position:fixed;inset:0;z-index:2000;pointer-events:none;
 .pr-form{display:flex;flex-direction:column;gap:18px;max-width:760px}
 .pr-field label{display:flex;justify-content:space-between;align-items:baseline;gap:12px;font:600 10px 'Big Shoulders Text',sans-serif;letter-spacing:.9px;text-transform:uppercase;color:var(--faint);margin:0 0 6px}
 .pr-field label small{font:10px 'Fragment Mono',monospace;letter-spacing:.4px;text-transform:none;color:var(--faint);font-variant-numeric:tabular-nums}
+.pr-field label small{flex:none;white-space:nowrap}
 .pr-field[data-short] label small{color:var(--warning-dark)}
 .pr-field input,.pr-field textarea{width:100%;background:var(--surface);border:1px solid var(--line);border-radius:7px;color:var(--ink);padding:11px 12px;font:13px/1.6 'Public Sans',sans-serif;outline:none;transition:border-color .15s}
 .pr-field textarea{resize:vertical;min-height:118px}
@@ -1832,6 +1833,10 @@ body::before{content:'';position:fixed;inset:0;z-index:2000;pointer-events:none;
 .pr-appeal summary,.pr-settings summary{cursor:pointer;font:600 11px 'Big Shoulders Text',sans-serif;letter-spacing:.6px;text-transform:uppercase;color:var(--ink-2)}
 .pr-settings .card-form{margin-top:14px}
 
+.status-tabs .pr-past{background:transparent;border:0;border-bottom:2px solid transparent;margin-bottom:-1px;border-radius:0;padding:10px 6px;color:var(--muted);font:600 11px 'Big Shoulders Text',sans-serif;letter-spacing:.5px;text-transform:uppercase;cursor:pointer;width:11em;max-width:100%;text-overflow:ellipsis}
+.status-tabs .pr-past[data-on]{color:var(--ink);border-bottom-color:var(--accent)}
+.status-tabs .pr-past:hover{color:var(--ink)}
+.status-tabs .pr-past:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .pr-pill{display:inline-block;font:600 10px 'Big Shoulders Text',sans-serif;letter-spacing:.8px;text-transform:uppercase;padding:4px 9px;border-radius:999px;background:var(--warning-soft);color:var(--warning-dark);border:1px solid var(--warning-border)}
 .pr-board{margin-top:6px}
 .pr-board-row{display:grid;grid-template-columns:56px minmax(0,1fr) 92px 92px 28px;gap:14px;align-items:center;padding:13px 6px;border-top:1px solid var(--line-soft)}
