@@ -586,6 +586,7 @@ def _company_block(company: Company) -> dict[str, Any]:
         "area": company.area,
         "last_funding_at": _iso(company.last_funding_at),
         "linkedin_url": _web_url(company.linkedin_url),
+        "github_org": (company.github_org or "").strip() or None,
     }
 
 

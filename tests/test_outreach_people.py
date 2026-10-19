@@ -131,7 +131,7 @@ TOUCH_KEYS = {
     "body",
     "happened_at",
 }
-COMPANY_KEYS = {"stage", "sector", "area", "last_funding_at", "linkedin_url"}
+COMPANY_KEYS = {"stage", "sector", "area", "last_funding_at", "linkedin_url", "github_org"}
 
 LINKEDIN_SEARCH = "https://www.linkedin.com/search/results/people/?keywords="
 
@@ -1134,6 +1134,7 @@ async def test_detail_shape(outreach_db: Factory) -> None:
             area="Indiranagar",
             last_funding_at=NOW - timedelta(days=12),
             linkedin_url="https://www.linkedin.com/company/tessel-ai",
+            github_org="tessel-ai",
         )
         founder = await make_contact(
             session, company, "founder", "Asha Rao", email="asha@tessel.example"
@@ -1162,6 +1163,8 @@ async def test_detail_shape(outreach_db: Factory) -> None:
         "area": "Indiranagar",
         "last_funding_at": (NOW - timedelta(days=12)).isoformat(),
         "linkedin_url": "https://www.linkedin.com/company/tessel-ai",
+        # So the Open source section can tell "no organisation on record" from "not checked yet".
+        "github_org": "tessel-ai",
     }
     [shown] = detail["people"]
     assert set(shown) == PERSON_KEYS
@@ -1292,6 +1295,7 @@ async def test_detail_without_a_snapshot_has_no_issues(outreach_db: Factory) -> 
 
     assert detail["issues"] is None
     assert detail["company"] is not None
+    assert detail["company"]["github_org"] is None
 
 
 async def test_detail_reads_the_snapshot_after_its_own_session_is_closed(
