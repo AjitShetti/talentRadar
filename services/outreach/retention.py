@@ -7,8 +7,9 @@ A thread goes when it is **closed or cold** and nothing has happened in it for
 ``THREAD_RETENTION_DAYS``: no touch, and no edit to the thread itself (closing
 a thread is an edit, so a thread closed last week is never pruned for having an
 old last message). Its people and touches go with it, by the database's
-``ON DELETE CASCADE``. A thread with a reply, or one still waiting on a
-follow-up, is never pruned however old it is.
+``ON DELETE CASCADE``. An open thread with a reply, or one still waiting on a
+follow-up, is never pruned however old it is. A closed thread is pruned whether
+or not anyone replied: closing it is the user saying the conversation is over.
 
 The live set is tiny (about 1 KB a thread, capped per user), so this exists for
 the long tail rather than for pressure. It deletes at most
