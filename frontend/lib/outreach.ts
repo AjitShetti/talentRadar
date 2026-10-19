@@ -1,7 +1,7 @@
 // Pure display helpers for /outreach, the thread drawer and the company-drawer block.
 // No fetching, no storage, no sending: a channel action only builds a link the
 // browser opens in a new tab. Types come from lib/api.ts, which mirrors the server.
-import type { DraftFormat, OutreachChannelName, OutreachOutcome, OutreachPerson, PersonState, ThreadStage, ThreadSummary } from '@/lib/api'
+import type { DraftFormat, IssueSnapshot, OutreachChannelName, OutreachOutcome, OutreachPerson, PersonState, ThreadStage, ThreadSummary } from '@/lib/api'
 import { externalHref } from '@/lib/safe-url'
 
 export const STAGE_LABEL: Record<ThreadStage, string> = {
@@ -70,14 +70,38 @@ export function threadTone(t: ThreadSummary): OutreachTone {
   return 'idle'
 }
 
-/** The lamp for a person: due once a waiting person's follow-up date has passed. */
+// The calendar day in India an instant falls on, as a day count.
+const istDay = (ms: number) => Math.floor((ms + IST_OFFSET_MS) / DAY_MS)
+
+/**
+ * The lamp for a person: due from 00:00 IST on the day a waiting person's follow-up is dated, not from
+ * the minute it was set for. That is the server's rule (domain/outreach.py::is_due_today), so the lamp
+ * and the Due list never disagree for part of a day.
+ */
 export function personTone(p: OutreachPerson, now: Date = new Date()): OutreachTone {
   const state = shownState(p, now)
   if (state === 'replied') return 'replied'
   if (state !== 'waiting') return 'idle'
   const next = p.next_follow_up_at ? toMs(p.next_follow_up_at) : Number.NaN
-  return !Number.isNaN(next) && next <= now.getTime() ? 'due' : 'waiting'
+  return !Number.isNaN(next) && istDay(next) <= istDay(now.getTime()) ? 'due' : 'waiting'
 }
+
+/**
+ * "Follow-up due 15 Oct" for a person who is waiting on a nudge that is not due yet, in place of the
+ * draft button. Null once the server offers the draft (it only does when the follow-up is due) and for
+ * anyone with no nudge to wait for.
+ */
+export function followUpWait(p: OutreachPerson): string | null {
+  if (p.draft || p.state !== 'waiting' || p.follow_ups_sent >= MAX_FOLLOW_UPS || !p.next_follow_up_at) return null
+  const when = dayMonth(p.next_follow_up_at)
+  return when ? `Follow-up due ${when}` : null
+}
+
+/**
+ * Can the user say they sent a message to this person? Whenever a draft is offered, and also while a
+ * follow-up is only waiting its date: they may have written anyway, and the timeline should say so.
+ */
+export const canMarkSent = (p: OutreachPerson): boolean => p.draft !== null || followUpWait(p) !== null
 
 /** The one line under a person: where they stand and what happens next. */
 export function personLine(p: OutreachPerson, now: Date = new Date()): string {
@@ -191,6 +215,59 @@ export const SUBJECT_MAX = 80
 
 // Drafts a user may write in one IST day (PER_USER_DAILY_DRAFTS). The referral ask counts against the same cap.
 export const DAILY_DRAFTS = 20
+
+/** The PATCH that finishes a next step: the text and its date both go. */
+export const NEXT_STEP_DONE = { next_step: null, next_step_at: null } as const
+
+/**
+ * The PATCH that saves an edited next step. A step with no date is kept (it is simply never owed); a
+ * date with no step has nothing to remind about, so it clears like Done.
+ */
+export function nextStepPatch(text: string, date: string): { next_step: string | null; next_step_at: string | null } {
+  const step = text.trim().slice(0, NEXT_STEP_MAX).trim()
+  if (!step) return { ...NEXT_STEP_DONE }
+  return { next_step: step, next_step_at: date || null }
+}
+
+/**
+ * Was the request refused because the thread is not as the drawer shows it (not found, or in a state that
+ * refuses it, such as "They replied")? Then the drawer reads the thread again so its buttons stop lying.
+ */
+export function isStaleError(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null || !('status' in err)) return false
+  const status = (err as { status: unknown }).status
+  return status === 404 || status === 409
+}
+
+/**
+ * The one line the Open source section opens with, whatever the state of the company's GitHub snapshot
+ * (spec 6 and 8.4). Null for a thread with no company: the drawer says why there is nothing to suggest.
+ */
+export function openSourceNote(t: { company_name: string; company: { github_org: string | null } | null; issues: IssueSnapshot | null }): string | null {
+  if (!t.company) return null
+  const snap = t.issues
+  if (!snap) {
+    const org = t.company.github_org
+    return org
+      ? `Not checked yet. Good first issues in ${org} are looked up once a day.`
+      : `No GitHub organisation on record for ${t.company_name}, so there are no issues to look at.`
+  }
+  const checked = dayMonth(snap.fetched_at)
+  const read = 'Read the issue first; the comment is yours to post.'
+  switch (snap.status) {
+    case 'not_found':
+      return `No public issues found. Checked ${checked}.`
+    case 'ok':
+      return snap.issues.length > 0
+        ? `Good first issues in ${snap.org}'s repositories, checked ${checked}. ${read}`
+        : `No good first issues open right now. Checked ${checked}.`
+    default:
+      // error or rate_limited: the refresh did not complete, and the last list is kept.
+      return snap.issues.length > 0
+        ? `Refreshing failed on ${checked}, so these are from the last good check. ${read}`
+        : `Refreshing failed on ${checked}. We will try again at the next daily check.`
+  }
+}
 
 export const OUTCOMES: ReadonlyArray<{ value: OutreachOutcome; label: string }> = [
   { value: 'referred', label: 'Got a referral' },
