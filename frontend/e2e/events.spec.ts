@@ -57,14 +57,16 @@ const CORS = {
   'access-control-allow-methods': 'GET, PUT, POST, PATCH, DELETE, OPTIONS',
 }
 
+// A regular expression, not '**/api/v1/events**': a glob's `**` crosses `/` only between slashes, so that one misses /events/<id>.
+const EVENTS_API = /\/api\/v1\/events(?:[/?]|$)/
+
 /** Answers every /api/v1/events call; saves are remembered so a reload of the list agrees with what was clicked. */
 async function serveEvents(page: Page) {
   const saved = new Map<string, EventSaveStatus>([['e2', 'going']])
   const calls: string[] = []
   const card = (id: string): EventCard => ({ ...CARDS.find(c => c.id === id)!, my_status: saved.get(id) ?? null })
 
-  // A regular expression, not '**/api/v1/events**': a glob's `**` crosses `/` only between slashes, so that one misses /events/<id>.
-  await page.route(/\/api\/v1\/events(?:[/?]|$)/, async route => {
+  await page.route(EVENTS_API, async route => {
     const request = route.request()
     const method = request.method()
     if (method === 'OPTIONS') return route.fulfill({ status: 204, headers: CORS })
@@ -273,18 +275,73 @@ test('company drawer shows hosted events', async ({ page, account, errors }) => 
   expect(listReads(calls)).toEqual(['LIST company_id=c1&limit=3'])
 })
 
+/** Two animation frames: whatever the page does with an answer it was just handed, it has done by now. */
+const afterPaint = (page: Page) => page.evaluate(() => new Promise<void>(resolve => {
+  requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+}))
+
+const isEventsRead = (url: string, companyId: string) => url.includes('/api/v1/events?') && url.includes(`company_id=${companyId}`)
+
+/** Resolves once the page has been given the API's answer to the events read for this company. Start it before the click. */
+const readAnswered = (page: Page, companyId: string) => page.waitForResponse(
+  response => response.request().method() === 'GET' && isEventsRead(response.url(), companyId),
+)
+
 test('company drawer hides the events block when the company hosts none', async ({ page, account, errors }) => {
   void account; void errors
   const calls = await serveEvents(page)
   await openCompanyList(page)
 
+  const answered = readAnswered(page, 'c2')
   await page.locator('.ci-card').filter({ hasText: 'Plain Works' }).click()
+  await answered
+  await afterPaint(page)
 
-  // The people block is drawn from the same detail the events block sits under; once it is there the events read has been asked.
+  // The people block is drawn from the same detail the events block sits under, and the events answer has been drawn by now.
   await expect(page.getByTestId('drawer-people')).toBeVisible()
-  await expect.poll(() => listReads(calls)).toEqual(['LIST company_id=c2&limit=3'])
+  expect(listReads(calls)).toEqual(['LIST company_id=c2&limit=3'])
   await expect(page.getByTestId('drawer-events')).toHaveCount(0)
 })
+
+/** The two ways a read fails: the API answers with an error, or the request never gets an answer at all. */
+const FAILED_READS = [
+  {
+    name: 'a server error',
+    fail: (route: Route) => route.fulfill({
+      status: 500, headers: CORS, contentType: 'application/json', body: JSON.stringify({ detail: 'Something went wrong' }),
+    }),
+    answered: readAnswered,
+  },
+  {
+    name: 'a dropped connection',
+    fail: (route: Route) => route.abort('failed'),
+    answered: (page: Page, companyId: string) => page.waitForEvent('requestfailed', request => isEventsRead(request.url(), companyId)),
+  },
+]
+
+for (const failure of FAILED_READS) {
+  test(`company drawer shows no events block when the read fails with ${failure.name}`, async ({ page, account, errors }) => {
+    void account; void errors
+    await serveEvents(page)
+    // Registered after serveEvents, so it answers first: the company that does host an event gets a failure instead.
+    await page.route(EVENTS_API, route => {
+      const request = route.request()
+      if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: CORS })
+      if (request.method() === 'GET' && isEventsRead(request.url(), 'c1')) return failure.fail(route)
+      return route.fallback()
+    })
+    await openCompanyList(page)
+
+    const answered = failure.answered(page, 'c1')
+    await page.locator('.ci-card').filter({ hasText: 'Okta' }).click()
+    await answered
+    await afterPaint(page)
+
+    // Okta hosts an event, so the missing block is the failure's doing; the rest of the drawer is untouched.
+    await expect(page.getByTestId('drawer-people')).toBeVisible()
+    await expect(page.getByTestId('drawer-events')).toHaveCount(0)
+  })
+}
 
 // ── The Overview day plan ────────────────────────────────────────────────────
 
@@ -356,4 +413,43 @@ test('this week and who-you-met follow the lead when there is room', async ({ pa
 
   await expect(focusTitles(page)).toHaveText(['Apply to the Stripe backend role', /^Friday:/, /^Who did you meet/])
   await expect(page.getByRole('link', { name: /Add who you met/ })).toHaveAttribute('href', '/events?event=e2#people')
+})
+
+const TODAY_CONFERENCE = briefingCard('event_today', 'event_today:e4', 'Today: Rust Conf Bengaluru', {
+  tone: 'primary', actions: [{ label: 'Open event', href: '/events?event=e4', style: 'primary' }],
+})
+const CANCELLED = briefingCard('event_today', 'event_today:e5', 'Namma Rust Night was cancelled by the organiser', {
+  tone: 'warning', actions: [{ label: 'Open event', href: '/events?event=e5', style: 'primary' }],
+})
+
+/** What the tag on the first row of Today's focus says, and whether it is lit. */
+const firstTag = (page: Page) => page.locator('.ov-act').first().locator('.ov-tags span')
+
+for (const [name, card, tag] of [
+  ['an evening start', TONIGHT, 'Tonight'],
+  ['an event that began earlier or runs through the day', TODAY_CONFERENCE, 'Today'],
+  ['a cancelled one', CANCELLED, 'Cancelled'],
+] as const) {
+  test(`the event for today is tagged ${tag} for ${name}`, async ({ page, account, errors }) => {
+    void account; void errors
+    await serveOverview(page, { interviewToday: false, onboarded: true, cards: [card] })
+    await page.goto('/dashboard')
+
+    await expect(focusTitles(page).first()).toHaveText(card.title)
+    await expect(firstTag(page)).toHaveText([tag])
+    await expect(firstTag(page)).toHaveAttribute('data-hot', 'true')
+  })
+}
+
+test('only the first event for today is promoted; the briefing sends the best one first', async ({ page, account, errors }) => {
+  void account; void errors
+  await serveOverview(page, { interviewToday: false, onboarded: true, cards: [TONIGHT, TODAY_CONFERENCE] })
+  await page.goto('/dashboard')
+
+  await expect(focusTitles(page).first()).toHaveText(/^Tonight:/)
+  await expect(firstTag(page)).toHaveText(['Tonight'])
+  // The other one is not promoted, and not lost: it stays in "Also on your radar".
+  await expect(focusTitles(page).filter({ hasText: 'Rust Conf Bengaluru' })).toHaveCount(0)
+  await expect(page.locator('.cp-card')).toHaveCount(1)
+  await expect(page.locator('.cp-card')).toContainText('Today: Rust Conf Bengaluru')
 })

@@ -275,6 +275,117 @@ async def test_an_event_that_began_on_an_earlier_day_and_is_still_running_is_tod
     assert today[str(overnight.id)]["id"] == f"event_today:{overnight.id}"
 
 
+async def test_an_earlier_day_event_that_is_on_now_says_when_it_ends_not_when_it_began(
+    add: Callable[..., Any], me: User
+) -> None:
+    """Its title says "Today", so a detail that opened with the start clock read as a time ahead."""
+    conference = make_event(days(-1), days(1), title="Rust Conf")  # ends Fri 16 Oct, 11:30 IST
+    overnight = make_event(
+        hours(-13.5), hours(2.5), title="Hack Night"
+    )  # began Wed 22:00 IST, ends 14:00 IST today
+    await add(conference, overnight, saved(me, conference), saved(me, overnight, "saved"))
+
+    details = {card["title"]: card["detail"] for card in await cards_for(me)}
+
+    assert details["Today: Rust Conf"] == (
+        "On now · until 16 Oct at Indiranagar, hosted by Rust Bengaluru."
+        " Add the people you meet afterwards."
+    )
+    assert details["Today: Hack Night"] == (
+        "On now · until 14:00 at Indiranagar, hosted by Rust Bengaluru."
+        " Add the people you meet afterwards."
+    )
+
+
+async def test_an_earlier_day_event_that_is_on_now_names_only_what_it_states(
+    add: Callable[..., Any], me: User
+) -> None:
+    online = make_event(
+        days(-1), days(1), is_online=True, venue_name=None, area=None, organiser_name=None
+    )
+    await add(online, saved(me, online))
+
+    (card,) = await cards_for(me)
+
+    assert card["detail"] == "On now · until 16 Oct online. Add the people you meet afterwards."
+
+
+async def test_event_today_leads_with_the_event_the_user_is_going_to(
+    add: Callable[..., Any], me: User
+) -> None:
+    """Going beats saved, then an event that starts today beats one that began on an earlier day.
+
+    The Overview shows the first ``event_today`` card, so the order is the choice. By start time
+    alone a saved conference that began on Wednesday would take the slot every day of its run.
+    """
+    conference = make_event(days(-1), days(2), title="Rust Conf")  # Wed to Sat, saved
+    going_conference = make_event(days(-2), days(1), title="Go Conf")  # Tue to Fri, going
+    morning = make_event(hours(1), title="Breakfast Meetup")  # today 12:30 IST, saved
+    evening = make_event(TONIGHT, title="Rust Night")  # today 18:30 IST, saved
+    going_evening = make_event(TONIGHT + timedelta(hours=1), title="Go Night")  # 19:30, going
+    await add(
+        conference,
+        going_conference,
+        morning,
+        evening,
+        going_evening,
+        saved(me, conference, "saved"),
+        saved(me, going_conference, "going"),
+        saved(me, morning, "saved"),
+        saved(me, evening, "saved"),
+        saved(me, going_evening, "going"),
+    )
+
+    cards = await cards_for(me)
+
+    assert [card["title"] for card in cards] == [
+        "Tonight: Go Night",  # going, starts today
+        "Today: Go Conf",  # going, began earlier
+        "Today: Breakfast Meetup",  # saved, starts today, earliest
+        "Tonight: Rust Night",  # saved, starts today
+        "Today: Rust Conf",  # saved, began earlier
+    ]
+
+
+async def test_a_saved_event_that_starts_today_leads_a_saved_conference(
+    add: Callable[..., Any], me: User
+) -> None:
+    conference = make_event(days(-1), days(1), title="Rust Conf")
+    evening = make_event(TONIGHT, title="Rust Night")
+    await add(conference, evening, saved(me, conference, "saved"), saved(me, evening, "saved"))
+
+    assert [card["title"] for card in await cards_for(me)] == [
+        "Tonight: Rust Night",
+        "Today: Rust Conf",
+    ]
+
+
+async def test_event_today_cards_still_come_before_soon_and_met(
+    add: Callable[..., Any], me: User
+) -> None:
+    conference = make_event(days(-1), days(1), title="Rust Conf")
+    evening = make_event(TONIGHT, title="Rust Night")
+    soon = make_event(days(2), title="Next Week")
+    over = make_event(hours(-3), hours(-1), title="Just Ended")
+    await add(
+        conference,
+        evening,
+        soon,
+        over,
+        saved(me, conference, "saved"),
+        saved(me, evening, "saved"),
+        saved(me, soon),
+        saved(me, over),
+    )
+
+    assert kinds(await cards_for(me)) == [
+        "event_today",
+        "event_today",
+        "event_soon",
+        "event_met_prompt",
+    ]
+
+
 async def test_a_cancelled_event_that_is_running_across_days_is_still_the_warning(
     add: Callable[..., Any], me: User
 ) -> None:

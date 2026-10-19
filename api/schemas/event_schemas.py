@@ -41,8 +41,9 @@ _EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 #: What a host is made of. The host is already lower-cased by ``urlsplit``. A denylist of
 #: separators would miss the next one: ``evil.io\.linkedin.com`` parses here as a
 #: ``linkedin.com`` subdomain and is opened by a browser as ``evil.io``, so only letters,
-#: digits, dots and hyphens are let through.
-_HOST_PATTERN = re.compile(r"[a-z0-9.-]+")
+#: digits, dots and hyphens are let through, in labels: no empty one (``a..b``) and no dot at
+#: either end (``.linkedin.com``, ``example.test.``).
+_HOST_PATTERN = re.compile(r"[a-z0-9-]+(?:\.[a-z0-9-]+)*")
 
 #: The host each profile field must be on: that host or one of its subdomains.
 _PROFILE_HOSTS: dict[str, tuple[str, ...]] = {

@@ -86,6 +86,7 @@ function buildActions(
     })
   }
 
+  // The server lists the best one first (one the user is going to, then one that starts today), so the first is the one shown.
   const eventToday = briefing?.cards?.find(card => card.kind === 'event_today')
   if (eventToday) out.push(fromCard(eventToday, todayTag(eventToday), 'Open event', '/events'))
 

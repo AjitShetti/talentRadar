@@ -347,9 +347,20 @@ def _event_today_word(starts: datetime, *, today: date) -> str:
     return "Tonight" if evening else "Today"
 
 
-def _event_today_detail(event: Event) -> str:
-    """``"18:30 at Indiranagar, hosted by Rust Bengaluru. …"`` naming only what is stored."""
-    clock = as_utc(event.starts_at).astimezone(IST).strftime("%H:%M")
+def _event_today_detail(event: Event, *, today: date) -> str:
+    """``"18:30 at Indiranagar, hosted by Rust Bengaluru. …"`` naming only what is stored.
+
+    An event that began on an earlier IST date has no start clock worth reading: "22:00" next
+    to "Today:" looks like a time ahead. It says it is on now and when it ends instead, as a
+    clock if that is today and as a date if it runs on.
+    """
+    begins = as_utc(event.starts_at).astimezone(IST)
+    if begins.date() == today:
+        clock = begins.strftime("%H:%M")
+    else:
+        ends = effective_end(event.starts_at, event.ends_at).astimezone(IST)
+        until = ends.strftime("%H:%M") if ends.date() == today else f"{ends.day} {ends:%b}"
+        clock = f"On now · until {until}"
     place = event.area or event.venue_name
     if event.is_online:
         where = " online"
@@ -368,7 +379,8 @@ async def _event_cards(user_id: str, *, now: datetime) -> list[dict[str, Any]]:
     * ``event_today``: starts on today's IST date and has not ended, or began on an earlier
       day and is still running. It reads "Today: …" when it starts before 17:00 IST and
       "Tonight: …" from then. A cancelled one is a warning in the same slot, because the plan
-      for today just changed.
+      for today just changed. Several come best first, because the Overview shows only the
+      first: events the user is going to, then ones that start today, then by start time.
     * ``event_soon``: the one soonest event in the next week that is not today.
     * ``event_met_prompt``: an event the user was going to, which ended within the
       last two days, with nobody noted yet.
@@ -401,15 +413,18 @@ async def _event_cards(user_id: str, *, now: datetime) -> list[dict[str, Any]]:
             .limit(_EVENT_ROWS)
         )
 
-        cards: list[dict[str, Any]] = []
+        today_cards: list[tuple[tuple[bool, bool], dict[str, Any]]] = []
         soonest: tuple[Event, str] | None = None
         ended: list[tuple[Event, str]] = []
         for event, status in result.all():
             starts = as_utc(event.starts_at)
             over = effective_end(event.starts_at, event.ends_at)
             if (ist_date(starts) == today and over > current) or starts <= current < over:
+                # The Overview leads with the first of these: one the user is going to, then
+                # one that starts today. Rows are in start order, so the sort is stable on it.
+                rank = (status != "going", ist_date(starts) != today)
                 if event.is_cancelled:
-                    cards.append(_event_card(
+                    today_cards.append((rank, _event_card(
                         event,
                         status,
                         card_id=f"event_today:{event.id}",
@@ -418,23 +433,25 @@ async def _event_cards(user_id: str, *, now: datetime) -> list[dict[str, Any]]:
                         detail="It was on your list for today. Check the organiser's page "
                         "before you plan around it.",
                         tone="warning",
-                    ))
+                    )))
                 else:
-                    cards.append(_event_card(
+                    today_cards.append((rank, _event_card(
                         event,
                         status,
                         card_id=f"event_today:{event.id}",
                         kind="event_today",
                         title=f"{_event_today_word(starts, today=today)}: {event.title}",
-                        detail=_event_today_detail(event),
+                        detail=_event_today_detail(event, today=today),
                         tone="primary",
-                    ))
+                    )))
             elif event.is_cancelled:
                 continue
             elif starts > current:  # rows are in start order, so the first is the soonest
                 soonest = soonest or (event, status)
             elif status == "going" and recent_since < over <= current:
                 ended.append((event, status))
+
+        cards = [card for _, card in sorted(today_cards, key=lambda ranked: ranked[0])]
 
         if soonest is not None:
             event, status = soonest
