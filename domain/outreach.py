@@ -293,12 +293,21 @@ def snooze(clock: PersonClock, *, days: int, now: datetime) -> PersonClock:
 
 
 def can_draft(clock: PersonClock, now: datetime) -> Literal["first", "follow_up"] | None:
-    """Which message the app may help write next for this person, if any."""
+    """Which message the app may help write next for this person, if any.
+
+    A follow-up is offered only once it is due (``is_due_today``). Before that the
+    person is simply waiting: drafting and logging a nudge the day after the first
+    note would spend follow-up 1 four days early and restart the clock, which is the
+    nagging the product exists to prevent. A waiting person with no date set has no
+    clock to wait for, so that is not held back.
+    """
     if clock.state == "planned":
         return "first"
     if clock.state == "waiting":
         if clock.follow_ups_sent < MAX_FOLLOW_UPS:
-            return "follow_up"
+            if clock.next_follow_up_at is None or is_due_today(clock, now):
+                return "follow_up"
+            return None
         if _may_recontact(clock, now):
             return "first"
     return None
@@ -310,6 +319,21 @@ def is_due(clock: PersonClock, now: datetime) -> bool:
         clock.state == "waiting"
         and clock.next_follow_up_at is not None
         and aware(clock.next_follow_up_at) <= aware(now)
+    )
+
+
+def is_due_today(clock: PersonClock, now: datetime) -> bool:
+    """Is a follow-up owed to this person today in India?
+
+    A follow-up dated any time today (IST) is due from 00:00 IST, not from the minute
+    it was set for, so a Bengaluru morning shows what the day holds. ``is_due``
+    compares instants; this is the day-granular rule every surface that says "due"
+    shares, so a lamp, the due list and the draft button cannot disagree.
+    """
+    return (
+        clock.state == "waiting"
+        and clock.next_follow_up_at is not None
+        and ist_today(clock.next_follow_up_at) <= ist_today(now)
     )
 
 

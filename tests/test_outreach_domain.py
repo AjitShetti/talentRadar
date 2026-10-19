@@ -310,11 +310,34 @@ def test_snooze_needs_a_follow_up_to_postpone() -> None:
         snooze(replied, days=3, now=T + days(2))
 
 
+def test_a_follow_up_cannot_be_drafted_before_it_is_due() -> None:
+    # Written once at T (11:30 IST, 10 Oct), so the nudge is dated 15 Oct. Drafting it
+    # the next morning would spend follow-up 1 four days early and restart the clock.
+    clock = waiting_clock()
+    assert can_draft(clock, T + days(1)) is None
+    assert can_draft(clock, T + days(4)) is None
+    # Due is a day in India: from 00:00 IST on the 15th, which is 18:30 UTC on the 14th.
+    assert can_draft(clock, datetime(2026, 10, 14, 18, 29, tzinfo=UTC)) is None
+    assert can_draft(clock, datetime(2026, 10, 14, 18, 30, tzinfo=UTC)) == "follow_up"
+    assert can_draft(clock, T + days(5)) == "follow_up"
+    assert can_draft(clock, T + days(9)) == "follow_up"  # overdue is still offered
+
+    # The second nudge waits for its own date, seven days after the first.
+    one_up = apply_touch(clock, direction="out", channel="email", at=T + days(5)).clock
+    assert can_draft(one_up, T + days(6)) is None
+    assert can_draft(one_up, T + days(12)) == "follow_up"
+
+    # A snooze pushes the date out, and the offer with it.
+    snoozed = snooze(clock, days=3, now=T + days(5))
+    assert can_draft(snoozed, T + days(6)) is None
+    assert can_draft(snoozed, T + days(8)) == "follow_up"
+
+
 def test_can_draft_by_state() -> None:
     assert can_draft(PersonClock.new(), T) == "first"
-    assert can_draft(waiting_clock(), T + days(1)) == "follow_up"
+    assert can_draft(waiting_clock(), T + days(5)) == "follow_up"
     one_up = apply_touch(waiting_clock(), direction="out", channel="email", at=T + days(5)).clock
-    assert can_draft(one_up, T + days(6)) == "follow_up"
+    assert can_draft(one_up, T + days(12)) == "follow_up"
     assert can_draft(exhausted_clock(), T + days(13)) is None
     replied = apply_touch(waiting_clock(), direction="in", channel="email", at=T + days(1)).clock
     assert can_draft(replied, T + days(2)) is None

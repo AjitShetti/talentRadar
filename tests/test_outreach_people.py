@@ -862,6 +862,14 @@ async def test_detail_draft_field_follows_can_draft(outreach_db: Factory) -> Non
     await _waiting(
         outreach_db,
         thread_id,
+        "Early Person",
+        first_sent_at=NOW - timedelta(days=1),
+        last_outbound_at=NOW - timedelta(days=1),
+        next_follow_up_at=NOW + timedelta(days=4),
+    )
+    await _waiting(
+        outreach_db,
+        thread_id,
         "Cold Person",
         follow_ups_sent=2,
         first_sent_at=NOW - timedelta(days=30),
@@ -877,6 +885,8 @@ async def test_detail_draft_field_follows_can_draft(outreach_db: Factory) -> Non
         "Planned Person": ("planned", "first"),
         "Replied Person": ("replied", None),
         "Waiting Person": ("waiting", "follow_up"),
+        # Written to yesterday: still waiting, and the nudge is not due for four days.
+        "Early Person": ("waiting", None),
         "Cold Person": ("cold", None),
         "Dropped Person": ("dropped", None),
     }

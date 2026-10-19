@@ -51,7 +51,7 @@ from sqlalchemy.orm import selectinload
 from agents.interview.role_context import _flat, build_role_context
 from config.settings import get_settings
 from domain.company_taxonomy import STAGES
-from domain.outreach import MAX_FOLLOW_UPS, aware, can_draft, ist_today
+from domain.outreach import IST, MAX_FOLLOW_UPS, aware, can_draft, ist_today
 from domain.outreach_drafts import (
     FORMATS,
     DraftFormat,
@@ -418,6 +418,16 @@ async def _gather(
             if offered is None:
                 if clock.state == "replied":
                     raise Conflict("They replied. Keep the conversation in your own words.")
+                if (
+                    clock.state == "waiting"
+                    and clock.follow_ups_sent < MAX_FOLLOW_UPS
+                    and clock.next_follow_up_at is not None
+                ):
+                    when = aware(clock.next_follow_up_at).astimezone(IST)
+                    raise Conflict(
+                        f"Your follow-up is not due until {when.day} {when.strftime('%b')}. "
+                        "Give them time to answer first."
+                    )
                 raise Conflict("There is no further message to draft for this person.")
             # A comment on an issue is one-off however the person's clock stands.
             kind = "first" if fmt == "github_comment" else offered

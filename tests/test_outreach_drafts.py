@@ -715,6 +715,28 @@ async def test_no_draft_after_reply(outreach_db: Factory, chat: AsyncMock) -> No
 
 
 @pytest.mark.asyncio
+async def test_a_follow_up_is_refused_until_it_is_due(
+    outreach_db: Factory, chat: AsyncMock
+) -> None:
+    uid, tid, people, _ = await _start(outreach_db, "Asha Rao")
+    asha = people["Asha Rao"]
+    await record_touch(uid, tid, person_id=asha, channel="linkedin", direction="out", now=T0)
+
+    # T0 is 8 Oct, so the nudge is dated 13 Oct. The day after is too soon, and the
+    # refusal says when, spends no draft and never reaches the model.
+    with pytest.raises(Conflict, match="13 Oct"):
+        await draft(
+            uid, tid, person_id=asha, fmt="linkedin_message", now=T0 + timedelta(days=1)
+        )
+
+    chat.assert_not_awaited()
+    assert await user_drafts_left(uid) == PER_USER_DAILY_DRAFTS
+    # The day it falls due the same request goes through.
+    due = await draft(uid, tid, person_id=asha, fmt="linkedin_message", now=T0 + timedelta(days=5))
+    assert due["generated"] is True
+
+
+@pytest.mark.asyncio
 async def test_no_draft_for_a_dropped_person_or_after_both_follow_ups(
     outreach_db: Factory,
 ) -> None:

@@ -55,6 +55,7 @@ from domain.outreach import (
     aware,
     clean_text,
     effective_state,
+    is_due_today,
     ist_day_bounds,
     ist_today,
     thread_stage,
@@ -182,12 +183,10 @@ def follow_up_due(clock: PersonClock, now: datetime) -> bool:
     """Is a follow-up owed to this person today in India?
 
     A follow-up dated any time today (IST) is due from 00:00 IST, not from the
-    minute it was set for, so a Bengaluru morning shows what the day holds.
-    ``domain.outreach.is_due`` compares instants; this is the day-granular rule
-    every surface that says "due" must share.
+    minute it was set for, so a Bengaluru morning shows what the day holds. The rule
+    is ``domain.outreach.is_due_today``, which ``can_draft`` reads too.
     """
-    owed_from = follow_up_due_from(clock)
-    return owed_from is not None and owed_from <= aware(now)
+    return is_due_today(clock, now)
 
 
 # --- the summary -------------------------------------------------------------
