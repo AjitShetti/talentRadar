@@ -329,17 +329,19 @@ async def reached_today(user_id: str, *, now: datetime | None = None) -> int:
 async def _conversations_started(session: AsyncSession, uid: uuid.UUID) -> int:
     return (
         await session.execute(
-            select(func.count(OutreachPerson.thread_id.distinct()))
-            .join(OutreachThread, OutreachThread.id == OutreachPerson.thread_id)
-            .where(OutreachThread.user_id == uid, OutreachPerson.state == "replied")
+            select(func.count(OutreachTouch.thread_id.distinct())).where(
+                OutreachTouch.user_id == uid, OutreachTouch.kind == "reply"
+            )
         )
     ).scalar_one()
 
 
 async def conversations_started(user_id: str) -> int:
-    """How many of the caller's threads have someone who replied, closed ones included.
+    """How many of the caller's threads have a recorded reply, closed ones included.
 
-    "They replied" is a conversation whatever they said, so a "not now" counts.
+    "They replied" is a conversation whatever they said, so a "not now" counts. It is
+    read from the reply on the timeline, not from who is in the thread now: taking a
+    person out leaves their touches behind, so tidying a thread never lowers the count.
     """
     uid = _owner(user_id)
     async with AsyncSessionLocal() as session:

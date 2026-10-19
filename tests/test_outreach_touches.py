@@ -37,7 +37,7 @@ from domain.outreach import (
 )
 from services.outreach import touches as touches_module
 from services.outreach.errors import Conflict, Invalid, NotFound
-from services.outreach.people import add_person, update_person
+from services.outreach.people import add_person, remove_person, update_person
 from services.outreach.retention import MAX_THREADS_PER_RUN, prune_outreach, prune_statement
 from services.outreach.threads import create_thread, update_thread
 from services.outreach.touches import (
@@ -511,6 +511,23 @@ async def test_replied_at_keeps_the_first_reply(outreach_db: Factory) -> None:
     assert (await _person_row(outreach_db, asha)).state == "replied"
     # Three replies are still one conversation.
     assert await conversations_started(str(user.id)) == 1
+
+
+async def test_removing_a_replied_person_keeps_the_conversation_counted(
+    outreach_db: Factory,
+) -> None:
+    user, thread_id, (asha, vikram) = await _start(outreach_db, "Asha Verma", "Vikram Rao")
+    await _touch(user, thread_id, asha, now=NOW - days(2))
+    await _touch(user, thread_id, asha, now=NOW, direction="in", note="Happy to chat")
+    await _touch(user, thread_id, vikram, now=NOW - days(1))
+    assert await conversations_started(str(user.id)) == 1
+
+    detail = await remove_person(str(user.id), thread_id, asha, now=NOW)
+
+    # The reply is still on the timeline, so the conversation still happened.
+    assert any(t["kind"] == "reply" for t in detail["touches"])
+    assert await conversations_started(str(user.id)) == 1
+    assert (await home(str(user.id), now=NOW))["conversations_started"] == 1
 
 
 async def test_snooze_is_refused_once_both_follow_ups_are_spent(outreach_db: Factory) -> None:
