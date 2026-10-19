@@ -29,11 +29,14 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import UTC, datetime
+import uuid
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from domain.event_time import IST, as_utc, effective_end, ist_date
 from services.agent_memory import (
     active_dismissals,
     get_memories,
@@ -45,6 +48,9 @@ from storage.database import AsyncSessionLocal
 from storage.models import (
     ApplicationStatus,
     Company,
+    Event,
+    EventContact,
+    EventSave,
     InterviewSession,
     Job,
     JobApplication,
@@ -70,6 +76,18 @@ IN_FLIGHT_STAGES = (
 )
 #: Memory type used for preferences the copilot infers from conversation.
 PREFERENCE_TYPE = "preference"
+#: How far ahead the single "coming up" event card looks.
+EVENT_SOON_WINDOW_DAYS = 7
+#: How long after an event ends the briefing still asks who the user met.
+EVENT_MET_PROMPT_DAYS = 2
+#: Starts read for the event cards: far enough back for a multi-day event that ended yesterday.
+_EVENT_LOOKBACK_DAYS = 9
+_EVENT_ROWS = 200
+
+
+def _now() -> datetime:
+    """The clock. A module-level function so a test can pin it."""
+    return datetime.now(tz=UTC)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -284,6 +302,173 @@ def _clock(iso: str) -> str:
         return "a time on your tracker"
 
 
+def _event_link(event_id: uuid.UUID, anchor: str = "") -> str:
+    return f"/events?event={event_id}{anchor}"
+
+
+def _event_card(
+    event: Event,
+    status: str,
+    *,
+    card_id: str,
+    kind: str,
+    title: str,
+    detail: str,
+    tone: str,
+    label: str = "Open event",
+    anchor: str = "",
+) -> dict[str, Any]:
+    """One event card. The ids, the link and the meta are the same for all three kinds."""
+    return _card(
+        card_id=card_id,
+        kind=kind,
+        title=title,
+        detail=detail,
+        tone=tone,
+        actions=[{"label": label, "href": _event_link(event.id, anchor), "style": "primary"}],
+        meta={
+            "event_id": str(event.id),
+            "starts_at": as_utc(event.starts_at).isoformat(),
+            "status": status,
+        },
+    )
+
+
+def _event_today_detail(event: Event) -> str:
+    """``"18:30 at Indiranagar, hosted by Rust Bengaluru. …"`` naming only what is stored."""
+    clock = as_utc(event.starts_at).astimezone(IST).strftime("%H:%M")
+    place = event.area or event.venue_name
+    if event.is_online:
+        where = " online"
+    elif place:
+        where = f" at {place}"
+    else:
+        where = ""
+    host = f", hosted by {event.organiser_name}" if event.organiser_name else ""
+    return f"{clock}{where}{host}. Add the people you meet afterwards."
+
+
+async def _event_cards(user_id: str, *, now: datetime) -> list[dict[str, Any]]:
+    """
+    Day-plan cards from the events the user saved or marked going (spec 9.4).
+
+    * ``event_today``: starts on today's IST date and has not ended. A cancelled one
+      is a warning in the same slot, because the plan for tonight just changed.
+    * ``event_soon``: the one soonest event in the next week that is not today.
+    * ``event_met_prompt``: an event the user was going to, which ended within the
+      last two days, with nobody noted yet.
+
+    Only the user's own saves count, and a cancelled event is only ever the warning. Like
+    every producer here it never raises: a failure is logged and the briefing carries on
+    without these cards.
+    """
+    session: AsyncSession | None = None
+    try:
+        me = parse_uuid(user_id)
+        if not me:
+            return []
+        from services.events.read import readable
+
+        session = AsyncSessionLocal()
+        current = as_utc(now)
+        today = ist_date(current)
+        recent_since = current - timedelta(days=EVENT_MET_PROMPT_DAYS)
+        result = await session.execute(
+            select(Event, EventSave.status)
+            .join(EventSave, EventSave.event_id == Event.id)
+            .where(
+                EventSave.user_id == me,
+                readable(me),
+                Event.starts_at >= current - timedelta(days=_EVENT_LOOKBACK_DAYS),
+                Event.starts_at <= current + timedelta(days=EVENT_SOON_WINDOW_DAYS),
+            )
+            .order_by(Event.starts_at, Event.id)
+            .limit(_EVENT_ROWS)
+        )
+
+        cards: list[dict[str, Any]] = []
+        soonest: tuple[Event, str] | None = None
+        ended: list[tuple[Event, str]] = []
+        for event, status in result.all():
+            starts = as_utc(event.starts_at)
+            over = effective_end(event.starts_at, event.ends_at)
+            if ist_date(starts) == today and over > current:
+                if event.is_cancelled:
+                    cards.append(_event_card(
+                        event,
+                        status,
+                        card_id=f"event_today:{event.id}",
+                        kind="event_today",
+                        title=f"{event.title} was cancelled by the organiser",
+                        detail="It was on your list for today. Check the organiser's page "
+                        "before you plan around it.",
+                        tone="warning",
+                    ))
+                else:
+                    cards.append(_event_card(
+                        event,
+                        status,
+                        card_id=f"event_today:{event.id}",
+                        kind="event_today",
+                        title=f"Tonight: {event.title}",
+                        detail=_event_today_detail(event),
+                        tone="primary",
+                    ))
+            elif event.is_cancelled:
+                continue
+            elif starts > current:  # rows are in start order, so the first is the soonest
+                soonest = soonest or (event, status)
+            elif status == "going" and recent_since < over <= current:
+                ended.append((event, status))
+
+        if soonest is not None:
+            event, status = soonest
+            weekday = as_utc(event.starts_at).astimezone(IST).strftime("%A")
+            cards.append(_event_card(
+                event,
+                status,
+                card_id=f"event_soon:{event.id}",
+                kind="event_soon",
+                title=f"{weekday}: {event.title}",
+                detail=(
+                    "You're going. Add it to your calendar."
+                    if status == "going"
+                    else "You saved it — decide whether you're going."
+                ),
+                tone="action",
+            ))
+
+        if ended:
+            noted = set((await session.execute(
+                select(EventContact.event_id)
+                .where(
+                    EventContact.user_id == me,
+                    EventContact.event_id.in_([event.id for event, _ in ended]),
+                )
+                .distinct()
+            )).scalars())
+            for event, status in ended:
+                if event.id not in noted:
+                    cards.append(_event_card(
+                        event,
+                        status,
+                        card_id=f"event_met:{event.id}",
+                        kind="event_met_prompt",
+                        title=f"Who did you meet at {event.title}?",
+                        detail="Note them now; each one can become an Outreach thread.",
+                        tone="action",
+                        label="Add who you met",
+                        anchor="#people",
+                    ))
+        return cards
+    except Exception as exc:  # a broken card must never break the briefing
+        logger.warning("Event cards unavailable: %s", exc)
+        return []
+    finally:
+        if session is not None:
+            await session.close()
+
+
 async def _interview_card(user_id: str, applied: int) -> dict[str, Any] | None:
     """
     The one interview nudge the briefing owns: applications in flight and no
@@ -336,16 +521,18 @@ async def build_briefing(*, user_id: str) -> dict[str, Any]:
     """
     Assemble today's briefing.
 
-    Ordering is deliberate: a dated commitment (an interview on the calendar)
-    outranks everything, then the single next-best action, then anything
-    decaying (stale applications), then the practice nudge. Cards the user
-    dismissed or snoozed are filtered out at the end so the id-based dismissal
-    works no matter which producer emitted the card.
+    Ordering is deliberate: a dated commitment (an interview on the calendar,
+    then an event the user is going to) outranks everything, then the single
+    next-best action, then anything decaying (stale applications), then the
+    practice nudge. Cards the user dismissed or snoozed are filtered out at the
+    end so the id-based dismissal works no matter which producer emitted the card.
     """
+    now = _now()
     next_action = await recommend_next_action(user_id=user_id)
     context = next_action.get("context", {}) if isinstance(next_action, dict) else {}
 
     cards: list[dict[str, Any]] = await _scheduled_interview_cards(user_id)
+    cards.extend(await _event_cards(user_id, now=now))
 
     if next_action.get("recommendation"):
         cards.append(_card(
@@ -373,7 +560,7 @@ async def build_briefing(*, user_id: str) -> dict[str, Any]:
     visible = [c for c in cards if c["id"] not in dismissed]
 
     return {
-        "generated_at": datetime.now(tz=UTC).isoformat(),
+        "generated_at": now.isoformat(),
         "headline": _headline(visible, context),
         "cards": visible,
         "hidden_count": len(cards) - len(visible),

@@ -88,6 +88,7 @@ def stub_sources(monkeypatch: pytest.MonkeyPatch) -> dict:
             "context": {"total_applications": 8, "saved": 6, "applied": 1, "interviews": 0},
         },
         "application_cards": [],
+        "event_cards": [],
         "interview_card": None,
         "dismissed": set(),
     }
@@ -98,6 +99,9 @@ def stub_sources(monkeypatch: pytest.MonkeyPatch) -> dict:
     async def fake_app_cards(user_id: str) -> list:
         return state["application_cards"]
 
+    async def fake_event_cards(user_id: str, *, now: datetime) -> list:
+        return state["event_cards"]
+
     async def fake_interview(user_id: str, applied: int) -> dict | None:
         return state["interview_card"]
 
@@ -106,6 +110,7 @@ def stub_sources(monkeypatch: pytest.MonkeyPatch) -> dict:
 
     monkeypatch.setattr(copilot, "recommend_next_action", fake_next_action)
     monkeypatch.setattr(copilot, "_application_cards", fake_app_cards)
+    monkeypatch.setattr(copilot, "_event_cards", fake_event_cards)
     monkeypatch.setattr(copilot, "_interview_card", fake_interview)
     monkeypatch.setattr(copilot, "active_dismissals", fake_dismissals)
     return state
