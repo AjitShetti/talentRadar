@@ -7,11 +7,9 @@ import AppShell from '@/components/AppShell'
 import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
 import { api, Challenge, ChallengesOverview, PracticeFeel, PracticeHistory, PracticeSettings, PracticeToday } from '@/lib/api'
+import { clock, dayTime, duration, NBSP, shortDate, weekdayTime } from '@/lib/practice-time'
 import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 
-// Every practice time is shown in IST, the clock the schedule is set in (challenge
-// Fri 18:00, contest Sun 08:00), whatever the browser's zone is.
-const IST = 'Asia/Kolkata'
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const FEELS: Array<[PracticeFeel, string]> = [['easy', 'Easy'], ['right', 'Right'], ['hard', 'Hard']]
 const TRACK_NAMES: Record<string, string> = { ml: 'ML', ai: 'AI', devops: 'DevOps' }
@@ -20,30 +18,6 @@ const STATUS_WORDS: Record<string, string> = {
   judge_failed: 'not judged', missed: 'not submitted', started: 'not submitted',
 }
 
-function istParts(iso: string) {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return null
-  const parts = new Intl.DateTimeFormat('en-US', { timeZone: IST, weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(date)
-  const pick = (type: string) => parts.find(part => part.type === type)?.value ?? ''
-  return { weekday: pick('weekday'), day: pick('day'), month: pick('month'), time: `${pick('hour')}:${pick('minute')}` }
-}
-/** "08:41" */
-const clock = (iso: string) => istParts(iso)?.time ?? ''
-/** "Sun 08:00 IST" */
-function weekdayTime(iso: string) {
-  const p = istParts(iso)
-  return p ? `${p.weekday} ${p.time} IST` : ''
-}
-/** "Fri 23 Oct 18:00 IST" */
-function dayTime(iso: string) {
-  const p = istParts(iso)
-  return p ? `${p.weekday} ${p.day} ${p.month} ${p.time} IST` : ''
-}
-/** "09 OCT" — the IST date a challenge opened. */
-function shortDate(iso: string) {
-  const p = istParts(iso)
-  return p ? `${p.day} ${p.month}`.toUpperCase() : ''
-}
 /** "Thu 15 Oct" from the server's IST day (YYYY-MM-DD). */
 function dayLabel(day: string) {
   const date = new Date(`${day}T00:00:00Z`)
@@ -52,17 +26,6 @@ function dayLabel(day: string) {
   const pick = (type: string) => parts.find(part => part.type === type)?.value ?? ''
   return `${pick('weekday')} ${pick('day')} ${pick('month')}`
 }
-/** "2 d 14 h" (days on) or "31 h 12 m"; below an hour, "41 m". */
-function duration(ms: number, withDays: boolean) {
-  const minutes = Math.max(0, Math.floor(ms / 60000))
-  const days = Math.floor(minutes / 1440)
-  if (withDays && days > 0) return `${days} d ${Math.floor((minutes % 1440) / 60)} h`
-  const hours = Math.floor(minutes / 60)
-  return hours > 0 ? `${hours} h ${minutes % 60} m` : `${minutes} m`
-}
-// FlapText lays its characters out in a flex row, which collapses ordinary spaces; a
-// non-breaking space survives, so "31 h 12 m" keeps its gaps.
-const NBSP = String.fromCharCode(0xa0)
 const words = (text: string) => text.replace(/[-_]/g, ' ')
 const capitalise = (text: string) => text ? text[0].toUpperCase() + text.slice(1) : text
 const trackName = (track: string) => TRACK_NAMES[track] ?? capitalise(track)
