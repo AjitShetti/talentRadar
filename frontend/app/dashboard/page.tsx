@@ -8,7 +8,7 @@ import BriefingFeed from '@/components/BriefingFeed'
 import CopilotWorkspace from '@/components/CopilotWorkspace'
 import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
-import { ActivityItem, AgendaItem, api, Briefing, JobMatch, SkillsFocus } from '@/lib/api'
+import { ActivityItem, AgendaItem, api, Briefing, BriefingCard, JobMatch, SkillsFocus } from '@/lib/api'
 
 type Dimension = { key: string; label: string; score: number; weakest: boolean }
 type TrackStat = { track: string; label: string; score: number; sessions: number }
@@ -30,13 +30,36 @@ const clock = (iso: string | null) => {
 const sweepTime = (iso: string | null) => clock(iso) ?? '—'
 
 /**
+ * One of the briefing's cards as a ranked action. The card's own words stay: the
+ * server wrote them from evidence, and the key lets "Also on your radar" skip it.
+ */
+function fromCard(card: BriefingCard, tag: { label: string; hot?: boolean }, fallbackCta: string, fallbackHref: string): Action {
+  const action = card.actions?.[0]
+  return {
+    key: `briefing-${card.id}`,
+    title: card.title,
+    why: card.detail,
+    tags: [tag],
+    cta: action?.label || fallbackCta,
+    href: action?.href || fallbackHref,
+  }
+}
+
+/** What the "event_today" tag says: the card's own title says "Tonight" for an evening start, "Today" for an earlier one. */
+const todayTag = (card: BriefingCard) => card.tone === 'warning'
+  ? { label: 'Cancelled', hot: true }
+  : { label: card.title.startsWith('Tonight') ? 'Tonight' : 'Today', hot: true }
+
+/**
  * Rank today's actions, hardest constraint first.
  *
  * A dated interview is the only thing the user cannot move, so it always leads.
- * After that the order is: finish the setup everything else is computed from,
- * then the briefing's own next-best action, then the cheapest durable win
- * (a first mock), then study, then apply. Three at most — a fourth would make
- * this a list to read rather than a decision to act on.
+ * An event on the user's list for today is the next dated commitment, and it
+ * expires tonight, so it outranks setup. After that the order is: finish the
+ * setup everything else is computed from, then the briefing's own next-best
+ * action, then the week's event and who the user met, then the cheapest
+ * durable win (a first mock), then study, then apply. Three at most — a fourth
+ * would make this a list to read rather than a decision to act on.
  */
 function buildActions(
   agenda: AgendaItem[],
@@ -63,6 +86,9 @@ function buildActions(
     })
   }
 
+  const eventToday = briefing?.cards?.find(card => card.kind === 'event_today')
+  if (eventToday) out.push(fromCard(eventToday, todayTag(eventToday), 'Open event', '/events'))
+
   if (!onboarded) {
     out.push({
       key: 'onboard',
@@ -77,18 +103,18 @@ function buildActions(
   // The briefing is the deterministic "what needs you" engine (services/copilot.py).
   // Its top card outranks anything derived here, so it goes in before the
   // generic fallbacks rather than being shown in a second competing list.
-  const lead = briefing?.cards?.find(card => card.tone === 'primary' || card.tone === 'warning')
+  // An event card is ranked above and below on its own terms; as the lead it
+  // would count the same event twice.
+  const lead = briefing?.cards?.find(card => (card.tone === 'primary' || card.tone === 'warning') && !card.kind.startsWith('event_'))
   if (lead && out.length < 3) {
-    const action = lead.actions?.[0]
-    out.push({
-      key: `briefing-${lead.id}`,
-      title: lead.title,
-      why: lead.detail,
-      tags: [{ label: lead.kind.replace(/_/g, ' '), hot: lead.tone === 'warning' }],
-      cta: action?.label || 'Open',
-      href: action?.href || '/applications',
-    })
+    out.push(fromCard(lead, { label: lead.kind.replace(/_/g, ' '), hot: lead.tone === 'warning' }, 'Open', '/applications'))
   }
+
+  // Then the week ahead and the people just met, if there is still room.
+  const eventSoon = briefing?.cards?.find(card => card.kind === 'event_soon')
+  if (eventSoon && out.length < 3) out.push(fromCard(eventSoon, { label: 'This week' }, 'Open event', '/events'))
+  const eventMet = briefing?.cards?.find(card => card.kind === 'event_met_prompt')
+  if (eventMet && out.length < 3) out.push(fromCard(eventMet, { label: 'Who you met' }, 'Add who you met', '/events'))
 
   // When the briefing already sends the user to the Interview Lab, a second
   // interview row would spend one of three slots repeating it.

@@ -13,6 +13,7 @@ import {
   api, EventCard, EventContact, EventContactIn, EventDetail, EventFormat, EventListParams, EventPage, EventSaveStatus,
   EventSource, ImportReason, ManualEventIn,
 } from '@/lib/api'
+import { clock, dayLabel, effectiveEndMs, ist, istDay, knownEndMs, MONTHS, pad, startMs, whenLabel } from '@/lib/event-time'
 import { FEATURES } from '@/lib/features'
 import { usePersistentState } from '@/lib/persistent-state'
 import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
@@ -71,50 +72,6 @@ const MANUAL_REASON: Record<ImportReason, string> = {
   not_readable: 'We could not read that page.',
   daily_cap: 'You have added 10 links today.',
   not_in_bengaluru: 'That event does not look like it is in Bengaluru.',
-}
-
-// ── Time, in IST ─────────────────────────────────────────────────────────────
-// IST has no daylight saving, so a fixed offset is exact. Everything a person
-// reads here is IST, as in domain/event_time.py.
-const IST_OFFSET_MS = 330 * 60_000
-const DAY_MS = 86_400_000
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-
-const pad = (n: number) => String(n).padStart(2, '0')
-
-type IstParts = { day: number; month: number; weekday: number; hour: number; minute: number }
-
-function ist(ms: number): IstParts {
-  const t = new Date(ms + IST_OFFSET_MS)
-  return { day: t.getUTCDate(), month: t.getUTCMonth(), weekday: t.getUTCDay(), hour: t.getUTCHours(), minute: t.getUTCMinutes() }
-}
-
-/** Whole IST days since the epoch: two instants on one IST date share it. */
-const istDay = (ms: number) => Math.floor((ms + IST_OFFSET_MS) / DAY_MS)
-const clock = (p: IstParts) => `${pad(p.hour)}:${pad(p.minute)}`
-const dayLabel = (p: IstParts) => `${WEEKDAYS[p.weekday]} ${p.day} ${MONTHS[p.month]}`
-
-const startMs = (event: { starts_at: string }) => Date.parse(event.starts_at)
-
-/** The end the source gave, or null. A null end is never shown as if it were known. */
-function knownEndMs(event: { starts_at: string; ends_at: string | null }): number | null {
-  if (!event.ends_at) return null
-  const end = Date.parse(event.ends_at)
-  return Number.isFinite(end) && end > startMs(event) ? end : null
-}
-
-/** Readers assume a null end means start + 2 h (domain.event_time.effective_end). */
-const effectiveEndMs = (event: { starts_at: string; ends_at: string | null }) => knownEndMs(event) ?? startMs(event) + 2 * 3_600_000
-
-/** "Thu 15 Oct · 18:30–20:00 IST", across days "Sat 24 Oct 09:30 – Sun 25 Oct 17:00 IST", start only when there is no end. */
-function whenLabel(event: { starts_at: string; ends_at: string | null }): string {
-  const start = ist(startMs(event))
-  const endMs = knownEndMs(event)
-  if (endMs === null) return `${dayLabel(start)} · ${clock(start)} IST`
-  const end = ist(endMs)
-  if (istDay(endMs) === istDay(startMs(event))) return `${dayLabel(start)} · ${clock(start)}–${clock(end)} IST`
-  return `${dayLabel(start)} ${clock(start)} – ${dayLabel(end)} ${clock(end)} IST`
 }
 
 function durationLabel(event: { starts_at: string; ends_at: string | null }): string | null {
