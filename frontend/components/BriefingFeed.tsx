@@ -12,6 +12,8 @@ const KIND_LABELS: Record<string, string> = {
   saved_backlog: 'UNFINISHED',
   closed_role: 'NO LONGER LISTED',
   interview_momentum: 'MOMENTUM',
+  outreach_followup: 'FOLLOW-UP DUE',
+  outreach_suggestion: 'WORTH A NOTE',
 }
 
 function Card({ card, onDismiss }: { card: BriefingCard; onDismiss: (id: string, days?: number) => void }) {

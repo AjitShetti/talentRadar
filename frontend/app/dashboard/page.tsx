@@ -8,7 +8,7 @@ import BriefingFeed from '@/components/BriefingFeed'
 import CopilotWorkspace from '@/components/CopilotWorkspace'
 import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
-import { ActivityItem, AgendaItem, api, Briefing, JobMatch, SkillsFocus } from '@/lib/api'
+import { ActivityItem, AgendaItem, api, Briefing, BriefingCard, JobMatch, SkillsFocus } from '@/lib/api'
 
 type Dimension = { key: string; label: string; score: number; weakest: boolean }
 type TrackStat = { track: string; label: string; score: number; sessions: number }
@@ -29,14 +29,46 @@ const clock = (iso: string | null) => {
 
 const sweepTime = (iso: string | null) => clock(iso) ?? '—'
 
+/** A number the server put in a briefing card's `meta`, or null when it is missing or not one. */
+const metaNumber = (card: BriefingCard, key: string): number | null => {
+  const value = card.meta?.[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+/**
+ * A briefing card as a ranked action. The card's first button is the call to
+ * action, and the key carries the card id so the briefing below does not repeat it.
+ */
+function fromCard(card: BriefingCard, tags: Action['tags'], fallback: { cta: string; href: string }): Action {
+  const first = card.actions?.[0]
+  return {
+    key: `briefing-${card.id}`,
+    title: card.title,
+    why: card.detail,
+    tags,
+    cta: first?.label || fallback.cta,
+    href: first?.href || fallback.href,
+  }
+}
+
 /**
  * Rank today's actions, hardest constraint first.
  *
  * A dated interview is the only thing the user cannot move, so it always leads.
- * After that the order is: finish the setup everything else is computed from,
- * then the briefing's own next-best action, then the cheapest durable win
- * (a first mock), then study, then apply. Three at most — a fourth would make
- * this a list to read rather than a decision to act on.
+ * The order is:
+ *   1. an interview today;
+ *   2. finish the setup everything else is computed from;
+ *   3. an interview on the calendar within a day (the briefing's card);
+ *   4. an Outreach follow-up that is due;
+ *   5. the briefing's own next-best action;
+ *   6. the one company worth a note (the Outreach suggestion);
+ *   7. the cheapest durable win (a first mock), then study, then apply.
+ *
+ * A follow-up is a date the user set themselves, so it is a dated commitment and
+ * outranks the briefing's next-best action; an interview within a day is a harder
+ * one, so the follow-up ranks below it. The suggestion is a nudge, not a
+ * commitment, so it goes after the lead. Three at most — a fourth would make this
+ * a list to read rather than a decision to act on.
  */
 function buildActions(
   agenda: AgendaItem[],
@@ -75,19 +107,54 @@ function buildActions(
   }
 
   // The briefing is the deterministic "what needs you" engine (services/copilot.py).
-  // Its top card outranks anything derived here, so it goes in before the
-  // generic fallbacks rather than being shown in a second competing list.
-  const lead = briefing?.cards?.find(card => card.tone === 'primary' || card.tone === 'warning')
+  // Its cards outrank anything derived here, so they go in before the generic
+  // fallbacks rather than being shown in a second competing list.
+  const cards = briefing?.cards ?? []
+  const taken = (card: BriefingCard) => out.some(action => action.key === `briefing-${card.id}`)
+
+  // An interview within a day. Today's is already the first action, and the briefing
+  // has a card for the same interview: showing it again would spend a second slot
+  // saying it twice, so that card is skipped here and as the lead.
+  const interviewTodayShown = out.some(action => action.key === 'interview-today')
+  const repeatsToday = (card: BriefingCard) =>
+    interviewTodayShown && card.kind === 'scheduled_interview' && metaNumber(card, 'days_away') === 0
+  const soon = cards.find(card => {
+    const days = metaNumber(card, 'days_away')
+    return card.kind === 'scheduled_interview' && days !== null && days <= 1 && !repeatsToday(card)
+  })
+  if (soon && out.length < 3) {
+    out.push(fromCard(soon, [{ label: metaNumber(soon, 'days_away') === 0 ? 'Today' : 'Tomorrow', hot: true }, { label: 'Interview' }], { cta: 'Open prep', href: '/interview' }))
+  }
+
+  // Everything owed on Outreach arrives as one card; its count is what is due.
+  const followUp = cards.find(card => card.kind === 'outreach_followup')
+  if (followUp && out.length < 3 && !taken(followUp)) {
+    const due = metaNumber(followUp, 'count') ?? 1
+    out.push(fromCard(followUp, [{ label: `${due} due`, hot: true }, { label: 'Outreach' }], { cta: 'Open Outreach', href: '/outreach' }))
+  }
+
+  // The lead is the briefing's next-best action. Outreach cards have their own slots.
+  const lead = cards.find(card => (card.tone === 'primary' || card.tone === 'warning') && !card.kind.startsWith('outreach_') && !taken(card) && !repeatsToday(card))
   if (lead && out.length < 3) {
-    const action = lead.actions?.[0]
-    out.push({
-      key: `briefing-${lead.id}`,
-      title: lead.title,
-      why: lead.detail,
-      tags: [{ label: lead.kind.replace(/_/g, ' '), hot: lead.tone === 'warning' }],
-      cta: action?.label || 'Open',
-      href: action?.href || '/applications',
-    })
+    out.push(fromCard(lead, [{ label: lead.kind.replace(/_/g, ' '), hot: lead.tone === 'warning' }], { cta: 'Open', href: '/applications' }))
+  }
+
+  // One company worth a note, only while the day's target is not met (the server
+  // leaves the card out otherwise). It is a nudge, so it ranks below the lead.
+  const suggestion = cards.find(card => card.kind === 'outreach_suggestion')
+  if (suggestion && out.length < 3 && !taken(suggestion)) {
+    const reached = metaNumber(suggestion, 'reached_today')
+    const target = metaNumber(suggestion, 'daily_target')
+    const reasons = Array.isArray(suggestion.meta?.reasons) ? suggestion.meta.reasons : []
+    const reason = typeof reasons[0] === 'string' ? reasons[0] : ''
+    out.push(fromCard(
+      suggestion,
+      [
+        ...(reached !== null && target !== null ? [{ label: `${reached} of ${target} today` }] : []),
+        ...(reason ? [{ label: reason }] : []),
+      ],
+      { cta: 'See who to contact', href: '/outreach' },
+    ))
   }
 
   // When the briefing already sends the user to the Interview Lab, a second
