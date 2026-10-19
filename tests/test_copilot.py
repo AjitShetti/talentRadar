@@ -15,6 +15,7 @@ Everything runs without a database or a network.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 
@@ -30,6 +31,7 @@ from services.copilot import (
     build_briefing,
     chat,
 )
+from services.outreach import briefing as outreach_briefing
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Card primitives
@@ -90,6 +92,7 @@ def stub_sources(monkeypatch: pytest.MonkeyPatch) -> dict:
         "application_cards": [],
         "interview_card": None,
         "dismissed": set(),
+        "outreach": {"followup": None, "suggestion": None},
     }
 
     async def fake_next_action(*, user_id: str) -> dict:
@@ -104,10 +107,18 @@ def stub_sources(monkeypatch: pytest.MonkeyPatch) -> dict:
     async def fake_dismissals(*, user_id: str) -> set:
         return state["dismissed"]
 
+    async def fake_outreach(user_id: str, *, now: datetime | None = None) -> dict[str, Any]:
+        outreach = state["outreach"]
+        if isinstance(outreach, Exception):
+            raise outreach
+        cards: dict[str, Any] = outreach
+        return cards
+
     monkeypatch.setattr(copilot, "recommend_next_action", fake_next_action)
     monkeypatch.setattr(copilot, "_application_cards", fake_app_cards)
     monkeypatch.setattr(copilot, "_interview_card", fake_interview)
     monkeypatch.setattr(copilot, "active_dismissals", fake_dismissals)
+    monkeypatch.setattr(outreach_briefing, "outreach_cards", fake_outreach)
     return state
 
 
@@ -169,6 +180,66 @@ async def test_briefing_never_reports_what_the_overview_panels_own(stub_sources:
 async def test_interview_card_stays_quiet_until_something_is_in_flight() -> None:
     """No applications means no practice nudge — and no query to make one."""
     assert await _interview_card("u1", 0) is None
+
+
+async def test_briefing_places_outreach_cards(
+    stub_sources: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A dated commitment leads, the follow-up comes right after it, the suggestion is last."""
+    async def fake_scheduled(user_id: str) -> list[dict[str, Any]]:
+        return [_card(card_id="scheduled_interview:1", kind="scheduled_interview",
+                      title="Interview tomorrow", detail="d", tone="warning")]
+
+    monkeypatch.setattr(copilot, "_scheduled_interview_cards", fake_scheduled)
+    stub_sources["application_cards"] = [
+        _card(card_id="saved_backlog", kind="saved_backlog", title="6 saved", detail="d"),
+    ]
+    stub_sources["interview_card"] = _card(
+        card_id="interview_cold_start", kind="interview_momentum", title="practise", detail="d"
+    )
+    stub_sources["outreach"] = {
+        "followup": _card(card_id="outreach_followup", kind="outreach_followup",
+                          title="Follow up", detail="d", tone="primary", dismissible=False),
+        "suggestion": _card(card_id="outreach_suggestion:c1", kind="outreach_suggestion",
+                            title="Reach out", detail="d"),
+    }
+
+    briefing = await build_briefing(user_id="u1")
+
+    assert [c["kind"] for c in briefing["cards"]] == [
+        "scheduled_interview",
+        "outreach_followup",
+        "priority",
+        "saved_backlog",
+        "interview_momentum",
+        "outreach_suggestion",
+    ]
+
+
+async def test_a_dismissed_outreach_suggestion_is_filtered_like_any_card(
+    stub_sources: dict[str, Any],
+) -> None:
+    stub_sources["outreach"] = {
+        "followup": None,
+        "suggestion": _card(card_id="outreach_suggestion:c1", kind="outreach_suggestion",
+                            title="Reach out", detail="d"),
+    }
+    stub_sources["dismissed"] = {"outreach_suggestion:c1"}
+
+    briefing = await build_briefing(user_id="u1")
+
+    assert [c["kind"] for c in briefing["cards"]] == ["priority"]
+    assert briefing["hidden_count"] == 1
+
+
+async def test_a_failing_outreach_producer_cannot_blank_the_briefing(
+    stub_sources: dict[str, Any],
+) -> None:
+    stub_sources["outreach"] = RuntimeError("the outreach tables are unreachable")
+
+    briefing = await build_briefing(user_id="u1")
+
+    assert [c["kind"] for c in briefing["cards"]] == ["priority"]
 
 
 async def test_briefing_survives_a_missing_recommendation(stub_sources: dict) -> None:

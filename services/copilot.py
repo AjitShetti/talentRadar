@@ -332,20 +332,43 @@ async def _interview_card(user_id: str, applied: int) -> dict[str, Any] | None:
         await session.close()
 
 
+async def _outreach_cards(user_id: str) -> dict[str, dict[str, Any] | None]:
+    """
+    The Outreach follow-up and suggestion cards, or neither.
+
+    ``outreach_cards`` already degrades to no cards, so this only guards the call
+    itself: one failing producer must not blank the briefing. Imported here because
+    ``services.outreach.briefing`` builds its cards with ``_card`` from this module.
+    """
+    try:
+        from services.outreach.briefing import outreach_cards
+
+        return await outreach_cards(user_id)
+    except Exception as exc:
+        logger.warning("Outreach cards unavailable: %s", type(exc).__name__)
+        return {"followup": None, "suggestion": None}
+
+
 async def build_briefing(*, user_id: str) -> dict[str, Any]:
     """
     Assemble today's briefing.
 
     Ordering is deliberate: a dated commitment (an interview on the calendar)
-    outranks everything, then the single next-best action, then anything
-    decaying (stale applications), then the practice nudge. Cards the user
-    dismissed or snoozed are filtered out at the end so the id-based dismissal
-    works no matter which producer emitted the card.
+    outranks everything, then the follow-ups the user owes on Outreach (a date
+    they set themselves), then the single next-best action, then anything
+    decaying (stale applications), then the practice nudge, and last the one
+    company worth a note. Cards the user dismissed or snoozed are filtered out
+    at the end so the id-based dismissal works no matter which producer emitted
+    the card.
     """
     next_action = await recommend_next_action(user_id=user_id)
     context = next_action.get("context", {}) if isinstance(next_action, dict) else {}
+    outreach = await _outreach_cards(user_id)
 
     cards: list[dict[str, Any]] = await _scheduled_interview_cards(user_id)
+
+    if followup_card := outreach.get("followup"):
+        cards.append(followup_card)
 
     if next_action.get("recommendation"):
         cards.append(_card(
@@ -368,6 +391,9 @@ async def build_briefing(*, user_id: str) -> dict[str, Any]:
     interview_card = await _interview_card(user_id, int(context.get("applied", 0) or 0))
     if interview_card:
         cards.append(interview_card)
+
+    if suggestion_card := outreach.get("suggestion"):
+        cards.append(suggestion_card)
 
     dismissed = await active_dismissals(user_id=user_id)
     visible = [c for c in cards if c["id"] not in dismissed]
