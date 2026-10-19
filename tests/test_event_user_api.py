@@ -899,6 +899,15 @@ async def test_manual_event_needs_only_a_title_and_a_time(client: AsyncClient) -
     assert created.json()["is_online"] is False
 
 
+async def test_manual_event_link_accepts_a_hyphenated_numbered_host(client: AsyncClient) -> None:
+    """The host check is a positive pattern, so ordinary hosts (digits, hyphens, case) pass it."""
+    link = "https://Rust-Night-2.example.test/dinner"
+    created = await client.post(f"{LIST}/manual", json={**MANUAL, "url": link})
+
+    assert created.status_code == 201, created.text
+    assert created.json()["url"] == link
+
+
 async def test_manual_event_text_is_made_safe(client: AsyncClient) -> None:
     nul, bell = chr(0), chr(7)
     created = await client.post(
@@ -935,6 +944,8 @@ async def test_manual_event_text_is_made_safe(client: AsyncClient) -> None:
         {"url": "https://user:pw@example.test/dinner"},
         {"url": "https://exa mple.test/dinner"},
         {"url": f"https://evil.io{BACKSLASH}.example.test/dinner"},
+        {"url": "https://evil.io!.example.test/dinner"},
+        {"url": "https://exa_mple.test/dinner"},
         {"venue_name": "v" * 201},
     ],
     ids=lambda changes: "-".join(f"{k}={str(v)[:18]}" for k, v in changes.items()),
@@ -1151,6 +1162,11 @@ async def test_a_person_is_linked_only_to_a_tech_company_on_the_map(
         {"linkedin_url": f"https://evil.io{BACKSLASH}.linkedin.com/in/x"},
         {"linkedin_url": "https://evil.io%2e.linkedin.com/in/x"},
         {"linkedin_url": "https://evil.io;.linkedin.com/in/x"},
+        {"linkedin_url": "https://evil.io!.linkedin.com/in/x"},
+        {"linkedin_url": "https://evil.io,.linkedin.com/in/x"},
+        {"linkedin_url": "https://evil.io_.linkedin.com/in/x"},
+        {"x_url": "https://evil.io'.x.com/asha"},
+        {"github_url": "https://evil.io$.github.com/asha"},
         {"x_url": f"https://evil.io{BACKSLASH}.x.com/asha"},
         {"github_url": "https://evil.io%2e.github.com/asha"},
         {"linkedin_url": "javascript:alert(1)"},

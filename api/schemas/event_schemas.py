@@ -38,9 +38,11 @@ _CONTROL = re.compile("[" + "".join(map(chr, (*range(9), *range(14, 32), 127))) 
 _VISIBLE_ASCII = re.compile(r"[!-~]+")
 _EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 
-#: Characters a host never has but a browser may read as a separator: ``evil.io\.linkedin.com``
-#: parses here as a ``linkedin.com`` subdomain and is opened by a browser as ``evil.io``.
-_HOST_REFUSED = (chr(92), "%", ";")
+#: What a host is made of. The host is already lower-cased by ``urlsplit``. A denylist of
+#: separators would miss the next one: ``evil.io\.linkedin.com`` parses here as a
+#: ``linkedin.com`` subdomain and is opened by a browser as ``evil.io``, so only letters,
+#: digits, dots and hyphens are let through.
+_HOST_PATTERN = re.compile(r"[a-z0-9.-]+")
 
 #: The host each profile field must be on: that host or one of its subdomains.
 _PROFILE_HOSTS: dict[str, tuple[str, ...]] = {
@@ -64,8 +66,8 @@ def _paragraphs(value: str) -> str:
 def _https_link(value: str, hosts: tuple[str, ...] | None = None) -> str:
     """``value`` if it is a plain ``https`` link, and on one of ``hosts`` when they are given.
 
-    Visible ASCII only, no userinfo and no port, a host with no backslash, percent sign or
-    semicolon, and a host matched exactly (or as a subdomain of a listed one), so
+    Visible ASCII only, no userinfo and no port, a host of letters, digits, dots and hyphens
+    only, and a host matched exactly (or as a subdomain of a listed one), so
     ``linkedin.com.evil.io``, ``evil.io/linkedin.com`` and a backslash after ``evil.io`` are all
     refused. ``ValueError`` says what is wrong without echoing the link.
     """
@@ -84,7 +86,7 @@ def _https_link(value: str, hosts: tuple[str, ...] | None = None) -> str:
         raise ValueError("a link must start with https://")
     if parts.username or parts.password or port or parts.netloc.lower() != host:
         raise ValueError("a link must not carry a login or a port")
-    if any(char in host for char in _HOST_REFUSED):
+    if _HOST_PATTERN.fullmatch(host) is None:
         raise ValueError("a link's host must be a plain domain name")
     if hosts is not None and not any(host == h or host.endswith(f".{h}") for h in hosts):
         raise ValueError(f"must be a link on {' or '.join(hosts)}")

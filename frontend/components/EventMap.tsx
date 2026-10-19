@@ -117,6 +117,8 @@ export default function EventMap({ events, selectedId, goingIds, onSelect, onUna
   useEffect(() => { onSelectRef.current = onSelect; onUnavailableRef.current = onUnavailable })
 
   const model = useMemo(() => buildPins(events, BBOX), [events])
+  // Only an exact pin can be displaced from a venue it claims; the legend explains the fan-out when there is one.
+  const sharedVenues = useMemo(() => model.pins.some(pin => pin.kind === 'exact' && pin.stacked > 1), [model.pins])
   const { plain, lit } = useMemo(() => splitSources(model.pins, goingIds, selectedId), [model.pins, goingIds, selectedId])
   const latest = useRef({ plain, lit })
   latest.current = { plain, lit }
@@ -271,13 +273,20 @@ export default function EventMap({ events, selectedId, goingIds, onSelect, onUna
         if (cancelled) return
         loaded = true
         if (timer) clearTimeout(timer)
-        m.addSource(SRC_PLAIN, { type: 'geojson', data: latest.current.plain, cluster: true, clusterRadius: 40, clusterMaxZoom: CLUSTER_MAX_ZOOM, promoteId: 'id' })
-        m.addSource(SRC_LIT, { type: 'geojson', data: latest.current.lit, promoteId: 'id' })
-        pinLayers().forEach(layer => m.addLayer(layer))
-        m.on('sourcedata', e => { if (e.sourceId === SRC_PLAIN && e.isSourceLoaded) syncClusters() })
-        m.on('moveend', syncClusters)
-        m.on('idle', syncClusters)
-        setReady(true)
+        // `loaded` is set, so the 'error' handler no longer reports: a throw here must reach `fail`
+        // itself, or the map stays on "Loading map…" with no way out.
+        try {
+          m.addSource(SRC_PLAIN, { type: 'geojson', data: latest.current.plain, cluster: true, clusterRadius: 40, clusterMaxZoom: CLUSTER_MAX_ZOOM, promoteId: 'id' })
+          m.addSource(SRC_LIT, { type: 'geojson', data: latest.current.lit, promoteId: 'id' })
+          pinLayers().forEach(layer => m.addLayer(layer))
+          m.on('sourcedata', e => { if (e.sourceId === SRC_PLAIN && e.isSourceLoaded) syncClusters() })
+          m.on('moveend', syncClusters)
+          m.on('idle', syncClusters)
+          setReady(true)
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : ''
+          fail(`The map pins could not be drawn${detail ? `: ${detail.slice(0, 120)}` : '.'}`)
+        }
       })
     }).catch(() => fail('The map library could not be loaded.'))
 
@@ -314,18 +323,25 @@ export default function EventMap({ events, selectedId, goingIds, onSelect, onUna
 
   // An event selected from outside the map (a deep link, the list): bring it into view if it is out of sight.
   // A pin the user clicked is already where they are looking.
+  // The effect depends on the pin's id and position, not on the object: `buildPins` makes a new object
+  // whenever the events change (Show more, a save, a filter), and that must not re-centre a pin the user has moved away from.
   const selectedPin = useMemo(() => model.pins.find(p => p.id === selectedId) ?? null, [model.pins, selectedId])
+  const pinId = selectedPin?.id ?? null
+  const pinLat = selectedPin?.lat ?? null
+  const pinLng = selectedPin?.lng ?? null
   useEffect(() => {
+    // Nothing selected: forget a click, so selecting the same event again from the list is not mistaken for it.
+    if (pinId === null || pinLat === null || pinLng === null) { clickedRef.current = null; return }
     const m = mapRef.current
-    if (!m || !ready || !selectedPin) return
-    const fromPin = clickedRef.current === selectedPin.id
+    if (!m || !ready) return
+    const fromPin = clickedRef.current === pinId
     clickedRef.current = null
     if (fromPin) return
-    const point = m.project([selectedPin.lng, selectedPin.lat])
+    const point = m.project([pinLng, pinLat])
     const canvas = m.getCanvas()
     const visible = point.x > 48 && point.x < canvas.clientWidth - 48 && point.y > 64 && point.y < canvas.clientHeight - 64
-    if (!visible) m.easeTo({ center: [selectedPin.lng, selectedPin.lat], duration: reducedMotion() ? 0 : 600 })
-  }, [selectedPin, ready])
+    if (!visible) m.easeTo({ center: [pinLng, pinLat], duration: reducedMotion() ? 0 : 600 })
+  }, [pinId, pinLat, pinLng, ready])
 
   const fit = () => mapRef.current?.fitBounds([[BBOX.west, BBOX.south], [BBOX.east, BBOX.north]], { padding: 28, duration: reducedMotion() ? 0 : 500 })
 
@@ -357,6 +373,7 @@ export default function EventMap({ events, selectedId, goingIds, onSelect, onUna
 
     <div className="cm-legend" aria-hidden="true">
       <span><svg width="12" height="12"><circle cx="6" cy="6" r="4" className="cm-key-dot" /></svg>Exact venue</span>
+      {sharedVenues && <span><svg width="12" height="12"><circle cx="6" cy="6" r="4" className="cm-key-dot" /></svg>Shared venue — fanned out beside it</span>}
       <span><svg width="12" height="12"><circle cx="6" cy="6" r="4" className="cm-key-ring" /></svg>Area only — approximate</span>
       <span><svg width="12" height="12"><circle cx="6" cy="6" r="4.5" className="cm-key-lit" /></svg>You&apos;re going · selected</span>
       <span><svg width="12" height="12"><circle cx="6" cy="6" r="5.4" className="cm-key-cluster" /></svg>Cluster — click to zoom</span>

@@ -30,7 +30,7 @@ from __future__ import annotations
 import logging
 import re
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
@@ -83,6 +83,8 @@ EVENT_MET_PROMPT_DAYS = 2
 #: Starts read for the event cards: far enough back for a multi-day event that ended yesterday.
 _EVENT_LOOKBACK_DAYS = 9
 _EVENT_ROWS = 200
+#: An event that starts at this hour of the IST day or later is "Tonight"; earlier, "Today".
+_EVENT_EVENING_HOUR = 17
 
 
 def _now() -> datetime:
@@ -334,6 +336,17 @@ def _event_card(
     )
 
 
+def _event_today_word(starts: datetime, *, today: date) -> str:
+    """``"Tonight"`` for an evening start on ``today`` (IST); ``"Today"`` for anything else.
+
+    A morning meetup is not tonight, and neither is a conference that began on an earlier day
+    and is still running.
+    """
+    local = starts.astimezone(IST)
+    evening = local.date() == today and local.hour >= _EVENT_EVENING_HOUR
+    return "Tonight" if evening else "Today"
+
+
 def _event_today_detail(event: Event) -> str:
     """``"18:30 at Indiranagar, hosted by Rust Bengaluru. …"`` naming only what is stored."""
     clock = as_utc(event.starts_at).astimezone(IST).strftime("%H:%M")
@@ -352,8 +365,10 @@ async def _event_cards(user_id: str, *, now: datetime) -> list[dict[str, Any]]:
     """
     Day-plan cards from the events the user saved or marked going (spec 9.4).
 
-    * ``event_today``: starts on today's IST date and has not ended. A cancelled one
-      is a warning in the same slot, because the plan for tonight just changed.
+    * ``event_today``: starts on today's IST date and has not ended, or began on an earlier
+      day and is still running. It reads "Today: …" when it starts before 17:00 IST and
+      "Tonight: …" from then. A cancelled one is a warning in the same slot, because the plan
+      for today just changed.
     * ``event_soon``: the one soonest event in the next week that is not today.
     * ``event_met_prompt``: an event the user was going to, which ended within the
       last two days, with nobody noted yet.
@@ -392,7 +407,7 @@ async def _event_cards(user_id: str, *, now: datetime) -> list[dict[str, Any]]:
         for event, status in result.all():
             starts = as_utc(event.starts_at)
             over = effective_end(event.starts_at, event.ends_at)
-            if ist_date(starts) == today and over > current:
+            if (ist_date(starts) == today and over > current) or starts <= current < over:
                 if event.is_cancelled:
                     cards.append(_event_card(
                         event,
@@ -410,7 +425,7 @@ async def _event_cards(user_id: str, *, now: datetime) -> list[dict[str, Any]]:
                         status,
                         card_id=f"event_today:{event.id}",
                         kind="event_today",
-                        title=f"Tonight: {event.title}",
+                        title=f"{_event_today_word(starts, today=today)}: {event.title}",
                         detail=_event_today_detail(event),
                         tone="primary",
                     ))

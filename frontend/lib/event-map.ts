@@ -11,6 +11,9 @@
  *  - Precision `none`, an online event, an event with no usable position, and a
  *    position outside the city's bounds are not drawn at all. They are counted so
  *    the page can say how many are missing.
+ *  - Events that share one venue are fanned out around it so each can be clicked.
+ *    A fanned-out pin is drawn tens of metres off the venue, so it says "Shared
+ *    venue", not "Exact venue".
  */
 
 /** south/west/north/east, as `BBOX` in `lib/maplibre.ts`. Passed in so this file imports nothing. */
@@ -64,8 +67,12 @@ export type EventPin = {
   lng: number
   kind: PinKind
   title: string
+  /** The venue (exact) or the area (ring) the note names; `null` when the event states neither. */
+  place: string | null
   /** What the tooltip says under the title: the precision, then where. */
   note: string
+  /** How many events share this pin's spot, itself included. Above 1 the pin is drawn off the spot. */
+  stacked: number
   cancelled: boolean
   startsAt: string
 }
@@ -84,10 +91,24 @@ export const PRECISION_NOTE: Record<PinKind, string> = {
   area: 'Approximate — area only',
 }
 
-/** The tooltip line. A venue is named only for an exact pin: an area ring is not at the venue. */
-export function pinNote(kind: PinKind, event: Pick<PlaceableEvent, 'venue_name' | 'area'>): string {
-  const place = kind === 'exact' ? event.venue_name || event.area : event.area
-  return [PRECISION_NOTE[kind], place].filter(Boolean).join(' · ')
+/** What an exact pin says when it shares its venue and so is drawn beside it, not on it. */
+export const sharedVenueNote = (count: number): string => `Shared venue · ${count} events`
+
+/** The place a note names. A venue is named only for an exact pin: an area ring is not at the venue. */
+const placeOf = (kind: PinKind, event: Pick<PlaceableEvent, 'venue_name' | 'area'>): string | null =>
+  (kind === 'exact' ? event.venue_name || event.area : event.area) || null
+
+/**
+ * The tooltip line, from the precision and the place. `stacked` is how many events share the pin's
+ * spot: an exact pin among several is displaced, so it must not claim to be the exact venue.
+ */
+export function describePin(kind: PinKind, place: string | null, stacked = 1): string {
+  const claim = kind === 'exact' && stacked > 1 ? sharedVenueNote(stacked) : PRECISION_NOTE[kind]
+  return [claim, place].filter(Boolean).join(' · ')
+}
+
+export function pinNote(kind: PinKind, event: Pick<PlaceableEvent, 'venue_name' | 'area'>, stacked = 1): string {
+  return describePin(kind, placeOf(kind, event), stacked)
 }
 
 // ── Several events at one spot ───────────────────────────────────────────────
@@ -134,7 +155,13 @@ export function spreadStacks(pins: readonly EventPin[]): EventPin[] {
       const { east, north } = stackOffset(index, ordered.length)
       const dLat = north / M_PER_DEG_LAT
       const dLng = east / (M_PER_DEG_LAT * Math.cos((pin.lat * Math.PI) / 180))
-      moved.set(pin.id, { ...pin, lat: pin.lat + dLat, lng: pin.lng + dLng })
+      moved.set(pin.id, {
+        ...pin,
+        lat: pin.lat + dLat,
+        lng: pin.lng + dLng,
+        stacked: ordered.length,
+        note: describePin(pin.kind, pin.place, ordered.length),
+      })
     })
   })
   return pins.map(pin => moved.get(pin.id) ?? pin)
@@ -158,7 +185,9 @@ export function buildPins(events: readonly PlaceableEvent[], bounds: Bounds): Pi
       lng: placement.lng,
       kind: placement.kind,
       title: event.title,
+      place: placeOf(placement.kind, event),
       note: pinNote(placement.kind, event),
+      stacked: 1,
       cancelled: event.is_cancelled,
       startsAt: event.starts_at,
     })

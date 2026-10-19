@@ -169,6 +169,44 @@ async def test_event_today_card(add: Callable[..., Any], me: User, status: str) 
     }
 
 
+@pytest.mark.parametrize(
+    ("starts", "word"),
+    [
+        (hours(-1), "Today"),  # 10:30 IST, already running
+        (hours(4.5), "Today"),  # 16:00 IST
+        (hours(5) + timedelta(minutes=29), "Today"),  # 16:59 IST
+        (hours(5.5), "Tonight"),  # 17:00 IST
+        (TONIGHT, "Tonight"),  # 18:30 IST
+    ],
+    ids=["10:30", "16:00", "16:59", "17:00", "18:30"],
+)
+async def test_the_card_says_today_before_5pm_ist_and_tonight_from_then(
+    add: Callable[..., Any], me: User, starts: datetime, word: str
+) -> None:
+    event = make_event(starts)
+    await add(event, saved(me, event))
+
+    (card,) = await cards_for(me)
+
+    assert card["title"] == f"{word}: Rust Night Bengaluru"
+
+
+async def test_the_briefing_words_a_morning_event_as_today(
+    add: Callable[..., Any], me: User, other_sources_quiet: None
+) -> None:
+    """Through ``build_briefing``, with the clock pinned on ``copilot._now``."""
+    morning = make_event(NOW + timedelta(hours=1), title="Breakfast Meetup")  # 12:30 IST
+    evening = make_event(TONIGHT, title="Rust Night")
+    await add(morning, evening, saved(me, morning), saved(me, evening))
+
+    briefing = await build_briefing(user_id=str(me.id))
+
+    assert [c["title"] for c in briefing["cards"]] == [
+        "Today: Breakfast Meetup",
+        "Tonight: Rust Night",
+    ]
+
+
 async def test_event_today_detail_names_only_what_the_event_states(
     add: Callable[..., Any], me: User
 ) -> None:
@@ -207,6 +245,46 @@ async def test_an_event_that_is_running_is_still_today(add: Callable[..., Any], 
     await add(running, saved(me, running))
 
     assert kinds(await cards_for(me)) == ["event_today"]
+
+
+async def test_an_event_that_began_on_an_earlier_day_and_is_still_running_is_today(
+    add: Callable[..., Any], me: User
+) -> None:
+    """A conference or an overnight event began on another IST date and has not ended."""
+    conference = make_event(days(-1), days(1), title="Rust Conf")  # Wed 11:30 IST to Fri 11:30
+    overnight = make_event(
+        hours(-13.5), hours(2.5), title="Hack Night"
+    )  # Wed 22:00 IST to Thu 14:00 IST, the same Thursday it is now
+    over = make_event(days(-2), hours(-1), title="Already over")  # began Tue, ended 10:30 today
+    await add(
+        conference,
+        overnight,
+        over,
+        saved(me, conference),
+        saved(me, overnight, "saved"),
+        saved(me, over),
+    )
+
+    cards = await cards_for(me)
+
+    today = {c["meta"]["event_id"]: c for c in cards if c["kind"] == "event_today"}
+    assert set(today) == {str(conference.id), str(overnight.id)}
+    # Neither starts today, and the second began in the evening: neither is "Tonight".
+    assert today[str(conference.id)]["title"] == "Today: Rust Conf"
+    assert today[str(overnight.id)]["title"] == "Today: Hack Night"
+    assert today[str(overnight.id)]["id"] == f"event_today:{overnight.id}"
+
+
+async def test_a_cancelled_event_that_is_running_across_days_is_still_the_warning(
+    add: Callable[..., Any], me: User
+) -> None:
+    conference = make_event(days(-1), days(1), is_cancelled=True)
+    await add(conference, saved(me, conference))
+
+    (card,) = await cards_for(me)
+
+    assert card["kind"] == "event_today"
+    assert card["tone"] == "warning"
 
 
 async def test_today_is_the_ist_day_not_the_utc_day(add: Callable[..., Any], me: User) -> None:
