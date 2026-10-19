@@ -117,6 +117,24 @@ export type ChatReply = { intent: string; reply: string; jobs: ChatJob[]; data?:
 export type AgentMemory = { id: string; memory_type: string; content: string; metadata?: Record<string, unknown> | null; created_at?: string | null }
 export type LearningTask = { skill_name: string; title: string; description?: string | null; resources?: string[] | null; priority?: number | null }
 export type LearningPlan = { tasks: LearningTask[]; total: number }
+// Practice (services/practice, api/routers/practice.py). A question is a pointer: the server never stores its statement, and the page links out to leetcode.com.
+export type PracticeFeel = 'easy' | 'right' | 'hard'
+export type PracticeQuestion = { id: number; slug: string; title: string; difficulty: 'easy' | 'medium' | 'hard'; topics: string[]; url: string }
+export type Contest = { starts_at: string; ends_at: string; show: boolean; live: boolean; url: string }
+export type PracticeToday = { day: string; catalogue: 'ok' | 'empty'; catalogue_size: number; track: string; track_label: string; question: PracticeQuestion | null; reason: string; relaxed: string[]; done_at: string | null; feel: PracticeFeel | null; swaps_left: number; leetcode_daily_url: string; contest: Contest }
+export type PracticeHistory = { days: Array<{ day: string; done: boolean; difficulty: string | null; topic: string | null }>; counts: { this_month: number; last_30: number; longest_run: number }; topics: Array<{ topic: string; count: number }> }
+export type ChallengeBrief = { slug: string; title: string; track: string; hours: 24 | 48; summary: string; context: string[]; must_have: string[]; nice_to_have: string[]; constraints: string[]; deliverables: string[]; judge_focus: string[]; bengaluru_context: string }
+export type AttemptStatus = 'started' | 'submitted' | 'queued' | 'judged' | 'rejected' | 'judge_failed' | 'missed'
+export type Writeup = { decisions: string; tradeoffs: string; ai_usage: string; next_steps: string }
+export type Attempt = { status: AttemptStatus; started_at: string; deadline_at: string; proof_code: string; repo_url: string | null; writeup: Writeup | null; video_url: string | null; submitted_at: string | null; editable_until: string; total: number | null }
+export type Challenge = { slug: string; opens_at: string; closes_at: string; last_start_at: string; brief: ChallengeBrief; attempt: Attempt | null }
+export type ChallengesOverview = { current: Challenge | null; next_opens_at: string | null; past: Array<{ slug: string; title: string; track: string; opens_at: string; status: AttemptStatus | null; total: number | null }> }
+export type Criterion = 'thinking' | 'tradeoffs' | 'ai_usage' | 'build_process' | 'meets_brief' | 'code_quality'
+export type AttemptResult = { status: AttemptStatus; held: boolean; reject_reason: string | null; total: number | null; scores: Record<Criterion, number> | null; weights: Record<Criterion, number>; notes: (Record<Criterion, string> & { strengths: string[]; improvements: string[]; summary: string }) | null; signals: Record<string, number | boolean> | null; snapshot_sha: string | null; snapshot_url: string | null; appeal: { available: boolean; used: boolean; until: string | null }; rejudged: boolean }
+export type BoardRow = { rank: number; name: string; total: number; hours_used: number | null; repo_url?: string | null; you?: boolean }
+export type ChallengeBoard = { provisional: boolean; total_entries: number; queued: number; rows: BoardRow[]; me: BoardRow | null }
+export type OverallBoard = { window_challenges: number; rows: Array<{ rank: number; name: string; score: number; entries: number; you?: boolean }>; me: { rank: number; name: string; score: number; entries: number } | null }
+export type PracticeSettings = { display_name: string | null; show_repo: boolean; contest_reminder: boolean; handle: string }
 
 export function token() { return typeof window === 'undefined' ? null : localStorage.getItem(TOKEN_KEY) }
 
@@ -303,5 +321,24 @@ export const api = {
     memories: () => request<{ memories: AgentMemory[]; count: number }>('/api/v1/agent/memories', {}, true),
     remember: (content: string, memory_type = 'preference') => request<AgentMemory>('/api/v1/agent/memories', { method: 'POST', body: JSON.stringify({ content, memory_type }) }, true),
     forget: (id: string) => request<void>(`/api/v1/agent/memories/${encodeURIComponent(id)}`, { method: 'DELETE' }, true),
+  },
+  practice: {
+    today: () => request<PracticeToday>('/api/v1/practice/today', {}, true),
+    // Marking done is idempotent. The one-tap rating is optional and rides in the same request.
+    done: (feel?: PracticeFeel) => request<PracticeToday>('/api/v1/practice/today/done', { method: 'POST', body: feel ? JSON.stringify({ feel }) : undefined }, true),
+    feel: (feel: PracticeFeel) => request<PracticeToday>('/api/v1/practice/today/feel', { method: 'PATCH', body: JSON.stringify({ feel }) }, true),
+    undo: () => request<PracticeToday>('/api/v1/practice/today/done', { method: 'DELETE' }, true),
+    swap: () => request<PracticeToday>('/api/v1/practice/today/swap', { method: 'POST' }, true),
+    history: (weeks = 12) => request<PracticeHistory>(`/api/v1/practice/history?weeks=${weeks}`, {}, true),
+    challenges: () => request<ChallengesOverview>('/api/v1/practice/challenges', {}, true),
+    challenge: (slug: string) => request<Challenge>(`/api/v1/practice/challenges/${encodeURIComponent(slug)}`, {}, true),
+    start: (slug: string) => request<Challenge>(`/api/v1/practice/challenges/${encodeURIComponent(slug)}/start`, { method: 'POST' }, true),
+    submit: (slug: string, payload: { repo_url: string; writeup: Writeup; video_url?: string | null }) => request<Challenge>(`/api/v1/practice/challenges/${encodeURIComponent(slug)}/submission`, { method: 'PUT', body: JSON.stringify(payload) }, true),
+    result: (slug: string) => request<AttemptResult>(`/api/v1/practice/challenges/${encodeURIComponent(slug)}/result`, {}, true),
+    appeal: (slug: string, reason: string) => request<AttemptResult>(`/api/v1/practice/challenges/${encodeURIComponent(slug)}/appeal`, { method: 'POST', body: JSON.stringify({ reason }) }, true),
+    board: (slug: string) => request<ChallengeBoard>(`/api/v1/practice/challenges/${encodeURIComponent(slug)}/leaderboard`, {}, true),
+    overall: () => request<OverallBoard>('/api/v1/practice/leaderboard', {}, true),
+    settings: () => request<PracticeSettings>('/api/v1/practice/settings', {}, true),
+    saveSettings: (payload: Pick<PracticeSettings, 'display_name' | 'show_repo' | 'contest_reminder'>) => request<PracticeSettings>('/api/v1/practice/settings', { method: 'PUT', body: JSON.stringify(payload) }, true),
   },
 }

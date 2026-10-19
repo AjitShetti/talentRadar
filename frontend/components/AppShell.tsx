@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { BriefcaseBusiness, FileText, LayoutDashboard, LogOut, MessageSquare, Search, Sparkles, UserRound } from 'lucide-react'
+import { BriefcaseBusiness, Dumbbell, FileText, LayoutDashboard, LogOut, MessageSquare, Search, Sparkles, UserRound } from 'lucide-react'
 import { currentEmail, signOut } from '@/lib/api'
 
 const nav = [
@@ -11,6 +11,7 @@ const nav = [
   ['Find roles', '/search', Search],
   ['Applications', '/applications', BriefcaseBusiness],
   ['Interview lab', '/interview', MessageSquare],
+  ['Practice', '/practice', Dumbbell],
   ['Resume studio', '/resume-studio', FileText],
   ['Profile & goals', '/settings', UserRound],
   ['Company intel', '/company-intel', Sparkles],
@@ -60,7 +61,7 @@ export default function AppShell({ children, narrow = false, bleed = false }: { 
   return <div className="app-shell">
     <header className={`topnav ${navHidden ? 'topnav-hidden' : ''}`}>
       <Link className="brand" href="/dashboard"><span className="brand-mark">R</span><span>Talent<span>Radar</span></span></Link>
-      <nav className="topnav-links">{nav.map(([label, href, Icon]) => <Link key={href} className={`nav-item ${path === href ? 'active' : ''}`} href={href}><Icon size={14} /><span>{label}</span></Link>)}</nav>
+      <nav className="topnav-links">{nav.map(([label, href, Icon]) => <Link key={href} className={`nav-item ${path === href || path.startsWith(href + '/') ? 'active' : ''}`} href={href}><Icon size={14} /><span>{label}</span></Link>)}</nav>
       <div className="top-actions">
         {email
           ? <div className="user-chip"><div className="top-avatar">{email.slice(0, 2).toUpperCase()}</div><button className="logout-button" title="Sign out" onClick={() => { signOut(); router.push('/login') }}><LogOut size={15} /></button></div>
