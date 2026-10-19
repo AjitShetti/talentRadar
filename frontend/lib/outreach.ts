@@ -162,6 +162,8 @@ export function parseThreadTarget(params: { get(name: string): string | null }):
 export const NOTE_MAX = 500
 export const NEXT_STEP_MAX = 140
 export const BODY_MAX = 2000
+// An email subject (domain/outreach_drafts.py::SUBJECT_MAX).
+export const SUBJECT_MAX = 80
 
 // Drafts a user may write in one IST day (PER_USER_DAILY_DRAFTS). The referral ask counts against the same cap.
 export const DAILY_DRAFTS = 20

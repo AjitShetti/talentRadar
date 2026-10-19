@@ -4,9 +4,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import CopyButton from '@/components/CopyButton'
 import { RELATIONSHIPS } from '@/components/ReferralAsk'
 import { track } from '@/lib/analytics'
-import { api, DraftFormat, IssueSnapshot, OutreachDraft, OutreachPerson, ThreadDetail } from '@/lib/api'
+import { api, DraftFormat, IssueSnapshot, OutreachChannelName, OutreachDraft, OutreachPerson, ThreadDetail } from '@/lib/api'
 import {
-  BODY_MAX, channelActionLabel, channelHref, DAILY_DRAFTS, defaultFormat, formatSpec, formatsForChannels, FormatSpec, mailtoHref,
+  BODY_MAX, channelActionLabel, channelHref, DAILY_DRAFTS, defaultFormat, formatSpec, formatsForChannels, FormatSpec, mailtoHref, SUBJECT_MAX,
 } from '@/lib/outreach'
 
 /** One good-first-issue from a company's open-source snapshot. */
@@ -18,8 +18,13 @@ type Props = {
   person: OutreachPerson | null
   /** The issue a GitHub comment is about; null for a message to a person. */
   issue: SnapshotIssue | null
-  /** The thread as the server holds it after the touch was recorded. */
-  onSent: (detail: ThreadDetail) => void
+  /** True while the drawer has a change in flight; "I sent it" waits, so only one touch is ever on the wire. */
+  busy: boolean
+  /**
+   * Records that the user sent this message, through the drawer's single-flight guard.
+   * `onFail` receives the message to show beside the panel. Resolves true once it was recorded.
+   */
+  onSend: (touch: { channel: OutreachChannelName; body?: string }, onFail: (message: string) => void) => Promise<boolean>
   onCancel?: () => void
   /** True while an edited draft that has not been sent exists, so the drawer can ask before it closes. */
   onDirtyChange?: (dirty: boolean) => void
@@ -30,7 +35,7 @@ const messageOf = (err: unknown, fallback: string) => (err instanceof Error && e
 // What made the draft, said plainly: a template is never presented as a tailored message.
 function noteFor(draft: OutreachDraft): string {
   if (draft.generated) return "Written from your resume and this company's profile. Fill any [bracketed] gap."
-  if (draft.reason === 'daily_cap') return `You've used today's ${DAILY_DRAFTS} drafts; here's a template.`
+  if (draft.reason === 'daily_cap') return `This is a template — you've used today's ${DAILY_DRAFTS} drafts.`
   return 'The writing model is busy, so this is a template. Fill the [bracketed] parts yourself.'
 }
 
@@ -46,7 +51,7 @@ function targetFor(spec: FormatSpec, person: OutreachPerson | null, issue: Snaps
  * channel action copies the text and opens the page (or the user's mail client),
  * and "I sent it" only records that the user did, after they click it.
  */
-export default function DraftPanel({ thread, person, issue, onSent, onCancel, onDirtyChange }: Props) {
+export default function DraftPanel({ thread, person, issue, busy, onSend, onCancel, onDirtyChange }: Props) {
   const kind = person?.draft ?? 'first'
   // A comment on an issue needs the issue, so it is offered only when one is given.
   const specs = useMemo(
@@ -60,7 +65,7 @@ export default function DraftPanel({ thread, person, issue, onSent, onCancel, on
   const [subject, setSubject] = useState('')
   const [used, setUsed] = useState(false)
   const [keep, setKeep] = useState(false)
-  const [busy, setBusy] = useState(false)
+  const [writing, setWriting] = useState(false)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
   const rootRef = useRef<HTMLElement>(null)
@@ -90,8 +95,8 @@ export default function DraftPanel({ thread, person, issue, onSent, onCancel, on
   const over = result ? Math.max(0, text.length - result.max_chars) : 0
 
   async function write() {
-    if (busy || !format) return
-    setBusy(true); setError('')
+    if (writing || !format) return
+    setWriting(true); setError('')
     try {
       const next = await api.outreach.draft(thread.id, {
         person_id: person?.id,
@@ -103,14 +108,15 @@ export default function DraftPanel({ thread, person, issue, onSent, onCancel, on
       track('outreach_drafted', { format: next.format, generated: next.generated })
     } catch (err) {
       setError(messageOf(err, 'The draft could not be written.'))
-    } finally { setBusy(false) }
+    } finally { setWriting(false) }
   }
 
   // The copy and the new tab both start inside the click, so the browser lets the tab open.
   async function openChannel() {
     if (!target) return
     setError('')
-    if (isEmail) {
+    // An email channel can hold a web page (a contact form) instead of an address: that opens like any other link.
+    if (isEmail && /^mailto:/i.test(target)) {
       window.location.href = mailtoHref(target.replace(/^mailto:/i, ''), subject.trim() || null, text)
       setUsed(true)
       return
@@ -126,15 +132,11 @@ export default function DraftPanel({ thread, person, issue, onSent, onCancel, on
   }
 
   async function sent() {
-    if (!drafted || sending) return
+    if (!drafted || sending || busy) return
     setSending(true); setError('')
     try {
       const body = keep ? text.trim() || undefined : undefined
-      const next = await api.outreach.touch(thread.id, { person_id: person?.id ?? null, channel: drafted.channel, direction: 'out', body })
-      track('outreach_sent', { channel: drafted.channel })
-      onSent(next)
-    } catch (err) {
-      setError(messageOf(err, 'Could not record that.'))
+      if (await onSend({ channel: drafted.channel, body }, setError)) track('outreach_sent', { channel: drafted.channel })
     } finally { setSending(false) }
   }
 
@@ -153,7 +155,7 @@ export default function DraftPanel({ thread, person, issue, onSent, onCancel, on
     </div>
 
     <div className="or-draft-row">
-      <button type="button" className="outline-button" onClick={write} disabled={busy || !format}>{busy ? 'Writing…' : result ? 'Write another' : 'Write the draft'}</button>
+      <button type="button" className="outline-button" onClick={write} disabled={writing || !format}>{writing ? 'Writing…' : result ? 'Write another' : 'Write the draft'}</button>
       {onCancel && <button type="button" className="text-button" onClick={onCancel}>Cancel</button>}
     </div>
 
@@ -161,7 +163,7 @@ export default function DraftPanel({ thread, person, issue, onSent, onCancel, on
 
     {result && drafted && <>
       {isEmail && <label>Subject
-        <input type="text" value={subject} maxLength={120} onChange={e => setSubject(e.target.value)} />
+        <input type="text" value={subject} maxLength={SUBJECT_MAX} onChange={e => setSubject(e.target.value)} />
       </label>}
       <label>Your draft — edit before you use it
         <textarea value={text} maxLength={BODY_MAX} rows={9} onChange={e => setText(e.target.value)} />
@@ -177,7 +179,7 @@ export default function DraftPanel({ thread, person, issue, onSent, onCancel, on
       <div className="or-draft-row">
         {target && <button type="button" className="outline-button" onClick={openChannel}>{channelActionLabel(drafted.key)}</button>}
         {(!target || isEmail) && <CopyButton text={text} />}
-        <button type="button" className={used ? 'primary-button' : 'outline-button'} onClick={sent} disabled={sending}>{sending ? 'Saving…' : 'I sent it'}</button>
+        <button type="button" className={used ? 'primary-button' : 'outline-button'} onClick={sent} disabled={sending || busy}>{sending ? 'Saving…' : 'I sent it'}</button>
       </div>
       <label className="or-keep">
         <input type="checkbox" checked={keep} onChange={e => setKeep(e.target.checked)} />

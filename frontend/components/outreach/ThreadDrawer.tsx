@@ -6,7 +6,7 @@ import { Loader2, MoreHorizontal, X } from 'lucide-react'
 import DraftPanel, { SnapshotIssue } from '@/components/outreach/DraftPanel'
 import { track } from '@/lib/analytics'
 import {
-  api, OutreachChannel, OutreachOutcome, OutreachPerson, OutreachTouch, SuggestedPerson, ThreadDetail,
+  api, OutreachChannel, OutreachChannelName, OutreachOutcome, OutreachPerson, OutreachTouch, SuggestedPerson, ThreadDetail,
 } from '@/lib/api'
 import {
   CHANNEL_LABEL, channelHref, companySectorLabel, companyStageLabel, dayMonth, initials, KIND_LABEL, MAX_FOLLOW_UPS,
@@ -16,6 +16,9 @@ import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 import { useDialog } from '@/lib/use-dialog'
 
 const SNOOZE_DAYS = 3
+
+// The detail api/routers/applications.py sends with its 409 for a job the user already tracks.
+const APPLICATION_EXISTS = 'Application already exists'
 
 type Props = {
   threadId: string
@@ -101,7 +104,8 @@ export default function ThreadDrawer({ threadId, focusPersonId, openDraft, openR
   }, [])
 
   // One change at a time, so a double click is one touch and not two. Resolves true when the change was made.
-  async function run(key: string, work: () => Promise<ThreadDetail | null>, failure: string): Promise<boolean> {
+  // A failure is shown at the top of the drawer unless the caller shows it somewhere nearer.
+  async function run(key: string, work: () => Promise<ThreadDetail | null>, failure: string, onFail: (message: string) => void = setActionError): Promise<boolean> {
     if (pending) return false
     setPending(key); setActionError(''); setNotice('')
     try {
@@ -109,7 +113,7 @@ export default function ThreadDrawer({ threadId, focusPersonId, openDraft, openR
       if (next) apply(next)
       return true
     } catch (err) {
-      setActionError(messageOf(err, failure))
+      onFail(messageOf(err, failure))
       return false
     } finally { setPending(null) }
   }
@@ -125,6 +129,15 @@ export default function ThreadDrawer({ threadId, focusPersonId, openDraft, openR
     setMenuFor(null)
     setPanel(next)
   }
+
+  // The draft panel's "I sent it": the same guard as the row button, so the two can never overlap.
+  const sentFromDraft = (personId: string | null, closeAfter: () => void) =>
+    (touch: { channel: OutreachChannelName; body?: string }, onFail: (message: string) => void) =>
+      run(`sent:${personId ?? 'issue'}`, async () => {
+        const next = await api.outreach.touch(threadId, { person_id: personId, channel: touch.channel, direction: 'out', body: touch.body })
+        closeAfter()
+        return next
+      }, 'Could not record that.', onFail)
 
   const iSentIt = (p: OutreachPerson) => run(`sent:${p.id}`, async () => {
     const channel = touchChannel(p)
@@ -180,10 +193,22 @@ export default function ThreadDrawer({ threadId, focusPersonId, openDraft, openR
     }, 'Could not add them.')
   }
 
+  // A role the user already tracks is linked, not refused: the server answers a second create with a 409 and no id.
+  async function applicationFor(jobId: string): Promise<{ id: string }> {
+    try {
+      return await api.applications.create(jobId, 'saved')
+    } catch (err) {
+      if (!(err instanceof Error) || err.message !== APPLICATION_EXISTS) throw err
+      const existing = (await api.roles.dossier(jobId)).readiness?.application
+      if (!existing) throw err
+      return existing
+    }
+  }
+
   const trackRole = () => run('track', async () => {
     const jobId = detail?.job?.id
     if (!jobId) return null
-    const application = await api.applications.create(jobId, 'saved')
+    const application = await applicationFor(jobId)
     return api.outreach.update(threadId, { application_id: application.id })
   }, 'Could not track this role.')
 
@@ -275,7 +300,8 @@ export default function ThreadDrawer({ threadId, focusPersonId, openDraft, openR
                 thread={detail}
                 person={p}
                 issue={null}
-                onSent={next => { apply(next); closePanel(p.id) }}
+                busy={busy}
+                onSend={sentFromDraft(p.id, () => closePanel(p.id))}
                 onCancel={() => closePanel(p.id)}
                 onDirtyChange={dirty => { dirtyRef.current = dirty }}
               />}
@@ -324,7 +350,8 @@ export default function ThreadDrawer({ threadId, focusPersonId, openDraft, openR
                 thread={detail}
                 person={null}
                 issue={issue}
-                onSent={next => { apply(next); setPanel(null) }}
+                busy={busy}
+                onSend={sentFromDraft(null, () => setPanel(null))}
                 onCancel={() => setPanel(null)}
                 onDirtyChange={dirty => { dirtyRef.current = dirty }}
               />}
@@ -406,11 +433,11 @@ function PersonRow({ person: p, busy, menuOpen, panel, onDraft, onReplyForm, onS
       <span className="or-state">{personLine(p)}</span>
     </div>
     <div className="or-actions">
-      {p.draft && <button type="button" className="outline-button" onClick={onDraft} disabled={busy} aria-expanded={panel === 'draft'}>
+      {p.draft && <button type="button" className="outline-button" onClick={onDraft} disabled={busy} aria-expanded={panel === 'draft'} aria-label={`${p.draft === 'first' ? 'Draft first message' : 'Draft follow-up'} to ${p.name}`}>
         {p.draft === 'first' ? 'Draft first message' : 'Draft follow-up'}
       </button>}
-      {p.draft && <button type="button" className="outline-button" onClick={onSent} disabled={busy}>I sent it</button>}
-      {canReply && <button type="button" className="outline-button" onClick={onReplyForm} disabled={busy} aria-expanded={panel === 'reply'}>They replied</button>}
+      {p.draft && <button type="button" className="outline-button" onClick={onSent} disabled={busy} aria-label={`I sent it to ${p.name}`}>I sent it</button>}
+      {canReply && <button type="button" className="outline-button" onClick={onReplyForm} disabled={busy} aria-expanded={panel === 'reply'} aria-label={`They replied (${p.name})`}>They replied</button>}
       <button type="button" className="outline-button" onClick={onMenu} aria-expanded={menuOpen} aria-controls={menuId} aria-label={`More actions for ${p.name}`}><MoreHorizontal size={14} /></button>
     </div>
     {menuOpen && <div className="or-actions" id={menuId}>
