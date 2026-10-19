@@ -1,0 +1,39 @@
+{
+  "slug": "postgres-job-queue",
+  "title": "A job queue on Postgres alone",
+  "track": "backend",
+  "hours": 48,
+  "summary": "Build a reliable job queue with only PostgreSQL and SKIP LOCKED: workers, retries, dead letters, and enough visibility to debug it.",
+  "context": [
+    "Many teams reach for a message broker long before they need one. Cinder Ledger, a fictional billing company, has Postgres and a deadline, and wants background jobs (invoice documents, reminder drafts, exports) that survive crashes and never run twice at once.",
+    "You build the queue as a small library plus a worker. Postgres is the only service: run it locally, in a container or installed. Payloads are fictional invoices for fictional customers.",
+    "The interesting work is in the failures: a worker killed mid-job, a job that always fails, a hundred jobs enqueued at once."
+  ],
+  "must_have": [
+    "A jobs table and an enqueue call taking a name, a payload, a run-at time and a priority.",
+    "Workers that claim jobs with FOR UPDATE SKIP LOCKED, plus a test with several workers on one queue showing no job runs twice at once.",
+    "Retries with backoff, a maximum-attempts rule, and a dead-letter state that keeps the last error, with a way to requeue a dead job.",
+    "Crash safety: a worker that dies mid-job loses its claim after a visibility timeout and the job runs again, shown by a test that kills a worker.",
+    "Visibility: a CLI or page with counts by state, the oldest waiting job, the failing job types, and the attempt history of one job."
+  ],
+  "nice_to_have": [
+    "An idempotency key so a retried enqueue does not create two jobs.",
+    "LISTEN/NOTIFY to wake workers, with polling kept as the fallback.",
+    "Graceful shutdown that finishes the current job."
+  ],
+  "constraints": [
+    "No paid services, APIs or accounts. A local Postgres only, and no broker, Redis or queue product.",
+    "Fictional data only: invoice numbers and customers are made up."
+  ],
+  "deliverables": [
+    "A public repo created after you press Start, with commits spread across the window.",
+    "A README with how to run it (start Postgres, run a worker, run the tests), what delivery guarantee the queue gives, and what is missing."
+  ],
+  "judge_focus": [
+    "Why the claim query is safe, and what a long transaction or a held lock does to it.",
+    "How you chose the visibility timeout and what goes wrong if it is too short.",
+    "Whether you say plainly if the queue is at-least-once or exactly-once, and what a job author must do about it.",
+    "A trail of commits: enqueue and claim first, then each failure mode with its test."
+  ],
+  "bengaluru_context": "Backend and platform teams at Bengaluru SaaS and fintech companies run Postgres-backed queues in production, and interviewers there ask exactly how SKIP LOCKED, retries and dead letters work."
+}

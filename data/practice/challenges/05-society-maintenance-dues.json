@@ -1,0 +1,40 @@
+{
+  "slug": "society-maintenance-dues",
+  "title": "Apartment-society maintenance dues",
+  "track": "fullstack",
+  "hours": 48,
+  "summary": "A small web app for a residents' association treasurer: a dues ledger per flat, reminder messages drafted but never sent, and a numbered receipt for every payment.",
+  "context": [
+    "Greenfold Terraces is a fictional 80-flat apartment society. Its volunteer treasurer tracks monthly maintenance in a spreadsheet, chases late payers by hand over chat, and writes receipts on request. It is error-prone and a little awkward socially.",
+    "You build the tool the treasurer would use. It is not a payment gateway: residents pay by bank transfer and the treasurer records it. Seed it with fictional flats and residents.",
+    "The hard parts are accuracy and tact: a ledger that never drifts, reminders that are correct and polite, receipts that cannot be forged by editing a URL."
+  ],
+  "must_have": [
+    "A ledger per flat built from entries (charge, payment, waiver, correction) that are never edited or deleted. Balances are computed from entries, and a correction is a new entry.",
+    "Recording a payment (amount, date, mode, bank reference), including partial and advance payments, and refusing the same bank reference twice.",
+    "A reminders screen that drafts, for each flat with dues, a message with the right amount and months and a tone tiered by how late it is, ready to copy. The app never sends anything.",
+    "A numbered, printable receipt for every payment, sequential within a financial year with no gaps, showing which months it paid.",
+    "Treasurer sign-in, and a read-only view where a resident sees only their own flat."
+  ],
+  "nice_to_have": [
+    "A month-end summary: collected, outstanding, and aged 30, 60 and 90 days.",
+    "Import a bank-statement CSV and propose matches for the treasurer to confirm.",
+    "An audit view of who changed what and when."
+  ],
+  "constraints": [
+    "No paid services, APIs or accounts. SQLite or a local Postgres is fine.",
+    "Fictional data only: made-up flats and residents, example.com addresses and obviously fake phone numbers.",
+    "The app never sends a message, e-mail or payment on anyone's behalf."
+  ],
+  "deliverables": [
+    "A public repo created after you press Start, with commits spread across the window.",
+    "A README with how to run and seed the app, how to run the tests, the sign-in details for the seeded users, and what is missing."
+  ],
+  "judge_focus": [
+    "How the ledger stays correct: the model, its invariants, and tests of partial payments, advances and corrections.",
+    "Whether a resident can reach only their own flat, and how you checked.",
+    "Whether the reminder text is accurate, kind and free of pressure tactics.",
+    "A trail of commits: the ledger and its tests first, screens after."
+  ],
+  "bengaluru_context": "Teams building residential-community and property-management products in Bengaluru solve this daily: money owed between neighbours, recorded exactly and asked for politely."
+}

@@ -1,0 +1,41 @@
+{
+  "slug": "quick-commerce-order-tracker",
+  "title": "Quick-commerce order tracker at 375 px",
+  "track": "frontend",
+  "hours": 24,
+  "summary": "Build the order-tracking screen for a fictional ten-minute grocery app: live status, an honest ETA, accessible, and still useful when the signal drops.",
+  "context": [
+    "Pocketmart is a fictional grocery app that promises delivery in about ten minutes. After checkout the customer watches one screen, the order tracker, on a mid-range phone, on patchy 4G, in a lift, with one hand.",
+    "There is no backend to call. You write a small fake order feed (a script or mock endpoint) that moves an order through placed, packing, picked up, nearby and delivered, and sometimes adds a delay or an out-of-stock item. Build the screen against that feed.",
+    "Design for 375 px wide first. Desktop only has to not break."
+  ],
+  "must_have": [
+    "A tracker screen with the current status as a clear step sequence, an ETA shown as a range that widens or narrows as the feed changes (never a falsely precise minute), and the rider's first name and a call button once the order is picked up.",
+    "Live updates from the feed (polling, server-sent events or a websocket) with a visible 'last updated' indicator.",
+    "Offline tolerance: when the connection drops, the last known state stays on screen, says it is stale, and recovers by itself when the connection returns.",
+    "Accessibility you can show: keyboard operable, status changes announced to a screen reader without spamming it, passing contrast, tap targets of at least 44 px, reduced motion respected.",
+    "No horizontal scroll at 375 px."
+  ],
+  "nice_to_have": [
+    "An out-of-stock flow: the customer chooses replace or remove for one item.",
+    "A map-free progress view for the last 500 metres.",
+    "Installable as a PWA, with the app shell cached."
+  ],
+  "constraints": [
+    "No paid services, APIs or accounts. No map SDK that needs a key or a card; draw any map yourself or skip it.",
+    "Fictional data only: every name, address, item and rider is made up.",
+    "Any UI kit must be free; say which one and why."
+  ],
+  "deliverables": [
+    "A public repo created after you press Start, with commits spread across the window.",
+    "A README with how to run the app and the fake feed, how to simulate a dropped connection, the accessibility checks you ran and what they found, and what is missing.",
+    "Two screenshots at 375 px in the repo: a normal state and an offline state."
+  ],
+  "judge_focus": [
+    "Whether the ETA is honest when the feed is late, contradictory or silent.",
+    "What the offline state taught you about your state model, and the tests or checks that prove it.",
+    "Accessibility that was verified, not just listed as intentions.",
+    "A trail of commits: a working shell early, then the awkward states, with notes on what you dropped."
+  ],
+  "bengaluru_context": "Consumer-product teams at Bengaluru quick-commerce and food-delivery companies build this screen, where a slow connection and a worried customer are the normal case."
+}

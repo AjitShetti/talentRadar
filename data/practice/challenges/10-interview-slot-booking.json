@@ -1,0 +1,39 @@
+{
+  "slug": "interview-slot-booking",
+  "title": "Interview-slot booking for a small team",
+  "track": "fullstack",
+  "hours": 24,
+  "summary": "A booking page where candidates pick an interview slot from interviewers' availability, across time zones, with no double-booking and a clean cancellation.",
+  "context": [
+    "Bramble Works is a fictional 12-person start-up that interviews candidates in India, Singapore and Berlin. Today the recruiter trades e-mails to find a time and sometimes books two people into one slot.",
+    "You build the app. Interviewers publish availability, a candidate opens a link and picks a slot shown in their own time zone, and the system books it. Two candidates clicking the same slot at the same moment must not both get it.",
+    "Keep scope small and correctness high. There is no calendar integration and nothing is e-mailed; the app shows what it would send."
+  ],
+  "must_have": [
+    "Interviewers set weekly availability in their own time zone; the candidate page lists bookable slots in the candidate's zone, with the zone named on screen.",
+    "Atomic booking: simultaneous requests for one slot produce exactly one booking, proved by a test.",
+    "Tests for a daylight-saving change in a zone that has one, and for a half-hour-offset zone such as India.",
+    "Cancel and reschedule through a private, unguessable link, freeing the slot, with a cutoff (say 4 hours before) that is enforced.",
+    "A 'would send' log with the text of each confirmation and cancellation message, never sent."
+  ],
+  "nice_to_have": [
+    "Panel interviews that need two interviewers free at once.",
+    "Buffer time between interviews and a daily cap per interviewer.",
+    "A downloadable .ics file for each booking."
+  ],
+  "constraints": [
+    "No paid services, APIs or accounts, and no calendar or e-mail provider.",
+    "Fictional data only: made-up people, example.com addresses."
+  ],
+  "deliverables": [
+    "A public repo created after you press Start, with commits spread across the window.",
+    "A README with how to run and seed the app, how to run the tests, and what is missing."
+  ],
+  "judge_focus": [
+    "How double-booking is prevented, and what the database guarantees rather than what the code hopes.",
+    "Time-zone decisions: what is stored, and tests on the awkward cases.",
+    "What the person who loses the race is told.",
+    "A trail of commits: the data model and its tests first, screens after."
+  ],
+  "bengaluru_context": "Teams building recruiting, scheduling and HR-tech products in Bengaluru, and any engineering team that runs its own hiring across time zones, solve this every quarter."
+}

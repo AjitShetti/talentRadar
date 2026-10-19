@@ -1,0 +1,40 @@
+{
+  "slug": "idempotent-webhook-relay",
+  "title": "Idempotent payment-webhook relay",
+  "track": "backend",
+  "hours": 48,
+  "summary": "Receive signed payment events from a fictional gateway, drop the duplicates, deliver each one once to a flaky downstream service, and let an on-call engineer replay what got stuck.",
+  "context": [
+    "Kettle Row is a fictional online tea shop. Its fictional payment gateway, Brookpay, reports every payment with a signed HTTP POST (a webhook). Brookpay retries anything that does not get a 2xx within five seconds, so the same event often arrives two or three times, sometimes late, sometimes out of order.",
+    "Your relay sits between Brookpay and the shop's order service. That service is slow and now and then answers 500. The relay must accept events fast, never lose one, never hand the order service the same event twice, and show an engineer what is stuck.",
+    "Neither company exists, so you also write the stand-ins: a script that emits fictional events (with duplicates, delays and the odd bad signature) and a fake order service you can make fail on demand."
+  ],
+  "must_have": [
+    "An endpoint that checks an HMAC signature over the raw request body, rejects a bad or stale one, and answers a valid event quickly after storing it durably (SQLite or a file is fine).",
+    "Deduplication by the event's own id: the same event received many times, even at the same moment, reaches the order service once.",
+    "Delivery with retry, exponential backoff with jitter, a cap on attempts, and a dead-letter state for events that never succeed.",
+    "Replay of one event or of all dead letters, by command or endpoint, that keeps the once-only rule intact.",
+    "A test that sends one event from several threads at once and shows a single delivery."
+  ],
+  "nice_to_have": [
+    "Events for one order are delivered in the order they happened, even if they arrived swapped.",
+    "A page or CLI listing pending, delivered and dead events with their attempt history.",
+    "A note on what must change to run two copies of the relay."
+  ],
+  "constraints": [
+    "No paid services, APIs or accounts. Everything runs locally with free, open-source tools.",
+    "Fictional data only: the gateway, the shop and every customer in your fixtures are made up.",
+    "Any language you can ship quickly in. Do not spend hours on a front end."
+  ],
+  "deliverables": [
+    "A public repo created after you press Start, with commits spread across the window.",
+    "A README that says how to run the relay, the simulator and the fake order service, how to run the tests, and what is not done."
+  ],
+  "judge_focus": [
+    "How duplicates are detected, and what happens when two copies arrive in the same millisecond.",
+    "What happens if the process dies between 'stored' and 'delivered', and how you know.",
+    "Whether the retry policy is reasoned (why those delays, why that cap) rather than copied.",
+    "A trail of commits: the simple version first, then the hard cases, with tests arriving alongside."
+  ],
+  "bengaluru_context": "Payments and billing platform teams at Bengaluru fintech and e-commerce companies own webhook intake, deduplication and replay tooling that an on-call engineer must trust at 2 a.m."
+}
