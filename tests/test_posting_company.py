@@ -24,6 +24,8 @@ pytestmark = pytest.mark.integration
 
 @pytest_asyncio.fixture
 async def uow():
+    # A connection pooled by an earlier test belongs to that test's event loop.
+    await engine.dispose(close=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     async with AsyncSessionLocal() as session:
