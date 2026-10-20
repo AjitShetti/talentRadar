@@ -469,7 +469,7 @@ function PersonRow({ person: p, busy, menuOpen, panel, onDraft, onReplyForm, onS
       {wait && <span className="or-wait">{wait}</span>}
       {canMarkSent(p) && <button type="button" className="outline-button" onClick={onSent} disabled={busy} aria-label={`I sent it to ${p.name}`}>I sent it</button>}
       {canReply && <button type="button" className="outline-button" onClick={onReplyForm} disabled={busy} aria-expanded={panel === 'reply'} aria-label={`They replied (${p.name})`}>They replied</button>}
-      <button type="button" className="outline-button" onClick={onMenu} aria-expanded={menuOpen} aria-controls={menuId} aria-label={`More actions for ${p.name}`}><MoreHorizontal size={14} /></button>
+      <button type="button" className="outline-button or-more" onClick={onMenu} aria-expanded={menuOpen} aria-controls={menuId} aria-label={`More actions for ${p.name}`}><MoreHorizontal size={14} /></button>
     </div>
     {menuOpen && <div className="or-actions" id={menuId}>
       {canSnooze && <button type="button" className="text-button" onClick={onSnooze} disabled={busy}>Snooze {SNOOZE_DAYS} days</button>}
@@ -499,7 +499,7 @@ function ReplyForm({ name, busy, onSubmit, onCancel }: {
     if (!busy) void onSubmit({ note, nextStep, nextStepAt })
   }
 
-  return <div ref={ref}>
+  return <div ref={ref} className="or-reply">
     <form className="ci-contact-form" onSubmit={submit} aria-label={`Record ${name}'s reply`}>
       <label className="ci-span2" htmlFor={`${id}-note`}>What did {name} say? <span className="ci-empty-small">{note.length} / {NOTE_MAX}</span></label>
       <textarea id={`${id}-note`} className="ci-span2" rows={3} maxLength={NOTE_MAX} value={note} onChange={e => setNote(e.target.value)} placeholder="Optional. Kept on the timeline." />
@@ -575,18 +575,21 @@ function ThreadNote({ value, busy, onSave }: { value: string | null; busy: boole
     baseline.current = saved
   }, [saved])
   const dirty = text.trim() !== saved.trim()
+  const field = useRef<HTMLTextAreaElement>(null)
 
-  const submit = (e: FormEvent) => {
+  // The Save button leaves with the edit; keep the keyboard in the field.
+  const revert = () => { setText(saved); field.current?.focus() }
+  const submit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!busy && dirty) void onSave(text)
+    if (!busy && dirty && await onSave(text)) setTimeout(() => field.current?.focus(), 0)
   }
 
   return <form className="or-note-form" onSubmit={submit} aria-label="Why this company">
     <label htmlFor={`${id}-note`}>Why this company <span className="ci-empty-small">{text.length} / {NOTE_MAX}</span></label>
-    <textarea id={`${id}-note`} rows={2} maxLength={NOTE_MAX} value={text} onChange={e => setText(e.target.value)} placeholder="Optional. A line in your own words, offered to the draft." />
+    <textarea id={`${id}-note`} ref={field} rows={2} maxLength={NOTE_MAX} value={text} onChange={e => setText(e.target.value)} placeholder="Optional. A line in your own words, offered to the draft." />
     {dirty && <div className="or-actions">
       <button type="submit" className="outline-button" disabled={busy}>Save note</button>
-      <button type="button" className="text-button" onClick={() => setText(saved)}>Cancel</button>
+      <button type="button" className="text-button" onClick={revert}>Cancel</button>
     </div>}
   </form>
 }
@@ -602,38 +605,42 @@ function NextStep({ detail, busy, onSave, onDone }: {
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState('')
   const [date, setDate] = useState('')
-  const id = useId()
+  const wrap = useRef<HTMLDivElement>(null)
   const open = detail.stage !== 'closed'
   const has = Boolean(detail.next_step || detail.next_step_at)
   const when = detail.next_step_at ? dayMonth(detail.next_step_at) : ''
   if (!has && !(open && detail.stage === 'replied')) return null
 
+  // The control that had focus leaves the page with its form or button; keep the keyboard on the Edit button.
+  const refocus = () => setTimeout(() => wrap.current?.querySelector<HTMLElement>('.or-actions button:last-child')?.focus(), 0)
   const edit = () => { setText(detail.next_step ?? ''); setDate(detail.next_step_at ?? ''); setEditing(true) }
+  const stopEditing = () => { setEditing(false); refocus() }
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     if (busy || !text.trim()) return
-    if (await onSave(text, date)) setEditing(false)
+    if (await onSave(text, date)) stopEditing()
   }
+  const done = async () => { if (await onDone()) refocus() }
 
-  if (editing) {
-    return <form className="ci-contact-form" onSubmit={submit} aria-label="Next step">
-      <input id={`${id}-text`} aria-label="Next step" autoFocus maxLength={NEXT_STEP_MAX} value={text} onChange={e => setText(e.target.value)} placeholder="Next step, e.g. Call on Thursday" />
-      <input aria-label="Next step date" type="date" value={date} onChange={e => setDate(e.target.value)} />
-      <div className="ci-form-actions">
-        <button type="submit" className="outline-button" disabled={busy || !text.trim()}>{busy ? 'Saving…' : 'Save next step'}</button>
-        <button type="button" className="text-button" onClick={() => setEditing(false)}>Cancel</button>
-      </div>
-    </form>
-  }
-
-  return <div className="or-next">
-    {has
-      ? <p className="or-hint">Next step: <b>{detail.next_step || 'Not named'}</b>{when ? ` · ${when}` : ''}</p>
-      : <p className="or-hint">No next step set.</p>}
-    {open && <div className="or-actions">
-      {has && <button type="button" className="outline-button" onClick={() => void onDone()} disabled={busy} aria-label="Mark the next step done">Done</button>}
-      <button type="button" className="text-button" onClick={edit} disabled={busy} aria-label={has ? 'Edit the next step' : 'Add a next step'}>{has ? 'Edit' : 'Add a next step'}</button>
-    </div>}
+  return <div className="or-next" ref={wrap}>
+    {editing
+      ? <form className="ci-contact-form" onSubmit={submit} aria-label="Next step">
+          <input aria-label="Next step" autoFocus maxLength={NEXT_STEP_MAX} value={text} onChange={e => setText(e.target.value)} placeholder="Next step, e.g. Call on Thursday" />
+          <input aria-label="Next step date" type="date" value={date} onChange={e => setDate(e.target.value)} />
+          <div className="ci-form-actions">
+            <button type="submit" className="outline-button" disabled={busy || !text.trim()}>{busy ? 'Saving…' : 'Save next step'}</button>
+            <button type="button" className="text-button" onClick={stopEditing}>Cancel</button>
+          </div>
+        </form>
+      : <>
+          {has
+            ? <p className="or-hint">Next step: <b>{detail.next_step || 'Not named'}</b>{when ? ` · ${when}` : ''}</p>
+            : <p className="or-hint">No next step set.</p>}
+          {open && <div className="or-actions">
+            {has && <button type="button" className="outline-button" onClick={() => void done()} disabled={busy} aria-label="Mark the next step done">Done</button>}
+            <button type="button" className="text-button" onClick={edit} disabled={busy} aria-label={has ? 'Edit the next step' : 'Add a next step'}>{has ? 'Edit' : 'Add a next step'}</button>
+          </div>}
+        </>}
   </div>
 }
 

@@ -1847,4 +1847,8 @@ button.or-row:hover{transform:translateX(10px);background:var(--line-soft)}
 @media(max-width:1050px){.or-layout{grid-template-columns:1fr}.or-side{border-left:0;padding-left:0;margin-left:0;border-top:1px solid var(--line-strong);padding-top:28px}}
 @media(max-width:920px){button.or-row:hover{transform:none}}
 @media(max-width:700px){.or-row{grid-template-columns:9px minmax(0,1fr) auto}.or-row .or-mark{display:none}.or-actions{grid-column:1/-1;padding-left:21px}.or-actions .outline-button{flex:1 1 auto;justify-content:center}.or-person .or-actions{grid-column:1/-1;padding-left:0}.or-draft{padding-left:0;border-left:0}.or-draft-pair{grid-template-columns:1fr}.or-draft-row>.outline-button,.or-draft-row>.primary-button{flex:1 1 100%;justify-content:center}.or-count{margin-left:0}}
+/* Found in the 375 px pass: once the draft is used, "I sent it" turns primary and the global phone rule gave it a 20 px top margin; the "more" icon stretched across a row of its own; the reply form sat in the text column. */
+.or-draft .primary-button{margin-top:0}
+.or-actions .or-more{flex:0 0 auto}
+@media(max-width:700px){.or-person>.or-reply{grid-column:1/-1}}
 @media(prefers-reduced-motion:reduce){.or-row{transition:none}}
