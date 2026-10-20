@@ -1019,11 +1019,62 @@ def _signals_payload(stored: object) -> dict[str, int | float | bool] | None:
     }
 
 
+def _appeal_refusal(attempt: PracticeAttempt, moment: datetime) -> str | None:
+    """Why this attempt cannot be appealed now (the sentence :func:`request_appeal` raises), or
+    ``None`` when it can. The result page offers the form on exactly this condition."""
+    if attempt.status != _JUDGED or attempt.judged_at is None:
+        return _NOTHING_TO_APPEAL
+    if attempt.override_note or not _list_of_dicts(attempt.judge_runs):
+        return _REVIEWED_ALREADY
+    if attempt.appealed_at is not None:
+        return _APPEALED_ALREADY
+    if moment > _aware(attempt.judged_at) + APPEAL_WINDOW:
+        return _APPEAL_CLOSED
+    return None
+
+
+#: The appeal state each refusal shows as. ``_APPEALED_ALREADY`` is told by how the appeal went.
+_REFUSAL_STATES = {
+    _NOTHING_TO_APPEAL: "none",
+    _REVIEWED_ALREADY: "reviewed",
+    _APPEAL_CLOSED: "closed",
+}
+
+
+def _appeal_progress(attempt: PracticeAttempt) -> str:
+    """How an appeal that was made has gone: ``refused`` (the second reading would have been of
+    different material, so the first score stands), ``done`` (two readings were averaged),
+    ``pending`` (waiting for the judge, or for a person while the attempt is held) or
+    ``gave_up`` (the second reading failed for good; the first score stands)."""
+    if APPEAL_INPUT_CHANGED_FLAG in (attempt.flags or []):
+        return "refused"
+    if len(_list_of_dicts(attempt.judge_runs)) >= 2:
+        return "done"
+    if attempt.held or attempt.next_judge_at is not None:
+        return "pending"
+    return "gave_up"
+
+
+def _appeal_payload(attempt: PracticeAttempt, moment: datetime) -> dict[str, Any]:
+    refusal = _appeal_refusal(attempt, moment)
+    if refusal is None:
+        state = "open"
+    elif refusal == _APPEALED_ALREADY:
+        state = _appeal_progress(attempt)
+    else:
+        state = _REFUSAL_STATES[refusal]
+    judged_at = (
+        _aware(attempt.judged_at) if attempt.status == _JUDGED and attempt.judged_at else None
+    )
+    return {
+        "available": refusal is None,
+        "used": attempt.appealed_at is not None,
+        "until": _iso(judged_at + APPEAL_WINDOW) if judged_at is not None else None,
+        "state": state,
+    }
+
+
 def _result_payload(attempt: PracticeAttempt, moment: datetime) -> dict[str, Any]:
-    judged = attempt.status == _JUDGED
-    judged_at = _aware(attempt.judged_at) if judged and attempt.judged_at else None
-    until = judged_at + APPEAL_WINDOW if judged_at is not None else None
-    used = attempt.appealed_at is not None
     owner, name, sha = attempt.repo_owner, attempt.repo_name, attempt.snapshot_sha
     return {
         "status": attempt.status,
@@ -1042,11 +1093,7 @@ def _result_payload(attempt: PracticeAttempt, moment: datetime) -> dict[str, Any
         "snapshot_url": (
             RepoRef(owner, name).html_url + f"/commit/{sha}" if owner and name and sha else None
         ),
-        "appeal": {
-            "available": until is not None and not used and moment <= until,
-            "used": used,
-            "until": _iso(until) if until is not None else None,
-        },
+        "appeal": _appeal_payload(attempt, moment),
         "rejudged": len(_list_of_dicts(attempt.judge_runs)) >= 2,
     }
 
@@ -1096,14 +1143,9 @@ async def request_appeal(
     user = _user(user_id)
     async with AsyncSessionLocal() as session:
         attempt = await _own_attempt(session, user, slug)
-        if attempt.status != _JUDGED or attempt.judged_at is None:
-            raise PracticeConflict(_NOTHING_TO_APPEAL)
-        if attempt.override_note or not _list_of_dicts(attempt.judge_runs):
-            raise PracticeConflict(_REVIEWED_ALREADY)
-        if attempt.appealed_at is not None:
-            raise PracticeConflict(_APPEALED_ALREADY)
-        if moment > _aware(attempt.judged_at) + APPEAL_WINDOW:
-            raise PracticeConflict(_APPEAL_CLOSED)
+        refusal = _appeal_refusal(attempt, moment)
+        if refusal is not None:
+            raise PracticeConflict(refusal)
         attempt_id = attempt.id
     text = _clean_reason(reason)
     async with AsyncSessionLocal() as session:

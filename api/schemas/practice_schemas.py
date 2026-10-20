@@ -227,12 +227,23 @@ class ResultNotesSchema(BaseModel):
     summary: str
 
 
+AppealState = Literal["none", "open", "closed", "reviewed", "pending", "done", "gave_up", "refused"]
+
+
 class AppealStateSchema(BaseModel):
-    """Whether the owner may still appeal, whether they have, and until when."""
+    """Whether the owner may appeal now, whether they have, until when, and how it stands.
+
+    ``state``: ``none`` (nothing judged yet), ``open`` (the form is offered), ``closed`` (the
+    seven days are over), ``reviewed`` (a person has decided this result, so there is nothing
+    for the judge to re-read), then for an appeal made: ``pending`` (waiting), ``done`` (two
+    readings averaged), ``gave_up`` (the second reading could not be made) or ``refused`` (it
+    would not have been of the same material). The last two leave the first score standing.
+    """
 
     available: bool
     used: bool
     until: str | None
+    state: AppealState
 
 
 class AttemptResultSchema(BaseModel):

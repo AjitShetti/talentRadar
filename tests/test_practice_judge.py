@@ -80,7 +80,7 @@ RESULT_KEYS = {
     "appeal",
     "rejudged",
 }
-APPEAL_KEYS = {"available", "used", "until"}
+APPEAL_KEYS = {"available", "used", "until", "state"}
 NOTES_KEYS = {*CRITERIA, "strengths", "improvements", "summary"}
 
 SCORES = {
@@ -1525,10 +1525,18 @@ async def test_a_second_reading_that_keeps_failing_is_dropped_after_six_tries(
     assert row.scores == SCORES
     assert row.next_judge_at is None
     assert row.judge_attempts == 6
+    result = await judge.attempt_result(asha, "relay-sample-2026-10-16", now=at)
+    assert result["appeal"]["state"] == "gave_up"  # the page stops saying "Appeal sent"
+    assert result["appeal"]["used"] is True
+    assert result["appeal"]["available"] is False
 
 
 SLUG = "relay-sample-2026-10-16"
 APPEAL_AT = JUDGE_NOW + timedelta(days=1)
+
+
+async def appeal_state(db: Db, asha: str, at: datetime = APPEAL_AT) -> dict[str, Any]:
+    return (await judge.attempt_result(asha, SLUG, now=at))["appeal"]
 
 
 async def judged_after_a_cleared_hold(
@@ -1690,6 +1698,7 @@ async def test_an_appeal_rerun_over_a_different_input_is_refused_not_averaged(
     assert row.held is False
     assert row.flags == ["appeal_input_changed"]
     assert row.next_judge_at is None
+    assert (await appeal_state(db, asha))["state"] == "refused"
     # It stays refused: nothing reads GitHub or the model again for it.
     github.requests.clear()
     assert await judge.judge_attempt(queued, now=APPEAL_AT + timedelta(days=1)) == "judged"
@@ -1764,6 +1773,101 @@ async def test_a_cleared_hold_is_not_imposed_again_when_the_stored_json_is_reord
     assert row.held is False
     assert "appeal_input_changed" not in row.flags
     assert len(row.judge_runs) == 2
+
+
+async def test_the_appeal_state_follows_an_appeal_from_open_to_done(
+    db: Db, github: PerRepoGitHub, chat: AsyncMock, asha: str, queued: uuid.UUID
+) -> None:
+    await judged_attempt(db, chat, queued)
+    assert await appeal_state(db, asha) == {
+        "available": True,
+        "used": False,
+        "until": (JUDGE_NOW + timedelta(days=7)).isoformat(),
+        "state": "open",
+    }
+
+    await judge.request_appeal(asha, SLUG, "Again, please.", now=APPEAL_AT)
+    pending = await appeal_state(db, asha)
+    assert (pending["state"], pending["used"], pending["available"]) == ("pending", True, False)
+
+    chat.return_value = reply(SECOND_SCORES)
+    await judge.run_judge_step(4, now=APPEAL_AT)
+    assert (await appeal_state(db, asha))["state"] == "done"
+
+
+async def test_an_appeal_waiting_in_a_hold_is_pending_not_given_up(
+    db: Db, github: PerRepoGitHub, chat: AsyncMock, asha: str, queued: uuid.UUID
+) -> None:
+    await judged_attempt(db, chat, queued)
+    await judge.request_appeal(asha, SLUG, "Again, please.", now=APPEAL_AT)
+    github.readme = README_FIXTURE
+    await judge.run_judge_step(4, now=APPEAL_AT)  # held: no next_judge_at, waiting for a person
+
+    assert (await get_attempt(db, queued)).held is True
+    assert (await appeal_state(db, asha))["state"] == "pending"
+
+
+async def test_an_overridden_result_offers_no_appeal_and_says_a_person_reviewed_it(
+    db: Db, github: PerRepoGitHub, chat: AsyncMock, asha: str, queued: uuid.UUID
+) -> None:
+    await judged_attempt(db, chat, queued)
+    await judge.admin_override(queued, SECOND_SCORES, "Read by hand.")
+
+    appeal = await appeal_state(db, asha)
+
+    assert (appeal["available"], appeal["used"], appeal["state"]) == (False, False, "reviewed")
+    with pytest.raises(PracticeConflict):  # the form would only have been refused
+        await judge.request_appeal(asha, SLUG, "I disagree.", now=APPEAL_AT)
+
+
+async def test_a_result_with_no_stored_reading_offers_no_appeal(
+    db: Db, github: PerRepoGitHub, chat: AsyncMock, asha: str, queued: uuid.UUID
+) -> None:
+    await set_attempt(
+        db, queued, status="judged", judged_at=JUDGE_NOW, scores=SCORES, judge_runs=None
+    )
+
+    appeal = await appeal_state(db, asha)
+
+    assert (appeal["available"], appeal["state"]) == (False, "reviewed")
+    with pytest.raises(PracticeConflict):
+        await judge.request_appeal(asha, SLUG, "Why?", now=APPEAL_AT)
+
+
+async def test_after_the_window_the_appeal_is_closed(
+    db: Db, github: PerRepoGitHub, chat: AsyncMock, asha: str, queued: uuid.UUID
+) -> None:
+    await judged_attempt(db, chat, queued)
+
+    appeal = await appeal_state(db, asha, JUDGE_NOW + timedelta(days=7, minutes=1))
+
+    assert (appeal["available"], appeal["used"], appeal["state"]) == (False, False, "closed")
+
+
+async def test_available_always_agrees_with_what_request_appeal_accepts(
+    db: Db, github: PerRepoGitHub, chat: AsyncMock, asha: str, queued: uuid.UUID
+) -> None:
+    """The form must never be offered where submitting it is a 409 (and the reverse)."""
+    await judged_attempt(db, chat, queued)
+    cases: list[dict[str, Any]] = [
+        {},
+        {"override_note": "Read by hand."},
+        {"override_note": None, "judge_runs": None},
+        {"judge_runs": None, "scores": SCORES},
+    ]
+    original = (await get_attempt(db, queued)).judge_runs
+    for change in cases:
+        await set_attempt(db, queued, judge_runs=original, override_note=None)
+        if change:
+            await set_attempt(db, queued, **change)
+        offered = (await appeal_state(db, asha))["available"]
+        try:
+            await judge.request_appeal(asha, SLUG, "Again, please.", now=APPEAL_AT)
+            accepted = True
+        except PracticeConflict:
+            accepted = False
+        assert offered is accepted, change
+        await set_attempt(db, queued, appealed_at=None, appeal_reason=None)
 
 
 # =========================================================================== admin
@@ -1925,6 +2029,7 @@ async def test_the_result_of_a_judged_attempt_has_the_page_shape(
         "available": True,
         "used": False,
         "until": (JUDGE_NOW + timedelta(days=7)).isoformat(),
+        "state": "open",
     }
     assert result["rejudged"] is False
 
@@ -1941,7 +2046,7 @@ async def test_the_result_of_a_queued_attempt_has_no_scores(
     assert result["total"] is None
     assert result["notes"] is None
     assert result["snapshot_url"] is None
-    assert result["appeal"] == {"available": False, "used": False, "until": None}
+    assert result["appeal"] == {"available": False, "used": False, "until": None, "state": "none"}
 
 
 async def test_the_result_of_a_held_attempt_says_so(
