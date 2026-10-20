@@ -76,6 +76,8 @@ IN_FLIGHT_STAGES = (
 )
 #: Memory type used for preferences the copilot infers from conversation.
 PREFERENCE_TYPE = "preference"
+#: Every event card's ``kind`` starts with this (event_today, event_soon, event_met_prompt).
+EVENT_CARD_PREFIX = "event_"
 #: How far ahead the single "coming up" event card looks.
 EVENT_SOON_WINDOW_DAYS = 7
 #: How long after an event ends the briefing still asks who the user met.
@@ -607,7 +609,13 @@ async def build_briefing(*, user_id: str) -> dict[str, Any]:
 
 
 def _headline(cards: list[dict[str, Any]], context: dict[str, Any]) -> str:
-    """One line summarising the state of the queue."""
+    """One line summarising the state of the application queue.
+
+    Event cards are about the day, not the pipeline: a cancelled event is a warning card, but
+    it is not an application to chase, and "N things across M applications" must not count a
+    meetup. They stay on the page; the headline just does not speak for them.
+    """
+    cards = [c for c in cards if not str(c["kind"]).startswith(EVENT_CARD_PREFIX)]
     today = [
         c for c in cards
         if c["kind"] == "scheduled_interview" and c["meta"].get("days_away") == 0

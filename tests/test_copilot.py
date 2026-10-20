@@ -72,6 +72,58 @@ def test_headline_is_calm_when_nothing_is_stale() -> None:
     assert "on top of things" in _headline(cards, {"total_applications": 2})
 
 
+def _event(kind: str, tone: str, card_id: str | None = None) -> dict:
+    return _card(card_id=card_id or f"{kind}:1", kind=kind, title="t", detail="d", tone=tone)
+
+
+def test_headline_does_not_chase_a_cancelled_event() -> None:
+    """A saved event the organiser cancelled is a warning card, but it is not a stale application."""
+    cards = [
+        _card(card_id="p", kind="priority", title="t", detail="d", tone="primary"),
+        _event("event_today", "warning"),
+    ]
+    assert _headline(cards, {"total_applications": 2}) == (
+        "You're on top of things — nothing is going stale."
+    )
+
+
+def test_headline_counts_only_application_items() -> None:
+    cards = [
+        _card(card_id="p", kind="priority", title="t", detail="d", tone="primary"),
+        _card(card_id="s", kind="saved_backlog", title="t", detail="d", tone="action"),
+        _event("event_today", "primary"),
+        _event("event_soon", "action"),
+        _event("event_met_prompt", "action", "event_met:1"),
+    ]
+    assert _headline(cards, {"total_applications": 5}) == (
+        "2 things worth your attention across 5 application(s)."
+    )
+
+
+def test_headline_chases_only_what_is_stale_when_events_are_also_warnings() -> None:
+    cards = [
+        _card(card_id="a", kind="stale_application", title="t", detail="d", tone="warning"),
+        _event("event_today", "warning"),
+    ]
+    assert _headline(cards, {"total_applications": 4}) == "1 thing(s) need chasing today."
+
+
+def test_headline_with_only_event_cards_has_nothing_stale() -> None:
+    cards = [_event("event_today", "primary"), _event("event_soon", "action")]
+    assert "on top of things" in _headline(cards, {"total_applications": 0})
+
+
+def test_headline_still_leads_with_an_interview_today_among_events() -> None:
+    interview = _card(
+        card_id="i", kind="scheduled_interview", title="t", detail="d", tone="primary",
+        meta={"days_away": 0},
+    )
+    cards = [_event("event_today", "warning"), interview]
+    assert _headline(cards, {"total_applications": 1}) == (
+        "You have 1 interview(s) today — everything else can wait."
+    )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Briefing assembly
 # ─────────────────────────────────────────────────────────────────────────────
