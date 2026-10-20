@@ -160,12 +160,15 @@ export default function PracticePage() {
     return () => clearInterval(id)
   }, [])
 
-  async function act(call: () => Promise<PracticeToday>, refreshCalendar = false) {
+  // `focusId` is where keyboard focus goes afterwards: the button that was pressed is often replaced
+  // or disabled by the result, and focus would otherwise fall back to the top of the page.
+  async function act(call: () => Promise<PracticeToday>, refreshCalendar = false, focusId?: string) {
     setBusy(true)
     setErrors(current => ({ ...current, today: '' }))
     try {
       setToday(await call())
       if (refreshCalendar) await loadHistory()
+      if (focusId) window.setTimeout(() => document.getElementById(focusId)?.focus(), 0)
     } catch (err) {
       setErrors(current => ({ ...current, today: err instanceof Error ? err.message : 'Something went wrong.' }))
     } finally {
@@ -238,22 +241,22 @@ export default function PracticePage() {
               {done && <div className="pr-feel" role="group" aria-label="How was it?">
                 <span>How was it?</span>
                 {FEELS.map(([value, text]) =>
-                  <button key={value} type="button" aria-pressed={today.feel === value} disabled={busy} onClick={() => act(() => api.practice.feel(value))}>{text}</button>)}
+                  <button key={value} id={`pr-feel-${value}`} type="button" aria-pressed={today.feel === value} disabled={busy} onClick={() => act(() => api.practice.feel(value), false, `pr-feel-${value}`)}>{text}</button>)}
               </div>}
             </div>
             <div className="pr-actions">
               {done
                 ? <>
                   <span className="pr-stamp">Done {clock(today.done_at!)}</span>
-                  <button type="button" className="pr-ghost" disabled={busy} onClick={() => act(() => api.practice.undo(), true)}>Undo</button>
+                  <button type="button" className="pr-ghost" disabled={busy} onClick={() => act(() => api.practice.undo(), true, 'pr-mark-done')}>Undo</button>
                 </>
                 : <>
                   {questionHref
                     ? <a className="primary-button" href={questionHref} {...EXTERNAL_LINK_PROPS}>Open on LeetCode ↗</a>
                     : null}
-                  <button type="button" className="pr-ghost" disabled={busy} onClick={() => act(() => api.practice.done(), true)}>Mark done</button>
+                  <button id="pr-mark-done" type="button" className="pr-ghost" disabled={busy} onClick={() => act(() => api.practice.done(), true, 'pr-feel-easy')}>Mark done</button>
                 </>}
-              <button type="button" className="pr-ghost" disabled={busy || today.swaps_left === 0} onClick={() => act(() => api.practice.swap())}>Swap</button>
+              <button type="button" className="pr-ghost" disabled={busy || today.swaps_left === 0} onClick={() => act(() => api.practice.swap(), false, 'pr-mark-done')}>Swap</button>
             </div>
           </article>
           : <div className="empty-state"><h2>The question list is not loaded yet.</h2></div>)}
@@ -300,7 +303,7 @@ export default function PracticePage() {
                 <span className="pr-lamp" aria-hidden="true" />
                 <div className="pr-code">{trackName(current.brief.track)}<b>{current.brief.hours} h</b></div>
                 <div><h3>{current.brief.title}</h3><p>{current.brief.summary}</p></div>
-                <div className="pr-clock" data-calm={currentState.calm ? '' : undefined}><b>{currentState.big}</b><span>{currentState.small}</span></div>
+                <div className="pr-clock" data-calm={currentState.calm ? '' : undefined} data-word={typeof currentState.big === 'string' && currentState.big.length > 8 ? '' : undefined}><b>{currentState.big}</b><span>{currentState.small}</span></div>
                 <Link className="pr-ghost" href={`/practice/challenges/${encodeURIComponent(current.slug)}`}>Read the brief →</Link>
               </article>
               {pastLastStart && <p className="pr-help">Not enough time left in this week&apos;s window — next build {nextBuild}</p>}

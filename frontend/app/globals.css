@@ -1784,6 +1784,8 @@ body::before{content:'';position:fixed;inset:0;z-index:2000;pointer-events:none;
 .pr-clock b{display:block;font:700 22px/1 'Fragment Mono',monospace;letter-spacing:-.4px;color:var(--accent);font-variant-numeric:tabular-nums}
 .pr-clock>span{display:block;margin-top:6px;font:10px 'Fragment Mono',monospace;letter-spacing:.8px;text-transform:uppercase;color:var(--faint)}
 .pr-clock[data-calm] b{color:var(--ink)}
+/* A word ("Under review", "Not submitted") in the 150px clock column: smaller, so it stays on one line */
+.pr-clock[data-word] b{font-size:15px;letter-spacing:0}
 @media (hover:hover) and (min-width:920px){
   .pr-build:hover,.pr-board-row:hover{transform:translateX(10px);background:var(--line-soft)}
   .pr-build,.pr-board-row{transition:transform var(--t,300ms) var(--ease-out,ease),background var(--t-fast,170ms) var(--ease-fast,ease)}

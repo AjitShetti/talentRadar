@@ -201,6 +201,8 @@ function ChallengeView({ slug }: { slug: string }) {
       const next = await api.practice.start(slug)
       setChallenge(next)
       adopt(next)
+      // The Start button is gone now: put keyboard focus where the work begins.
+      window.setTimeout(() => document.getElementById('pr-repo')?.focus(), 0)
     } catch (err) {
       setStartError(err instanceof Error ? err.message : 'Could not start this build.')
     } finally {
@@ -260,6 +262,8 @@ function ChallengeView({ slug }: { slug: string }) {
     try {
       setResult(await api.practice.appeal(slug, text))
       setReason('')
+      // The form has gone: focus its note, so a keyboard user hears what happened.
+      window.setTimeout(() => document.getElementById('pr-appeal-note')?.focus(), 0)
     } catch (err) {
       setAppealError(err instanceof Error ? err.message : 'Could not send your appeal.')
     } finally {
@@ -493,7 +497,7 @@ function ChallengeView({ slug }: { slug: string }) {
               <button className="pr-ghost" style={{ marginTop: 10 }} disabled={appealing}>{appealing ? 'Sending…' : 'Send appeal'}</button>
             </form>
           </details>
-          : APPEAL_NOTES[result.appeal.state] && <p className="pr-help">{APPEAL_NOTES[result.appeal.state]}</p>}
+          : APPEAL_NOTES[result.appeal.state] && <p id="pr-appeal-note" tabIndex={-1} className="pr-help">{APPEAL_NOTES[result.appeal.state]}</p>}
 
         <p className="pr-help"><Link href="/practice/leaderboard">See the leaderboard →</Link></p>
       </>}
