@@ -1,0 +1,39 @@
+{
+  "slug": "docs-rag-with-citations",
+  "title": "A docs answerer with citations and a refusal test set",
+  "track": "ai",
+  "hours": 48,
+  "summary": "Build a question-answering tool over a product's documentation that cites its sources, refuses what the docs do not say, and proves both with a test set.",
+  "context": [
+    "Quillstack is a fictional developer-tools company that wants a help box answering from its docs and never from guesswork. Support teams care less about clever answers than about wrong ones, and about which page an answer came from.",
+    "You write the docs: about 25 short Markdown pages for an invented product, such as a fictional queue-monitoring API. Let one page contradict an older one on purpose and leave some obvious gaps.",
+    "Then build retrieval and answering. Every answer cites the passage it relies on; a question the docs do not answer gets a refusal that says what the docs do cover."
+  ],
+  "must_have": [
+    "The invented docs corpus in the repo, chunked and indexed by a method you chose and can explain.",
+    "An answer function returning the answer plus, for each claim, the chunk it came from, with page and heading.",
+    "A test set of 40 questions: 25 the docs answer (with the expected page), 10 they do not (refusal expected), and 5 tricky ones, such as a superseded page or a question that sounds answerable but is not.",
+    "An evaluation script reporting retrieval hit rate, citation correctness, refusal precision and recall, and listing every failure.",
+    "A code check that an answer cannot cite a chunk that was not retrieved, with a test."
+  ],
+  "nice_to_have": [
+    "Two chunking or retrieval settings compared on the same test set.",
+    "Preferring the newer page when two disagree, and saying so in the answer.",
+    "A page in the corpus that contains instructions aimed at the model, and what your system does with it."
+  ],
+  "constraints": [
+    "No paid services, APIs or accounts. Use a local model or a free tier with no card, and commit recorded outputs so the evaluation reproduces without a key.",
+    "Fictional product, docs and company only. Do not copy real documentation."
+  ],
+  "deliverables": [
+    "A public repo created after you press Start, with commits spread across the window.",
+    "A README with how to run it (build the index, ask a question, run the evaluation), your scores, and what is missing."
+  ],
+  "judge_focus": [
+    "How the refusal threshold was chosen and what it cost in answers lost.",
+    "Whether citations are verified in code or merely requested from a model.",
+    "Whether the test set could have failed your system, and whether the commit history shows it written before you tuned.",
+    "Your account of what AI produced, what you verified, and what you threw away."
+  ],
+  "bengaluru_context": "Developer-experience, support-tooling and AI product teams at Bengaluru software companies are building this feature now, and the interview question is always how you stop it making things up."
+}

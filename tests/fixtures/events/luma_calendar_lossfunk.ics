@@ -1,0 +1,971 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Luma//Lossfunk Event Calendar//EN
+X-WR-CALNAME:Lossfunk Event Calendar
+X-WR-CALDESC:Luma Calendar
+REFRESH-INTERVAL;VALUE=DURATION:PT12H
+X-PUBLISHED-TTL:PT12H
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+BEGIN:VEVENT
+DTSTART:20250519T123000Z
+DTEND:20250519T133000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-Bn2ofclA0AaUmMH@events.lu.ma
+SUMMARY:BBNs: A For-Profit Path To Building More Centers of R&D Excellence 
+ In India
+DESCRIPTION:Get up-to-date information at: https://luma.com/bnoe80se\n\nHos
+ ted by Team Lossfunk & 3 others
+LOCATION:https://luma.com/event/evt-Bn2ofclA0AaUmMH
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20250822T123000Z
+DTEND:20250822T133000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-JfE7cinyeFyvqu6@events.lu.ma
+SUMMARY:Simple and Effective RL for Recommender Systems & Diffusion Fine-tu
+ ning
+DESCRIPTION:Get up-to-date information at: https://luma.com/j7dux1gz\n\nAdd
+ ress:\nIndiranagar\nThe exact location will be shred once the invite is ac
+ cepted\nBengaluru, Karnataka\nIndia\n\nHosted by Team Lossfunk, Host 1 Qui
+ ll & Host 2 Quill
+LOCATION:Indiranagar, Bengaluru, Karnataka, India
+GEO:12.9783692;77.6408356
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20250829T123000Z
+DTEND:20250829T133000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-nt2GD3QM36LbLXN@events.lu.ma
+SUMMARY:Advancing the Frontier of Multilingual Multimodality
+DESCRIPTION:Get up-to-date information at: https://luma.com/9li9xpxk\n\nAdd
+ ress:\nIndiranagar\nThe exact location will be shared after the invite is 
+ accepted.\nBengaluru, Karnataka\nIndia\n\nHosted by Team Lossfunk, Host 2 
+ Quill & Host 1 Quill
+LOCATION:Indiranagar, Bengaluru, Karnataka, India
+GEO:12.9783692;77.6408356
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20250906T060000Z
+DTEND:20250906T103000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-MxsG5H48iJJlJ3T@events.lu.ma
+SUMMARY:Lossfunk Residency Batch 5 Graduation
+DESCRIPTION:Get up-to-date information at: https://luma.com/r8o30qxi\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  1 Quill & Host 2 Quill
+LOCATION:https://luma.com/event/evt-MxsG5H48iJJlJ3T
+GEO:12.979410516759597;77.63953316894141
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20250906T133000Z
+DTEND:20250906T173000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-z1ndSPAXG6yAwv6@events.lu.ma
+SUMMARY:Batch 5 After-Party Celebration
+DESCRIPTION:Get up-to-date information at: https://luma.com/f1gxycge\n\nAdd
+ ress:\nWatson's Indiranagar\n2nd Floor – Private Party Space\nBengaluru,
+  Karnataka\nIndia\n\nHosted by Team Lossfunk, Host 2 Quill & Host 1 Quill
+LOCATION:Watson's Indiranagar, 2nd Floor, 777/I, 100 Feet Rd, HAL 2nd Stage
+ , Doopanahalli, Indiranagar, Bengaluru, Karnataka 560008, India
+GEO:12.967276;77.6412768
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20250912T123000Z
+DTEND:20250912T133000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-JQ4CzZ3MZ2YlcBm@events.lu.ma
+SUMMARY:How to Get AI to Score 90% in JEE Math Using RL (Aryabhata 1.0)
+DESCRIPTION:Get up-to-date information at: https://luma.com/okl31x07\n\nAdd
+ ress:\nIndiranagar\nThe exact location will be shared once the invite is a
+ ccepted\nBengaluru, Karnataka\nIndia\n\nHosted by Team Lossfunk, Host 2 Qu
+ ill & Host 1 Quill
+LOCATION:Indiranagar, Bengaluru, Karnataka, India
+GEO:12.9783692;77.6408356
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20250919T123000Z
+DTEND:20250919T133000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-qHjU9j5S4qoTatb@events.lu.ma
+SUMMARY:Why Do Coding Agents Still Suck, and How to Improve Them
+DESCRIPTION:Get up-to-date information at: https://luma.com/l5fq7mwr\n\nAdd
+ ress:\nIndiranagar\nThe exact location will be shared once the invite is a
+ ccepted\nBengaluru, Karnataka\nIndia\n\nHosted by Team Lossfunk, Host 1 Qu
+ ill & Host 2 Quill
+LOCATION:Indiranagar, Bengaluru, Karnataka, India
+GEO:12.9783692;77.6408356
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20251101T053000Z
+DTEND:20251101T103000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-eReR9lFj4R2dy8J@events.lu.ma
+SUMMARY:Lossfunk Residency Batch 6 Graduation
+DESCRIPTION:Get up-to-date information at: https://luma.com/5el29x1h\n\nAdd
+ ress:\nDongle Desk Green View\nBengaluru, Karnataka\nIndia\n\nHosted by Te
+ am Lossfunk & 3 others
+LOCATION:Dongle Desk Green View, 461, Shri Krishna Temple Rd, Binnamangala,
+  Stage 1, Indiranagar, Bengaluru, Karnataka 560038, India
+GEO:12.979014999999999;77.6438235
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20251114T123000Z
+DTEND:20251114T133000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-e0Awygftn5LD6xF@events.lu.ma
+SUMMARY:Beyond RLHF: MPO as the Next Generation of LLM Post-Training
+DESCRIPTION:Get up-to-date information at: https://luma.com/x8gbbcs2\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 1 Quill
+LOCATION:https://luma.com/event/evt-e0Awygftn5LD6xF
+GEO:12.977042555472629;77.64183028933529
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20251119T123000Z
+DTEND:20251119T133000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-UkyqCMq2ukA6qrD@events.lu.ma
+SUMMARY:Why LLMs Think in English and How It Affects Their Performance
+DESCRIPTION:Get up-to-date information at: https://luma.com/l89qrm0d\n\nHos
+ ted by Team Lossfunk, Host 2 Quill & Host 1 Quill
+LOCATION:https://luma.com/event/evt-UkyqCMq2ukA6qrD
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20251121T123000Z
+DTEND:20251121T133000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-55HFy42rPXwMFrW@events.lu.ma
+SUMMARY:How Advanced AIs Can Cause Human Extinction
+DESCRIPTION:Get up-to-date information at: https://luma.com/hznl94q6\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 1 Quill
+LOCATION:https://luma.com/event/evt-55HFy42rPXwMFrW
+GEO:12.979442182678733;77.64295364287612
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20251128T123000Z
+DTEND:20251128T133000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-qKLJ6AGIDTjsCoo@events.lu.ma
+SUMMARY:How to Build Smarter Optimizers: Beyond Just Minimizing Loss
+DESCRIPTION:Get up-to-date information at: https://luma.com/1rfa6iz8\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 1 Quill
+LOCATION:https://luma.com/event/evt-qKLJ6AGIDTjsCoo
+GEO:12.979062600694045;77.63943229360821
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20251205T123000Z
+DTEND:20251205T133000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-C60FnBrbaSDrTVV@events.lu.ma
+SUMMARY:How the Brain Stores Memories and Its Inspiration for Long-Context 
+ LLMs
+DESCRIPTION:Get up-to-date information at: https://luma.com/acpgtp3d\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 1 Quill
+LOCATION:https://luma.com/event/evt-C60FnBrbaSDrTVV
+GEO:12.977981353843997;77.63958123833336
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20251212T123000Z
+DTEND:20251212T133000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-6j6jxrkPI28EHnf@events.lu.ma
+SUMMARY:A Hitchhiker’s Guide to Good Research
+DESCRIPTION:Get up-to-date information at: https://luma.com/xt4wsm9l\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 1 Quill
+LOCATION:https://luma.com/event/evt-6j6jxrkPI28EHnf
+GEO:12.97699912007606;77.64167254311073
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20251219T123000Z
+DTEND:20251219T133000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-UkCbDhojGYnfsmr@events.lu.ma
+SUMMARY:Building AI Systems That Write Their Own GPU Kernels
+DESCRIPTION:Get up-to-date information at: https://luma.com/a9xeszuw\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 1 Quill
+LOCATION:https://luma.com/event/evt-UkCbDhojGYnfsmr
+GEO:12.977090062079485;77.6405392212905
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260102T123000Z
+DTEND:20260102T133000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-SemSWJ5uwYYPXZB@events.lu.ma
+SUMMARY:Understanding Human Gaze in Everyday Social Scenes using Multimodal
+  Deep Learning
+DESCRIPTION:Get up-to-date information at: https://luma.com/98vxov7i\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 1 Quill
+LOCATION:https://luma.com/event/evt-SemSWJ5uwYYPXZB
+GEO:12.977029562088585;77.64178835858847
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260109T123000Z
+DTEND:20260109T133000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-bSjlcJOqFdGNKNf@events.lu.ma
+SUMMARY:Can AI Learn Hierarchies Like Humans Do?
+DESCRIPTION:Get up-to-date information at: https://luma.com/m9fenrve\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 1 Quill
+LOCATION:https://luma.com/event/evt-bSjlcJOqFdGNKNf
+GEO:12.977099363182067;77.64051676467815
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260116T123000Z
+DTEND:20260116T133000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-wzeeC6amuo1YUWp@events.lu.ma
+SUMMARY:How to Build a Search Engine for Geography
+DESCRIPTION:Get up-to-date information at: https://luma.com/qn4q95wa\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 1 Quill
+LOCATION:https://luma.com/event/evt-wzeeC6amuo1YUWp
+GEO:12.978529246442351;77.63941815781908
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260123T130000Z
+DTEND:20260123T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-aLBHQlcvPk5VYBM@events.lu.ma
+SUMMARY:How Neuroscience Shaped Modern AI
+DESCRIPTION:Get up-to-date information at: https://luma.com/yxcm2mcb\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  3 Quill & Host 2 Quill
+LOCATION:https://luma.com/event/evt-aLBHQlcvPk5VYBM
+GEO:12.98054236848611;77.64140404396753
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260130T130000Z
+DTEND:20260130T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-lCF7NQKEc3wtPAB@events.lu.ma
+SUMMARY:Breaking LLM Safety: Jailbreaks, Agents, and Threats
+DESCRIPTION:Get up-to-date information at: https://luma.com/h8zxe9qa\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk & 3 o
+ thers
+LOCATION:https://luma.com/event/evt-lCF7NQKEc3wtPAB
+GEO:12.980413969664616;77.64054921946271
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260220T130000Z
+DTEND:20260220T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-AyfdQRZJni0AdyJ@events.lu.ma
+SUMMARY:From Neurons to Networks: Core Principles Linking Biological and Ar
+ tificial Intelligence
+DESCRIPTION:Get up-to-date information at: https://luma.com/qh2a2t20\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk & 3 o
+ thers
+LOCATION:https://luma.com/event/evt-AyfdQRZJni0AdyJ
+GEO:12.979530650211105;77.63945798744241
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260225T123000Z
+DTEND:20260225T133000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-flTI29h4FYqhk5i@events.lu.ma
+SUMMARY:Neural Nets as Scientific Instruments
+DESCRIPTION:Get up-to-date information at: https://luma.com/2jgvf1ah\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  3 Quill & Host 2 Quill
+LOCATION:https://luma.com/event/evt-flTI29h4FYqhk5i
+GEO:12.982934657706764;77.64064664152681
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260227T130000Z
+DTEND:20260227T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-URewo5xOzRnmY4G@events.lu.ma
+SUMMARY:History of walking robots
+DESCRIPTION:Get up-to-date information at: https://luma.com/hwaaa7ch\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 3 Quill
+LOCATION:https://luma.com/event/evt-URewo5xOzRnmY4G
+GEO:12.982504107008237;77.64132312932604
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260228T053000Z
+DTEND:20260228T113000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-Q9gNZfqzySbcJEI@events.lu.ma
+SUMMARY:Lossfunk Residency Batch 7 Graduation
+DESCRIPTION:Get up-to-date information at: https://luma.com/w8ima8qd\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 3 Quill
+LOCATION:https://luma.com/event/evt-Q9gNZfqzySbcJEI
+GEO:12.980271731214462;77.64276598135278
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260306T130000Z
+DTEND:20260306T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-yNSfoUCeMRBXJAD@events.lu.ma
+SUMMARY:A case, and a plan for Building Math Superintelligence
+DESCRIPTION:Get up-to-date information at: https://luma.com/70s0cd2n\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 3 Quill
+LOCATION:https://luma.com/event/evt-yNSfoUCeMRBXJAD
+GEO:12.980387560258084;77.63838021411625
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260313T130000Z
+DTEND:20260313T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-RsWuUBoTGy2MCUX@events.lu.ma
+SUMMARY:Tiny Aya: Building the most capable multilingual open weight 3B mod
+ el
+DESCRIPTION:Get up-to-date information at: https://luma.com/tusx9lg8\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  3 Quill & Host 2 Quill
+LOCATION:https://luma.com/event/evt-RsWuUBoTGy2MCUX
+GEO:12.982203702140705;77.64156497698029
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260318T113000Z
+DTEND:20260318T123000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-FrRTn1JhQruVUDF@events.lu.ma
+SUMMARY:BrAInspiration: What can AI learn from the brain?
+DESCRIPTION:Get up-to-date information at: https://luma.com/7nklo2pf\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  3 Quill & Host 2 Quill
+LOCATION:https://luma.com/event/evt-FrRTn1JhQruVUDF
+GEO:12.979329713515178;77.64299729702859
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260327T130000Z
+DTEND:20260327T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-FqNIkkJFale82s5@events.lu.ma
+SUMMARY:Listen to the Logits: Efficient Scaling at Inference Time for LLMs
+DESCRIPTION:Get up-to-date information at: https://luma.com/73tj0g40\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  3 Quill & Host 2 Quill
+LOCATION:https://luma.com/event/evt-FqNIkkJFale82s5
+GEO:12.980281163433258;77.6402815127726
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260410T130000Z
+DTEND:20260410T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-KZEnL8BYfbUrNCD@events.lu.ma
+SUMMARY:RL Environments: Building the Arenas Where Frontier Models Learn
+DESCRIPTION:Get up-to-date information at: https://luma.com/xtld7v7n\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  3 Quill & Host 2 Quill
+LOCATION:https://luma.com/event/evt-KZEnL8BYfbUrNCD
+GEO:12.980762177936194;77.63822336871709
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260417T130000Z
+DTEND:20260417T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-XbhCeJQZYFWaVqk@events.lu.ma
+SUMMARY:Chasing Peak FLOPS: How MATMUL Algorithms Co-Evolved with GPU Archi
+ tecture
+DESCRIPTION:Get up-to-date information at: https://luma.com/9mpimf4z\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  3 Quill & Host 2 Quill
+LOCATION:https://luma.com/event/evt-XbhCeJQZYFWaVqk
+GEO:12.976965343425736;77.64147974027931
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260424T130000Z
+DTEND:20260424T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-RNwQ5MlNOkvExLZ@events.lu.ma
+SUMMARY:Chaos Everywhere!
+DESCRIPTION:Get up-to-date information at: https://luma.com/qvgbk6j4\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  3 Quill & Host 2 Quill
+LOCATION:https://luma.com/event/evt-RNwQ5MlNOkvExLZ
+GEO:12.977309132352266;77.642354800774
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260427T130000Z
+DTEND:20260427T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-EYPGxmAYqnPzr0w@events.lu.ma
+SUMMARY:The Road to Autonomy - Unlocking Humanoid Loco-Manipulation
+DESCRIPTION:Get up-to-date information at: https://luma.com/pvfvlimb\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 3 Quill
+LOCATION:https://luma.com/event/evt-EYPGxmAYqnPzr0w
+GEO:12.980529036907754;77.64152179254046
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260508T130000Z
+DTEND:20260508T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-AYCBV6bkiOPnQfj@events.lu.ma
+SUMMARY:Reward Hacking Benchmark: How Frontier LLMs Game Their Own Evaluati
+ ons
+DESCRIPTION:Get up-to-date information at: https://luma.com/f92a1jps\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk & 3 o
+ thers
+LOCATION:https://luma.com/event/evt-AYCBV6bkiOPnQfj
+GEO:12.977487937571002;77.63993487434011
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260515T130000Z
+DTEND:20260515T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-rvRDKb57VmKSTQH@events.lu.ma
+SUMMARY:Mind and Consciousness: Eastern and Western Perspectives
+DESCRIPTION:Get up-to-date information at: https://luma.com/1ey48t7w\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 3 Quill
+LOCATION:https://luma.com/event/evt-rvRDKb57VmKSTQH
+GEO:12.981840272025373;77.64174358783728
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260520T130000Z
+DTEND:20260520T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-1apQOCBJskyrOpO@events.lu.ma
+SUMMARY:Chaos Everywhere - Part 2!
+DESCRIPTION:Get up-to-date information at: https://luma.com/9h6oahoo\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 3 Quill
+LOCATION:https://luma.com/event/evt-1apQOCBJskyrOpO
+GEO:12.982579297566419;77.64124342311761
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260529T130000Z
+DTEND:20260529T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-BTizlsPERmlB3vX@events.lu.ma
+SUMMARY:Do you need a brain to have a mind?
+DESCRIPTION:Get up-to-date information at: https://luma.com/p44pj8qq\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 3 Quill
+LOCATION:https://luma.com/event/evt-BTizlsPERmlB3vX
+GEO:12.979809626300062;77.64110548998856
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260605T130000Z
+DTEND:20260605T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-LK5hNq2nGzpDEB1@events.lu.ma
+SUMMARY:K-Steering: A Framework for Behavioral Steering of Language Models
+DESCRIPTION:Get up-to-date information at: https://luma.com/qsmflm9u\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 3 Quill
+LOCATION:https://luma.com/event/evt-LK5hNq2nGzpDEB1
+GEO:12.980013218898254;77.63865980541989
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260612T130000Z
+DTEND:20260612T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-ZQDTOAFJwO5JIzZ@events.lu.ma
+SUMMARY:A few backprops to bind them all
+DESCRIPTION:Get up-to-date information at: https://luma.com/s4tmgahg\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk & 3 o
+ thers
+LOCATION:https://luma.com/event/evt-ZQDTOAFJwO5JIzZ
+GEO:12.982756099125867;77.6410090385153
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260617T130000Z
+DTEND:20260617T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-3AocbNThe5CFEmQ@events.lu.ma
+SUMMARY:Beyond Scaling: Making Large Language Models Efficient
+DESCRIPTION:Get up-to-date information at: https://luma.com/fnsbxsln\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  3 Quill & Host 2 Quill
+LOCATION:https://luma.com/event/evt-3AocbNThe5CFEmQ
+GEO:12.9795145459255;77.63951504242924
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260624T130000Z
+DTEND:20260624T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-495Z4l1krKIBVNH@events.lu.ma
+SUMMARY:When Cells Stop Listening: Broken Receptor Signalling in Ageing cel
+ ls and implications for Drug Discovery
+DESCRIPTION:Get up-to-date information at: https://luma.com/ykci4qth\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  3 Quill & Host 2 Quill
+LOCATION:https://luma.com/event/evt-495Z4l1krKIBVNH
+GEO:12.97989555472993;77.64121450590322
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260703T130000Z
+DTEND:20260703T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-YZluIoPxJpmJqFx@events.lu.ma
+SUMMARY:Altered Selves and Self Models
+DESCRIPTION:Get up-to-date information at: https://luma.com/rn2vihin\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk & 3 o
+ thers
+LOCATION:https://luma.com/event/evt-YZluIoPxJpmJqFx
+GEO:12.982457698161701;77.63863215786824
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260708T130000Z
+DTEND:20260708T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-V98B9W3a2yqFR1u@events.lu.ma
+SUMMARY:Towards Technofuturism: Neurology, AI and the Hindu Mind Sciences
+DESCRIPTION:Get up-to-date information at: https://luma.com/lbuqvyd7\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 3 Quill
+LOCATION:https://luma.com/event/evt-V98B9W3a2yqFR1u
+GEO:12.980763526909028;77.63822297921894
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260710T123000Z
+DTEND:20260710T143000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-bIfIbbBpAAHUoPo@events.lu.ma
+SUMMARY:Writing in the age of AI!
+DESCRIPTION:Get up-to-date information at: https://luma.com/vamel4i4\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk & 3 o
+ thers
+LOCATION:https://luma.com/event/evt-bIfIbbBpAAHUoPo
+GEO:12.981634825436984;77.63819692629858
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260717T130000Z
+DTEND:20260717T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-UEuaaPV4GXFNPPv@events.lu.ma
+SUMMARY:AI for Disasters, Energy, Agriculture & Water: Building AI Systems 
+ for the Physical World
+DESCRIPTION:Get up-to-date information at: https://luma.com/z6j5w3m5\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 3 Quill
+LOCATION:https://luma.com/event/evt-UEuaaPV4GXFNPPv
+GEO:12.980164247006723;77.6385284261364
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260722T130000Z
+DTEND:20260722T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-H1YD4CkSw52RcxU@events.lu.ma
+SUMMARY:Simulations of Reality: Physics and AI
+DESCRIPTION:Get up-to-date information at: https://luma.com/xa89j6pf\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk & 3 o
+ thers
+LOCATION:https://luma.com/event/evt-H1YD4CkSw52RcxU
+GEO:12.97945199652949;77.6400492259801
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260724T130000Z
+DTEND:20260724T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-O9Qj1tc25ytmPpP@events.lu.ma
+SUMMARY:Do AI algorithms see the way we do? Towards a dialogue on vision be
+ tween brains and machines.
+DESCRIPTION:Get up-to-date information at: https://luma.com/pdx17bi7\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 3 Quill
+LOCATION:https://luma.com/event/evt-O9Qj1tc25ytmPpP
+GEO:12.98003067389141;77.63864306555914
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260725T083000Z
+DTEND:20260725T103000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Host 4 Quill":MAILTO:organiser@example.com
+UID:evt-yY3AyQfEgXMqWDe@events.lu.ma
+SUMMARY:Lossfunk Research Mixers, Vol. 2
+DESCRIPTION:Get up-to-date information at: https://luma.com/v5p3cx1h\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Host 4 Quill & 4 ot
+ hers
+LOCATION:https://luma.com/event/evt-yY3AyQfEgXMqWDe
+GEO:12.982912222248903;77.63929485863213
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260731T130000Z
+DTEND:20260731T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-QTUH26SACmVSRjE@events.lu.ma
+SUMMARY:Medical ultrasound imaging for the 21st century!
+DESCRIPTION:Get up-to-date information at: https://luma.com/jwg9gn9v\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  3 Quill & Host 2 Quill
+LOCATION:https://luma.com/event/evt-QTUH26SACmVSRjE
+GEO:12.980203950911607;77.64150155533082
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260803T130000Z
+DTEND:20260803T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-ruhRJBJIEqYYzdO@events.lu.ma
+SUMMARY:Let There Be Lightning
+DESCRIPTION:Get up-to-date information at: https://luma.com/3nqqbmr8\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  3 Quill & Host 2 Quill
+LOCATION:https://luma.com/event/evt-ruhRJBJIEqYYzdO
+GEO:12.982980415470823;77.63949643769102
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260806T130000Z
+DTEND:20260806T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-AdAeAiSlkx5cPbw@events.lu.ma
+SUMMARY:Beyond the Black Box: A Technical Introduction to Mechanistic Inter
+ pretability
+DESCRIPTION:Get up-to-date information at: https://luma.com/6elja2bd\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  3 Quill & Host 2 Quill
+LOCATION:https://luma.com/event/evt-AdAeAiSlkx5cPbw
+GEO:12.981259832002516;77.64184578798404
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260807T130000Z
+DTEND:20260807T143000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-IGlJE3PBZm4Ckho@events.lu.ma
+SUMMARY:Lossfunk Research Showcase
+DESCRIPTION:Get up-to-date information at: https://luma.com/2dza1f3z\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk & 4 o
+ thers
+LOCATION:https://luma.com/event/evt-IGlJE3PBZm4Ckho
+GEO:12.97960552432198;77.64074767998021
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260814T130000Z
+DTEND:20260814T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-olaq2NBW10IlCt8@events.lu.ma
+SUMMARY:Build Semiconductor Chips with AI
+DESCRIPTION:Get up-to-date information at: https://luma.com/cr3edf37\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 3 Quill
+LOCATION:https://luma.com/event/evt-olaq2NBW10IlCt8
+GEO:12.981357579765268;77.6418425109655
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260822T083000Z
+DTEND:20260822T103000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Host 4 Quill":MAILTO:organiser@example.com
+UID:evt-8SrmMHB9HNZBfHw@events.lu.ma
+SUMMARY:Lossfunk Research Mixers, Vol. 3
+DESCRIPTION:Get up-to-date information at: https://luma.com/nrxgoqjm\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Host 4 Quill & 4 ot
+ hers
+LOCATION:https://luma.com/event/evt-8SrmMHB9HNZBfHw
+GEO:12.979451570069473;77.639971575403
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260828T130000Z
+DTEND:20260828T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-3e5TorX35aqdPHT@events.lu.ma
+SUMMARY:Neuroscience for AI: Insights from the hippocampal complex
+DESCRIPTION:Get up-to-date information at: https://luma.com/uae5w8p4\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 3 Quill
+LOCATION:https://luma.com/event/evt-3e5TorX35aqdPHT
+GEO:12.982429889124619;77.64139316796681
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260911T123000Z
+DTEND:20260911T133000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-GloxYckkaNKCnbk@events.lu.ma
+SUMMARY:Neurons That Fire Together: Building Cognition from Cell Assemblies
+DESCRIPTION:Get up-to-date information at: https://luma.com/p4b1y1dq\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 3 Quill
+LOCATION:https://luma.com/event/evt-GloxYckkaNKCnbk
+GEO:12.981907099117251;77.6417182289181
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260918T130000Z
+DTEND:20260918T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-uI9r4gtaNja8xAB@events.lu.ma
+SUMMARY:Building self-improving AI systems
+DESCRIPTION:Get up-to-date information at: https://luma.com/ob92ov60\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 3 Quill
+LOCATION:https://luma.com/event/evt-uI9r4gtaNja8xAB
+GEO:12.980836018528825;77.64179625918868
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20260925T130000Z
+DTEND:20260925T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-WqRL060ILDbSAVV@events.lu.ma
+SUMMARY:Philosophy of Human Reasoning and its Relevance for Machine Reasoni
+ ng
+DESCRIPTION:Get up-to-date information at: https://luma.com/wvzqflea\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 3 Quill
+LOCATION:https://luma.com/event/evt-WqRL060ILDbSAVV
+GEO:12.981303616291115;77.64184499528878
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261009T130000Z
+DTEND:20261009T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-7o263byDmPfbuDN@events.lu.ma
+SUMMARY:Digital Biology: From DNA to AI
+DESCRIPTION:Get up-to-date information at: https://luma.com/3d4a5r46\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 3 Quill
+LOCATION:https://luma.com/event/evt-7o263byDmPfbuDN
+GEO:12.97974893072272;77.63898309876676
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261015T130000Z
+DTEND:20261015T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-uEFApQM2Hn8eTaR@events.lu.ma
+SUMMARY:Reimagining education in the age of AI with Dr. Host 8 Quill (IISc)
+DESCRIPTION:Get up-to-date information at: https://luma.com/5lto2b0m\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 3 Quill
+LOCATION:https://luma.com/event/evt-uEFApQM2Hn8eTaR
+GEO:12.980159091397537;77.64146755281651
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261016T130000Z
+DTEND:20261016T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-p6nZdJs1Ld6AMtu@events.lu.ma
+SUMMARY:Blueprints of Being: The Embodied Architecture of Experience
+DESCRIPTION:Get up-to-date information at: https://luma.com/2xepmt3a\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 3 Quill
+LOCATION:https://luma.com/event/evt-p6nZdJs1Ld6AMtu
+GEO:12.979738805937101;77.63899901604768
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261017T083000Z
+DTEND:20261017T103000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-rAVXjJgIsIvoqOg@events.lu.ma
+SUMMARY:Lossfunk Research Mixers, Vol. 5
+DESCRIPTION:Get up-to-date information at: https://luma.com/ilh3vrwi\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk & 4 o
+ thers
+LOCATION:https://luma.com/event/evt-rAVXjJgIsIvoqOg
+GEO:12.981576669133792;77.6381848825015
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261021T130000Z
+DTEND:20261021T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-8Mu36DRxrQV4ttX@events.lu.ma
+SUMMARY:The KV Cache Bottleneck: Architectural Alternatives
+DESCRIPTION:Get up-to-date information at: https://luma.com/587afpgo\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 3 Quill
+LOCATION:https://luma.com/event/evt-8Mu36DRxrQV4ttX
+GEO:12.980070469169066;77.64139348744976
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261030T130000Z
+DTEND:20261030T140000Z
+DTSTAMP:20261016T051759Z
+ORGANIZER;CN="Team Lossfunk":MAILTO:organiser@example.com
+UID:evt-P1kZUCg2onrrzaz@events.lu.ma
+SUMMARY:On Continual Learning without forgetting via on-policy self-distill
+ ation for Semiconductor Circuit design
+DESCRIPTION:Get up-to-date information at: https://luma.com/anwdy1mx\n\nAdd
+ ress:\nCheck event page for more details.\n\nHosted by Team Lossfunk, Host
+  2 Quill & Host 3 Quill
+LOCATION:https://luma.com/event/evt-P1kZUCg2onrrzaz
+GEO:12.98249163836039;77.64133545627351
+SEQUENCE:214291079
+STATUS:TENTATIVE
+END:VEVENT
+END:VCALENDAR

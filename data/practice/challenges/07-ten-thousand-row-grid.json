@@ -1,0 +1,40 @@
+{
+  "slug": "ten-thousand-row-grid",
+  "title": "A spreadsheet-like grid for 10,000 rows",
+  "track": "frontend",
+  "hours": 48,
+  "summary": "Build a data grid that stays smooth with 10,000 rows and can be used fully from the keyboard.",
+  "context": [
+    "Internal tools live and die by the table. The operations team at Sundial Freight, a fictional logistics company, reviews 10,000 shipment rows a day: sorting, filtering and fixing cells. Their current table freezes, scrolls with a lag, and cannot be used without a mouse.",
+    "Generate the rows yourself with a seeded script (shipment id, origin, destination, weight, status, a notes column, a date). Then build the grid. You may borrow one small free piece, such as a virtual scroller, if you name it and say what you built yourself.",
+    "Test it as a user would: open it, scroll fast, sort, edit, and put the mouse away."
+  ],
+  "must_have": [
+    "Virtualised rendering: only the rows in view plus a small buffer exist in the page, and the DOM node count is visible while scrolling.",
+    "Keyboard-first navigation following the ARIA grid pattern: arrow keys, Home, End, PageUp, PageDown, Enter to edit, Escape to cancel, Tab to move on, and a visible active cell announced to assistive technology.",
+    "Sort by any column and filter by at least two column types, without blocking the page for more than a few frames on 10,000 rows.",
+    "Editable cells with validation, and undo and redo for the last 20 edits.",
+    "Measurements in the README: scroll frame times and sort time, with the machine and browser used."
+  ],
+  "nice_to_have": [
+    "Column resize and a pinned first column.",
+    "Copy and paste of a block of cells.",
+    "Row selection with shift-click and a bulk edit."
+  ],
+  "constraints": [
+    "No paid services, APIs or accounts, and no commercial grid component.",
+    "Fictional data only: made-up cities, shipment ids and notes.",
+    "Any framework, or none."
+  ],
+  "deliverables": [
+    "A public repo created after you press Start, with commits spread across the window.",
+    "A README with how to run it and regenerate the data, your measurements, the keyboard map, and what is missing."
+  ],
+  "judge_focus": [
+    "Measured performance, not claimed: where the time goes and what you changed after measuring.",
+    "Keyboard and screen-reader behaviour you actually tested, including focus after sort, filter and edit.",
+    "Which edge cases you chose to handle and which you wrote down as limits.",
+    "A trail of commits: a naive version, the measurement that showed the problem, then the fix."
+  ],
+  "bengaluru_context": "Frontend platform and internal-tools teams at Bengaluru logistics, fintech and SaaS companies spend months making tables like this fast and accessible."
+}

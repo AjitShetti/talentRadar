@@ -1,0 +1,33 @@
+{
+  "data": {
+    "dailyCodingChallengeV2": {
+      "challenges": [
+        {
+          "date": "2026-10-01",
+          "link": "/problems/valid-parentheses/",
+          "question": {"titleSlug": "valid-parentheses", "difficulty": "Easy"}
+        },
+        {
+          "date": "2026-10-02",
+          "link": "/problems/generate-parentheses/",
+          "question": {"titleSlug": "generate-parentheses", "difficulty": "Medium"}
+        },
+        {
+          "date": "2026-10-03",
+          "link": "/problems/longest-valid-parentheses/",
+          "question": {"titleSlug": "longest-valid-parentheses", "difficulty": "Hard"}
+        },
+        {
+          "date": "2026-10-04",
+          "link": "/problems/valid-parenthesis-string/",
+          "question": {"titleSlug": "valid-parenthesis-string", "difficulty": "Medium"}
+        },
+        {
+          "date": "2026-10-05",
+          "link": "/problems/score-of-parentheses/",
+          "question": {"titleSlug": "score-of-parentheses", "difficulty": "Medium"}
+        }
+      ]
+    }
+  }
+}

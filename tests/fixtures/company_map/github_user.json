@@ -1,0 +1,16 @@
+{
+  "login": "asharao-dev",
+  "id": 1001,
+  "type": "User",
+  "html_url": "https://github.com/asharao-dev",
+  "name": "Asha Rao",
+  "company": "@acmepay",
+  "blog": "https://asharao.dev",
+  "location": "Bengaluru",
+  "email": null,
+  "bio": "Backend at Acme Pay",
+  "twitter_username": "asharao",
+  "public_repos": 12,
+  "followers": 40,
+  "created_at": "2016-03-01T10:00:00Z"
+}

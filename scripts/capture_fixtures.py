@@ -5,6 +5,11 @@ Record real source responses so the contract tests can replay them offline.
 
     python scripts/capture_fixtures.py                  # every source
     python scripts/capture_fixtures.py --source foundit # just one
+    python scripts/capture_fixtures.py --company-map    # company-map importers
+    python scripts/capture_fixtures.py --events         # Events: Luma iCal feeds, GDG pages, Eventbrite API
+    python scripts/capture_fixtures.py --events --events-source gdg   # just the GDG pages
+    EVENTBRITE_TOKEN=... python scripts/capture_fixtures.py --events --events-source eventbrite
+    python scripts/capture_fixtures.py --practice       # practice GitHub responses
 
 Rather than guessing each scraper's request URLs, this wraps
 ``ScraplingManager.fetch_html_or_json`` and records every call the scraper
@@ -23,12 +28,34 @@ import argparse
 import asyncio
 import gzip
 import json
+import os
+import re
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
+from urllib.parse import urlsplit
+
+# Run as a file (``python scripts/capture_fixtures.py``) the script's own folder is sys.path[0],
+# so the repository root is added here, as scripts/refresh_events.py does.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from ingestion.scrapling_manager import ScraplingManager
 from ingestion.sources.registry import LiveSource, live_source_registry
+from scripts.fixture_privacy import (
+    bare_json_page,
+    gdg_chapter_people,
+    gdg_event_people,
+    pseudonymise_ics,
+    reduce_eventbrite_event,
+    reduce_eventbrite_list,
+    reduce_gdg_chapter,
+    reduce_gdg_event,
+    scrub_gdg_slug,
+)
+
+if TYPE_CHECKING:
+    import httpx
 
 FIXTURE_DIR = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "sources"
 
@@ -130,10 +157,619 @@ async def main_async(args: argparse.Namespace) -> int:
     return 0 if written else 1
 
 
+COMPANY_MAP_DIR = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "company_map"
+_WIKIDATA_KEEP = 40  # companies
+_OVERPASS_KEEP = 80  # elements
+#: The YC entries the tests pin: every case the parser has a rule for (active,
+#: inactive, acquired, listed, no website, a Play Store "website", a tracking
+#: query, several offices, other cities). A slug that has left the directory is
+#: reported, not silently replaced.
+_YC_KEEP_SLUGS = (
+    "razorpay", "meesho", "markupwand", "drivezy", "scribe", "supr-daily", "chutney-inc",
+    "recordbook", "onefin", "100x", "statiq", "dockup", "circuithub", "craze", "medplum",
+)  # fmt: skip
+_YC_DESCRIPTION_KEEP = 400  # characters of long_description
+_GITHUB_SEARCH_KEEP = 14  # search results
+#: Organisations the tests pin: a real company, one with no website and no
+#: repository, one in several cities, one whose link has no scheme.
+_GITHUB_ORGS = ("SigNoz", "swiggy-private", "hotstar", "Auquan")
+
+
+def _write_fixture(name: str, data: object) -> None:
+    text = json.dumps(data, indent=1, ensure_ascii=False) + "\n"
+    (COMPANY_MAP_DIR / name).write_text(text, encoding="utf-8", newline="\n")
+
+
+async def capture_yc(client: httpx.AsyncClient) -> None:
+    """Record ``yc.json``: the pinned entries of the directory, descriptions cut short."""
+    from services.company_map import yc
+
+    directory = await yc.fetch(client)
+    by_slug = {entry.get("slug"): entry for entry in directory}
+    missing = [slug for slug in _YC_KEEP_SLUGS if slug not in by_slug]
+    kept = [by_slug[slug] for slug in _YC_KEEP_SLUGS if slug in by_slug]
+    for entry in kept:
+        entry["long_description"] = (entry.get("long_description") or "")[:_YC_DESCRIPTION_KEEP]
+    _write_fixture("yc.json", kept)
+    note = f" (gone from the directory: {missing})" if missing else ""
+    print(f"  yc        {len(kept)} companies{note}")
+
+
+async def capture_github_orgs(client: httpx.AsyncClient) -> None:
+    """Record ``github_org_search.json`` and ``github_orgs.json`` (contact email blanked)."""
+    from services.company_map import github_orgs
+
+    page = await github_orgs.search_page(client, github_orgs.LOCATIONS[0], 1)
+    page["items"] = page.get("items", [])[:_GITHUB_SEARCH_KEEP]
+    _write_fixture("github_org_search.json", page)
+    print(f"  github    {len(page['items'])} search results")
+
+    organisations: dict[str, object] = {}
+    for login in _GITHUB_ORGS:
+        org = await github_orgs.fetch_org(client, login)
+        if org is not None:
+            org["email"] = None
+            organisations[login] = org
+    _write_fixture("github_orgs.json", organisations)
+    print(f"  github    {len(organisations)} organisations")
+
+
+async def capture_company_map() -> int:
+    """
+    Re-record the company-map importer fixtures: Wikidata, Overpass, the
+    Y Combinator directory, one GitHub organisation search and four
+    organisation records, and the four news feeds, trimmed so they stay small.
+    The people fixtures (GitHub members, Tavily) are synthetic by design and
+    are not recorded: real responses would put real individuals' details in
+    the repository. The GitHub organisation records are organisations, and
+    their contact email is blanked.
+    """
+    import re
+
+    import httpx
+
+    from services.company_map import osm, wikidata
+    from services.company_map.news_feeds import FEEDS, fetch_feed
+
+    COMPANY_MAP_DIR.mkdir(parents=True, exist_ok=True)
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        payload = await wikidata.fetch(client)
+        rows = payload.get("results", {}).get("bindings", [])
+        keep = list(dict.fromkeys(r["item"]["value"] for r in rows if "item" in r))[:_WIKIDATA_KEEP]
+        payload["results"]["bindings"] = [r for r in rows if r.get("item", {}).get("value") in keep]
+        (COMPANY_MAP_DIR / "wikidata.json").write_text(json.dumps(payload, indent=1), encoding="utf-8")
+        print(f"  wikidata  {len(keep)} companies")
+
+        overpass = await osm.fetch(client)
+        overpass["elements"] = overpass.get("elements", [])[:_OVERPASS_KEEP]
+        (COMPANY_MAP_DIR / "overpass.json").write_text(json.dumps(overpass, indent=1), encoding="utf-8")
+        print(f"  overpass  {len(overpass['elements'])} elements")
+
+        await capture_yc(client)
+        await capture_github_orgs(client)
+
+        for source in FEEDS:
+            xml = await fetch_feed(client, source)
+            # Full article bodies are copyrighted and large; the parser never reads them.
+            xml = re.sub(rb"<content:encoded>.*?</content:encoded>", b"", xml, flags=re.S)
+            (COMPANY_MAP_DIR / f"rss_{source}.xml").write_bytes(xml)
+            print(f"  rss_{source:9} {len(xml) // 1024} KB")
+    return 0
+
+
+# ── Events ───────────────────────────────────────────────────────────────────
+
+EVENTS_DIR = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "events"
+EVENT_SOURCES = Path(__file__).resolve().parent.parent / "data" / "events" / "sources.json"
+_LUMA_CALENDARS_RECORDED = 2  # the first calendars in sources.json; the rest are not replayed
+_LUMA_GAP_S = 1.0  # one request a second
+
+
+def _slug(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+
+
+async def capture_events_luma(redact: Sequence[str] = ()) -> int:
+    """
+    Record the Luma iCal feeds the tests replay: the Bengaluru Discover feed and
+    the first two curated calendars in ``data/events/sources.json``. Each is
+    fetched once through the same ``fetch_feed`` the app uses (one request a
+    second), checked to parse, pseudonymised, and written. Returns a process
+    exit code: 0 when every planned file was written.
+
+    People are pseudonymised on the way in (see :func:`pseudonymise_ics`), so a
+    real host's name never reaches the repository. Review the diff for people
+    the rules cannot see, such as a speaker named in a description, and re-run
+    with ``--redact "Full Name"`` for each.
+    """
+    import httpx
+
+    from services.events import luma
+
+    sources = json.loads(EVENT_SOURCES.read_text(encoding="utf-8"))["luma"]
+    plan: list[tuple[str, Literal["discover", "calendar"], str]] = [
+        (f"luma_discover_{_slug(entry['name'])}.ics", "discover", entry["id"])
+        for entry in sources["discover"][:1]
+    ] + [
+        (f"luma_calendar_{_slug(entry['name'])}.ics", "calendar", entry["id"])
+        for entry in sources["calendars"][:_LUMA_CALENDARS_RECORDED]
+    ]
+    EVENTS_DIR.mkdir(parents=True, exist_ok=True)
+    written = 0
+    async with httpx.AsyncClient() as client:
+        for index, (filename, kind, ident) in enumerate(plan):
+            if index:
+                await asyncio.sleep(_LUMA_GAP_S)
+            try:
+                data = await luma.fetch_feed(client, luma.feed_url(kind, ident))
+            except (httpx.HTTPError, ValueError) as exc:
+                print(f"  luma {kind:8} {ident} FAILED: {type(exc).__name__}: {exc}")
+                continue
+            events = await asyncio.to_thread(luma.parse_feed, data)
+            if not events:
+                print(f"  luma {kind:8} {ident} parsed to 0 events - not writing a fixture")
+                continue
+            text = pseudonymise_ics(data.decode("utf-8-sig", errors="replace"), extra_names=redact)
+            (EVENTS_DIR / filename).write_text(text, encoding="utf-8", newline="\n")
+            print(f"  luma {kind:8} {len(events):>3} events, {len(text) // 1024} KB -> {filename}")
+            written += 1
+    print(f"\nWrote {written} of {len(plan)} Luma fixture(s).")
+    return 0 if written == len(plan) else 1
+
+
+_GDG_EVENT_PAGES = 2  # event pages recorded: upcoming events first, then the newest past ones
+
+
+def _write_gz(path: Path, data: bytes) -> None:
+    """Gzip with no timestamp in the header, so recording the same page twice gives the same file."""
+    path.write_bytes(gzip.compress(data, compresslevel=9, mtime=0))
+
+
+async def capture_events_gdg(
+    redact: Sequence[str] = (), *, client: httpx.AsyncClient | None = None
+) -> int:
+    """
+    Record the GDG pages the tests replay: each chapter page in
+    ``data/events/sources.json`` and up to two event pages. Every request goes
+    through ``gdg.fetch_page`` (so ``assert_allowed`` runs first and ``/api/`` and
+    ``/gql/`` are never touched), at least ``CRAWL_DELAY_S`` after the one before.
+
+    The event pages are the chapters' upcoming events, in chapter order, and then
+    (when there are fewer than two) their past events, newest first as each page
+    lists them. Each page is cut down to the one JSON block its parser reads and
+    every person in it is pseudonymised (see ``reduce_gdg_chapter`` and
+    ``reduce_gdg_event``), then written gzipped. A page that does not hold the
+    expected JSON, or whose reduction no longer parses, is reported and not
+    written: a fixture that proves nothing is never made up. Returns a process
+    exit code: 0 when every planned file was written.
+
+    Review the diff for people the rules cannot see, such as a speaker named in
+    a description, and re-run with ``--redact "Full Name"`` for each. ``client``
+    is for tests; a run on its own makes its own.
+    """
+    import httpx
+
+    from services.events import gdg
+
+    chapters = json.loads(EVENT_SOURCES.read_text(encoding="utf-8"))["gdg"]["chapters"]
+    own_client = client is None
+    http = httpx.AsyncClient() if client is None else client
+    requests = 0
+    written = 0
+
+    async def fetch(url: str) -> bytes | None:
+        nonlocal requests
+        if requests:
+            await asyncio.sleep(gdg.CRAWL_DELAY_S)
+        requests += 1
+        try:
+            return await gdg.fetch_page(http, url)
+        except (httpx.HTTPError, ValueError) as exc:
+            print(f"  gdg {url[len(gdg.BASE) :]} FAILED: {type(exc).__name__}: {exc}")
+            return None
+
+    # (real slug, chapter name, people already known): the real slug is what is requested.
+    upcoming: list[tuple[str, str, list[str]]] = []
+    past: list[tuple[str, str, list[str]]] = []
+    try:
+        EVENTS_DIR.mkdir(parents=True, exist_ok=True)
+        for entry in chapters:
+            slug, name = entry["slug"], entry["name"]
+            data = await fetch(gdg.chapter_url(slug))
+            if data is None:
+                continue
+            blob = await asyncio.to_thread(gdg.chapter_blob, data)
+            if blob is None:
+                print(f"  gdg chapter {slug} holds no page data - not writing a fixture")
+                continue
+            listings = await asyncio.to_thread(gdg.parse_chapter, data)
+            try:
+                reduced = reduce_gdg_chapter(blob, redact=redact)
+            except ValueError as exc:
+                print(
+                    f"  gdg chapter {slug} has no usable page data ({exc}) - not writing a fixture"
+                )
+                continue
+            page = bare_json_page(
+                reduced, script_type="application/json", script_id="__NEXT_DATA__"
+            )
+            _write_gz(EVENTS_DIR / f"gdg_chapter_{slug}.html.gz", page)
+            people = [*gdg_chapter_people(blob), *redact]
+            upcoming += [(item.slug, name, people) for item in listings]
+            past += [(past_slug, name, people) for past_slug in gdg.past_event_slugs(blob)]
+            print(
+                f"  gdg chapter {slug:22} {len(listings):>2} upcoming -> gdg_chapter_{slug}.html.gz"
+            )
+            written += 1
+
+        chosen: dict[str, tuple[str, list[str]]] = {}
+        for slug, name, people in [*upcoming, *past]:
+            if len(chosen) < _GDG_EVENT_PAGES:
+                chosen.setdefault(slug, (name, people))
+        for slug, (name, people) in chosen.items():
+            data = await fetch(gdg.event_page_url(slug))
+            if data is None:
+                continue
+            block = await asyncio.to_thread(gdg.event_json_ld, data)
+            try:
+                reduced = reduce_gdg_event(block, redact=people)
+            except ValueError as exc:
+                print(f"  gdg event {slug} has no Event JSON-LD ({exc}) - not writing a fixture")
+                continue
+            names = [*people, *gdg_event_people(block or {})]
+            kept_slug = scrub_gdg_slug(slug, names)
+            page = bare_json_page(reduced, script_type="application/ld+json")
+            facts = await asyncio.to_thread(
+                gdg.parse_event_page, page, slug=kept_slug, chapter=name
+            )
+            if facts is None:
+                print(f"  gdg event {slug} no longer parses once reduced - not writing a fixture")
+                continue
+            filename = f"gdg_event_{kept_slug}.html.gz"
+            _write_gz(EVENTS_DIR / filename, page)
+            print(f"  gdg event {facts.starts_at:%Y-%m-%d} {facts.title[:40]!r} -> {filename}")
+            written += 1
+    finally:
+        if own_client:
+            await http.aclose()
+    planned = len(chapters) + _GDG_EVENT_PAGES
+    print(f"\nWrote {written} of {planned} GDG fixture(s) in {requests} request(s).")
+    return 0 if written == planned else 1
+
+
+_EVENTBRITE_LIST_EVENTS = 3  # events kept in the recorded list page
+_EVENTBRITE_GAP_S = 1.0  # one request a second
+_EVENTBRITE_RECORDINGS = 2  # the event and the list page
+
+
+def _eventbrite_token() -> str | None:
+    """The personal token from ``EVENTBRITE_TOKEN`` in the environment, else from the settings
+    (``.env``); ``None`` when there is none. It is never printed."""
+    token = os.environ.get("EVENTBRITE_TOKEN", "").strip()
+    if token:
+        return token
+    try:
+        from config.settings import get_settings
+
+        return get_settings().eventbrite_token
+    except ValueError:  # the settings need unrelated keys that a bare checkout lacks
+        return None
+
+
+def _listed(entries: object) -> list[dict[str, Any]]:
+    return [e for e in entries if isinstance(e, dict)] if isinstance(entries, list) else []
+
+
+async def capture_events_eventbrite(
+    redact: Sequence[str] = (),
+    *,
+    client: httpx.AsyncClient | None = None,
+    token: str | None = None,
+) -> int:
+    """
+    Record the two Eventbrite payloads the tests replay, through the official API only: the
+    first curated organiser's live events (one page) and then one of those events by id with
+    ``expand=venue,organizer,format``. When ``organizers/{id}/events`` is refused (403 or 404, a
+    token that is not a member of the organisation) the first curated venue's events are used
+    instead; add ``"organizer_endpoint": "unavailable"`` under ``"eventbrite"`` in
+    ``data/events/sources.json`` when that happens. Requests are one a second.
+
+    Without ``EVENTBRITE_TOKEN``, or with no organiser or venue in ``sources.json``, nothing is
+    requested or written: the committed fixtures (hand-written from the documented shapes
+    until a token exists) are left as they are, and the exit code is 0. Both files are written
+    together or not at all, and only once each still parses after being cut down (see
+    ``reduce_eventbrite_event``): a recording that proves nothing never replaces one that does.
+    The token is never printed or written. Review the diff for people the rules cannot see,
+    and re-run with ``--redact "Full Name"`` for each. ``client`` and ``token`` are for tests.
+    """
+    import httpx
+
+    from services.events import eventbrite
+
+    key = token if token is not None else _eventbrite_token()
+    if not key:
+        print(
+            "  eventbrite SKIPPED: EVENTBRITE_TOKEN is not set, so no request was made. "
+            "tests/fixtures/events/eventbrite_*.json are left as they are."
+        )
+        return 0
+    config = json.loads(EVENT_SOURCES.read_text(encoding="utf-8")).get("eventbrite", {})
+    organizers, venues = _listed(config.get("organizers")), _listed(config.get("venues"))
+    if not organizers and not venues:
+        print(
+            "  eventbrite SKIPPED: data/events/sources.json lists no organiser or venue "
+            f"({config.get('status', 'no status')}). Nothing was requested or written."
+        )
+        return 0
+
+    own_client = client is None
+    http = httpx.AsyncClient() if client is None else client
+    requests = 0
+
+    async def call(label: str, fetch: Any, *args: str) -> tuple[dict[str, Any] | None, int | None]:
+        """The payload (or ``None``) and, for an HTTP error status, that status."""
+        nonlocal requests
+        if requests:
+            await asyncio.sleep(_EVENTBRITE_GAP_S)
+        requests += 1
+        try:
+            return await fetch(http, key, *args), None
+        except httpx.HTTPStatusError as exc:
+            print(f"  eventbrite {label} FAILED: {type(exc).__name__}: {exc}")
+            return None, exc.response.status_code
+        except (httpx.HTTPError, ValueError) as exc:
+            print(f"  eventbrite {label} FAILED: {type(exc).__name__}: {exc}")
+            return None, None
+
+    recorded: dict[str, dict[str, Any]] = {}
+    try:
+        page: dict[str, Any] | None = None
+        if organizers:
+            ident = str(organizers[0].get("id"))
+            page, status = await call(f"organizer {ident}", eventbrite.organizer_events, ident)
+            if page is None and status in (403, 404):
+                print(
+                    '  eventbrite: organizer events are not served to this token; record "organizer_endpoint": '
+                    '"unavailable" under "eventbrite" in data/events/sources.json'
+                )
+        if page is None and venues:
+            ident = str(venues[0].get("id"))
+            page, _ = await call(f"venue {ident}", eventbrite.venue_events, ident)
+        if page is None:
+            print("  eventbrite: no list page could be read - not writing a fixture")
+            return 1
+        events, _ = eventbrite.parse_event_list(page)
+        if not events:
+            print("  eventbrite: the list page parsed to 0 events - not writing a fixture")
+            return 1
+        try:
+            reduced_page = reduce_eventbrite_list(
+                page, redact=redact, limit=_EVENTBRITE_LIST_EVENTS
+            )
+        except ValueError as exc:
+            print(f"  eventbrite: the list page cannot be recorded ({exc}) - not writing a fixture")
+            return 1
+        if not eventbrite.parse_event_list(reduced_page)[0]:
+            print("  eventbrite: the list no longer parses once reduced - not writing a fixture")
+            return 1
+        recorded["eventbrite_organizer_events.json"] = reduced_page
+
+        wanted = events[0].external_id
+        payload, _ = await call(f"event {wanted}", eventbrite.get_event, wanted)
+        if payload is None:
+            print("  eventbrite: the event could not be read - not writing a fixture")
+            return 1
+        try:
+            reduced_event = reduce_eventbrite_event(payload, redact=redact)
+        except ValueError as exc:
+            print(f"  eventbrite: the event cannot be recorded ({exc}) - not writing a fixture")
+            return 1
+        facts = eventbrite.parse_event(reduced_event)
+        if facts is None:
+            print("  eventbrite: the event no longer parses once reduced - not writing a fixture")
+            return 1
+        recorded["eventbrite_event.json"] = reduced_event
+    finally:
+        if own_client:
+            await http.aclose()
+
+    EVENTS_DIR.mkdir(parents=True, exist_ok=True)
+    for filename, body in recorded.items():
+        text = json.dumps(body, indent=2, ensure_ascii=False) + "\n"
+        (EVENTS_DIR / filename).write_text(text, encoding="utf-8", newline="\n")
+        print(f"  eventbrite {filename}")
+    print(f"  eventbrite event {facts.starts_at:%Y-%m-%d} {facts.title[:40]!r}")
+    print(
+        f"\nWrote {len(recorded)} of {_EVENTBRITE_RECORDINGS} Eventbrite fixture(s) "
+        f"in {requests} request(s)."
+    )
+    return 0
+
+
+async def capture_events(redact: Sequence[str] = (), sources: Sequence[str] = ()) -> int:
+    """Record the Events fixtures of ``sources`` ("luma", "gdg", "eventbrite"; none means all)."""
+    wanted = set(sources) or {"luma", "gdg", "eventbrite"}
+    codes = []
+    if "luma" in wanted:
+        codes.append(await capture_events_luma(redact))
+    if "gdg" in wanted:
+        codes.append(await capture_events_gdg(redact))
+    if "eventbrite" in wanted:
+        codes.append(await capture_events_eventbrite(redact))
+    return 0 if all(code == 0 for code in codes) else 1
+
+
+PRACTICE_DIR = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "practice"
+#: Practice reads GitHub only. Its LeetCode fixtures are written by hand; no script fetches the LeetCode site.
+_PRACTICE_HOSTS = ("api.github.com",)
+_GITHUB_JSON = "application/vnd.github+json"
+_GITHUB_RAW = "application/vnd.github.raw"
+
+
+def _blank_commit_emails(commits: list[dict[str, Any]]) -> None:
+    """Blank the author and committer emails: a commit's contact address is a real person's, and the fixture never keeps one."""
+    for entry in commits:
+        for role in ("author", "committer"):
+            entry["commit"][role]["email"] = None
+
+
+#: Fictional stand-ins for the people GitHub reports. The GitHub mascot account is
+#: not a person, so it is kept as published.
+FAKE_LOGIN = "demo-builder"
+FAKE_NAME = "Demo Builder"
+FAKE_USER_ID = 90000001
+_MASCOT = frozenset({"octocat", "The Octocat"})
+
+
+def _fictional_user(user: dict[str, Any] | None) -> dict[str, Any] | None:
+    """A fictional GitHub account in place of a real one. None and the mascot pass through."""
+    if user is None or user.get("login") in _MASCOT:
+        return user
+    return {
+        "login": FAKE_LOGIN,
+        "id": FAKE_USER_ID,
+        "avatar_url": f"https://avatars.githubusercontent.com/u/{FAKE_USER_ID}?v=4",
+        "html_url": f"https://github.com/{FAKE_LOGIN}",
+        "url": f"https://api.github.com/users/{FAKE_LOGIN}",
+        "type": "User",
+    }
+
+
+def _pseudonymise(commits: list[dict[str, Any]], events: list[dict[str, Any]]) -> dict[str, str]:
+    """
+    Replace every real person in the commit history and the activity feed with a
+    fictional one, in place. Returns the real names and logins replaced, mapped to
+    their stand-ins, so the same renames also reach commit messages and URLs.
+    """
+    renames: dict[str, str] = {}
+    _blank_commit_emails(commits)
+    for entry in commits:
+        for role in ("author", "committer"):
+            person = entry["commit"][role]
+            account = entry.get(role)
+            login = account.get("login") if account else None
+            if login in _MASCOT or person.get("name") in _MASCOT:
+                continue
+            if person.get("name"):
+                renames[person["name"]] = FAKE_NAME
+            if login:
+                renames[login] = FAKE_LOGIN
+            person["name"] = FAKE_NAME
+            entry[role] = _fictional_user(account)
+    for event in events:
+        actor = event.get("actor")
+        login = actor.get("login") if actor else None
+        if actor and login not in _MASCOT:
+            if login:
+                renames[login] = FAKE_LOGIN
+            event["actor"] = _fictional_user(actor)
+    return renames
+
+
+def _apply_renames(text: str, renames: dict[str, str]) -> str:
+    """
+    Rename real identities in serialised JSON, in any casing. Longest first, so a
+    full name is replaced before a prefix of it could be.
+    """
+    for real in sorted(renames, key=len, reverse=True):
+        # Doubled backslashes keep the stand-in literal in re.sub's replacement syntax.
+        literal = renames[real].replace("\\", "\\\\")
+        text = re.sub(re.escape(real), literal, text, flags=re.IGNORECASE)
+    return text
+
+
+async def capture_practice(client: httpx.AsyncClient) -> None:
+    """
+    Record the GitHub responses the Practice reader replays: the octocat sample
+    repository (repo, commits, tree, README) and the activity feed of the repository
+    named by PRACTICE_ACTIVITY_REPO (owner/name). Unauthenticated unless GITHUB_TOKEN is set.
+    """
+    activity_repo = os.environ.get("PRACTICE_ACTIVITY_REPO", "")
+    if not activity_repo:
+        raise SystemExit(
+            "set PRACTICE_ACTIVITY_REPO=owner/name to record that repository's activity"
+        )
+    PRACTICE_DIR.mkdir(parents=True, exist_ok=True)
+    auth = (
+        {"Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}"}
+        if os.environ.get("GITHUB_TOKEN")
+        else {}
+    )
+
+    async def get(path: str, accept: str) -> httpx.Response:
+        url = f"https://api.github.com{path}"
+        assert urlsplit(url).hostname in _PRACTICE_HOSTS, url
+        response = await client.get(url, headers={**auth, "Accept": accept})
+        response.raise_for_status()
+        return response
+
+    json_responses = {
+        "github_repo.json": await get("/repos/octocat/Hello-World", _GITHUB_JSON),
+        "github_activity.json": await get(
+            f"/repos/{activity_repo}/activity?per_page=20", _GITHUB_JSON
+        ),
+        "github_commits.json": await get(
+            "/repos/octocat/Hello-World/commits?per_page=5", _GITHUB_JSON
+        ),
+        "github_tree.json": await get(
+            "/repos/octocat/Hello-World/git/trees/master?recursive=1", _GITHUB_JSON
+        ),
+    }
+    payloads = {name: response.json() for name, response in json_responses.items()}
+    renames = _pseudonymise(payloads["github_commits.json"], payloads["github_activity.json"])
+    for name, payload in payloads.items():
+        text = _apply_renames(json.dumps(payload, indent=2, ensure_ascii=False), renames)
+        (PRACTICE_DIR / name).write_text(text + "\n", encoding="utf-8", newline="\n")
+        print(f"  practice  {name}")
+
+    readme = await get("/repos/octocat/Hello-World/readme", _GITHUB_RAW)
+    (PRACTICE_DIR / "github_readme.md").write_bytes(readme.content)
+    print("  practice  github_readme.md")
+
+
+async def _capture_practice_main() -> int:
+    import httpx
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        await capture_practice(client)
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Record live source responses as test fixtures.")
     parser.add_argument("--source", action="append", help="Capture only this source (repeatable)")
+    parser.add_argument(
+        "--company-map", action="store_true", help="Record the company-map importer fixtures"
+    )
+    parser.add_argument(
+        "--events",
+        action="store_true",
+        help="Record the Events fixtures (Luma iCal feeds, GDG pages, Eventbrite API)",
+    )
+    parser.add_argument(
+        "--events-source",
+        action="append",
+        default=[],
+        choices=("luma", "gdg", "eventbrite"),
+        help="With --events: record only this source (repeatable)",
+    )
+    parser.add_argument(
+        "--redact",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="With --events: also rename this person wherever a recording names them (repeatable)",
+    )
+    parser.add_argument(
+        "--practice", action="store_true", help="Record the practice GitHub fixtures"
+    )
     args = parser.parse_args()
+    if args.company_map:
+        return asyncio.run(capture_company_map())
+    if args.events:
+        return asyncio.run(capture_events(args.redact, args.events_source))
+    if args.practice:
+        return asyncio.run(_capture_practice_main())
     return asyncio.run(main_async(args))
 
 

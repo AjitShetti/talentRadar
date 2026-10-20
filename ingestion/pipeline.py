@@ -18,6 +18,7 @@ from typing import Any
 from ingestion.embeddings.vector_store import get_vector_store
 from ingestion.parsers.jd_parser import JDParser
 from ingestion.parsers.schemas import ParsedJobDescription, RawJobResult
+from services.job_persistence import posting_company
 from storage.database import AsyncSessionLocal
 from storage.models import IngestionStatus
 from storage.repository import UnitOfWork
@@ -28,13 +29,6 @@ logger = logging.getLogger(__name__)
 def _stable_id(text: str) -> str:
     """MD5 fingerprint of a URL or title+company string used as external_id."""
     return hashlib.md5(text.encode()).hexdigest()
-
-
-def _company_domain(company_name: str) -> str:
-    """Create a deterministic pseudo-domain key from a company name."""
-    import re
-    slug = re.sub(r"[^\w]", "-", company_name.lower()).strip("-")
-    return f"{slug}.talentradar.internal"
 
 
 async def persist_parsed(
@@ -69,7 +63,9 @@ async def persist_parsed(
         try:
             for data in parsed:
                 if not data.source_url or not is_valid_job_url(data.source_url):
-                    logger.warning("Dropping invalid or listing job URL in persist_parsed: %s", data.source_url)
+                    logger.warning(
+                        "Dropping invalid or listing job URL in persist_parsed: %s", data.source_url
+                    )
                     skipped += 1
                     continue
 
@@ -80,18 +76,16 @@ async def persist_parsed(
                 ):
                     logger.info(
                         "Skipping non-India posting: %r at %r (location=%r)",
-                        data.title, data.company, data.location,
+                        data.title,
+                        data.company,
+                        data.location,
                     )
                     skipped += 1
                     continue
 
                 job_source = detect_source_from_url(data.source_url)
 
-                company_slug = _company_domain(data.company)
-                company, _ = await uow.companies.upsert_by_domain(
-                    domain=company_slug,
-                    defaults={"name": data.company},
-                )
+                company = await posting_company(uow, data.company)
 
                 external_id = _stable_id(data.source_url or data.title + data.company)
                 job_kwargs = data.to_job_kwargs()
@@ -112,25 +106,27 @@ async def persist_parsed(
                 else:
                     updated += 1
 
-                embedding_items.append({
-                    "job_id": external_id,
-                    "text": (job_kwargs.get("description_clean") or data.raw_text)[:4096],
-                    "metadata": {
-                        "title": data.title,
-                        "company": data.company,
-                        "location": data.location or "",
-                        "country": job_kwargs.get("country") or "",
-                        "city": job_kwargs.get("city") or "",
-                        "is_remote": data.is_remote,
-                        "seniority": data.seniority or "",
-                        "employment_type": data.employment_type or "",
-                        "skills_str": ", ".join(data.skills),
-                        "source_url": data.source_url or "",
-                        "salary": data.salary or "",
-                        "source": job_source,
-                    },
-                    "internal_job_id": job.id,
-                })
+                embedding_items.append(
+                    {
+                        "job_id": external_id,
+                        "text": (job_kwargs.get("description_clean") or data.raw_text)[:4096],
+                        "metadata": {
+                            "title": data.title,
+                            "company": data.company,
+                            "location": data.location or "",
+                            "country": job_kwargs.get("country") or "",
+                            "city": job_kwargs.get("city") or "",
+                            "is_remote": data.is_remote,
+                            "seniority": data.seniority or "",
+                            "employment_type": data.employment_type or "",
+                            "skills_str": ", ".join(data.skills),
+                            "source_url": data.source_url or "",
+                            "salary": data.salary or "",
+                            "source": job_source,
+                        },
+                        "internal_job_id": job.id,
+                    }
+                )
 
             await session.commit()
 
@@ -162,6 +158,7 @@ async def persist_parsed(
 
         except Exception as exc:
             import traceback
+
             logger.exception("Pipeline failed run_id=%s: %s", run_id, exc)
             try:
                 await uow.ingestion_runs.fail(

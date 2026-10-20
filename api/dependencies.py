@@ -9,8 +9,31 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from storage.database import AsyncSessionLocal
 from storage.repository import CompanyRepository, IngestionRunRepository, JobRepository, UnitOfWork
+
+
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
+    """
+    Provide a bare AsyncSession for services that take one (``services/events``).
+
+    Commits when the request succeeds and rolls back when it raises, exactly as
+    :func:`get_unit_of_work` does.
+
+    Usage:
+        @router.get("/events")
+        async def list_events(session: AsyncSession = Depends(get_session)):
+            ...
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
 
 
 async def get_unit_of_work() -> AsyncGenerator[UnitOfWork, None]:

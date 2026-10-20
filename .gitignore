@@ -233,6 +233,9 @@ __marimo__/
 # feeds Company Intel is source and must stay tracked.
 /data/*
 !/data/companies/
+!/data/company_sources/
+!/data/events/
+!/data/practice/
 data/raw/
 data/raw/**
 /.agents

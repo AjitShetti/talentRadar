@@ -17,9 +17,9 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import delete, select
+from sqlalchemy import CursorResult, delete, select
 
 from services.base import parse_uuid
 from storage.database import AsyncSessionLocal
@@ -121,7 +121,7 @@ async def forget(*, user_id: str, memory_id: str) -> bool:
             .where(AgentMemory.id == memory_uuid)
         )
         await session.commit()
-        return bool(result.rowcount)
+        return bool(cast("CursorResult[Any]", result).rowcount)
     finally:
         await session.close()
 
@@ -148,6 +148,11 @@ async def dismiss_card(
     )
 
 
+def _as_utc(moment: datetime) -> datetime:
+    """A stored timestamp as UTC-aware: SQLite hands them back naive, and they were stored as UTC."""
+    return moment.replace(tzinfo=UTC) if moment.tzinfo is None else moment
+
+
 async def active_dismissals(*, user_id: str) -> set[str]:
     """Card ids the user has dismissed and that have not expired yet."""
     now = datetime.now(tz=UTC)
@@ -164,7 +169,7 @@ async def active_dismissals(*, user_id: str) -> set[str]:
         return {
             m.content
             for m in result.scalars().all()
-            if m.expires_at is None or m.expires_at > now
+            if m.expires_at is None or _as_utc(m.expires_at) > now
         }
     finally:
         await session.close()

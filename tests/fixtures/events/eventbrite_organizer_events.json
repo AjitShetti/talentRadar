@@ -1,0 +1,190 @@
+{
+  "_comment": "hand-written from the documented v3 shapes; re-record with a token",
+  "pagination": {
+    "object_count": 5,
+    "page_number": 1,
+    "page_size": 3,
+    "page_count": 2,
+    "continuation": "eyJwYWdlIjogMn0",
+    "has_more_items": true
+  },
+  "events": [
+    {
+      "name": {
+        "text": "Async Rust in Production: Bengaluru Meetup",
+        "html": "Async Rust in Production: Bengaluru Meetup"
+      },
+      "description": {
+        "text": "An evening of talks on running async Rust services in production.",
+        "html": "<P>An evening of talks on running async Rust services in production.</P>"
+      },
+      "id": "712345678901",
+      "url": "https://www.eventbrite.com/e/async-rust-in-production-bengaluru-meetup-tickets-712345678901",
+      "start": {
+        "timezone": "Asia/Kolkata",
+        "local": "2026-11-21T18:00:00",
+        "utc": "2026-11-21T12:30:00Z"
+      },
+      "end": {
+        "timezone": "Asia/Kolkata",
+        "local": "2026-11-21T20:30:00",
+        "utc": "2026-11-21T15:00:00Z"
+      },
+      "status": "live",
+      "currency": "INR",
+      "listed": true,
+      "online_event": false,
+      "is_free": true,
+      "summary": "Two talks on running async Rust services in production, then open questions and networking.",
+      "organizer_id": "98765432101",
+      "venue_id": "45678901234",
+      "category_id": "102",
+      "subcategory_id": "2004",
+      "format_id": "2",
+      "resource_uri": "https://www.eventbriteapi.com/v3/events/712345678901/",
+      "venue": {
+        "address": {
+          "address_1": "14 Quill Lane",
+          "address_2": "5th Block",
+          "city": "Bengaluru",
+          "region": "KA",
+          "postal_code": "560095",
+          "country": "IN",
+          "latitude": "12.9352",
+          "longitude": "77.6245",
+          "localized_address_display": "14 Quill Lane, 5th Block, Koramangala, Bengaluru, KA 560095",
+          "localized_area_display": "Bengaluru, KA"
+        },
+        "resource_uri": "https://www.eventbriteapi.com/v3/venues/45678901234/",
+        "id": "45678901234",
+        "name": "Quill Commons Koramangala",
+        "latitude": "12.9352",
+        "longitude": "77.6245"
+      },
+      "organizer": {
+        "resource_uri": "https://www.eventbriteapi.com/v3/organizers/98765432101/",
+        "id": "98765432101",
+        "name": "Quill Tech Meetups",
+        "url": "https://www.eventbrite.com/o/quill-tech-meetups-98765432101",
+        "website": "https://quilltechmeetups.example"
+      },
+      "format": {
+        "resource_uri": "https://www.eventbriteapi.com/v3/formats/2/",
+        "id": "2",
+        "name": "Seminar or Talk"
+      }
+    },
+    {
+      "name": {
+        "text": "Kubernetes Clinic (online)",
+        "html": "Kubernetes Clinic (online)"
+      },
+      "description": {
+        "text": "Bring your cluster problems. We debug them live.",
+        "html": "<P>Bring your cluster problems. We debug them live.</P>"
+      },
+      "id": "712345678902",
+      "url": "https://www.eventbrite.com/e/kubernetes-clinic-online-tickets-712345678902",
+      "start": {
+        "timezone": "Asia/Kolkata",
+        "local": "2026-11-28T19:30:00",
+        "utc": "2026-11-28T14:00:00Z"
+      },
+      "end": {
+        "timezone": "Asia/Kolkata",
+        "local": "2026-11-28T21:00:00",
+        "utc": "2026-11-28T15:30:00Z"
+      },
+      "status": "live",
+      "currency": "INR",
+      "listed": true,
+      "online_event": true,
+      "is_free": false,
+      "summary": "A live debugging session for Kubernetes clusters, run online.",
+      "organizer_id": "98765432101",
+      "venue_id": null,
+      "category_id": "102",
+      "subcategory_id": "2004",
+      "format_id": "9",
+      "resource_uri": "https://www.eventbriteapi.com/v3/events/712345678902/",
+      "venue": null,
+      "organizer": {
+        "resource_uri": "https://www.eventbriteapi.com/v3/organizers/98765432101/",
+        "id": "98765432101",
+        "name": "Quill Tech Meetups",
+        "url": "https://www.eventbrite.com/o/quill-tech-meetups-98765432101",
+        "website": "https://quilltechmeetups.example"
+      },
+      "format": {
+        "resource_uri": "https://www.eventbriteapi.com/v3/formats/9/",
+        "id": "9",
+        "name": "Class, Training, or Workshop"
+      }
+    },
+    {
+      "name": {
+        "text": "Quill Hack Night",
+        "html": "Quill Hack Night"
+      },
+      "description": {
+        "text": "Cancelled: the venue is unavailable.",
+        "html": "<P>Cancelled: the venue is unavailable.</P>"
+      },
+      "id": "712345678903",
+      "url": "https://www.eventbrite.com/e/quill-hack-night-tickets-712345678903",
+      "start": {
+        "timezone": "Asia/Kolkata",
+        "local": "2026-12-05T17:00:00",
+        "utc": "2026-12-05T11:30:00Z"
+      },
+      "end": {
+        "timezone": "Asia/Kolkata",
+        "local": "2026-12-05T21:00:00",
+        "utc": "2026-12-05T15:30:00Z"
+      },
+      "status": "canceled",
+      "currency": "INR",
+      "listed": true,
+      "online_event": false,
+      "is_free": true,
+      "summary": "An evening of building small things together.",
+      "organizer_id": "98765432101",
+      "venue_id": "45678901234",
+      "category_id": "102",
+      "subcategory_id": null,
+      "format_id": "10",
+      "resource_uri": "https://www.eventbriteapi.com/v3/events/712345678903/",
+      "venue": {
+        "address": {
+          "address_1": "14 Quill Lane",
+          "address_2": "5th Block",
+          "city": "Bengaluru",
+          "region": "KA",
+          "postal_code": "560095",
+          "country": "IN",
+          "latitude": "12.9352",
+          "longitude": "77.6245",
+          "localized_address_display": "14 Quill Lane, 5th Block, Koramangala, Bengaluru, KA 560095",
+          "localized_area_display": "Bengaluru, KA"
+        },
+        "resource_uri": "https://www.eventbriteapi.com/v3/venues/45678901234/",
+        "id": "45678901234",
+        "name": "Quill Commons Koramangala",
+        "latitude": "12.9352",
+        "longitude": "77.6245"
+      },
+      "organizer": {
+        "resource_uri": "https://www.eventbriteapi.com/v3/organizers/98765432101/",
+        "id": "98765432101",
+        "name": "Quill Tech Meetups",
+        "url": "https://www.eventbrite.com/o/quill-tech-meetups-98765432101",
+        "website": "https://quilltechmeetups.example"
+      },
+      "format": {
+        "resource_uri": "https://www.eventbriteapi.com/v3/formats/10/",
+        "id": "10",
+        "name": "Meeting or Networking Event"
+      }
+    }
+  ]
+}

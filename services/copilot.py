@@ -29,11 +29,22 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import UTC, datetime
+import uuid
+from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from domain.event_time import IST, as_utc, effective_end, ist_date
+from domain.practice_pick import topic_label
+from domain.practice_schedule import (
+    CONTEST_URL,
+    GRACE,
+    ContestWindow,
+    contest_window,
+    submission_open,
+)
 from services.agent_memory import (
     active_dismissals,
     get_memories,
@@ -41,13 +52,20 @@ from services.agent_memory import (
     remember,
 )
 from services.base import parse_uuid
+from services.practice import daily
 from storage.database import AsyncSessionLocal
 from storage.models import (
     ApplicationStatus,
     Company,
+    Event,
+    EventContact,
+    EventSave,
     InterviewSession,
     Job,
     JobApplication,
+    PracticeAttempt,
+    PracticeChallenge,
+    PracticeSettings,
 )
 
 if TYPE_CHECKING:
@@ -61,6 +79,8 @@ STALE_AFTER_DAYS = 10
 SAVED_STALE_AFTER_DAYS = 5
 #: How far ahead a scheduled interview becomes something to act on today.
 SCHEDULED_PREP_WINDOW_DAYS = 3
+#: A started take-home becomes a card this long before its deadline.
+PRACTICE_DEADLINE_WINDOW = timedelta(hours=12)
 #: Stages where silence means "chase it", as opposed to a closed outcome.
 IN_FLIGHT_STAGES = (
     ApplicationStatus.APPLIED,
@@ -70,6 +90,37 @@ IN_FLIGHT_STAGES = (
 )
 #: Memory type used for preferences the copilot infers from conversation.
 PREFERENCE_TYPE = "preference"
+#: The briefing card kinds whose title and detail may be sent to the model. An
+#: allowlist on purpose: a card kind added later (Outreach, Events, Practice) holds
+#: what the user typed or whom they are talking to, so it stays out of the prompt
+#: until someone decides it may go in. The Outreach follow-up card holds a person's
+#: name and the user's typed next step; it contributes a count and nothing else.
+MODEL_VISIBLE_CARD_KINDS = frozenset({
+    "closed_role",
+    "interview_momentum",
+    "priority",
+    "saved_backlog",
+    "scheduled_interview",
+    "stale_application",
+})
+#: The kind of the one Outreach card for everything owed today.
+FOLLOWUP_CARD_KIND = "outreach_followup"
+#: Every event card's ``kind`` starts with this (event_today, event_soon, event_met_prompt).
+EVENT_CARD_PREFIX = "event_"
+#: How far ahead the single "coming up" event card looks.
+EVENT_SOON_WINDOW_DAYS = 7
+#: How long after an event ends the briefing still asks who the user met.
+EVENT_MET_PROMPT_DAYS = 2
+#: Starts read for the event cards: far enough back for a multi-day event that ended yesterday.
+_EVENT_LOOKBACK_DAYS = 9
+_EVENT_ROWS = 200
+#: An event that starts at this hour of the IST day or later is "Tonight"; earlier, "Today".
+_EVENT_EVENING_HOUR = 17
+
+
+def _now() -> datetime:
+    """The clock. A module-level function so a test can pin it."""
+    return datetime.now(tz=UTC)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -284,6 +335,203 @@ def _clock(iso: str) -> str:
         return "a time on your tracker"
 
 
+def _event_link(event_id: uuid.UUID, anchor: str = "") -> str:
+    return f"/events?event={event_id}{anchor}"
+
+
+def _event_card(
+    event: Event,
+    status: str,
+    *,
+    card_id: str,
+    kind: str,
+    title: str,
+    detail: str,
+    tone: str,
+    label: str = "Open event",
+    anchor: str = "",
+) -> dict[str, Any]:
+    """One event card. The ids, the link and the meta are the same for all three kinds."""
+    return _card(
+        card_id=card_id,
+        kind=kind,
+        title=title,
+        detail=detail,
+        tone=tone,
+        actions=[{"label": label, "href": _event_link(event.id, anchor), "style": "primary"}],
+        meta={
+            "event_id": str(event.id),
+            "starts_at": as_utc(event.starts_at).isoformat(),
+            "status": status,
+        },
+    )
+
+
+def _event_today_word(starts: datetime, *, today: date) -> str:
+    """``"Tonight"`` for an evening start on ``today`` (IST); ``"Today"`` for anything else.
+
+    A morning meetup is not tonight, and neither is a conference that began on an earlier day
+    and is still running.
+    """
+    local = starts.astimezone(IST)
+    evening = local.date() == today and local.hour >= _EVENT_EVENING_HOUR
+    return "Tonight" if evening else "Today"
+
+
+def _event_today_detail(event: Event, *, today: date) -> str:
+    """``"18:30 at Indiranagar, hosted by Rust Bengaluru. …"`` naming only what is stored.
+
+    An event that began on an earlier IST date has no start clock worth reading: "22:00" next
+    to "Today:" looks like a time ahead. It says it is on now and when it ends instead, as a
+    clock if that is today and as a date if it runs on.
+    """
+    begins = as_utc(event.starts_at).astimezone(IST)
+    if begins.date() == today:
+        clock = begins.strftime("%H:%M")
+    else:
+        ends = effective_end(event.starts_at, event.ends_at).astimezone(IST)
+        until = ends.strftime("%H:%M") if ends.date() == today else f"{ends.day} {ends:%b}"
+        clock = f"On now · until {until}"
+    place = event.area or event.venue_name
+    if event.is_online:
+        where = " online"
+    elif place:
+        where = f" at {place}"
+    else:
+        where = ""
+    host = f", hosted by {event.organiser_name}" if event.organiser_name else ""
+    return f"{clock}{where}{host}. Add the people you meet afterwards."
+
+
+async def _event_cards(user_id: str, *, now: datetime) -> list[dict[str, Any]]:
+    """
+    Day-plan cards from the events the user saved or marked going (spec 9.4).
+
+    * ``event_today``: starts on today's IST date and has not ended, or began on an earlier
+      day and is still running. It reads "Today: …" when it starts before 17:00 IST and
+      "Tonight: …" from then. A cancelled one is a warning in the same slot, because the plan
+      for today just changed. Several come best first, because the Overview shows only the
+      first: events the user is going to, then ones that start today, then by start time.
+    * ``event_soon``: the one soonest event in the next week that is not today.
+    * ``event_met_prompt``: an event the user was going to, which ended within the
+      last two days, with nobody noted yet.
+
+    Only the user's own saves count, and a cancelled event is only ever the warning. Like
+    every producer here it never raises: a failure is logged and the briefing carries on
+    without these cards.
+    """
+    session: AsyncSession | None = None
+    try:
+        me = parse_uuid(user_id)
+        if not me:
+            return []
+        from services.events.read import readable
+
+        session = AsyncSessionLocal()
+        current = as_utc(now)
+        today = ist_date(current)
+        recent_since = current - timedelta(days=EVENT_MET_PROMPT_DAYS)
+        result = await session.execute(
+            select(Event, EventSave.status)
+            .join(EventSave, EventSave.event_id == Event.id)
+            .where(
+                EventSave.user_id == me,
+                readable(me),
+                Event.starts_at >= current - timedelta(days=_EVENT_LOOKBACK_DAYS),
+                Event.starts_at <= current + timedelta(days=EVENT_SOON_WINDOW_DAYS),
+            )
+            .order_by(Event.starts_at, Event.id)
+            .limit(_EVENT_ROWS)
+        )
+
+        today_cards: list[tuple[tuple[bool, bool], dict[str, Any]]] = []
+        soonest: tuple[Event, str] | None = None
+        ended: list[tuple[Event, str]] = []
+        for event, status in result.all():
+            starts = as_utc(event.starts_at)
+            over = effective_end(event.starts_at, event.ends_at)
+            if (ist_date(starts) == today and over > current) or starts <= current < over:
+                # The Overview leads with the first of these: one the user is going to, then
+                # one that starts today. Rows are in start order, so the sort is stable on it.
+                rank = (status != "going", ist_date(starts) != today)
+                if event.is_cancelled:
+                    today_cards.append((rank, _event_card(
+                        event,
+                        status,
+                        card_id=f"event_today:{event.id}",
+                        kind="event_today",
+                        title=f"{event.title} was cancelled by the organiser",
+                        detail="It was on your list for today. Check the organiser's page "
+                        "before you plan around it.",
+                        tone="warning",
+                    )))
+                else:
+                    today_cards.append((rank, _event_card(
+                        event,
+                        status,
+                        card_id=f"event_today:{event.id}",
+                        kind="event_today",
+                        title=f"{_event_today_word(starts, today=today)}: {event.title}",
+                        detail=_event_today_detail(event, today=today),
+                        tone="primary",
+                    )))
+            elif event.is_cancelled:
+                continue
+            elif starts > current:  # rows are in start order, so the first is the soonest
+                soonest = soonest or (event, status)
+            elif status == "going" and recent_since < over <= current:
+                ended.append((event, status))
+
+        cards = [card for _, card in sorted(today_cards, key=lambda ranked: ranked[0])]
+
+        if soonest is not None:
+            event, status = soonest
+            weekday = as_utc(event.starts_at).astimezone(IST).strftime("%A")
+            cards.append(_event_card(
+                event,
+                status,
+                card_id=f"event_soon:{event.id}",
+                kind="event_soon",
+                title=f"{weekday}: {event.title}",
+                detail=(
+                    "You're going. Add it to your calendar."
+                    if status == "going"
+                    else "You saved it — decide whether you're going."
+                ),
+                tone="action",
+            ))
+
+        if ended:
+            noted = set((await session.execute(
+                select(EventContact.event_id)
+                .where(
+                    EventContact.user_id == me,
+                    EventContact.event_id.in_([event.id for event, _ in ended]),
+                )
+                .distinct()
+            )).scalars())
+            for event, status in ended:
+                if event.id not in noted:
+                    cards.append(_event_card(
+                        event,
+                        status,
+                        card_id=f"event_met:{event.id}",
+                        kind="event_met_prompt",
+                        title=f"Who did you meet at {event.title}?",
+                        detail="Note them now; each one can become an Outreach thread.",
+                        tone="action",
+                        label="Add who you met",
+                        anchor="#people",
+                    ))
+        return cards
+    except Exception as exc:  # a broken card must never break the briefing
+        logger.warning("Event cards unavailable: %s", exc)
+        return []
+    finally:
+        if session is not None:
+            await session.close()
+
+
 async def _interview_card(user_id: str, applied: int) -> dict[str, Any] | None:
     """
     The one interview nudge the briefing owns: applications in flight and no
@@ -332,20 +580,235 @@ async def _interview_card(user_id: str, applied: int) -> dict[str, Any] | None:
         await session.close()
 
 
+async def _outreach_cards(user_id: str) -> dict[str, dict[str, Any] | None]:
+    """
+    The Outreach follow-up and suggestion cards, or neither.
+
+    ``outreach_cards`` already degrades to no cards, so this only guards the call
+    itself: one failing producer must not blank the briefing. Imported here because
+    ``services.outreach.briefing`` builds its cards with ``_card`` from this module.
+    """
+    try:
+        from services.outreach.briefing import outreach_cards
+
+        return await outreach_cards(user_id)
+    except Exception as exc:
+        logger.warning("Outreach cards unavailable: %s", type(exc).__name__)
+        return {"followup": None, "suggestion": None}
+
+
+def _utc(moment: datetime) -> datetime:
+    """An aware UTC instant; SQLite hands timezone-aware columns back naive, and they are UTC."""
+    return moment.replace(tzinfo=UTC) if moment.tzinfo is None else moment.astimezone(UTC)
+
+
+def _ist_clock(moment: datetime) -> str:
+    """``HH:MM`` on India time, which is how Practice states every deadline."""
+    return moment.astimezone(IST).strftime("%H:%M")
+
+
+async def _practice_deadline_cards(
+    user_id: str, *, now: datetime | None = None
+) -> list[dict[str, Any]]:
+    """
+    Take-homes the user started and has not submitted, due within twelve hours.
+
+    A dated commitment, so it sits right behind the calendar. The card stays through the
+    write-up hour after the deadline, while a write-up can still be saved. A failure here
+    gives no cards and is logged: it must never take the briefing down with it.
+    """
+    moment = _utc(now) if now is not None else datetime.now(UTC)
+    try:
+        user_uuid = parse_uuid(user_id)
+        if not user_uuid:
+            return []
+        async with AsyncSessionLocal() as session:
+            rows = (
+                await session.execute(
+                    select(
+                        PracticeAttempt.id,
+                        PracticeAttempt.deadline_at,
+                        PracticeChallenge.slug,
+                        PracticeChallenge.title,
+                        PracticeChallenge.hours,
+                    )
+                    .join(PracticeChallenge, PracticeChallenge.id == PracticeAttempt.challenge_id)
+                    .where(PracticeAttempt.user_id == user_uuid)
+                    .where(PracticeAttempt.status == "started")
+                )
+            ).all()
+
+        cards: list[dict[str, Any]] = []
+        for attempt_id, deadline_at, slug, title, hours in sorted(
+            rows, key=lambda row: _utc(row[1])
+        ):
+            deadline = _utc(deadline_at)
+            if deadline - moment > PRACTICE_DEADLINE_WINDOW or not submission_open(
+                moment, deadline
+            ):
+                continue
+            due = _ist_clock(deadline)
+            if moment > deadline:
+                # The deadline has passed: only the write-up hour is left, and "submit by <due>"
+                # would name a time that is already gone.
+                closes = _ist_clock(deadline + GRACE)
+                card_title = f'Finish the write-up for "{title}" by {closes}'
+                card_detail = (
+                    f"Your {hours}-hour build closed at {due} IST. "
+                    f"Pushes after that are not read; the write-up closes at {closes} IST."
+                )
+            else:
+                card_title = f'Submit "{title}" by {due}'
+                card_detail = (
+                    f"Your {hours}-hour build closes at {due} IST. "
+                    "Pushes after that are not read."
+                )
+            cards.append(_card(
+                card_id=f"practice_deadline:{attempt_id}",
+                kind="practice_deadline",
+                title=card_title,
+                detail=card_detail,
+                tone="warning",
+                actions=[{
+                    "label": "Open submission",
+                    "href": f"/practice/challenges/{slug}",
+                    "style": "primary",
+                }],
+                meta={
+                    "attempt_id": str(attempt_id),
+                    "challenge": slug,
+                    "deadline_at": deadline.isoformat(),
+                },
+            ))
+        return cards
+    except Exception as exc:  # a broken card must never break the briefing
+        logger.warning("Practice deadline cards unavailable: %s", exc)
+        return []
+
+
+_WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+
+def _contest_card(window: ContestWindow) -> dict[str, Any]:
+    """The weekly LeetCode contest. Its id carries the date, so a dismissal lasts one week."""
+    starts, ends = window.starts_at.astimezone(IST), window.ends_at.astimezone(IST)
+    return _card(
+        card_id=f"practice_contest:{starts.date().isoformat()}",
+        kind="practice_contest",
+        title=f"LeetCode weekly contest, {_WEEKDAYS[starts.weekday()]} {_ist_clock(starts)} IST",
+        detail=(
+            f"It runs from {_ist_clock(starts)} to {_ist_clock(ends)} IST on leetcode.com, "
+            "timed like an online assessment."
+        ),
+        actions=[{"label": "Open contest", "href": CONTEST_URL, "style": "primary"}],
+        meta={
+            "starts_at": window.starts_at.isoformat(),
+            "ends_at": window.ends_at.isoformat(),
+            "live": window.live,
+        },
+    )
+
+
+def _today_card(today: dict[str, Any]) -> dict[str, Any] | None:
+    """Today's daily question, unless there is none or it is already done."""
+    question = today.get("question")
+    if not isinstance(question, dict) or today.get("done_at") is not None:
+        return None
+    # The pick's reason starts with the topic it drew ("Graph — you last practised it ...").
+    reason = str(today.get("reason") or "")
+    topic, separator, why = reason.partition(" — ")
+    if not separator:
+        topics = question.get("topics") or []
+        topic, why = (topic_label(str(topics[0])) if topics else ""), reason
+    detail = " · ".join(
+        part for part in (str(question["difficulty"]).title(), topic, why) if part
+    )
+    return _card(
+        card_id=f"practice_today:{today['day']}",
+        kind="practice_today",
+        title=f"Solve today's question: {question['title']}",
+        detail=detail,
+        actions=[
+            {"label": "Open on LeetCode", "href": str(question["url"]), "style": "primary"},
+            {"label": "Open Practice", "href": "/practice", "style": "ghost"},
+        ],
+        meta={"slug": question["slug"], "difficulty": question["difficulty"]},
+    )
+
+
+async def _contest_reminder_on(user_id: str) -> bool:
+    """The user's Practice setting; on until they turn it off."""
+    user_uuid = parse_uuid(user_id)
+    if not user_uuid:
+        return False
+    async with AsyncSessionLocal() as session:
+        stored = (
+            await session.execute(
+                select(PracticeSettings.contest_reminder).where(
+                    PracticeSettings.user_id == user_uuid
+                )
+            )
+        ).scalar_one_or_none()
+    return True if stored is None else bool(stored)
+
+
+async def _practice_suggestion_card(
+    user_id: str, *, now: datetime | None = None
+) -> dict[str, Any] | None:
+    """
+    At most one Practice suggestion: the weekly contest, else today's question.
+
+    Only for someone who marked a question done in the last 14 days; a DSA nag to a
+    person who never opened Practice is noise on a day plan. The contest shows from
+    Saturday 20:00 to Sunday 09:30 IST unless they turned the reminder off, and then
+    today's question is offered instead, if it is not done. A failure here gives
+    ``None`` and is logged.
+    """
+    moment = _utc(now) if now is not None else datetime.now(UTC)
+    try:
+        if not await daily.practised_recently(user_id, now=moment):
+            return None
+        window = contest_window(moment)
+        if window.show and await _contest_reminder_on(user_id):
+            return _contest_card(window)
+        return _today_card(await daily.today(user_id, now=moment))
+    except Exception as exc:  # a broken card must never break the briefing
+        logger.warning("Practice suggestion unavailable: %s", exc)
+        return None
+
+
 async def build_briefing(*, user_id: str) -> dict[str, Any]:
     """
     Assemble today's briefing.
 
-    Ordering is deliberate: a dated commitment (an interview on the calendar)
-    outranks everything, then the single next-best action, then anything
-    decaying (stale applications), then the practice nudge. Cards the user
-    dismissed or snoozed are filtered out at the end so the id-based dismissal
-    works no matter which producer emitted the card.
+    Ordering is deliberate. A dated commitment outranks everything: an interview on
+    the calendar, then a take-home due within hours (a missed deadline cannot be
+    recovered), then an event the user is going to today, then the follow-ups they owe
+    on Outreach (a date they set themselves). Then comes the single next-best action,
+    anything decaying (stale applications), the events coming up or just over, the
+    interview-practice nudge, the one company worth a note, and last the one Practice
+    suggestion. Cards the user dismissed or snoozed are filtered out at the end so the
+    id-based dismissal works no matter which producer emitted the card.
     """
+    now = _now()
     next_action = await recommend_next_action(user_id=user_id)
     context = next_action.get("context", {}) if isinstance(next_action, dict) else {}
+    outreach = await _outreach_cards(user_id)
+    # One producer, two slots: what is on today ranks with the dated commitments, and
+    # what is coming up or just over ranks after the application cards.
+    events = await _event_cards(user_id, now=now)
+    events_today = [c for c in events if c["kind"] == "event_today"]
+    events_later = [c for c in events if c["kind"] != "event_today"]
 
     cards: list[dict[str, Any]] = await _scheduled_interview_cards(user_id)
+    # The take-home deadline ranks above the Outreach follow-up on the Overview (buildActions in
+    # frontend/app/dashboard/page.tsx): a missed deadline cannot be recovered, a follow-up can
+    # slip a day.
+    cards.extend(await _practice_deadline_cards(user_id))
+    cards.extend(events_today)
+
+    if followup_card := outreach.get("followup"):
+        cards.append(followup_card)
 
     if next_action.get("recommendation"):
         cards.append(_card(
@@ -364,16 +827,24 @@ async def build_briefing(*, user_id: str) -> dict[str, Any]:
         ))
 
     cards.extend(await _application_cards(user_id))
+    cards.extend(events_later)
 
     interview_card = await _interview_card(user_id, int(context.get("applied", 0) or 0))
     if interview_card:
         cards.append(interview_card)
 
+    if suggestion_card := outreach.get("suggestion"):
+        cards.append(suggestion_card)
+
+    practice_card = await _practice_suggestion_card(user_id)
+    if practice_card:
+        cards.append(practice_card)
+
     dismissed = await active_dismissals(user_id=user_id)
     visible = [c for c in cards if c["id"] not in dismissed]
 
     return {
-        "generated_at": datetime.now(tz=UTC).isoformat(),
+        "generated_at": now.isoformat(),
         "headline": _headline(visible, context),
         "cards": visible,
         "hidden_count": len(cards) - len(visible),
@@ -387,8 +858,29 @@ async def build_briefing(*, user_id: str) -> dict[str, Any]:
     }
 
 
+def _follow_ups_due(cards: list[dict[str, Any]]) -> int:
+    """How many Outreach follow-ups the briefing says are owed today (0 when none).
+
+    The count is read from the card's ``meta`` and nothing else, so it is safe to
+    show anywhere, including in the prompt of ``_general_reply``.
+    """
+    card = next((c for c in cards if c["kind"] == FOLLOWUP_CARD_KIND), None)
+    if card is None:
+        return 0
+    try:
+        return max(int(card["meta"].get("count", 1)), 1)
+    except (AttributeError, TypeError, ValueError):
+        return 1
+
+
 def _headline(cards: list[dict[str, Any]], context: dict[str, Any]) -> str:
-    """One line summarising the state of the queue."""
+    """One line summarising the state of the application queue.
+
+    Event cards are about the day, not the pipeline: a cancelled event is a warning card, but
+    it is not an application to chase, and "N things across M applications" must not count a
+    meetup. They stay on the page; the headline just does not speak for them.
+    """
+    cards = [c for c in cards if not str(c["kind"]).startswith(EVENT_CARD_PREFIX)]
     today = [
         c for c in cards
         if c["kind"] == "scheduled_interview" and c["meta"].get("days_away") == 0
@@ -398,6 +890,9 @@ def _headline(cards: list[dict[str, Any]], context: dict[str, Any]) -> str:
     urgent = sum(1 for c in cards if c["tone"] == "warning")
     if urgent:
         return f"{urgent} thing(s) need chasing today."
+    owed = _follow_ups_due(cards)
+    if owed:
+        return f"{owed} follow-up{'s' if owed != 1 else ''} due on Outreach."
     if len(cards) <= 1:
         return "You're on top of things — nothing is going stale."
     total = context.get("total_applications", 0)
@@ -575,22 +1070,24 @@ async def _general_reply(
     briefing = await build_briefing(user_id=user_id)
     memories = await get_memories(user_id=user_id, memory_type=PREFERENCE_TYPE, limit=10)
 
+    # Only cleared kinds go in by title and detail; Outreach adds a count, never a name.
+    visible = [c for c in briefing["cards"] if c["kind"] in MODEL_VISIBLE_CARD_KINDS]
+    context: dict[str, Any] = {
+        "intent": "general",
+        "stats": briefing["stats"],
+        "open_items": [{"title": c["title"], "detail": c["detail"]} for c in visible[:4]],
+        "known_preferences": [m.get("content") for m in memories],
+        "recent_turns": (history or [])[-4:],
+    }
+    if owed := _follow_ups_due(briefing["cards"]):
+        context["outreach_follow_ups_due"] = owed
+
     try:
-        return await generate_copilot_reply(
-            question=message,
-            context={
-                "intent": "general",
-                "stats": briefing["stats"],
-                "open_items": [
-                    {"title": c["title"], "detail": c["detail"]} for c in briefing["cards"][:4]
-                ],
-                "known_preferences": [m.get("content") for m in memories],
-                "recent_turns": (history or [])[-4:],
-            },
-        )
+        return await generate_copilot_reply(question=message, context=context)
     except Exception as exc:
         logger.warning("General reply failed: %s", exc)
-        cards = briefing["cards"]
-        if cards:
-            return f"{briefing['headline']} Start with: {cards[0]['title']}."
-        return "I don't have enough activity yet to advise you. Save a few roles and ask again."
+        # The fallback reply is replayed as history, so it names only allowlisted cards.
+        headline = str(briefing["headline"])
+        if visible and visible[0]["title"]:
+            return f"{headline} Start with: {visible[0]['title']}."
+        return headline or "I don't have enough activity yet to advise you. Save a few roles and ask again."

@@ -44,7 +44,12 @@ logger = logging.getLogger(__name__)
 _TAVILY_URL = "https://api.tavily.com/search"
 _TIMEOUT = httpx.Timeout(20.0, connect=5.0)
 
-VALID_KINDS = {"careers_inbox", "careers_page", "recruiter", "referral", "other"}
+# founder / leader / engineer are people (migration 015): a curated one is
+# read from a public source and always carries ``source_url``.
+VALID_KINDS = {
+    "careers_inbox", "careers_page", "recruiter", "referral", "other",
+    "founder", "leader", "engineer",
+}
 
 _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 
@@ -328,6 +333,10 @@ def _serialise(contact: CompanyContact) -> dict[str, Any]:
         "linkedin_url": contact.linkedin_url,
         "notes": contact.notes,
         "source_url": contact.source_url,
+        "x_url": contact.x_url,
+        "github_url": contact.github_url,
+        "profile_url": contact.profile_url,
+        "source_kind": contact.source_kind,
         "verified": contact.verified,
         "is_curated": contact.user_id is None,
         "created_at": contact.created_at.isoformat() if contact.created_at else None,
@@ -400,6 +409,7 @@ async def save_contact(
             linkedin_url=linkedin_url,
             notes=notes,
             source_url=source_url,
+            source_kind="user",
             verified=verified,
         )
         session.add(contact)

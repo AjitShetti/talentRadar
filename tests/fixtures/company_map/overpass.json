@@ -1,0 +1,1374 @@
+{
+ "version": 0.6,
+ "generator": "Overpass API 0.7.62.11 87bfad18",
+ "osm3s": {
+  "timestamp_osm_base": "2026-10-14T11:18:01Z",
+  "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+ },
+ "elements": [
+  {
+   "type": "node",
+   "id": 338178218,
+   "lat": 13.0440258,
+   "lon": 77.621342,
+   "tags": {
+    "addr:city": "Bengaluru",
+    "addr:postcode": "560045",
+    "air_conditioning": "yes",
+    "fax": "+918041891000",
+    "landuse": "commercial",
+    "name": "Philips Innovation Campus",
+    "office": "company",
+    "phone": "+918041890000",
+    "smoking": "no",
+    "url": "http://www.bangalore.philips.com/html/index.asp",
+    "website": "https://www.philips.co.in/content/corporate/en_IN/about-philips/philips-innovation-center.html/",
+    "wheelchair": "yes"
+   }
+  },
+  {
+   "type": "node",
+   "id": 2602625578,
+   "lat": 12.9230839,
+   "lon": 77.5853491,
+   "tags": {
+    "addr:city": "Bangalore",
+    "addr:housenumber": "No. 37",
+    "addr:postcode": "560041",
+    "addr:street": "10 Main, Jayanagar",
+    "name": "Trip38",
+    "office": "it",
+    "website": "http://trip38.com"
+   }
+  },
+  {
+   "type": "node",
+   "id": 3357540334,
+   "lat": 12.9188741,
+   "lon": 77.6702697,
+   "tags": {
+    "addr:city": "Bangalore",
+    "addr:housenumber": "18/2A",
+    "addr:postcode": "560103",
+    "addr:street": "Sarjapur Road",
+    "level": "2",
+    "name": "Khosla Labs",
+    "office": "company",
+    "phone": "+91 80 4212 4272",
+    "smoking": "no",
+    "website": "http://khoslalabs.com"
+   }
+  },
+  {
+   "type": "node",
+   "id": 3419568380,
+   "lat": 13.0342363,
+   "lon": 77.5692585,
+   "tags": {
+    "addr:city": "Bengaluru",
+    "addr:housenumber": "10",
+    "addr:postcode": "560094",
+    "addr:street": "RMV 2nd Stage 1st Main Road",
+    "name": "Globals",
+    "office": "company",
+    "website": "https://globalsinc.com/"
+   }
+  },
+  {
+   "type": "node",
+   "id": 4030163472,
+   "lat": 12.9816173,
+   "lon": 77.6385578,
+   "tags": {
+    "addr:city": "Bengaluru",
+    "addr:country": "IN",
+    "addr:housenumber": "105",
+    "addr:place": "Indiranagar 1st Stage",
+    "addr:postcode": "560038",
+    "addr:street": "10th Cross",
+    "name": "Nilenso Software",
+    "office": "it",
+    "website": "https://nilenso.com/"
+   }
+  },
+  {
+   "type": "node",
+   "id": 4444433724,
+   "lat": 12.9227173,
+   "lon": 77.682381,
+   "tags": {
+    "addr:city": "BANGALORE",
+    "addr:floor": "7",
+    "addr:housenumber": "6A",
+    "addr:postcode": "560103",
+    "addr:street": "\"No 1, Adarsh Palm Retreat, Bellandur, Near Cisco,",
+    "name": "INTUIT",
+    "office": "company",
+    "smoking": "no",
+    "website": "https://intuitagain.com/contact_us.php"
+   }
+  },
+  {
+   "type": "node",
+   "id": 4445083327,
+   "lat": 12.9306321,
+   "lon": 77.6921174,
+   "tags": {
+    "addr:city": "Bangalore",
+    "addr:postcode": "560103",
+    "addr:street": "2nd Floor South Wing, Tower 2, Hibiscus,  Embassy Tech Village (SEZ), Outer Ring Road (ORR),  Devarabesanehalli, Varthur Hobli,",
+    "name": "Sony",
+    "office": "company",
+    "phone": "080-67078500",
+    "smoking": "outside",
+    "website": "https://www.sonyindiasoftware.co.in"
+   }
+  },
+  {
+   "type": "node",
+   "id": 4445089987,
+   "lat": 12.9467394,
+   "lon": 77.6464947,
+   "tags": {
+    "addr:city": "Bangalore",
+    "addr:housenumber": "2nd floor",
+    "addr:postcode": "560071",
+    "addr:street": "Pine Valley,  Embassy Golf Link Business Park,Off Intermediate Ring Road,  Domlur",
+    "name": "McAfee Software India Pvt. Ltd",
+    "office": "company",
+    "phone": "\"080 4180 9000 \"",
+    "website": "https://mcafee.com/"
+   }
+  },
+  {
+   "type": "node",
+   "id": 4445318819,
+   "lat": 12.9257178,
+   "lon": 77.6867849,
+   "tags": {
+    "addr:city": "Bengaluru",
+    "addr:housenumber": "C 1",
+    "addr:postcode": "560103",
+    "addr:street": "RMZ Eco world,Block C 1, Campus 8 A, Floor 1,2,3 Doddakanahalli Village",
+    "name": "KPMG",
+    "office": "company",
+    "phone": "080 675 35008, 080 6781 6000",
+    "smoking": "outside",
+    "website": "https://kpmg.com/"
+   }
+  },
+  {
+   "type": "node",
+   "id": 4445359078,
+   "lat": 12.9256865,
+   "lon": 77.6872884,
+   "tags": {
+    "addr:city": "Bengaluru",
+    "addr:housenumber": "1A",
+    "addr:postcode": "560103",
+    "addr:street": "RMZ Eco World Road",
+    "contact:bluesky": "applogicnetworks.com",
+    "contact:facebook": "AppLogicNetworks",
+    "contact:instagram": "applogicnetworks",
+    "internet_access": "wlan",
+    "level": "4",
+    "name": "Applogic Networks",
+    "note": "not a duplicate of https://www.openstreetmap.org/node/12691427301/ both locations exist on different floors",
+    "office": "company",
+    "phone": "080677 43333",
+    "smoking": "outside",
+    "website": "https://www.applogicnetworks.com"
+   }
+  },
+  {
+   "type": "node",
+   "id": 4446056637,
+   "lat": 12.9483819,
+   "lon": 77.6892497,
+   "tags": {
+    "addr:city": "Bengaluru",
+    "addr:housenumber": "124, 125",
+    "addr:postcode": "560037",
+    "addr:street": "Off Old Airport Road, Divyasree Technopolis, Yemlur P.O",
+    "name": "CGI",
+    "office": "company",
+    "phone": "+91 80 4194 0000",
+    "website": "https://www.cgi.com/"
+   }
+  },
+  {
+   "type": "node",
+   "id": 4446233975,
+   "lat": 12.9318415,
+   "lon": 77.6914263,
+   "tags": {
+    "addr:city": "Bangalore",
+    "addr:postcode": "560103",
+    "addr:street": "Upper ground & 4th floor, Building 2A,  Tower West & Tower East, SEZ,,  Embassy Tech Village, Devarabeesanahalli Hobli, Varthur,",
+    "name": "Seagate Technology",
+    "office": "company",
+    "phone": "080 4652 3000",
+    "smoking": "outside",
+    "website": "https://www.seagate.com/gb/en/"
+   }
+  },
+  {
+   "type": "node",
+   "id": 4446516267,
+   "lat": 12.9247782,
+   "lon": 77.6807978,
+   "tags": {
+    "addr:city": "BANGALORE",
+    "addr:postcode": "560103",
+    "addr:street": "\"RMZ Ecospace Internal Rd, Adarsh Palm Retreat, Bellandur",
+    "name": "Intel",
+    "office": "company",
+    "smoking": "no",
+    "website": "https://www.intel.com/"
+   }
+  },
+  {
+   "type": "node",
+   "id": 4446633800,
+   "lat": 12.9260762,
+   "lon": 77.6804625,
+   "tags": {
+    "addr:city": "BANGALORE",
+    "addr:postcode": "560103",
+    "addr:street": "Campus 1C, RMZ Ecospace, Sarjapur Outer Ring Road, Devarabisanahalli,",
+    "name": "Freescale Semiconductor India Private Limited",
+    "office": "company",
+    "website": "www.freescale.com"
+   }
+  },
+  {
+   "type": "node",
+   "id": 4447209004,
+   "lat": 12.9323774,
+   "lon": 77.6835493,
+   "tags": {
+    "addr:city": "Bengaluru",
+    "addr:postcode": "560103",
+    "addr:street": "Sevice Road",
+    "name": "jda software pvt.limited",
+    "office": "company",
+    "phone": "+918061018888",
+    "smoking": "isolated",
+    "website": "https://jda.com/"
+   }
+  },
+  {
+   "type": "node",
+   "id": 4488717802,
+   "lat": 12.9827061,
+   "lon": 77.6251679,
+   "tags": {
+    "addr:city": "bangalore",
+    "addr:housenumber": "1&2",
+    "addr:postcode": "560008",
+    "addr:street": "Karuna Amman Koil",
+    "name": "TMEIC Industrial Systems india Pvt. Ltd",
+    "office": "company",
+    "phone": "080675 15599",
+    "website": "https://tmeic.com/"
+   }
+  },
+  {
+   "type": "node",
+   "id": 4489725613,
+   "lat": 12.9401959,
+   "lon": 77.6253387,
+   "tags": {
+    "addr:city": "bangalore",
+    "addr:housenumber": "897/D",
+    "addr:postcode": "560095",
+    "addr:street": "P.R Complex , 80 Feet Road, Koramangala 6th Block , Near Koramangala Bus Depot",
+    "name": "kintesa world express pvt ltd",
+    "office": "company",
+    "phone": "080 3941 5050",
+    "website": "https://kweindia.com"
+   }
+  },
+  {
+   "type": "node",
+   "id": 4834767519,
+   "lat": 13.0041631,
+   "lon": 77.5623488,
+   "tags": {
+    "addr:city": "Bengaluru",
+    "addr:country": "IN",
+    "addr:housenumber": "16",
+    "addr:postcode": "560003",
+    "addr:street": "11th Main Road",
+    "description": "Learn how to make science learning exciting and hands-on in the school and at home. ThinkTac creates a scaffold to experientially learn life and entrepreneurial skills, while producing tangible learning outcomes in curricular areas.",
+    "email": "info@thinktac.in",
+    "level": "0",
+    "name": "ThinkTac",
+    "office": "company",
+    "opening_hours": "Mo-Fr 08:30-18:00",
+    "phone": "+918023440070",
+    "smoking": "no",
+    "website": "https://thinktac.in",
+    "wheelchair": "yes"
+   }
+  },
+  {
+   "type": "node",
+   "id": 5347720321,
+   "lat": 12.8974321,
+   "lon": 77.5872356,
+   "tags": {
+    "addr:housenumber": "24",
+    "addr:postcode": "560078",
+    "addr:street": "24th Main, 19th Cross Road",
+    "email": "contactus@aindra.in",
+    "name": "Aindra Systems",
+    "office": "company",
+    "opening_hours": "Mo-Sa 21:30-19:00",
+    "phone": "+91 80 4205 1729",
+    "website": "https://www.aindra.in/"
+   }
+  },
+  {
+   "type": "node",
+   "id": 5764956349,
+   "lat": 12.9327115,
+   "lon": 77.6035964,
+   "tags": {
+    "addr:city": "Bangalore",
+    "addr:housenumber": "3rd Floor Tower D,",
+    "addr:postcode": "560029",
+    "addr:street": "IBC Innner Road,Bannerghatta Main Road",
+    "name": "Ather Energy",
+    "office": "company",
+    "opening_hours": "Mo-Fr 09:00-18:00",
+    "smoking": "isolated",
+    "website": "https://www.atherenergy.com/"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6070145685,
+   "lat": 12.959944,
+   "lon": 77.6441379,
+   "tags": {
+    "addr:city": "Bengaluru",
+    "addr:housenumber": "7th Floor,Tower-B, Diamond District",
+    "addr:postcode": "560008",
+    "addr:street": "HAL Old Airport Road, Kodihalli",
+    "description": "Zoomcar is India’s largest marketplace for cars on rent. From short road trips to quick in-city drives for groceries, supply pick-up, food runs, we have the cheapest car rental options for all your needs! A hatchback for daily commute, a sedan for short t",
+    "email": "info@zoomcar.in",
+    "name": "Zoomcar India",
+    "office": "company",
+    "opening_hours": "24x7, Monday-Sunday",
+    "phone": "+91 8067481200",
+    "website": "https://www.zoomcar.com/"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6390812083,
+   "lat": 12.8781202,
+   "lon": 77.7451149,
+   "tags": {
+    "addr:city": "Bengaluru",
+    "addr:postcode": "562125",
+    "addr:street": "Sy No 54/2 Dommasandra village Muthanalluru Cross Near ABR Sport, Chandapura Dommasandra Road",
+    "name": "SAMAN Portable Office Solutions",
+    "office": "company",
+    "opening_hours": "24/7",
+    "phone": "+91 97089 89937",
+    "website": "https://samanportable.com/"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6487644808,
+   "lat": 12.9986914,
+   "lon": 77.5503634,
+   "tags": {
+    "addr:city": "Bangalore",
+    "addr:housenumber": "410/69",
+    "addr:postcode": "560010",
+    "addr:street": "20th Main, 1st Block, Rajajinagar",
+    "description": "Customized Tech firm, specializing in the Social, Development, and Health Sector.",
+    "email": "kaushal@kavintech.com",
+    "email_1": "kavin@kavintech.com",
+    "name": "Kavin Corporation",
+    "office": "it",
+    "opening_hours": "Mo-Fr 10:30-18:45",
+    "phone": "+91-94498 35712",
+    "website": "https://www.kavinsoft.com/"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6704989085,
+   "lat": 13.0813846,
+   "lon": 77.559798,
+   "tags": {
+    "addr:housenumber": "2nd Floor",
+    "addr:postcode": "560097",
+    "addr:street": "#591/A",
+    "email": "projects@jntechsolutions.org",
+    "name": "JN Tech Solutions",
+    "office": "company",
+    "opening_hours": "Mo-Sa 09:30-18:00",
+    "website": "https://www.jntechsolutions.org"
+   }
+  },
+  {
+   "type": "node",
+   "id": 6840249301,
+   "lat": 12.933972,
+   "lon": 77.6134152,
+   "tags": {
+    "addr:city": "Bengaluru",
+    "addr:housenumber": "JB Group #110",
+    "addr:postcode": "560095",
+    "addr:street": "Mezzanine Floor, 4th Cross Koramangala",
+    "email": "info@sacumen.com",
+    "name": "Sacumen",
+    "office": "company",
+    "opening_hours": "Mo-Sa 08:00-20:00",
+    "website": "https://sacumen.com/"
+   }
+  },
+  {
+   "type": "node",
+   "id": 7201052041,
+   "lat": 13.0046061,
+   "lon": 77.5487553,
+   "tags": {
+    "addr:city": "Bengaluru",
+    "addr:country": "IN",
+    "addr:hamlet": "Mahalakshmipuram",
+    "addr:housenumber": "190",
+    "addr:postcode": "560086",
+    "addr:street": "Chord Road",
+    "email": "info@samarthainfo.com",
+    "name": "Samartha and Suveechi",
+    "office": "company",
+    "phone": "+91-80-65676692",
+    "website": "https://samarthainfo.com/"
+   }
+  },
+  {
+   "type": "node",
+   "id": 7257695666,
+   "lat": 13.0144846,
+   "lon": 77.5744615,
+   "tags": {
+    "addr:city": "Bengaluru",
+    "addr:country": "IN",
+    "addr:hamlet": "RMV Extension",
+    "addr:housenumber": "237",
+    "addr:postcode": "560080",
+    "addr:street": "Dr. C V Raman Road",
+    "addr:suburb": "Sadashivanagar",
+    "email": "sales@engagedly.com",
+    "name": "Engagedly",
+    "office": "company",
+    "phone": "(650) 485-1642",
+    "website": "https://engagedly.com"
+   }
+  },
+  {
+   "type": "node",
+   "id": 7301358108,
+   "lat": 12.9870531,
+   "lon": 77.5946559,
+   "tags": {
+    "name": "Rollon Bearings Private Limited",
+    "office": "company",
+    "website": "https://www.rollonbearings.com"
+   }
+  },
+  {
+   "type": "node",
+   "id": 8767767819,
+   "lat": 12.9114349,
+   "lon": 77.5992958,
+   "tags": {
+    "addr:city": "Bengaluru",
+    "addr:housenumber": "Hubstairs Coworks, 45/B",
+    "addr:postcode": "560078",
+    "addr:street": "1st Main Road",
+    "name": "ONZE Technologies (India) Pvt Ltd",
+    "office": "company",
+    "opening_hours": "Mo-Fr 09:00-18:00",
+    "website": "https://latlong.ai"
+   }
+  },
+  {
+   "type": "node",
+   "id": 9282093117,
+   "lat": 12.9432449,
+   "lon": 77.6211427,
+   "tags": {
+    "addr:street": "80 Feet Road",
+    "building:levels": "5",
+    "check_date": "2023-09-09",
+    "internet_access": "wlan",
+    "internet_access:fee": "customers",
+    "name": "91Springboard",
+    "office": "company",
+    "opening_hours": "24/7",
+    "website": "https://www.91springboard.com/",
+    "wheelchair": "limited"
+   }
+  },
+  {
+   "type": "node",
+   "id": 9667889280,
+   "lat": 12.8401766,
+   "lon": 77.6639003,
+   "tags": {
+    "addr:city": "Bangalore",
+    "addr:housenumber": "R-22",
+    "addr:postcode": "560100",
+    "addr:street": "3rd Cross Road, Nash Square, 1st Floar<Electronic city Phase-1 Above Canara Bank, opp. Prathik Tech Park, Banglore, karnataka",
+    "description": "Fleet management System, Vehicle GPS Tracking System",
+    "name": "carX",
+    "office": "company",
+    "opening_hours": "Mo-Sa 09:00-18:00",
+    "website": "https://carx.io/",
+    "wheelchair": "limited"
+   }
+  },
+  {
+   "type": "node",
+   "id": 9780918382,
+   "lat": 13.0015778,
+   "lon": 77.5482141,
+   "tags": {
+    "addr:city": "Bengaluru",
+    "addr:country": "IN",
+    "addr:housenumber": "5",
+    "addr:postcode": "560086",
+    "addr:street": "11th Cross Road",
+    "name": "PRDC Infotech Pvt. Ltd.",
+    "office": "company",
+    "phone": "+91 (0) 80 4245 5555",
+    "website": "http://www.prdcinfotech.com/"
+   }
+  },
+  {
+   "type": "node",
+   "id": 9828082757,
+   "lat": 12.9494608,
+   "lon": 77.6915547,
+   "tags": {
+    "addr:city": "Bengaluru",
+    "addr:district": "Bengaluru Urban",
+    "addr:housenumber": "Divyasree Town Center",
+    "addr:postcode": "560037",
+    "addr:street": "Amani Bellandur Kane Village Varthur Hobli",
+    "name": "Deloitte Vista",
+    "office": "company",
+    "phone": "+91 80 6755 6101",
+    "website": "https://www.deloitte.com"
+   }
+  },
+  {
+   "type": "node",
+   "id": 9851011195,
+   "lat": 12.9225797,
+   "lon": 77.6805872,
+   "tags": {
+    "name": "Accenture",
+    "name:kn": "ಅಕ್ಸೆಂಚರ್",
+    "office": "company",
+    "website": "https://www.accenture.com/"
+   }
+  },
+  {
+   "type": "node",
+   "id": 9851365040,
+   "lat": 12.9822892,
+   "lon": 77.5962827,
+   "tags": {
+    "addr:city": "Bangalore",
+    "addr:country": "IN",
+    "addr:housenumber": "15/1",
+    "addr:postcode": "560001",
+    "addr:street": "Cubbon Road",
+    "addr:suburb": "Vasanth Nagar",
+    "name": "Apple",
+    "name:kn": "ಆಪೆಲ್",
+    "office": "company",
+    "operator": "Apple",
+    "short_name": "Apple",
+    "website": "https://www.apple.com/",
+    "wheelchair": "yes",
+    "wikidata": "Q312",
+    "wikipedia": "en:Apple Inc."
+   }
+  },
+  {
+   "type": "node",
+   "id": 9891898737,
+   "lat": 12.9731569,
+   "lon": 77.6137794,
+   "tags": {
+    "addr:country": "IN",
+    "addr:housename": "Raheja Towers",
+    "addr:postcode": "560001",
+    "addr:street": "Mahatma Gandhi Road",
+    "addr:unit": "902",
+    "name": "e-con Systems",
+    "office": "company",
+    "website": "https://www.e-consystems.com"
+   }
+  },
+  {
+   "type": "node",
+   "id": 9969767664,
+   "lat": 12.9086807,
+   "lon": 77.6486567,
+   "tags": {
+    "addr:city": "Bangalore",
+    "addr:housenumber": "1144",
+    "addr:postcode": "560102",
+    "addr:street": "22nd Cross Road",
+    "name": "Raincode Labs India",
+    "office": "it",
+    "phone": "+91 99450 47258",
+    "website": "https://www.raincodelabs.com/"
+   }
+  },
+  {
+   "type": "node",
+   "id": 10238197186,
+   "lat": 12.9706307,
+   "lon": 77.6151037,
+   "tags": {
+    "addr:city": "Bangalore",
+    "addr:country": "IN",
+    "addr:floor": "2",
+    "addr:hamlet": "Craig Park Layout",
+    "addr:housename": "Prestige Loka",
+    "addr:housenumber": "202",
+    "addr:postcode": "560025",
+    "addr:street": "Brunton Road",
+    "addr:suburb": "Ashok Nagar",
+    "check_date": "2025-08-21",
+    "internet_access": "wlan",
+    "internet_access:fee": "customers",
+    "level": "2",
+    "name": "SatSure Analytics India Pvt Ltd",
+    "name:en": "SatSure Analytics India Pvt Ltd",
+    "office": "company",
+    "official_name": "SatSure Analytics India Pvt Ltd",
+    "opening_hours": "Mo-Fr 09:30-19:00",
+    "website": "https://www.satsure.co/"
+   }
+  },
+  {
+   "type": "node",
+   "id": 10293607176,
+   "lat": 12.9746467,
+   "lon": 77.6407912,
+   "tags": {
+    "addr:housenumber": "278",
+    "addr:street": "100 Feet Road",
+    "name": "Sequoia Capital",
+    "office": "company",
+    "website": "https://www.sequoiacap.cn"
+   }
+  },
+  {
+   "type": "node",
+   "id": 10651190546,
+   "lat": 12.9830373,
+   "lon": 77.7087311,
+   "tags": {
+    "addr:housenumber": "1",
+    "email": "Bangalore@Swagelok.com",
+    "name": "Swagelok",
+    "office": "company",
+    "phone": "+91 80 42669100",
+    "website": "https://bangalore.swagelok.com/en"
+   }
+  },
+  {
+   "type": "node",
+   "id": 10761165099,
+   "lat": 12.9047743,
+   "lon": 77.6919057,
+   "tags": {
+    "addr:city": "Bengaluru",
+    "addr:housenumber": "38/3",
+    "addr:postcode": "560035",
+    "addr:street": "Halanayakanahalli Lake Road",
+    "name": "RCS Tech LLP",
+    "office": "it",
+    "website": "https://www.traxx.in/"
+   }
+  },
+  {
+   "type": "node",
+   "id": 10924790333,
+   "lat": 12.9332535,
+   "lon": 77.6305667,
+   "tags": {
+    "name": "slice",
+    "office": "company",
+    "website": "https://sliceit.com"
+   }
+  },
+  {
+   "type": "node",
+   "id": 11173564854,
+   "lat": 12.9198144,
+   "lon": 77.6705867,
+   "tags": {
+    "addr:city": "Bengaluru",
+    "addr:housenumber": "GGR Towers 18/2B",
+    "addr:postcode": "560103",
+    "addr:street": "Bellandur Gate, Sarjapur Road",
+    "name": "Odessa Inc.",
+    "office": "company",
+    "phone": "+91 80 4146 4321",
+    "website": "https://www.odessainc.com/"
+   }
+  },
+  {
+   "type": "node",
+   "id": 11237374568,
+   "lat": 12.9267703,
+   "lon": 77.6660281,
+   "tags": {
+    "name": "Navi",
+    "office": "company",
+    "website": "https://navi.com/"
+   }
+  },
+  {
+   "type": "node",
+   "id": 11297435403,
+   "lat": 13.0525783,
+   "lon": 77.5982469,
+   "tags": {
+    "addr:city": "Bangalore",
+    "addr:housenumber": "29",
+    "addr:postcode": "560024",
+    "addr:street": "Seventh Cross Road",
+    "email": "info@s2seducation.com",
+    "name": "Seed2Sapling Education",
+    "office": "company",
+    "opening_hours": "Mo-Sa 08:00-18:00",
+    "website": "https://www.s2seducation.com"
+   }
+  },
+  {
+   "type": "node",
+   "id": 11553915382,
+   "lat": 12.9197196,
+   "lon": 77.6848707,
+   "tags": {
+    "internet_access": "yes",
+    "name": "SAP Ariba",
+    "office": "company",
+    "website": "https://ariba.com"
+   }
+  },
+  {
+   "type": "node",
+   "id": 11931152157,
+   "lat": 12.9858685,
+   "lon": 77.5876245,
+   "tags": {
+    "addr:city": "Bengaluru",
+    "addr:country": "IN",
+    "addr:hamlet": "High Grounds",
+    "addr:housename": "Prestige Trade Tower",
+    "addr:postcode": "560001",
+    "addr:street": "Palace Road",
+    "addr:suburb": "Sampangi Rama Nagar",
+    "level": "19",
+    "name": "Access to Tokyo",
+    "office": "company",
+    "opening_hours": "09:00-18:00",
+    "start_date": "2024-04-26",
+    "website": "https://www.metro.tokyo.lg.jp/english/topics/2024/0509_03.html"
+   }
+  },
+  {
+   "type": "node",
+   "id": 12049261998,
+   "lat": 12.9038812,
+   "lon": 77.601298,
+   "tags": {
+    "addr:city": "Bengaluru",
+    "addr:district": "Bengaluru Urban",
+    "addr:housenumber": "175 and 175",
+    "addr:postcode": "560076",
+    "addr:street": "Bannerghatta Road",
+    "name": "Unicornready",
+    "office": "company",
+    "opening_hours": "Mo-Fr 09:00-17:00",
+    "phone": "918041682974",
+    "website": "https://www.unicornready.com/"
+   }
+  },
+  {
+   "type": "node",
+   "id": 12345816301,
+   "lat": 13.0005324,
+   "lon": 77.581877,
+   "tags": {
+    "addr:housenumber": "11/1, mosque Rd",
+    "addr:postcode": "560003",
+    "addr:street": "3rd Cross Road",
+    "name": "Akasha Enterprises",
+    "office": "company",
+    "opening_hours": "Mo-Fr 09:00-17:00",
+    "website": "http://www.akasha.co.in"
+   }
+  },
+  {
+   "type": "node",
+   "id": 12997655807,
+   "lat": 12.9386739,
+   "lon": 77.6902173,
+   "tags": {
+    "addr:city": "Bengaluru",
+    "addr:housenumber": "7th floor WING E, Kalyani helios Tech park",
+    "addr:postcode": "560103",
+    "addr:street": "Outer Ring Road",
+    "name": "MakeMyTrip India Pvt. Ltd",
+    "office": "company",
+    "website": "https://www.makemytrip.com"
+   }
+  },
+  {
+   "type": "way",
+   "id": 145259183,
+   "center": {
+    "lat": 12.8449391,
+    "lon": 77.662139
+   },
+   "tags": {
+    "atm": "yes",
+    "brand:wikidata": "Q2003237",
+    "brand:wikipedia": "en:United Bank of India",
+    "building": "yes",
+    "name": "Prestige Alecto",
+    "name:en": "Prestige Alecto",
+    "office": "company",
+    "short_name": "UBI",
+    "website": "http://www.unitedbankofindia.com"
+   }
+  },
+  {
+   "type": "way",
+   "id": 180969776,
+   "center": {
+    "lat": 12.9733539,
+    "lon": 77.7241918
+   },
+   "tags": {
+    "alt_name": "GE Global Research",
+    "barrier": "wall",
+    "landuse": "commercial",
+    "loc_name": "GE Bangalore Research Center",
+    "name": "John F. Welch Technology Centre",
+    "office": "company",
+    "official_name": "John F. Welch Technology Centre",
+    "official_name:etymology:wikidata": "Q355314",
+    "operator": "General Electric",
+    "short_name": "JFWTC",
+    "start_date": "2000",
+    "website": "https://www.ge.com/research/research-engine/rd-facilities/bengaluru",
+    "wikidata": "Q6232582",
+    "wikipedia": "en:John F. Welch Technology Centre"
+   }
+  },
+  {
+   "type": "way",
+   "id": 181461601,
+   "center": {
+    "lat": 12.9689665,
+    "lon": 77.7225676
+   },
+   "tags": {
+    "addr:city": "Bangalore",
+    "addr:postcode": "560037",
+    "building": "office",
+    "name": "Accenture Solutions Pvt Ltd",
+    "name:kn": "ಅಕ್ಸೆಂಚರ್",
+    "office": "company",
+    "opening_hours": "24/7",
+    "smoking": "isolated",
+    "website": "https://www.accenture.com/"
+   }
+  },
+  {
+   "type": "way",
+   "id": 181461602,
+   "center": {
+    "lat": 12.9697048,
+    "lon": 77.7247775
+   },
+   "tags": {
+    "addr:city": "Bangalore",
+    "addr:housenumber": "117 & 118, Rd Number 3, EPIP Zone",
+    "addr:postcode": "560037",
+    "addr:street": "Whitefield",
+    "building": "yes",
+    "name": "Capgemini",
+    "name:kn": "ಕ್ಯಾಪ್‌ಜೆಮಿನಿ",
+    "office": "company",
+    "opening_hours": "Mo-Su 08:00-22:00",
+    "phone": "+9180 4104 0000",
+    "smoking": "isolated",
+    "website": "https://www.capgemini.com/"
+   }
+  },
+  {
+   "type": "way",
+   "id": 181464981,
+   "center": {
+    "lat": 12.9798973,
+    "lon": 77.7237986
+   },
+   "tags": {
+    "addr:housenumber": "51,52",
+    "addr:postcode": "560066",
+    "building": "office",
+    "email": "enquiry@chesadentalcare.com",
+    "name": "Chesa Dental Care",
+    "office": "company",
+    "phone": "+91 73381 86333",
+    "website": "https://www.chesadentalcare.com/"
+   }
+  },
+  {
+   "type": "way",
+   "id": 181695501,
+   "center": {
+    "lat": 12.9737992,
+    "lon": 77.7159075
+   },
+   "tags": {
+    "addr:housenumber": "157",
+    "building": "office",
+    "building:levels": "4",
+    "name": "Infinite Computer Solutions",
+    "office": "company",
+    "website": "https://www.infinite.com/"
+   }
+  },
+  {
+   "type": "way",
+   "id": 264102939,
+   "center": {
+    "lat": 12.8384928,
+    "lon": 77.6650059
+   },
+   "tags": {
+    "addr:postcode": "560100",
+    "building": "commercial",
+    "name": "Hewlett Packard",
+    "name:kn": "ಹ್ಯೂಲೆಟ್ ಪಕಾರ್ಡ್",
+    "office": "it",
+    "smoking": "outside",
+    "website": "https://www.happiestminds.com/",
+    "wheelchair": "yes"
+   }
+  },
+  {
+   "type": "way",
+   "id": 330033112,
+   "center": {
+    "lat": 12.9779249,
+    "lon": 77.6406537
+   },
+   "tags": {
+    "building": "office",
+    "check_date": "2026-01-07",
+    "government": "yes",
+    "name": "NTPC Limited",
+    "office": "company",
+    "website": "https://www.ntpc.co.in/",
+    "wikidata": "Q1967805",
+    "wikipedia": "en:NTPC Limited"
+   }
+  },
+  {
+   "type": "way",
+   "id": 346128439,
+   "center": {
+    "lat": 13.0651794,
+    "lon": 77.5798688
+   },
+   "tags": {
+    "addr:city": "Sahakarnagar",
+    "addr:housenumber": "1443",
+    "addr:postcode": "560092",
+    "addr:street": "Kodigehalli Main road",
+    "building": "office",
+    "building:levels": "1",
+    "name": "Subconscious Compute Pvt. Ltd.",
+    "office": "it",
+    "opening_hours": "Mo-Fr 09:00-17:00",
+    "website": "https://www.subcom.tech"
+   }
+  },
+  {
+   "type": "way",
+   "id": 346526047,
+   "center": {
+    "lat": 12.9699648,
+    "lon": 77.6410357
+   },
+   "tags": {
+    "addr:housenumber": "769;770",
+    "addr:street": "12th Main Road",
+    "building": "commercial",
+    "building:levels": "5",
+    "name": "CRED aero",
+    "office": "company",
+    "website": "https://cred.club"
+   }
+  },
+  {
+   "type": "way",
+   "id": 346526055,
+   "center": {
+    "lat": 12.9687125,
+    "lon": 77.6410778
+   },
+   "tags": {
+    "addr:housenumber": "777",
+    "building": "yes",
+    "building:levels": "4",
+    "name": "CRED terra",
+    "office": "company",
+    "website": "https://cred.club"
+   }
+  },
+  {
+   "type": "way",
+   "id": 346807169,
+   "center": {
+    "lat": 13.0129269,
+    "lon": 77.5430641
+   },
+   "tags": {
+    "building": "yes",
+    "name": "1Pharmacy Network",
+    "office": "company",
+    "roof:material": "concrete",
+    "website": "https://www.1pharmacy.io"
+   }
+  },
+  {
+   "type": "way",
+   "id": 347066608,
+   "center": {
+    "lat": 12.9709572,
+    "lon": 77.7170639
+   },
+   "tags": {
+    "addr:city": "Bangalore",
+    "addr:postcode": "560066",
+    "addr:street": "I T P L Main Road",
+    "building": "office",
+    "name": "Capgemini Dartmoor Block",
+    "office": "company",
+    "website": "https://www.capgemini.com/",
+    "wheelchair": "yes"
+   }
+  },
+  {
+   "type": "way",
+   "id": 347236827,
+   "center": {
+    "lat": 12.9337181,
+    "lon": 77.6276264
+   },
+   "tags": {
+    "addr:city": "Bengaluru",
+    "addr:housenumber": "168",
+    "addr:postcode": "560034",
+    "addr:street": "3rd Cross, 15th Main",
+    "building": "yes",
+    "building:levels": "2",
+    "name": "DeltaX",
+    "office": "company",
+    "opening_hours": "09:00-20:00",
+    "website": "https://deltax.com/"
+   }
+  },
+  {
+   "type": "way",
+   "id": 347519945,
+   "center": {
+    "lat": 12.9259883,
+    "lon": 77.6001382
+   },
+   "tags": {
+    "building": "office",
+    "name": "Porter",
+    "office": "it",
+    "phone": "+91 080 4515 1818",
+    "website": "https://www.mpowerglobal.com/"
+   }
+  },
+  {
+   "type": "way",
+   "id": 348560591,
+   "center": {
+    "lat": 13.008488,
+    "lon": 77.5639674
+   },
+   "tags": {
+    "addr:city": "Bangalore",
+    "addr:housenumber": "55",
+    "addr:postcode": "560055",
+    "addr:street": "17th cross",
+    "building": "yes",
+    "name": "Datalife Cycle",
+    "office": "it",
+    "opening_hours": "09:00-19:00",
+    "website": "http://www.datalifecycle.in/"
+   }
+  },
+  {
+   "type": "way",
+   "id": 349545792,
+   "center": {
+    "lat": 12.9241027,
+    "lon": 77.6954408
+   },
+   "tags": {
+    "air_conditioning": "yes",
+    "building": "office",
+    "building:levels": "11",
+    "name": "Prestige Trinity Center",
+    "office": "company",
+    "phone": "090663 97116",
+    "smoking": "outside",
+    "website": "https://www.prestigeconstructions.com/",
+    "wheelchair": "yes"
+   }
+  },
+  {
+   "type": "way",
+   "id": 491335687,
+   "center": {
+    "lat": 13.0438912,
+    "lon": 77.6214102
+   },
+   "tags": {
+    "addr:city": "Bengaluru",
+    "addr:postcode": "560045",
+    "air_conditioning": "yes",
+    "building": "office",
+    "fax": "+918041891000",
+    "name": "Philips Innovation Campus",
+    "office": "company",
+    "phone": "+918041890000",
+    "smoking": "no",
+    "url": "http://www.bangalore.philips.com/html/index.asp",
+    "website": "https://www.philips.co.in/content/corporate/en_IN/about-philips/philips-innovation-center.html/",
+    "wheelchair": "yes"
+   }
+  },
+  {
+   "type": "way",
+   "id": 717452722,
+   "center": {
+    "lat": 12.9449531,
+    "lon": 77.5734385
+   },
+   "tags": {
+    "addr:city": "Bangalore",
+    "addr:housenumber": "64/1",
+    "addr:postcode": "560004",
+    "addr:street": "Krishna Rajendra Road",
+    "air_conditioning": "no",
+    "building": "yes",
+    "email": "contact@zoomtail.com",
+    "name": "Zoomtail",
+    "office": "company",
+    "opening_hours": "Mo-Fr 09:00-18:00",
+    "source": "local knowledge",
+    "website": "http://zoomtail.com"
+   }
+  },
+  {
+   "type": "way",
+   "id": 1037897709,
+   "center": {
+    "lat": 12.9050747,
+    "lon": 77.6509159
+   },
+   "tags": {
+    "addr:city": "Bengaluru",
+    "addr:housenumber": "1579",
+    "addr:postcode": "560102",
+    "addr:street": "27th Main Rd, Sector 2, HSR Layout",
+    "building": "yes",
+    "name": "TruEstate (IQOL Technologies)",
+    "office": "it",
+    "website": "https://truestate.in/"
+   }
+  },
+  {
+   "type": "way",
+   "id": 1168771886,
+   "center": {
+    "lat": 12.9400088,
+    "lon": 77.6229245
+   },
+   "tags": {
+    "building": "commercial",
+    "name": "Juspay Technologies Private Limited",
+    "office": "it",
+    "website": "https://www.juspay.in/"
+   }
+  },
+  {
+   "type": "way",
+   "id": 1268343122,
+   "center": {
+    "lat": 12.9359987,
+    "lon": 77.6212551
+   },
+   "tags": {
+    "addr:housenumber": "99",
+    "addr:street": "5th Cross Road",
+    "building": "office",
+    "name": "Infomart Tech Park",
+    "office": "company",
+    "website": "http://infomartgroup.com/index.html"
+   }
+  },
+  {
+   "type": "way",
+   "id": 1270623555,
+   "center": {
+    "lat": 12.8904324,
+    "lon": 77.5815843
+   },
+   "tags": {
+    "addr:city": "Bangalore",
+    "addr:district": "Bengaluru Urban",
+    "addr:housenumber": "481",
+    "addr:postcode": "560078",
+    "addr:street": "5th Cross Road",
+    "building": "yes",
+    "building:levels": "3",
+    "description": "ERP Peers is India's leading NetSuite Partner & solution provider, helping businesses achieve exceptional growth. We streamline and automate operations through our expertise in NetSuite and Celigo.",
+    "name": "ERP Peers",
+    "office": "it",
+    "website": "https://erppeers.com/"
+   }
+  },
+  {
+   "type": "way",
+   "id": 1271217728,
+   "center": {
+    "lat": 12.9196631,
+    "lon": 77.5682271
+   },
+   "tags": {
+    "addr:city": "Banashankari 2nd stage,Bangalore",
+    "addr:district": "Bengaluru",
+    "addr:housenumber": "1877",
+    "addr:postcode": "560070",
+    "addr:street": "31st Cross Road",
+    "building": "yes",
+    "building:levels": "3",
+    "name": "Connectivity IT Solutions Private Limited",
+    "office": "it",
+    "opening_hours": "Mo-Fr 09:30-18:30",
+    "phone": "08026716555",
+    "website": "https://www.cosol.in"
+   }
+  },
+  {
+   "type": "way",
+   "id": 1279060660,
+   "center": {
+    "lat": 12.9117355,
+    "lon": 77.6431192
+   },
+   "tags": {
+    "addr:city": "Bangalore",
+    "addr:district": "Bengaluru Urban",
+    "addr:housenumber": "17L",
+    "addr:postcode": "560102",
+    "addr:street": "18th cross, 19th main, Sector 3, HSRlayout",
+    "building": "yes",
+    "layer": "1",
+    "name": "Bhagyalakshmi Square",
+    "office": "company",
+    "opening_hours": "Mo-Fr 09:00-17:00",
+    "website": "https://miniklub.in",
+    "wheelchair": "yes"
+   }
+  },
+  {
+   "type": "way",
+   "id": 1300695633,
+   "center": {
+    "lat": 12.9632885,
+    "lon": 77.6136581
+   },
+   "tags": {
+    "addr:city": "Bengaluru",
+    "addr:district": "Bengaluru Urban",
+    "addr:housenumber": "#15, 4th Floor",
+    "addr:postcode": "560047",
+    "addr:street": "Cross Road A, Austin Town",
+    "building": "yes",
+    "name": "Fenopix Technologies Pvt Ltd",
+    "office": "it",
+    "opening_hours": "Mo-Fr 09:30-18:30",
+    "website": "https://canvasjs.com"
+   }
+  },
+  {
+   "type": "relation",
+   "id": 14311757,
+   "center": {
+    "lat": 12.9437968,
+    "lon": 77.6049088
+   },
+   "tags": {
+    "landuse": "industrial",
+    "name": "Bosch Spark.NXT",
+    "name:kn": "ಬಾಷ್ ಆರ್ ಬಿ ಐ ಎನ್",
+    "office": "company",
+    "old_name": "Bosch RBIN",
+    "type": "multipolygon",
+    "website": "https://www.sparknxt.com"
+   }
+  },
+  {
+   "type": "node",
+   "id": 306588561,
+   "lat": 12.9338273,
+   "lon": 77.6178775,
+   "tags": {
+    "name": "Wipro K1 office",
+    "office": "company"
+   }
+  },
+  {
+   "type": "node",
+   "id": 338178217,
+   "lat": 13.0448787,
+   "lon": 77.6216681,
+   "tags": {
+    "name": "NXP Semiconductors India",
+    "office": "company",
+    "url": "http://www.nxp.com/"
+   }
+  }
+ ]
+}

@@ -8,9 +8,11 @@ is the blank message box. This drafts the message. It does not send it, and it
 does not find the person - the recipient is someone the user names, usually a
 contact already on record in Company Intel.
 
-One model call, made only when the user asks for a draft. If the model is
-unavailable the user still gets a usable template, with the personal lines
-left as visible gaps rather than filled with something made up.
+One model call, made only when the user asks for a draft, and counted against
+the user's daily allowance of model-written drafts. If the model is
+unavailable, or the allowance is spent, the user still gets a usable template,
+with the personal lines left as visible gaps rather than filled with something
+made up.
 
 Three kinds of untrusted text meet in this prompt - a scraped posting, a
 resume, and names typed into a form - so all of it goes in the user turn,
@@ -28,6 +30,7 @@ from agents.interview.role_context import _flat, build_role_context
 from config.settings import get_settings
 from services.base import parse_uuid
 from services.llm import _chat
+from services.llm_budget import claim_user_draft
 from services.resumes import get_active_resume
 
 logger = logging.getLogger(__name__)
@@ -35,6 +38,10 @@ logger = logging.getLogger(__name__)
 MAX_MESSAGE_CHARS = 1200
 _MAX_RESUME_CHARS = 2500
 _MAX_NAME_CHARS = 80
+
+# Why a template was returned instead of a model-written draft.
+REASON_DAILY_CAP = "daily_cap"
+REASON_MODEL_UNAVAILABLE = "model_unavailable"
 
 # How well the user knows the recipient decides the whole register of the ask.
 RELATIONSHIPS: dict[str, str] = {
@@ -173,7 +180,11 @@ async def draft(
     Draft a referral ask. ``None`` when the role does not exist.
 
     ``generated`` is False when the template was used, so the interface can
-    say so instead of presenting a template as a tailored draft.
+    say so instead of presenting a template as a tailored draft. ``reason``
+    is always present: ``None`` for a generated draft, ``"daily_cap"`` when
+    the user has already had their day's model-written drafts (shared with
+    outreach drafts, see ``services/llm_budget.py``), ``"model_unavailable"``
+    when the model failed or answered with nothing.
     """
     job_uuid = parse_uuid(job_id)
     if job_uuid is None:
@@ -195,22 +206,30 @@ async def draft(
         relationship=relationship,
         resume_text=(resume or {}).get("extracted_text"),
     )
-    try:
-        text = (
-            await _chat(
-                system,
-                user,
-                model=get_settings().groq_fast_model,
-                temperature=0.5,
-                # Reasoning tokens are spent from this budget before any of the
-                # reply is written; the reply itself is capped separately below.
-                max_tokens=1200,
-                reasoning_effort="low",
-            )
-        ).strip()
-    except Exception as exc:
-        logger.warning("Referral draft fell back to the template: %s", exc)
-        text = ""
+    text = ""
+    reason: str | None = None
+    # The claim is made here, right before the model is asked, so a request that
+    # never gets this far (no such role) spends nothing from the allowance.
+    if not await claim_user_draft(user_id):
+        reason = REASON_DAILY_CAP
+    else:
+        try:
+            text = (
+                await _chat(
+                    system,
+                    user,
+                    model=get_settings().groq_fast_model,
+                    temperature=0.5,
+                    # Reasoning tokens are spent from this budget before any of the
+                    # reply is written; the reply itself is capped separately below.
+                    max_tokens=1200,
+                    reasoning_effort="low",
+                )
+            ).strip()
+        except Exception as exc:
+            logger.warning("Referral draft fell back to the template: %s", exc)
+        if not text:
+            reason = REASON_MODEL_UNAVAILABLE
 
     if not text:
         return {
@@ -218,5 +237,6 @@ async def draft(
                 role=role, recipient_name=recipient_name, relationship=relationship
             ),
             "generated": False,
+            "reason": reason,
         }
-    return {"message": text[:MAX_MESSAGE_CHARS].strip(), "generated": True}
+    return {"message": text[:MAX_MESSAGE_CHARS].strip(), "generated": True, "reason": None}

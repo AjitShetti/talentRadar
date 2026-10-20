@@ -15,6 +15,7 @@ const ID_KEY = 'talentradar_anon_id'
 export type AnalyticsEvent =
   | 'public_role_view' | 'check_submitted' | 'signup' | 'dossier_opened'
   | 'prep_started' | 'prep_completed' | 'referral_drafted' | 'resume_tailored' | 'marked_applied'
+  | 'outreach_drafted' | 'outreach_sent' | 'outreach_added'
 
 function anonymousId(): string {
   try {

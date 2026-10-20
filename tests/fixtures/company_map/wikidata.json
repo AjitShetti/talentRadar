@@ -1,0 +1,3017 @@
+{
+ "head": {
+  "vars": [
+   "item",
+   "itemLabel",
+   "itemDescription",
+   "website",
+   "coord",
+   "inception",
+   "employees",
+   "industryLabel",
+   "xHandle",
+   "linkedinCompany",
+   "githubOrg",
+   "logo",
+   "isVc",
+   "isPublic",
+   "person",
+   "personLabel",
+   "role",
+   "personX",
+   "personLinkedin",
+   "personGithub"
+  ]
+ },
+ "results": {
+  "bindings": [
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1381966"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q17486463"
+    },
+    "role": {
+     "type": "literal",
+     "value": "leader"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.flipkart.com/"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2007-10-01T00:00:00Z"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "flipkartsupport"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Flipkart"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian electronic commerce company"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "e-commerce"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Binny Bansal"
+    },
+    "personLinkedin": {
+     "type": "literal",
+     "value": "binnybansal"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Flipkart%20logo%20%282026%29.svg"
+    },
+    "linkedinCompany": {
+     "type": "literal",
+     "value": "flipkart"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1381966"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q17486463"
+    },
+    "role": {
+     "type": "literal",
+     "value": "leader"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.flipkart.com/"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2007-10-01T00:00:00Z"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "Flipkart"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Flipkart"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian electronic commerce company"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "e-commerce"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Binny Bansal"
+    },
+    "personLinkedin": {
+     "type": "literal",
+     "value": "binnybansal"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Flipkart%20logo%20%282026%29.svg"
+    },
+    "linkedinCompany": {
+     "type": "literal",
+     "value": "flipkart"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q487694"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q467215"
+    },
+    "role": {
+     "type": "literal",
+     "value": "founder"
+    },
+    "website": {
+     "type": "uri",
+     "value": "http://www.biocon.com/"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "1978-01-01T00:00:00Z"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "bioconlimited"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Biocon"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "an Indian biopharmaceutical company"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "biotechnology"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Kiran Mazumdar-Shaw"
+    },
+    "isPublic": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
+     "type": "literal",
+     "value": "true"
+    },
+    "linkedinCompany": {
+     "type": "literal",
+     "value": "biocon"
+    },
+    "personX": {
+     "type": "literal",
+     "value": "kiranshaw"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q487694"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q467215"
+    },
+    "role": {
+     "type": "literal",
+     "value": "founder"
+    },
+    "website": {
+     "type": "uri",
+     "value": "http://www.biocon.com/"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "1978-11-29T00:00:00Z"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "bioconlimited"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Biocon"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "an Indian biopharmaceutical company"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "biotechnology"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Kiran Mazumdar-Shaw"
+    },
+    "isPublic": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
+     "type": "literal",
+     "value": "true"
+    },
+    "linkedinCompany": {
+     "type": "literal",
+     "value": "biocon"
+    },
+    "personX": {
+     "type": "literal",
+     "value": "kiranshaw"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q487694"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q467215"
+    },
+    "role": {
+     "type": "literal",
+     "value": "founder"
+    },
+    "website": {
+     "type": "uri",
+     "value": "http://www.biocon.com/"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "1978-01-01T00:00:00Z"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "Bioconlimited"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Biocon"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "an Indian biopharmaceutical company"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "biotechnology"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Kiran Mazumdar-Shaw"
+    },
+    "isPublic": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
+     "type": "literal",
+     "value": "true"
+    },
+    "linkedinCompany": {
+     "type": "literal",
+     "value": "biocon"
+    },
+    "personX": {
+     "type": "literal",
+     "value": "kiranshaw"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q487694"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q467215"
+    },
+    "role": {
+     "type": "literal",
+     "value": "founder"
+    },
+    "website": {
+     "type": "uri",
+     "value": "http://www.biocon.com/"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "1978-11-29T00:00:00Z"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "Bioconlimited"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Biocon"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "an Indian biopharmaceutical company"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "biotechnology"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Kiran Mazumdar-Shaw"
+    },
+    "isPublic": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
+     "type": "literal",
+     "value": "true"
+    },
+    "linkedinCompany": {
+     "type": "literal",
+     "value": "biocon"
+    },
+    "personX": {
+     "type": "literal",
+     "value": "kiranshaw"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q3764687"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q6184280"
+    },
+    "role": {
+     "type": "literal",
+     "value": "founder"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.mphasis.com/"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2000-06-01T00:00:00Z"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Mphasis%20-%20The%20Next%20Applied.png"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Mphasis"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Mphasis is an IT services company based in Bangalore, India"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Jerry Rao"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "mphasis"
+    },
+    "isPublic": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
+     "type": "literal",
+     "value": "true"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "IT service management"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1381966"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q17486463"
+    },
+    "role": {
+     "type": "literal",
+     "value": "founder"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.flipkart.com/"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2007-10-01T00:00:00Z"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Flipkart%20logo%20%282026%29.svg"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Flipkart"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian electronic commerce company"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Binny Bansal"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "Flipkart"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "e-commerce"
+    },
+    "linkedinCompany": {
+     "type": "literal",
+     "value": "flipkart"
+    },
+    "personLinkedin": {
+     "type": "literal",
+     "value": "binnybansal"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1381966"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q17486463"
+    },
+    "role": {
+     "type": "literal",
+     "value": "founder"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.flipkart.com/"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2007-10-01T00:00:00Z"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Flipkart%20logo%20%282026%29.svg"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Flipkart"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian electronic commerce company"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Binny Bansal"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "flipkartsupport"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "e-commerce"
+    },
+    "linkedinCompany": {
+     "type": "literal",
+     "value": "flipkart"
+    },
+    "personLinkedin": {
+     "type": "literal",
+     "value": "binnybansal"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1381966"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q16215695"
+    },
+    "role": {
+     "type": "literal",
+     "value": "founder"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.flipkart.com/"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2007-10-01T00:00:00Z"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Flipkart%20logo%20%282026%29.svg"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Flipkart"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian electronic commerce company"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Sachin Bansal"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "Flipkart"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "e-commerce"
+    },
+    "linkedinCompany": {
+     "type": "literal",
+     "value": "flipkart"
+    },
+    "personX": {
+     "type": "literal",
+     "value": "_sachinbansal"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q3764687"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q6184280"
+    },
+    "role": {
+     "type": "literal",
+     "value": "founder"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.mphasis.com/"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2000-06-01T00:00:00Z"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Mphasis%20-%20The%20Next%20Applied.png"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Mphasis"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Mphasis is an IT services company based in Bangalore, India"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Jerry Rao"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "mphasis"
+    },
+    "isPublic": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
+     "type": "literal",
+     "value": "true"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "information technology consulting"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q1381966"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q16215695"
+    },
+    "role": {
+     "type": "literal",
+     "value": "founder"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.flipkart.com/"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2007-10-01T00:00:00Z"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Flipkart%20logo%20%282026%29.svg"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Flipkart"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian electronic commerce company"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Sachin Bansal"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "flipkartsupport"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "e-commerce"
+    },
+    "linkedinCompany": {
+     "type": "literal",
+     "value": "flipkart"
+    },
+    "personX": {
+     "type": "literal",
+     "value": "_sachinbansal"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q139895120"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q139895333"
+    },
+    "role": {
+     "type": "literal",
+     "value": "founder"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://hireflutterdev.com/"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "GetWidget"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "AI software development company and open-source Flutter UI Kit publisher, founded 2017, headquartered in Bengaluru"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Navin Sharma"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "software industry"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "getwidget"
+    },
+    "linkedinCompany": {
+     "type": "literal",
+     "value": "getwidget"
+    },
+    "personLinkedin": {
+     "type": "literal",
+     "value": "navinsharma002"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2017-01-01T00:00:00Z"
+    },
+    "personX": {
+     "type": "literal",
+     "value": "navinsharmacse"
+    },
+    "personGithub": {
+     "type": "literal",
+     "value": "navin10sharma"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q139500742"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q139500912"
+    },
+    "role": {
+     "type": "literal",
+     "value": "founder"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://edify.club"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Edify Club"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian online e-commerce platform for certified refurbished laptops"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Ashwini Purohit"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "electronics refurbishment"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "edify_club"
+    },
+    "linkedinCompany": {
+     "type": "literal",
+     "value": "13214065"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2023-10-01T00:00:00Z"
+    },
+    "personX": {
+     "type": "literal",
+     "value": "ashwini0529"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q139500742"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q139500907"
+    },
+    "role": {
+     "type": "literal",
+     "value": "founder"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://edify.club"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Edify Club"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian online e-commerce platform for certified refurbished laptops"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Saurabh Vyas"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "electronics refurbishment"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "edify_club"
+    },
+    "linkedinCompany": {
+     "type": "literal",
+     "value": "13214065"
+    },
+    "personLinkedin": {
+     "type": "literal",
+     "value": "vyassaurabh"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2023-10-01T00:00:00Z"
+    },
+    "personX": {
+     "type": "literal",
+     "value": "saurabhvyas_20"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q139895120"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q139895333"
+    },
+    "role": {
+     "type": "literal",
+     "value": "founder"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.getwidget.dev"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "GetWidget"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "AI software development company and open-source Flutter UI Kit publisher, founded 2017, headquartered in Bengaluru"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Navin Sharma"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "artificial intelligence"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "getwidget"
+    },
+    "linkedinCompany": {
+     "type": "literal",
+     "value": "getwidget"
+    },
+    "personLinkedin": {
+     "type": "literal",
+     "value": "navinsharma002"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2017-01-01T00:00:00Z"
+    },
+    "personX": {
+     "type": "literal",
+     "value": "navinsharmacse"
+    },
+    "personGithub": {
+     "type": "literal",
+     "value": "navin10sharma"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q139895120"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q139895333"
+    },
+    "role": {
+     "type": "literal",
+     "value": "founder"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://hireflutterdev.com/"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "GetWidget"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "AI software development company and open-source Flutter UI Kit publisher, founded 2017, headquartered in Bengaluru"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Navin Sharma"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "artificial intelligence"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "getwidget"
+    },
+    "linkedinCompany": {
+     "type": "literal",
+     "value": "getwidget"
+    },
+    "personLinkedin": {
+     "type": "literal",
+     "value": "navinsharma002"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2017-01-01T00:00:00Z"
+    },
+    "personX": {
+     "type": "literal",
+     "value": "navinsharmacse"
+    },
+    "personGithub": {
+     "type": "literal",
+     "value": "navin10sharma"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q139895120"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q139895333"
+    },
+    "role": {
+     "type": "literal",
+     "value": "founder"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.getwidget.dev"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "GetWidget"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "AI software development company and open-source Flutter UI Kit publisher, founded 2017, headquartered in Bengaluru"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Navin Sharma"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "software industry"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "getwidget"
+    },
+    "linkedinCompany": {
+     "type": "literal",
+     "value": "getwidget"
+    },
+    "personLinkedin": {
+     "type": "literal",
+     "value": "navinsharma002"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2017-01-01T00:00:00Z"
+    },
+    "personX": {
+     "type": "literal",
+     "value": "navinsharmacse"
+    },
+    "personGithub": {
+     "type": "literal",
+     "value": "navin10sharma"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q137015469"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q21209355"
+    },
+    "role": {
+     "type": "literal",
+     "value": "founder"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.biome-solutions.com/"
+    },
+    "itemLabel": {
+     "type": "literal",
+     "value": "Q137015469"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Chitra Vishwanath"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "architecture"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "1991-01-01T00:00:00Z"
+    },
+    "employees": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#decimal",
+     "type": "literal",
+     "value": "20"
+    },
+    "coord": {
+     "datatype": "http://www.opengis.net/ont/geosparql#wktLiteral",
+     "type": "literal",
+     "value": "Point(77.5535998 13.0708136)"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q8069628"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q98115159"
+    },
+    "role": {
+     "type": "literal",
+     "value": "founder"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://zerodha.com/"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2010-01-01T00:00:00Z"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Zerodha"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian financial services company"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Nikhil Kamath"
+    },
+    "personLinkedin": {
+     "type": "literal",
+     "value": "nikhilkamathcio"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "financial services"
+    },
+    "personX": {
+     "type": "literal",
+     "value": "nikhilkamathcio"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "zerodhaonline"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q141543938"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q141546727"
+    },
+    "role": {
+     "type": "literal",
+     "value": "leader"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://hourglassresearch.com/"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2011-01-06T00:00:00Z"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Hourglass Research"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "intellectual property research and technology consulting company headquartered in Bengaluru, India"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Gouraj Yadav"
+    },
+    "personLinkedin": {
+     "type": "literal",
+     "value": "gouraj"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "legal services"
+    },
+    "linkedinCompany": {
+     "type": "literal",
+     "value": "hourglass-research"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q6008783"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q17078411"
+    },
+    "role": {
+     "type": "literal",
+     "value": "founder"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://japan.inmobi.com"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2007-01-01T00:00:00Z"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Inmobi-logo.svg"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "InMobi"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian technology company"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Naveen Tewari"
+    },
+    "personLinkedin": {
+     "type": "literal",
+     "value": "naveentewari"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "advertising industry"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "inmobi"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q6008783"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q17078411"
+    },
+    "role": {
+     "type": "literal",
+     "value": "founder"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://japan.inmobi.com"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2007-01-01T00:00:00Z"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Inmobi-logo.svg"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "InMobi"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian technology company"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Naveen Tewari"
+    },
+    "personLinkedin": {
+     "type": "literal",
+     "value": "naveentewari"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "advertising industry"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "InMobi"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q139500742"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q139500912"
+    },
+    "role": {
+     "type": "literal",
+     "value": "leader"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://edify.club"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2023-10-01T00:00:00Z"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Edify Club"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian online e-commerce platform for certified refurbished laptops"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Ashwini Purohit"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "electronics refurbishment"
+    },
+    "linkedinCompany": {
+     "type": "literal",
+     "value": "13214065"
+    },
+    "personX": {
+     "type": "literal",
+     "value": "ashwini0529"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "edify_club"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q137015469"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q21209355"
+    },
+    "role": {
+     "type": "literal",
+     "value": "leader"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.biome-solutions.com/"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "1991-01-01T00:00:00Z"
+    },
+    "itemLabel": {
+     "type": "literal",
+     "value": "Q137015469"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Chitra Vishwanath"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "architecture"
+    },
+    "coord": {
+     "datatype": "http://www.opengis.net/ont/geosparql#wktLiteral",
+     "type": "literal",
+     "value": "Point(77.5535998 13.0708136)"
+    },
+    "employees": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#decimal",
+     "type": "literal",
+     "value": "20"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q8069628"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q70276727"
+    },
+    "role": {
+     "type": "literal",
+     "value": "founder"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://zerodha.com/"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2010-01-01T00:00:00Z"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Zerodha"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian financial services company"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Nithin Kamath"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "financial services"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "zerodhaonline"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q6008783"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q17078411"
+    },
+    "role": {
+     "type": "literal",
+     "value": "founder"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.inmobi.com"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2007-01-01T00:00:00Z"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Inmobi-logo.svg"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "InMobi"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian technology company"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Naveen Tewari"
+    },
+    "personLinkedin": {
+     "type": "literal",
+     "value": "naveentewari"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "advertising industry"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "inmobi"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q6008783"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q17078411"
+    },
+    "role": {
+     "type": "literal",
+     "value": "founder"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.inmobi.com"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2007-01-01T00:00:00Z"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Inmobi-logo.svg"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "InMobi"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian technology company"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Naveen Tewari"
+    },
+    "personLinkedin": {
+     "type": "literal",
+     "value": "naveentewari"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "advertising industry"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "InMobi"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q4853646"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://tallysolutions.com/"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "1988-01-01T00:00:00Z"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Tally%20-%20Logo.png"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Tally Solutions"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Bangalore-based financial accounting software company"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q5968851"
+    },
+    "website": {
+     "type": "uri",
+     "value": "http://www.ibm.com/in/"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "1992-01-01T00:00:00Z"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "IBM India Private Limited"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "company in Bengaluru, India"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "computer hardware industry"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/IBM%20logo.svg"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q5652261"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.happiestminds.com/"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2011-01-01T00:00:00Z"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Happiest Minds Technologies"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "information technology consulting"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q6095017"
+    },
+    "website": {
+     "type": "uri",
+     "value": "http://www.ittiam.com/"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2001-01-01T00:00:00Z"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Ittiam Systems"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian technology company"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Ittiam%20logo%20light%20bg.svg"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q6794121"
+    },
+    "website": {
+     "type": "uri",
+     "value": "http://www.mavallitiffinrooms.com"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "1924-01-01T00:00:00Z"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Mavalli Tiffin Room"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "food-related enterprise in India"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Mavalli%20Tiffin%20Room%20Logo.jpg"
+    },
+    "coord": {
+     "datatype": "http://www.opengis.net/ont/geosparql#wktLiteral",
+     "type": "literal",
+     "value": "Point(77.585537777 12.955163888)"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q22909616"
+    },
+    "website": {
+     "type": "uri",
+     "value": "http://www.vedantu.com"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Vedantu"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian online tutoring platform"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2014-04-13T00:00:00Z"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Vedantulogo%20orange.png"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "vedantu_learn"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "educational technology"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q18357397"
+    },
+    "website": {
+     "type": "uri",
+     "value": "http://www.urbanladder.com/"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Urban Ladder"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Furniture retailer"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2012-01-01T00:00:00Z"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "urbanladder"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q15823140"
+    },
+    "website": {
+     "type": "uri",
+     "value": "http://www.karuturi.com"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "1994-01-01T00:00:00Z"
+    },
+    "itemLabel": {
+     "type": "literal",
+     "value": "Q15823140"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q7425697"
+    },
+    "website": {
+     "type": "uri",
+     "value": "http://www.sasken.com/"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "1989-01-01T00:00:00Z"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Sasken Communication Technologies"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "saskentweets"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "company in Bengaluru, India"
+    },
+    "isPublic": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
+     "type": "literal",
+     "value": "true"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q7687803"
+    },
+    "website": {
+     "type": "uri",
+     "value": "http://www.tataelxsi.com/"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "1989-01-01T00:00:00Z"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Tata Elxsi"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q17053065"
+    },
+    "website": {
+     "type": "uri",
+     "value": "http://exotel.in/"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2011-01-01T00:00:00Z"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Exotel"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "exotel"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Cloud Telephony Platform"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q17152349"
+    },
+    "website": {
+     "type": "uri",
+     "value": "http://www.zoomcar.in/"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Zoomcar"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian self-drive car rental company"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "car rental company"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q17053065"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://exotel.com/"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2011-01-01T00:00:00Z"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Exotel"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "exotel"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Cloud Telephony Platform"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q6947830"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.myntra.com/"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2007-01-01T00:00:00Z"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Myntra"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "myntra"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "E-commerce company of fashion & lifestyle products in India"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "e-commerce"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q7305523"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.redbus.in/"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2006-01-01T00:00:00Z"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "redBus"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "redBus_in"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Online bus ticket booking portal in India"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q55622683"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://meesho.com"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Meesho"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Meesho%20logo.png"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian Origin social commerce platform"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "social commerce"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "meeshoapp"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q24946444"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.atherenergy.com"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Ather Energy"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian electric vehicle manufacturer company"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "automotive industry"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2013-01-01T00:00:00Z"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q24951713"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://axilor.com/"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Axilor Ventures"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "axilorventures"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2014-11-18T00:00:00Z"
+    },
+    "isVc": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
+     "type": "literal",
+     "value": "true"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q28402748"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.healthifyme.com"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "HealthifyMe"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian digital health and wellness company"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2012-01-01T00:00:00Z"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q55622683"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://meesho.com"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Meesho"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Meesho%20logo.png"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian Origin social commerce platform"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "information technology"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "meeshoapp"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q55454375"
+    },
+    "website": {
+     "type": "uri",
+     "value": "http://www.novonordisk.co.in/"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Novo Nordisk (India)"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Pharmaceutical company in Bengaluru, India"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "1923-01-01T00:00:00Z"
+    },
+    "coord": {
+     "datatype": "http://www.opengis.net/ont/geosparql#wktLiteral",
+     "type": "literal",
+     "value": "Point(77.722254 12.980356)"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q30324297"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.phonepe.com"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "PhonePe"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/PhonePe%20Logo.svg"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian financial technology company"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "phonepe_"
+    },
+    "coord": {
+     "datatype": "http://www.opengis.net/ont/geosparql#wktLiteral",
+     "type": "literal",
+     "value": "Point(77.63283333 12.92747222)"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q30324297"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.phonepe.com"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "PhonePe"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/PhonePe%20Logo.svg"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian financial technology company"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "phonepesupport"
+    },
+    "coord": {
+     "datatype": "http://www.opengis.net/ont/geosparql#wktLiteral",
+     "type": "literal",
+     "value": "Point(77.63283333 12.92747222)"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q109985545"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://razorpay.com"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Razorpay"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian payment gateway company"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2014-01-01T00:00:00Z"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "software industry"
+    },
+    "linkedinCompany": {
+     "type": "literal",
+     "value": "razorpay"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "razorpay"
+    },
+    "githubOrg": {
+     "type": "literal",
+     "value": "razorpay"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q109985545"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://razorpay.com"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Razorpay"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian payment gateway company"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2014-01-01T00:00:00Z"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "payment system"
+    },
+    "linkedinCompany": {
+     "type": "literal",
+     "value": "razorpay"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "razorpay"
+    },
+    "githubOrg": {
+     "type": "literal",
+     "value": "razorpay"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q106455641"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://cred.club/"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "CRED"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian financial services company"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2018-01-01T00:00:00Z"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "fintech"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q134437782"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.sarvam.ai/"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Sarvam AI"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian artificial intelligence company"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "artificial intelligence"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q138465565"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.baaz.pro"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2018-01-01T00:00:00Z"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "baaz"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Product engineering and enterprise software development agency"
+    },
+    "industryLabel": {
+     "type": "literal",
+     "value": "Q85903624"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q138465565"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.baaz.pro"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2018-01-01T00:00:00Z"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "baaz"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Product engineering and enterprise software development agency"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "enterprise software"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q138465565"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.baaz.pro"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2018-01-01T00:00:00Z"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "baaz"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Product engineering and enterprise software development agency"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "information technology consulting"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q138465565"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.baaz.pro"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2018-01-01T00:00:00Z"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "baaz"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Product engineering and enterprise software development agency"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "software industry"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q139796161"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://seezo.io"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2023-09-18T00:00:00Z"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Seezo"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "AI-powered application security company that automates security design reviews"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "application security"
+    },
+    "linkedinCompany": {
+     "type": "literal",
+     "value": "company/seezo-io"
+    },
+    "githubOrg": {
+     "type": "literal",
+     "value": "Seezo-io"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q141543938"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q141546727"
+    },
+    "role": {
+     "type": "literal",
+     "value": "founder"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://hourglassresearch.com/"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Hourglass Research"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "intellectual property research and technology consulting company headquartered in Bengaluru, India"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Gouraj Yadav"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2011-01-06T00:00:00Z"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "legal services"
+    },
+    "linkedinCompany": {
+     "type": "literal",
+     "value": "hourglass-research"
+    },
+    "personLinkedin": {
+     "type": "literal",
+     "value": "gouraj"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q141543938"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q141546728"
+    },
+    "role": {
+     "type": "literal",
+     "value": "founder"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://hourglassresearch.com/"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Hourglass Research"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "intellectual property research and technology consulting company headquartered in Bengaluru, India"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Ojas Sabnis"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2011-01-06T00:00:00Z"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "legal services"
+    },
+    "linkedinCompany": {
+     "type": "literal",
+     "value": "hourglass-research"
+    },
+    "personLinkedin": {
+     "type": "literal",
+     "value": "ojasds"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q141596361"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q141596382"
+    },
+    "role": {
+     "type": "literal",
+     "value": "founder"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://indianappguy.com"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indianappguy Tech Private Limited"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian software company founded in 2022, developer of MagicSlides"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Sanskar Tiwari"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2022-03-14T00:00:00Z"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "software industry"
+    },
+    "personLinkedin": {
+     "type": "literal",
+     "value": "indianappguy"
+    },
+    "personX": {
+     "type": "literal",
+     "value": "IndianAppGuy"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q65944364"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.swiggy.com"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Swiggy"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian food delivery app"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2014-08-01T00:00:00Z"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "food delivery"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "swiggy_in"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Swiggy%20Logo%202024.webp"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q86757635"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.cuemath.com"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Cuemath"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "educational company based in India"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "educational technology"
+    },
+    "logo": {
+     "type": "uri",
+     "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Cuemath-logo.png"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q141133821"
+    },
+    "person": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q141133879"
+    },
+    "role": {
+     "type": "literal",
+     "value": "founder"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://mindlyft.in"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Mindlyft"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian GTM engineering company, developer of the ASTRA agentic revenue system"
+    },
+    "personLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Harshit Kunwar"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2025-01-01T00:00:00Z"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "software industry"
+    },
+    "linkedinCompany": {
+     "type": "literal",
+     "value": "mindlyft"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "HrshitKunwar"
+    },
+    "personLinkedin": {
+     "type": "literal",
+     "value": "kunwar-harshit"
+    },
+    "personX": {
+     "type": "literal",
+     "value": "HrshitKunwar"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q56676515"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://hasura.io/"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Hasura"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "cloud platform as a service, backend as a service"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2015-01-01T00:00:00Z"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "software industry"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "HasuraHQ"
+    },
+    "githubOrg": {
+     "type": "literal",
+     "value": "hasura"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q104846573"
+    },
+    "website": {
+     "type": "uri",
+     "value": "http://pixxel.space/"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Pixxel"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian space technology company"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "aerospace industry"
+    },
+    "linkedinCompany": {
+     "type": "literal",
+     "value": "pixxelspace"
+    },
+    "xHandle": {
+     "type": "literal",
+     "value": "PixxelSpace"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q104638837"
+    },
+    "website": {
+     "type": "uri",
+     "value": "http://www.moonfroglabs.com/"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Moonfrog"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "video game developer"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2013-11-22T00:00:00Z"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "video game industry"
+    },
+    "linkedinCompany": {
+     "type": "literal",
+     "value": "moonfrog-labs"
+    }
+   },
+   {
+    "item": {
+     "type": "uri",
+     "value": "http://www.wikidata.org/entity/Q104871276"
+    },
+    "website": {
+     "type": "uri",
+     "value": "https://www.yulu.bike/"
+    },
+    "itemLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Yulu"
+    },
+    "itemDescription": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "Indian micromobility company"
+    },
+    "inception": {
+     "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+     "type": "literal",
+     "value": "2017-01-01T00:00:00Z"
+    },
+    "industryLabel": {
+     "xml:lang": "en",
+     "type": "literal",
+     "value": "transport"
+    }
+   }
+  ]
+ }
+}

@@ -20,14 +20,29 @@ Two rules, in order:
 
 Never deleted: any job with an application attached, and anything already
 LLM-enriched, which cost quota to produce.
+
+``company_news`` is pruned in the same pass: a non-funding item after
+``NEWS_RETENTION_DAYS``, a funding item after ``FUNDING_NEWS_RETENTION_DAYS``
+(phase 2's funding radar reads them for longer). An item's age is its
+publish date, or when we stored it if the feed gave none.
+
+Outreach threads that are closed or cold and have been idle for a year go in
+the same pass (``services/outreach/retention.py``).
+
+``events`` is pruned there too (:func:`prune_events`): a past event goes once it is
+over, unless somebody saved it or noted people at it, which is their history and
+outlives every window here.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any
+from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 
-from sqlalchemy import text
+from sqlalchemy import CursorResult, text
+
+from domain.event_time import DEFAULT_DURATION
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +57,18 @@ STORAGE_HIGH_WATER_BYTES = 400 * 1024 * 1024
 #: to matter to a request on a shared-CPU instance.
 MAX_DELETIONS_PER_RUN = 5000
 
+#: News that is not about funding is kept this long.
+NEWS_RETENTION_DAYS = 180
+
+#: Funding news is kept two years.
+FUNDING_NEWS_RETENTION_DAYS = 730
+
+#: An event nobody saved is kept this long after it ends.
+EVENT_RETENTION_DAYS = 14
+
+#: A cancelled event nobody saved is kept this long after it was due to start.
+CANCELLED_EVENT_RETENTION_DAYS = 2
+
 
 async def database_size_bytes(session: Any) -> int:
     """Current database size, or 0 if the backend cannot report it (e.g. SQLite)."""
@@ -50,6 +77,114 @@ async def database_size_bytes(session: Any) -> int:
         return int(result.scalar() or 0)
     except Exception as exc:
         logger.debug("Could not read database size: %s", exc)
+        return 0
+
+
+async def prune_company_news(session: Any) -> int:
+    """
+    Delete expired ``company_news`` rows; returns how many went.
+
+    Its own step with its own rollback: a database that predates migration 015
+    has no such table, and that must not stop the job prune around it.
+
+    Each day count is a direct ``make_interval`` argument so asyncpg binds it
+    as an integer; inside a ``CASE`` both would be inferred as text.
+    """
+    try:
+        result = await session.execute(
+            text(
+                """
+                DELETE FROM company_news
+                WHERE id IN (
+                    SELECT n.id FROM company_news n
+                    WHERE (
+                        n.category = 'funding'
+                        AND COALESCE(n.published_at, n.created_at)
+                            < NOW() - make_interval(days => :funding_days)
+                    ) OR (
+                        n.category <> 'funding'
+                        AND COALESCE(n.published_at, n.created_at)
+                            < NOW() - make_interval(days => :news_days)
+                    )
+                    LIMIT :cap
+                )
+                """
+            ),
+            {
+                "news_days": NEWS_RETENTION_DAYS,
+                "funding_days": FUNDING_NEWS_RETENTION_DAYS,
+                "cap": MAX_DELETIONS_PER_RUN,
+            },
+        )
+        await session.commit()
+        return int(result.rowcount or 0)
+    except Exception as exc:
+        logger.warning("News retention step failed: %s", exc)
+        await session.rollback()
+        return 0
+
+
+async def prune_events(session: Any) -> int:
+    """
+    Delete expired ``events`` rows; returns how many went.
+
+    An event that has an ``event_saves`` or ``event_contacts`` row is never touched,
+    whatever its age: it is that user's history, and goes only when the last of those
+    rows does. Of the rest, three kinds go: one that was never listed, as soon as it is
+    over; one that is over by :data:`EVENT_RETENTION_DAYS`; and a cancelled one
+    :data:`CANCELLED_EVENT_RETENTION_DAYS` after it was due to start. An event with no
+    stated end is over two hours after it starts. Oldest first, and at most
+    :data:`MAX_DELETIONS_PER_RUN`.
+
+    Its own step with its own rollback, like the news prune: a database that predates
+    the events migration has no such tables, and that must not stop the job prune.
+
+    The cut-offs are computed here and bound as timestamps, rather than written as
+    ``NOW() - make_interval(...)``: the statement then has nothing PostgreSQL-specific in
+    it, and the tests run the statement itself. Deleting an event cascades to its company
+    links and sets ``duplicate_of`` to NULL on its duplicates.
+    """
+    now = datetime.now(UTC)
+    aged = now - timedelta(days=EVENT_RETENTION_DAYS)
+    try:
+        result = await session.execute(
+            text(
+                """
+                DELETE FROM events
+                WHERE id IN (
+                    SELECT e.id FROM events e
+                    WHERE NOT EXISTS (SELECT 1 FROM event_saves s WHERE s.event_id = e.id)
+                      AND NOT EXISTS (SELECT 1 FROM event_contacts c WHERE c.event_id = e.id)
+                      AND (
+                          (NOT e.listed AND (
+                              e.ends_at < :unlisted_end
+                              OR (e.ends_at IS NULL AND e.starts_at < :unlisted_start)
+                          ))
+                          OR e.ends_at < :aged_end
+                          OR (e.ends_at IS NULL AND e.starts_at < :aged_start)
+                          OR (e.is_cancelled AND e.starts_at < :cancelled_start)
+                      )
+                    ORDER BY COALESCE(e.ends_at, e.starts_at) ASC
+                    LIMIT :cap
+                )
+                """
+            ),
+            {
+                # "Over" is the stated end, else two hours after the start: for a row with
+                # no end, the start must be earlier than the cut-off by that much.
+                "unlisted_end": now,
+                "unlisted_start": now - DEFAULT_DURATION,
+                "aged_end": aged,
+                "aged_start": aged - DEFAULT_DURATION,
+                "cancelled_start": now - timedelta(days=CANCELLED_EVENT_RETENTION_DAYS),
+                "cap": MAX_DELETIONS_PER_RUN,
+            },
+        )
+        await session.commit()
+        return int(result.rowcount or 0)
+    except Exception as exc:
+        logger.warning("Event retention step failed: %s", exc)
+        await session.rollback()
         return 0
 
 
@@ -63,6 +198,9 @@ async def prune_stale_jobs() -> dict[str, Any]:
     summary: dict[str, Any] = {
         "deleted_by_age": 0,
         "deleted_by_pressure": 0,
+        "deleted_news": 0,
+        "deleted_outreach_threads": 0,
+        "deleted_events": 0,
         "size_before": 0,
         "size_after": 0,
         "ran": False,
@@ -94,8 +232,28 @@ async def prune_stale_jobs() -> dict[str, Any]:
                 ),
                 {"days": RAW_RETENTION_DAYS, "cap": MAX_DELETIONS_PER_RUN},
             )
-            summary["deleted_by_age"] = aged.rowcount or 0
+            summary["deleted_by_age"] = cast("CursorResult[Any]", aged).rowcount or 0
             await session.commit()
+
+            # News ages out on its own clock, before the size check so the
+            # space it frees counts.
+            summary["deleted_news"] = await prune_company_news(session)
+
+            # Dead outreach threads go in the same pass. Its own step with its own
+            # rollback, like the news: a database that predates migration 017 has no
+            # such table, and that must not lose the summary of the prune around it.
+            try:
+                from services.outreach.retention import prune_outreach
+
+                summary["deleted_outreach_threads"] = await prune_outreach(session)
+            except Exception as exc:
+                logger.warning("Outreach retention step failed: %s", exc)
+                await session.rollback()
+
+            # Past events go after Outreach. ``prune_events`` rolls back on its own
+            # failure (a database that predates migration 018 has no such tables), so
+            # neither step can stop the other or the job prune around them.
+            summary["deleted_events"] = await prune_events(session)
 
             # Rule 2: pressure.
             size = await database_size_bytes(session)
@@ -125,7 +283,9 @@ async def prune_stale_jobs() -> dict[str, Any]:
                         ),
                         {"cap": remaining},
                     )
-                    summary["deleted_by_pressure"] = pressured.rowcount or 0
+                    summary["deleted_by_pressure"] = (
+                        cast("CursorResult[Any]", pressured).rowcount or 0
+                    )
                     await session.commit()
 
             summary["size_after"] = await database_size_bytes(session)
@@ -136,6 +296,11 @@ async def prune_stale_jobs() -> dict[str, Any]:
         return summary
 
     total = summary["deleted_by_age"] + summary["deleted_by_pressure"]
-    if total:
+    if (
+        total
+        or summary["deleted_news"]
+        or summary["deleted_outreach_threads"]
+        or summary["deleted_events"]
+    ):
         logger.info("Retention: removed %d stale job(s) — %s", total, summary)
     return summary

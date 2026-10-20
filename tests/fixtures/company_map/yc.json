@@ -1,0 +1,639 @@
+[
+ {
+  "id": 827,
+  "name": "Razorpay",
+  "slug": "razorpay",
+  "former_names": [],
+  "small_logo_thumb_url": "https://bookface-images.s3.amazonaws.com/small_logos/b6a6aaf9a84fa4b7ddb53cabda7443c142a5a154.png",
+  "website": "https://razorpay.com",
+  "all_locations": "Bengaluru, KA, India",
+  "long_description": "The journey of building Razorpay started in 2014, when Harshil Mathur (CEO & Co-Founder) and Shashank Kumar (MD & Co-Founder) witnessed the dismal state of the online payments industry in India then and understood that they have a larger and more important issue to solve. And That was democratizing online payments for Indian businesses, particularly the underserved market, Startups and SMEs. Over ",
+  "one_liner": "India's only full-stack financial solutions company for businesses.",
+  "team_size": 2700,
+  "industry": "Fintech",
+  "subindustry": "Fintech -> Payments",
+  "launched_at": 1416309883,
+  "tags": [
+   "Banking as a Service",
+   "Fintech",
+   "Payments",
+   "India"
+  ],
+  "tags_highlighted": [],
+  "top_company": true,
+  "isHiring": true,
+  "nonprofit": false,
+  "batch": "Winter 2015",
+  "status": "Active",
+  "industries": [
+   "Fintech",
+   "Payments"
+  ],
+  "regions": [
+   "India",
+   "South Asia",
+   "Remote",
+   "Partly Remote"
+  ],
+  "stage": "Growth",
+  "app_video_public": false,
+  "demo_day_video_public": false,
+  "app_answers": null,
+  "question_answers": true,
+  "url": "https://www.ycombinator.com/companies/razorpay",
+  "api": "https://yc-oss.github.io/api/batches/winter-2015/razorpay.json"
+ },
+ {
+  "id": 1266,
+  "name": "Meesho",
+  "slug": "meesho",
+  "former_names": [],
+  "small_logo_thumb_url": "https://bookface-images.s3.amazonaws.com/small_logos/2e219c412cfa3b69bc5211d8d7473cf06bfe6593.png",
+  "website": "http://www.meesho.com",
+  "all_locations": "Bengaluru, KA, India",
+  "long_description": "Meesho is India’s only true online marketplace, altering the status quo to make e-commerce inclusive and accessible for the next billion users. With a vision to enable 100 million small businesses, including individual entrepreneurs, to succeed online, Meesho is democratising internet commerce and bringing a range of products and new customers online. The Meesho marketplace provides sellers access",
+  "one_liner": "Democratizing internet commerce for everyone in India",
+  "team_size": 1450,
+  "industry": "B2B",
+  "subindustry": "B2B -> Retail",
+  "launched_at": 1461732013,
+  "tags": [
+   "E-commerce",
+   "Retail"
+  ],
+  "tags_highlighted": [],
+  "top_company": true,
+  "isHiring": true,
+  "nonprofit": false,
+  "batch": "Summer 2016",
+  "status": "Public",
+  "industries": [
+   "B2B",
+   "Retail"
+  ],
+  "regions": [
+   "India",
+   "South Asia",
+   "Remote",
+   "Partly Remote"
+  ],
+  "stage": "Growth",
+  "app_video_public": false,
+  "demo_day_video_public": false,
+  "app_answers": null,
+  "question_answers": true,
+  "url": "https://www.ycombinator.com/companies/meesho",
+  "api": "https://yc-oss.github.io/api/batches/summer-2016/meesho.json"
+ },
+ {
+  "id": 420,
+  "name": "Markupwand",
+  "slug": "markupwand",
+  "former_names": [],
+  "small_logo_thumb_url": "https://bookface-images.s3.amazonaws.com/small_logos/ee21082d6cb8096eeec027fb12b3d4e3cf1392ca.png",
+  "website": "http://markupwand.com",
+  "all_locations": "Bengaluru, KA, India",
+  "long_description": "A product that takes PSD files and generates HTML / CSS automatically, and asks a few questions to generate the view templates with a few simple inputs from a backend developer.",
+  "one_liner": "Convert Design files to working websites automagically",
+  "team_size": 3,
+  "industry": "B2B",
+  "subindustry": "B2B -> Engineering, Product and Design",
+  "launched_at": 1336096770,
+  "tags": [
+   "Developer Tools"
+  ],
+  "tags_highlighted": [],
+  "top_company": false,
+  "isHiring": false,
+  "nonprofit": false,
+  "batch": "Summer 2012",
+  "status": "Inactive",
+  "industries": [
+   "B2B",
+   "Engineering, Product and Design"
+  ],
+  "regions": [
+   "India",
+   "South Asia"
+  ],
+  "stage": "Early",
+  "app_video_public": false,
+  "demo_day_video_public": false,
+  "app_answers": null,
+  "question_answers": false,
+  "url": "https://www.ycombinator.com/companies/markupwand",
+  "api": "https://yc-oss.github.io/api/batches/summer-2012/markupwand.json"
+ },
+ {
+  "id": 1267,
+  "name": "Drivezy",
+  "slug": "drivezy",
+  "former_names": [
+   "JustRide"
+  ],
+  "small_logo_thumb_url": "https://bookface-images.s3.amazonaws.com/small_logos/b83c298b96264e91d71c57fafedfa83149d9d6a4.png",
+  "website": "http://www.drivezy.com",
+  "all_locations": "Bengaluru, KA, India",
+  "long_description": "Drivezy, the next generation car & bike sharing platform is here to transform the way vehicles are made, purchased and used. We envision a future where owning a car or bike will be a thing of the past. We're the fastest growing firm in the car & bike rental business in India.\r\n\r\nAndroid App: https://play.google.com/store/apps/details?id=in.justride\r\niOS App: https://itunes.apple.com/in/app/drivezy",
+  "one_liner": "India's largest vehicle sharing platform, turning people's vehicles…",
+  "team_size": 201,
+  "industry": "Consumer",
+  "subindustry": "Consumer -> Travel, Leisure and Tourism",
+  "launched_at": 1461732014,
+  "tags": [
+   "Marketplace"
+  ],
+  "tags_highlighted": [],
+  "top_company": false,
+  "isHiring": false,
+  "nonprofit": false,
+  "batch": "Summer 2016",
+  "status": "Inactive",
+  "industries": [
+   "Consumer",
+   "Travel, Leisure and Tourism"
+  ],
+  "regions": [
+   "India",
+   "South Asia"
+  ],
+  "stage": "Growth",
+  "app_video_public": false,
+  "demo_day_video_public": false,
+  "app_answers": null,
+  "question_answers": false,
+  "url": "https://www.ycombinator.com/companies/drivezy",
+  "api": "https://yc-oss.github.io/api/batches/summer-2016/drivezy.json"
+ },
+ {
+  "id": 1446,
+  "name": "Scribe",
+  "slug": "scribe",
+  "former_names": [],
+  "small_logo_thumb_url": "/company/thumb/missing.png",
+  "website": "http://tryscribe.com/",
+  "all_locations": "Bengaluru, KA, India",
+  "long_description": "Scribe is an AI-Powered Sales Assistant for your inside sales team, that you can hire in <10 minutes. \r\n\r\nScribe magically finds the best prospects, writes highly personalized emails, handles objections and schedules demos with pre-qualified leads. To put it into perspective, our customers have been able to get 3X the number of qualified meetings for 50% of the cost, and your SDRs can now focus on",
+  "one_liner": "Scribe is an AI based Sales Development Representative that you can…",
+  "team_size": 15,
+  "industry": "B2B",
+  "subindustry": "B2B -> Sales",
+  "launched_at": 1478053833,
+  "tags": [
+   "Artificial Intelligence",
+   "SaaS",
+   "B2B"
+  ],
+  "tags_highlighted": [],
+  "top_company": false,
+  "isHiring": false,
+  "nonprofit": false,
+  "batch": "Winter 2017",
+  "status": "Acquired",
+  "industries": [
+   "B2B",
+   "Sales"
+  ],
+  "regions": [
+   "India",
+   "South Asia"
+  ],
+  "stage": "Early",
+  "app_video_public": false,
+  "demo_day_video_public": false,
+  "app_answers": null,
+  "question_answers": false,
+  "url": "https://www.ycombinator.com/companies/scribe",
+  "api": "https://yc-oss.github.io/api/batches/winter-2017/scribe.json"
+ },
+ {
+  "id": 1511,
+  "name": "Supr Daily",
+  "slug": "supr-daily",
+  "former_names": [],
+  "small_logo_thumb_url": "https://bookface-images.s3.amazonaws.com/small_logos/53a5b6981dc4bc8f36f7592d30196e1a22512852.png",
+  "website": "http://www.suprdaily.com/",
+  "all_locations": "Bengaluru, KA, India",
+  "long_description": "Supr Daily is a daily grocery delivery service in India. We use daily milk subscriptions as a railroad to reduce the last-mile delivery costs by 10x. We leverage this as a 'Trojan Cow' to deliver all groceries to your doorstep by 7 am, daily.\r\n\r\nAt it's peak, we scaled the company to $100M annual revenue run rate with a presence in 6 cities serving 200k+ orders daily. We were part of the Winter 17",
+  "one_liner": "Daily grocery delivery service in India",
+  "team_size": null,
+  "industry": "Consumer",
+  "subindustry": "Consumer -> Food and Beverage",
+  "launched_at": 1478578235,
+  "tags": [
+   "Grocery",
+   "Consumer",
+   "Delivery",
+   "E-commerce"
+  ],
+  "tags_highlighted": [],
+  "top_company": false,
+  "isHiring": false,
+  "nonprofit": false,
+  "batch": "Winter 2017",
+  "status": "Acquired",
+  "industries": [
+   "Consumer",
+   "Food and Beverage"
+  ],
+  "regions": [
+   "India",
+   "South Asia"
+  ],
+  "stage": "Early",
+  "app_video_public": false,
+  "demo_day_video_public": false,
+  "app_answers": null,
+  "question_answers": false,
+  "url": "https://www.ycombinator.com/companies/supr-daily",
+  "api": "https://yc-oss.github.io/api/batches/winter-2017/supr-daily.json"
+ },
+ {
+  "id": 13344,
+  "name": "Chutney Inc",
+  "slug": "chutney-inc",
+  "former_names": [
+   "Chutney",
+   "HumBee",
+   "Flasho",
+   "HumBee"
+  ],
+  "small_logo_thumb_url": "https://bookface-images.s3.amazonaws.com/small_logos/1ae6c0cb382bcd0084b164a7baf124b6109a2f1a.png",
+  "website": "",
+  "all_locations": "Bengaluru, KA, India; Remote",
+  "long_description": "",
+  "one_liner": "Pseudonymous avatar-based social network",
+  "team_size": 5,
+  "industry": "Consumer",
+  "subindustry": "Consumer",
+  "launched_at": 1583799212,
+  "tags": [
+   "Social"
+  ],
+  "tags_highlighted": [],
+  "top_company": false,
+  "isHiring": false,
+  "nonprofit": false,
+  "batch": "Winter 2020",
+  "status": "Inactive",
+  "industries": [
+   "Consumer"
+  ],
+  "regions": [
+   "India",
+   "South Asia",
+   "Remote",
+   "Fully Remote"
+  ],
+  "stage": "Early",
+  "app_video_public": false,
+  "demo_day_video_public": false,
+  "app_answers": null,
+  "question_answers": false,
+  "url": "https://www.ycombinator.com/companies/chutney-inc",
+  "api": "https://yc-oss.github.io/api/batches/winter-2020/chutney-inc.json"
+ },
+ {
+  "id": 25619,
+  "name": "RecordBook",
+  "slug": "recordbook",
+  "former_names": [],
+  "small_logo_thumb_url": "https://bookface-images.s3.amazonaws.com/small_logos/3875d1d979cbc4f3d637b7d4c36031d0e7abc4ec.png",
+  "website": "https://play.google.com/store/apps/details?id=com.foodmonk.rekordapp",
+  "all_locations": "Bengaluru, KA, India; Remote",
+  "long_description": "RecordBook is one stop solution to manage all business DATA, WORKFLOWS & TEAMS for Small and Medium Businesses on their mobile devices & in their local languages.",
+  "one_liner": "Airtable for 400 Million SMBs Globally",
+  "team_size": 15,
+  "industry": "B2B",
+  "subindustry": "B2B",
+  "launched_at": 1644952083,
+  "tags": [],
+  "tags_highlighted": [],
+  "top_company": false,
+  "isHiring": false,
+  "nonprofit": false,
+  "batch": "Winter 2022",
+  "status": "Active",
+  "industries": [
+   "B2B"
+  ],
+  "regions": [
+   "India",
+   "South Asia",
+   "Remote",
+   "Fully Remote"
+  ],
+  "stage": "Early",
+  "app_video_public": false,
+  "demo_day_video_public": false,
+  "app_answers": true,
+  "question_answers": false,
+  "url": "https://www.ycombinator.com/companies/recordbook",
+  "api": "https://yc-oss.github.io/api/batches/winter-2022/recordbook.json"
+ },
+ {
+  "id": 1540,
+  "name": "OneFin",
+  "slug": "onefin",
+  "former_names": [
+   "Cready",
+   "Credy"
+  ],
+  "small_logo_thumb_url": "https://bookface-images.s3.amazonaws.com/small_logos/c6faf92eb91f0ff8910311336fa3f164df398c35.png",
+  "website": "https://www.onefin.in",
+  "all_locations": "Bengaluru, KA, India",
+  "long_description": "Building a plug-and-play suite of APIs and lending tech stack to enable financial inclusion. OneFin is backed by marquee investors from Silicon Valley like Y Combinator, Khosla Ventures, etc. Leading NBFC, SFB and fintech companies in India are our users.\r\n\r\nWe have enabled loan disbursement/migration of around $2B in last few years across more than 1 million loans across education loans, EV finan",
+  "one_liner": "Shopify for Financial Services",
+  "team_size": 50,
+  "industry": "Fintech",
+  "subindustry": "Fintech -> Credit and Lending",
+  "launched_at": 1478804688,
+  "tags": [
+   "Fintech",
+   "SaaS",
+   "API"
+  ],
+  "tags_highlighted": [],
+  "top_company": false,
+  "isHiring": true,
+  "nonprofit": false,
+  "batch": "Winter 2017",
+  "status": "Active",
+  "industries": [
+   "Fintech",
+   "Credit and Lending"
+  ],
+  "regions": [
+   "India",
+   "South Asia"
+  ],
+  "stage": "Early",
+  "app_video_public": false,
+  "demo_day_video_public": false,
+  "app_answers": null,
+  "question_answers": false,
+  "url": "https://www.ycombinator.com/companies/onefin",
+  "api": "https://yc-oss.github.io/api/batches/winter-2017/onefin.json"
+ },
+ {
+  "id": 26861,
+  "name": "100x",
+  "slug": "100x",
+  "former_names": [
+   "Videobug",
+   "Unlogged"
+  ],
+  "small_logo_thumb_url": "https://bookface-images.s3.amazonaws.com/small_logos/e57695e93f2c0c4bd59ac6e3b1a1d55dfeb43099.png",
+  "website": "https://100x.bot?utm_source=inbound&utm_medium=bookface&utm_campaign=yc&utm_id=122",
+  "all_locations": "Bengaluru, KA, India",
+  "long_description": "",
+  "one_liner": "Create, Share, and Monetize AI Agents",
+  "team_size": 3,
+  "industry": "B2B",
+  "subindustry": "B2B -> Productivity",
+  "launched_at": 1656204103,
+  "tags": [
+   "Artificial Intelligence",
+   "AI",
+   "AI Assistant"
+  ],
+  "tags_highlighted": [],
+  "top_company": false,
+  "isHiring": false,
+  "nonprofit": false,
+  "batch": "Summer 2022",
+  "status": "Active",
+  "industries": [
+   "B2B",
+   "Productivity"
+  ],
+  "regions": [
+   "India",
+   "South Asia"
+  ],
+  "stage": "Early",
+  "app_video_public": false,
+  "demo_day_video_public": false,
+  "app_answers": null,
+  "question_answers": false,
+  "url": "https://www.ycombinator.com/companies/100x",
+  "api": "https://yc-oss.github.io/api/batches/summer-2022/100x.json"
+ },
+ {
+  "id": 21979,
+  "name": "Statiq.",
+  "slug": "statiq",
+  "former_names": [
+   "Statiq ( by Shatify Services Private Limited )",
+   "Statiq ( by Sharify Services Private Limited )",
+   "Statiq ( Sharify Services Private Limited )"
+  ],
+  "small_logo_thumb_url": "https://bookface-images.s3.amazonaws.com/small_logos/826b10a93d1a290ef6eea0a5ea3d3e6fcc24af06.png",
+  "website": "https://statiq.in/",
+  "all_locations": "Gurugram, HR, India; Bengaluru, KA, India",
+  "long_description": "Statiq connects electric vehicle owners to EV chargers. EV owners can discover chargers near them, pre-book a slot and pay for the usage conveniently. Property owners can buy, share their chargers, manage them and earn by becoming charger hosts with Statiq. Our EV chargers can be found at shopping malls, workplaces, restaurants , hotels, residential spaces. ",
+  "one_liner": "India's Largest EV charging network",
+  "team_size": 200,
+  "industry": "Industrials",
+  "subindustry": "Industrials -> Energy",
+  "launched_at": 1596603047,
+  "tags": [
+   "Marketplace",
+   "Climate",
+   "Electric Vehicles"
+  ],
+  "tags_highlighted": [],
+  "top_company": false,
+  "isHiring": false,
+  "nonprofit": false,
+  "batch": "Summer 2020",
+  "status": "Active",
+  "industries": [
+   "Industrials",
+   "Energy"
+  ],
+  "regions": [
+   "India",
+   "South Asia",
+   "Remote",
+   "Partly Remote"
+  ],
+  "stage": "Growth",
+  "app_video_public": false,
+  "demo_day_video_public": false,
+  "app_answers": null,
+  "question_answers": false,
+  "url": "https://www.ycombinator.com/companies/statiq",
+  "api": "https://yc-oss.github.io/api/batches/summer-2020/statiq.json"
+ },
+ {
+  "id": 12266,
+  "name": "Dockup",
+  "slug": "dockup",
+  "former_names": [],
+  "small_logo_thumb_url": "https://bookface-images.s3.amazonaws.com/small_logos/7bbbc0b138970d664365f112bc20022470751139.png",
+  "website": "https://getdockup.com/",
+  "all_locations": "Bengaluru, KA, India; Mountain View, CA, USA",
+  "long_description": "Dockup gives on-demand environments for engineering teams so they can merge pull requests with confidence. It works like CircleCI, but allows you to manually test and see each code changes in action with your entire tech stack without having to mock any of your services.",
+  "one_liner": "On demand ephemeral environments to run manual and automated tests.",
+  "team_size": 4,
+  "industry": "B2B",
+  "subindustry": "B2B -> Engineering, Product and Design",
+  "launched_at": 1543988094,
+  "tags": [
+   "DevOps"
+  ],
+  "tags_highlighted": [],
+  "top_company": false,
+  "isHiring": false,
+  "nonprofit": false,
+  "batch": "Winter 2019",
+  "status": "Active",
+  "industries": [
+   "B2B",
+   "Engineering, Product and Design"
+  ],
+  "regions": [
+   "India",
+   "United States of America",
+   "South Asia",
+   "America / Canada"
+  ],
+  "stage": "Early",
+  "app_video_public": false,
+  "demo_day_video_public": false,
+  "app_answers": null,
+  "question_answers": false,
+  "url": "https://www.ycombinator.com/companies/dockup",
+  "api": "https://yc-oss.github.io/api/batches/winter-2019/dockup.json"
+ },
+ {
+  "id": 5,
+  "name": "CircuitHub",
+  "slug": "circuithub",
+  "former_names": [],
+  "small_logo_thumb_url": "https://bookface-images.s3.amazonaws.com/small_logos/5967d06c7b101af8570dc47b6eea5cd8567dd32b.png",
+  "website": "https://circuithub.com",
+  "all_locations": "London, England, United Kingdom",
+  "long_description": "CircuitHub offers on-demand electronics manufacturing powered by our factory-scale robotics platform, The Grid. This platform delivers a 10x improvement in the speed and cost of small-batch electronics production. Leading customers like Tesla, NASA, and Zipline rely on CircuitHub to cut their time to market in half.",
+  "one_liner": "On-Demand Electronics Manufacturing",
+  "team_size": 58,
+  "industry": "Industrials",
+  "subindustry": "Industrials -> Manufacturing and Robotics",
+  "launched_at": 1322045523,
+  "tags": [
+   "Hard Tech",
+   "Hardware",
+   "Robotics",
+   "Manufacturing",
+   "Automation"
+  ],
+  "tags_highlighted": [],
+  "top_company": false,
+  "isHiring": true,
+  "nonprofit": false,
+  "batch": "Winter 2012",
+  "status": "Active",
+  "industries": [
+   "Industrials",
+   "Manufacturing and Robotics"
+  ],
+  "regions": [
+   "United Kingdom",
+   "Europe",
+   "Remote",
+   "Partly Remote"
+  ],
+  "stage": "Early",
+  "app_video_public": false,
+  "demo_day_video_public": false,
+  "app_answers": null,
+  "question_answers": false,
+  "url": "https://www.ycombinator.com/companies/circuithub",
+  "api": "https://yc-oss.github.io/api/batches/winter-2012/circuithub.json"
+ },
+ {
+  "id": 26739,
+  "name": "Craze",
+  "slug": "craze",
+  "former_names": [],
+  "small_logo_thumb_url": "https://bookface-images.s3.amazonaws.com/small_logos/b5c0add505f7307410cfab6e36c9a7df97ce8d5d.png",
+  "website": "https://www.craze.ai/?utm_source=yc",
+  "all_locations": "Mumbai, MH, India",
+  "long_description": "Craze is the AI video platform where creatives make something people watch.\r\n\r\nBrands, creators, agencies and studios use Craze to storyboard, edit, design and turn creative direction into social media content, ads, films and more.\r\n\r\nCraze comes with a creative agent you direct, access to all top video/image/music/audio/media models, and a full premiere-like timeline editor. You can also use Craz",
+  "one_liner": "The AI video platform where creatives make something people watch",
+  "team_size": 8,
+  "industry": "Consumer",
+  "subindustry": "Consumer -> Content",
+  "launched_at": 1659184640,
+  "tags": [
+   "Video",
+   "Media",
+   "AI"
+  ],
+  "tags_highlighted": [],
+  "top_company": false,
+  "isHiring": false,
+  "nonprofit": false,
+  "batch": "Summer 2022",
+  "status": "Active",
+  "industries": [
+   "Consumer",
+   "Content"
+  ],
+  "regions": [
+   "India",
+   "South Asia"
+  ],
+  "stage": "Early",
+  "app_video_public": false,
+  "demo_day_video_public": false,
+  "app_answers": null,
+  "question_answers": false,
+  "url": "https://www.ycombinator.com/companies/craze",
+  "api": "https://yc-oss.github.io/api/batches/summer-2022/craze.json"
+ },
+ {
+  "id": 26413,
+  "name": "Medplum",
+  "slug": "medplum",
+  "former_names": [],
+  "small_logo_thumb_url": "https://bookface-images.s3.amazonaws.com/small_logos/4229dd6804f5d73a29c33ab5b98b1cf482e0ea34.png",
+  "website": "https://www.medplum.com",
+  "all_locations": "San Francisco, CA, USA",
+  "long_description": "Medplum makes it easy to build healthcare webapps that are compliant and interoperability ready.  Our open source toolkit allows healthcare providers write apps that are HIPAA compliant, SOC2 certified and FHIR native - streamlining payor connections, health system integrations and more. ",
+  "one_liner": "API first electronic health record (EHR) that is open source",
+  "team_size": 20,
+  "industry": "Healthcare",
+  "subindustry": "Healthcare -> Healthcare IT",
+  "launched_at": 1659548315,
+  "tags": [
+   "Developer Tools",
+   "Open Source",
+   "Healthcare"
+  ],
+  "tags_highlighted": [],
+  "top_company": false,
+  "isHiring": true,
+  "nonprofit": false,
+  "batch": "Summer 2022",
+  "status": "Active",
+  "industries": [
+   "Healthcare",
+   "Healthcare IT"
+  ],
+  "regions": [
+   "United States of America",
+   "America / Canada",
+   "Remote",
+   "Partly Remote"
+  ],
+  "stage": "Early",
+  "app_video_public": false,
+  "demo_day_video_public": false,
+  "app_answers": null,
+  "question_answers": false,
+  "url": "https://www.ycombinator.com/companies/medplum",
+  "api": "https://yc-oss.github.io/api/batches/summer-2022/medplum.json"
+ }
+]

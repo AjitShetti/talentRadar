@@ -1,0 +1,40 @@
+{
+  "slug": "issue-triage-agent",
+  "title": "Issue-triage agent with a 30-case eval",
+  "track": "ai",
+  "hours": 48,
+  "summary": "Build an agent that does a maintainer's first look at a new issue: label it, spot a duplicate, list what is missing, draft a reply. Then prove how well it works on 30 cases you labelled yourself.",
+  "context": [
+    "Maintainers of busy open-source projects lose hours to the first look at each new issue: is it a bug, a question or a feature request, has it been reported, can anyone reproduce it from what is written.",
+    "Invent a small open-source project (say, a fictional command-line tool) and generate or hand-write at least 100 fictional issues for it, with fictional authors. Include duplicates, vague reports, questions posted as bugs, and an issue with an empty body.",
+    "The agent is the smaller half of the job. The larger half is an eval you cannot flatter: 30 cases, labelled by you before you run anything."
+  ],
+  "must_have": [
+    "A triage function: given an issue it returns one label from a set you define, a duplicate verdict naming the earlier issue or none, what is missing to reproduce it, and a drafted first reply that is never posted anywhere.",
+    "An eval set of exactly 30 hand-labelled cases covering every label, at least five duplicate pairs, and several tricky ones.",
+    "An eval script that prints per-label precision and recall, duplicate accuracy, and every wrong answer with its input.",
+    "A baseline that uses no model (keywords or TF-IDF) scored on the same 30, so the agent's gain is a number.",
+    "Your committed scores and a short account of the failure cases you found and what you did, or chose not to do, about each."
+  ],
+  "nice_to_have": [
+    "A rubric of three or four yes/no questions applied by you to ten drafted replies.",
+    "A mode that reads open issues from a real public repo through the unauthenticated GitHub API; nothing from it is committed.",
+    "A confidence value you show to be roughly calibrated."
+  ],
+  "constraints": [
+    "No paid services, APIs or accounts. Use a small local model or a free tier that needs no card, and commit recorded model outputs so a reader can reproduce your scores without a key.",
+    "Fictional data only. Do not copy real people's issue text or usernames into the repo.",
+    "The agent drafts only: it never posts, labels or comments on anything."
+  ],
+  "deliverables": [
+    "A public repo created after you press Start, with commits spread across the window.",
+    "A README with how to run the triage, run the eval, re-record model outputs, your current scores, and what is missing."
+  ],
+  "judge_focus": [
+    "Whether the eval could have failed the agent, and how you kept yourself from labelling to fit its output.",
+    "What you changed because of a failure case, and what you left alone on purpose.",
+    "A trail of commits: the eval set and the baseline before the agent, then each change justified by a failure.",
+    "Your account of what AI produced, what you checked, and what you threw away."
+  ],
+  "bengaluru_context": "Developer-tools and open-source program teams at Bengaluru product companies build triage assistants like this, and are asked how they measure one before trusting it."
+}

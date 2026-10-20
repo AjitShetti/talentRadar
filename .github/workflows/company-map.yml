@@ -1,0 +1,95 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Keep the company map fresh, a bounded batch at a time
+# ─────────────────────────────────────────────────────────────────────────────
+# Each step is one call to POST /api/v1/ingest/company-map/refresh?step=…,
+# which never raises and leaves the last good data on failure:
+#
+#   daily      github_orgs (60) → sites (60) → geocode (40) → summaries (60) → github (30) → tech
+#   Mondays    wikidata   (Bengaluru-headquartered companies)
+#              yc         (Bengaluru companies in Y Combinator's directory)
+#              hiring_list (the checked-in recruiter list; no outside request)
+#   the 1st    osm        (offices tagged inside the Bengaluru bbox)
+#
+# github_orgs walks GitHub's organisation search for Bengaluru (at most 60
+# lookups a day, a cursor remembers the place), so it runs before sites and
+# geocode, which then work on the rows it just added.
+#
+# The limits keep every outside service inside its free use policy:
+# Nominatim at 1 request/second, a daily LLM budget for summaries, the GitHub
+# rate limit. Needs the CRON_TOKEN secret, like reverify.yml; without it the
+# run exits cleanly.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: company-map
+
+on:
+  schedule:
+    - cron: "41 22 * * *"
+  workflow_dispatch:
+    inputs:
+      step:
+        description: "One step to run (wikidata, osm, yc, hiring_list, github_orgs, sites, geocode, summaries, github, tech) or 'daily'"
+        required: false
+        default: daily
+
+concurrency:
+  group: company-map
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      API_BASE: ${{ vars.API_BASE_URL || 'https://talentradar-api.onrender.com' }}
+      CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
+      STEP_INPUT: ${{ github.event.inputs.step || 'daily' }}
+    steps:
+      - name: Skip when no token is configured
+        id: gate
+        run: |
+          if [ -z "$CRON_TOKEN" ]; then
+            echo "::notice::CRON_TOKEN secret is not set; skipping the company map refresh."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'true'
+        with:
+          sparse-checkout: scripts/keepalive.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Wake the API
+        if: steps.gate.outputs.run == 'true'
+        env:
+          URL: ${{ env.API_BASE }}/health
+          DEADLINE_SECONDS: "480"
+        run: bash scripts/keepalive.sh
+
+      - name: Run refresh steps
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          refresh() {
+            echo "::group::$1 (limit $2)"
+            curl --fail-with-body --silent --show-error --max-time 600 \
+              -X POST "$API_BASE/api/v1/ingest/company-map/refresh?step=$1&limit=$2" \
+              -H "X-Cron-Token: $CRON_TOKEN" || echo "::warning::step $1 failed"
+            echo
+            echo "::endgroup::"
+          }
+          if [ "$STEP_INPUT" != "daily" ]; then
+            refresh "$STEP_INPUT" 60
+            exit 0
+          fi
+          # 22:41 UTC: Monday's run is Tuesday 04:11 IST, still "Monday" in UTC.
+          if [ "$(date -u +%u)" = "1" ]; then refresh wikidata 2000; refresh yc 2000; refresh hiring_list 2000; fi
+          if [ "$(date -u +%d)" = "01" ]; then refresh osm 2000; fi
+          refresh github_orgs 60
+          refresh sites 60
+          refresh geocode 40
+          refresh summaries 60
+          refresh github 30
+          # Last: reads the descriptions the steps above just stored.
+          refresh tech 5000

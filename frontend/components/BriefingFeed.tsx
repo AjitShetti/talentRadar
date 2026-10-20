@@ -1,8 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { AlarmClock, ArrowRight, Loader2, Sparkles, X } from 'lucide-react'
+import { AlarmClock, ArrowRight, ArrowUpRight, Loader2, Sparkles, X } from 'lucide-react'
 import { Briefing, BriefingCard } from '@/lib/api'
+import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 
 /** Human label for a card's origin, shown above its title. */
 const KIND_LABELS: Record<string, string> = {
@@ -12,6 +13,14 @@ const KIND_LABELS: Record<string, string> = {
   saved_backlog: 'UNFINISHED',
   closed_role: 'NO LONGER LISTED',
   interview_momentum: 'MOMENTUM',
+  outreach_followup: 'FOLLOW-UP DUE',
+  outreach_suggestion: 'WORTH A NOTE',
+  event_today: 'ON TODAY',
+  event_soon: 'THIS WEEK',
+  event_met_prompt: 'WHO YOU MET',
+  practice_deadline: 'TAKE-HOME DUE',
+  practice_contest: 'WEEKLY CONTEST',
+  practice_today: 'DAILY QUESTION',
 }
 
 function Card({ card, onDismiss }: { card: BriefingCard; onDismiss: (id: string, days?: number) => void }) {
@@ -31,11 +40,14 @@ function Card({ card, onDismiss }: { card: BriefingCard; onDismiss: (id: string,
       </div>
       <p>{card.detail}</p>
       {card.actions.length > 0 && <div className="cp-card-actions">
-        {card.actions.map(action => <Link
-          key={action.label}
-          href={action.href}
-          className={action.style === 'primary' ? 'primary-button' : 'outline-button'}
-        >{action.label} <ArrowRight size={13}/></Link>)}
+        {card.actions.map(action => {
+          const className = action.style === 'primary' ? 'primary-button' : 'outline-button'
+          // An absolute http(s) URL (the LeetCode cards) opens in a new tab; an in-app path stays a Link.
+          const external = externalHref(action.href)
+          return external
+            ? <a key={action.label} href={external} className={className} {...EXTERNAL_LINK_PROPS}>{action.label} <ArrowUpRight size={13}/></a>
+            : <Link key={action.label} href={action.href} className={className}>{action.label} <ArrowRight size={13}/></Link>
+        })}
       </div>}
     </div>
   </article>

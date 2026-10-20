@@ -135,7 +135,7 @@ genuinely floats), not a leftover.
 Two things carry different weight here, and the difference matters if you are implementing:
 
 - **Shipped.** The app chrome, Search, Applications, Interview Lab, Resume Studio, Company Intel,
-  Settings, Onboarding and the auth split all run this system in `frontend/app/globals.css` today.
+  Outreach, Settings, Onboarding and the auth split all run this system in `frontend/app/globals.css` today.
 - **Specified, not yet built.** The **Overview day board** described below replaces the previous
   Overview iteration (`.dayboard` ledger table, `.metric-grid`, `.dashboard-grid`/`.bottom-grid`
   panels, and the in-page copilot panel), which is what `frontend/app/dashboard/page.tsx` still
@@ -421,6 +421,13 @@ One ranked row per employer — logo, name/industry, description, tier code, sta
 count. Selection lights an amber left edge (`inset 3px 0 0 var(--accent)`), not an outline, so
 "the one you're reading" and "the one that needs you" stay the same signal. `.mode-card` and
 `.editor-section-card` use the identical lit-edge treatment.
+
+### Outreach Row (`.or-row`)
+One row per due item or company thread on `/outreach`, opening with a 7px lamp whose color is the
+row's state: amber = due (the one lamp color spent on what needs you), green = replied, steel =
+waiting, hollow = not started or cold. A `.or-person` line in the thread drawer carries the same
+lamp. Hover slides 10px right on pointer devices only, and only above 920 px. Suggestions
+(`.or-sugg`) carry no plate numerals and spend no amber.
 
 ## The Overview, section by section
 

@@ -1,0 +1,69 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Pull open issues that suit a first contribution
+# ─────────────────────────────────────────────────────────────────────────────
+# The outreach list shows issues a candidate can pick up ("good first issue",
+# "help wanted"). Only this workflow asks GitHub for them: a page load never
+# calls GitHub, it reads what the last run stored. Once a day is enough, since
+# these issues do not change by the hour.
+#
+# The limit is 20 because an unauthenticated search allows 10 requests a
+# minute; a larger batch would be throttled before it finished.
+#
+# Needs one repository secret, CRON_TOKEN, matching the API's CRON_TOKEN
+# environment variable. Without it the run exits cleanly and does nothing -
+# a fork or a fresh clone must not go red for lacking a secret.
+#
+# GitHub's scheduled runs are best-effort and often hours late. That is fine
+# here: a late run only means the list is a little behind.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: outreach
+
+on:
+  schedule:
+    - cron: "40 2 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: outreach
+  cancel-in-progress: false
+
+jobs:
+  outreach:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      API_BASE: ${{ vars.API_BASE_URL || 'https://talentradar-api.onrender.com' }}
+      CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
+    steps:
+      - name: Skip when no token is configured
+        id: gate
+        run: |
+          if [ -z "$CRON_TOKEN" ]; then
+            echo "::notice::CRON_TOKEN secret is not set; skipping the outreach pull."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'true'
+        with:
+          sparse-checkout: scripts/keepalive.sh
+          sparse-checkout-cone-mode: false
+
+      # The instance is usually asleep when this fires; wake it first so the
+      # pull itself is not what pays the cold start.
+      - name: Wake the API
+        if: steps.gate.outputs.run == 'true'
+        env:
+          URL: ${{ env.API_BASE }}/health
+          DEADLINE_SECONDS: "480"
+        run: bash scripts/keepalive.sh
+
+      - name: Pull outreach issues
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          curl --fail-with-body --silent --show-error --max-time 300 \
+            -X POST "$API_BASE/api/v1/ingest/outreach-issues?limit=20" \
+            -H "X-Cron-Token: $CRON_TOKEN"

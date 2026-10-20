@@ -12,11 +12,13 @@ still leaves the user with something usable.
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
 
 from services import referral
+from services.cache_backend import CacheBackend
 
 ROLE = {
     "id": str(uuid.uuid4()),
@@ -26,6 +28,16 @@ ROLE = {
     "description": "Own the ledger service.",
 }
 RESUME = "Backend engineer, five years of Python. Built a payments reconciliation service."
+
+
+@pytest.fixture(autouse=True)
+async def _fresh_cache() -> AsyncIterator[None]:
+    """The in-process cache only: a developer's Redis is neither read nor written."""
+    await CacheBackend.reset()
+    CacheBackend._initialised = True
+    CacheBackend._client = None
+    yield
+    await CacheBackend.reset()
 
 
 def prompt(**overrides: Any) -> tuple[str, str]:
@@ -109,7 +121,7 @@ async def test_draft_returns_the_models_message(monkeypatch, loaded):
 
     monkeypatch.setattr(referral, "_chat", chat)
     result = await referral.draft(job_id=ROLE["id"], user_id=str(uuid.uuid4()), recipient_name="Asha")
-    assert result == {"message": "Hi Asha, hope you are well...", "generated": True}
+    assert result == {"message": "Hi Asha, hope you are well...", "generated": True, "reason": None}
 
 
 async def test_draft_falls_back_when_the_model_is_unavailable(monkeypatch, loaded):
@@ -149,6 +161,127 @@ async def test_unknown_role_is_none(monkeypatch):
     monkeypatch.setattr(referral, "_load_role", missing)
     assert await referral.draft(job_id=str(uuid.uuid4()), user_id=str(uuid.uuid4())) is None
     assert await referral.draft(job_id="nope", user_id=str(uuid.uuid4())) is None
+
+
+# ── the daily cap ────────────────────────────────────────────────────────────
+
+JOB_ID = str(ROLE["id"])
+
+
+async def test_referral_falls_back_when_the_user_cap_is_reached(
+    monkeypatch: pytest.MonkeyPatch, loaded: None
+) -> None:
+    from unittest.mock import AsyncMock
+
+    chat = AsyncMock(return_value="should never be asked")
+    monkeypatch.setattr(referral, "_chat", chat)
+    monkeypatch.setattr(referral, "claim_user_draft", AsyncMock(return_value=False))
+
+    result = await referral.draft(job_id=JOB_ID, user_id=str(uuid.uuid4()), recipient_name="Asha")
+
+    chat.assert_not_awaited()
+    assert result is not None
+    assert result["generated"] is False
+    assert result["reason"] == "daily_cap"
+    assert "[" in result["message"] and "Asha" in result["message"]
+
+
+async def test_referral_claims_the_cap_for_this_user_before_asking_the_model(
+    monkeypatch: pytest.MonkeyPatch, loaded: None
+) -> None:
+    from unittest.mock import AsyncMock
+
+    order: list[str] = []
+
+    async def claim(user_id: str) -> bool:
+        order.append(f"claim:{user_id}")
+        return True
+
+    async def chat(system: str, user: str, **kwargs: Any) -> str:
+        order.append("chat")
+        return "Hi Asha"
+
+    monkeypatch.setattr(referral, "claim_user_draft", AsyncMock(side_effect=claim))
+    monkeypatch.setattr(referral, "_chat", chat)
+    await referral.draft(job_id=JOB_ID, user_id="user-7")
+    assert order == ["claim:user-7", "chat"]
+
+
+async def test_referral_spends_the_shared_per_user_allowance(
+    monkeypatch: pytest.MonkeyPatch, loaded: None
+) -> None:
+    from unittest.mock import AsyncMock
+
+    from services import llm_budget
+
+    chat = AsyncMock(return_value="Hi Asha")
+    monkeypatch.setattr(referral, "_chat", chat)
+
+    mine = "user-with-a-busy-day"
+    for _ in range(llm_budget.PER_USER_DAILY_DRAFTS):
+        result = await referral.draft(job_id=JOB_ID, user_id=mine)
+        assert result is not None and result["generated"] is True
+    assert chat.await_count == llm_budget.PER_USER_DAILY_DRAFTS
+    assert await llm_budget.user_drafts_left(mine) == 0
+
+    over = await referral.draft(job_id=JOB_ID, user_id=mine)
+    assert over is not None
+    assert over["generated"] is False and over["reason"] == "daily_cap"
+    assert chat.await_count == llm_budget.PER_USER_DAILY_DRAFTS  # the model was not asked again
+
+    someone_else = await referral.draft(job_id=JOB_ID, user_id="a-quiet-user")
+    assert someone_else is not None and someone_else["generated"] is True
+
+
+async def test_referral_model_failure_says_the_model_was_unavailable(
+    monkeypatch: pytest.MonkeyPatch, loaded: None
+) -> None:
+    async def chat(system: str, user: str, **kwargs: Any) -> str:
+        raise RuntimeError("429 rate limited")
+
+    monkeypatch.setattr(referral, "_chat", chat)
+    result = await referral.draft(job_id=JOB_ID, user_id=str(uuid.uuid4()))
+    assert result is not None
+    assert result["generated"] is False
+    assert result["reason"] == "model_unavailable"
+
+
+async def test_referral_empty_reply_says_the_model_was_unavailable(
+    monkeypatch: pytest.MonkeyPatch, loaded: None
+) -> None:
+    async def chat(system: str, user: str, **kwargs: Any) -> str:
+        return "   "
+
+    monkeypatch.setattr(referral, "_chat", chat)
+    result = await referral.draft(job_id=JOB_ID, user_id=str(uuid.uuid4()))
+    assert result is not None and result["reason"] == "model_unavailable"
+
+
+async def test_a_generated_draft_always_carries_the_reason_key_as_none(
+    monkeypatch: pytest.MonkeyPatch, loaded: None
+) -> None:
+    async def chat(system: str, user: str, **kwargs: Any) -> str:
+        return "Hi Asha"
+
+    monkeypatch.setattr(referral, "_chat", chat)
+    result = await referral.draft(job_id=JOB_ID, user_id=str(uuid.uuid4()))
+    assert result is not None and result["generated"] is True
+    # The key is always there, so the payload has one shape on every path.
+    assert "reason" in result
+    assert result["reason"] is None
+
+
+async def test_an_unknown_role_spends_no_claim(monkeypatch: pytest.MonkeyPatch) -> None:
+    from unittest.mock import AsyncMock
+
+    async def missing(job_id: uuid.UUID) -> None:
+        return None
+
+    claim = AsyncMock(return_value=True)
+    monkeypatch.setattr(referral, "_load_role", missing)
+    monkeypatch.setattr(referral, "claim_user_draft", claim)
+    assert await referral.draft(job_id=str(uuid.uuid4()), user_id="u") is None
+    claim.assert_not_awaited()
 
 
 # ── HTTP ─────────────────────────────────────────────────────────────────────

@@ -1,0 +1,38 @@
+{
+  "slug": "rate-limiter-and-load-test",
+  "title": "A rate limiter as a library, and a load test that breaks it",
+  "track": "backend",
+  "hours": 24,
+  "summary": "Write a small rate-limiting library with two algorithms, then load-test it until you find where it fails and say what you learned.",
+  "context": [
+    "Every API team ends up with a rate limiter, and most have a story about the day it let everything through. You build one as a library other code can import, then try to break it on purpose.",
+    "The library is the smaller half. The larger half is evidence: a load test with a clear question, honest numbers, and a write-up of where the limiter stops being correct or fast."
+  ],
+  "must_have": [
+    "A library with a small, documented interface: check a key against a rule (for example 100 per minute) and get back allow or deny, plus when to retry.",
+    "Two algorithms of your choice (fixed window, sliding window, token bucket, leaky bucket) behind that interface, with a note on when a team would pick each.",
+    "Correctness under concurrency in one process: a test that hammers one key from many threads or tasks and shows the limit holds.",
+    "A pluggable store: in-memory by default and a second implementation (a file or SQLite) that proves the interface is not tied to one.",
+    "A load-test script and its results: requests per second, latency percentiles, requests wrongly allowed or denied near the edge, and the point where it breaks, in a table or chart."
+  ],
+  "nice_to_have": [
+    "The burst a fixed window lets through at its boundary, made visible.",
+    "Memory growth over a million distinct keys, and how you bound it.",
+    "A design note on making it work across several processes."
+  ],
+  "constraints": [
+    "No paid services, APIs or accounts. Run everything on your own machine and load-test nothing you do not own.",
+    "Fictional keys and data only (user-1, user-2 and so on)."
+  ],
+  "deliverables": [
+    "A public repo created after you press Start, with commits spread across the window.",
+    "A README with the interface, how to run the tests and the load test, your results, and what is missing."
+  ],
+  "judge_focus": [
+    "Whether the load test asks a clear question and the answer follows from the numbers.",
+    "How you found the first thing that broke, and whether you fixed it or documented it.",
+    "An interface that is small, hard to misuse, and honest about clocks and time.",
+    "A trail of commits: the simplest limiter first, then tests, then the load test shaping what you changed."
+  ],
+  "bengaluru_context": "Platform and API-gateway teams at Bengaluru product and fintech companies run limiters like this in front of every public endpoint, and are judged on the day traffic doubles."
+}

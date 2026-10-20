@@ -12,11 +12,18 @@ Provides:
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.security import HTTPAuthorizationCredentials
 
-from api.auth import get_current_user, require_cron_or_admin, require_role
+from api.auth import (
+    get_current_user,
+    optional_security,
+    require_admin,
+    require_cron_or_admin,
+    require_role,
+)
 from api.dependencies import get_unit_of_work
 from api.schemas.query_schemas import IngestRequestSchema, IngestResponseSchema
 
@@ -226,3 +233,110 @@ async def reverify_postings(limit: int = Query(default=150, ge=1, le=500)) -> di
 
     return await liveness.reverify_batch(limit=limit)
 
+
+RefreshStep = Literal[
+    "wikidata", "osm", "yc", "hiring_list", "github_orgs", "sites", "geocode", "summaries", "github",
+    "tech",
+]
+
+
+@router.post("/company-map/refresh", dependencies=[Depends(require_cron_or_admin)])
+async def refresh_company_map(
+    step: RefreshStep, limit: int = Query(default=50, ge=1, le=5000)
+) -> dict[str, int | str]:
+    """
+    Run one bounded company-map refresh step.
+
+    Called by ``.github/workflows/company-map.yml`` - there is no worker.
+    ``run_step`` caps ``limit`` per step (Nominatim's 1 req/s, the daily
+    summary budget) and never raises: a failed step comes back as
+    ``{"error": ...}`` and the rows keep their last good data.
+    """
+    from services.company_map import refresh
+
+    return await refresh.run_step(step, limit)
+
+
+RefreshEventsStep = Literal["luma", "gdg", "eventbrite", "link", "relevance", "prune", "purge"]
+
+
+async def _purge_needs_an_admin(
+    step: RefreshEventsStep,
+    credentials: HTTPAuthorizationCredentials | None = Depends(optional_security),
+) -> None:
+    """``purge`` deletes stored rows (spec 10: admin only), so the cron secret is not enough."""
+    if step == "purge":
+        require_admin(credentials)
+
+
+@router.post(
+    "/events/refresh",
+    dependencies=[Depends(require_cron_or_admin), Depends(_purge_needs_an_admin)],
+)
+async def refresh_events(
+    step: RefreshEventsStep,
+    limit: int = Query(default=30, ge=1, le=2000),
+    source: str | None = Query(default=None, max_length=32),
+) -> dict[str, int | str]:
+    """
+    Run one bounded Events refresh step (Luma, GDG, Eventbrite, link, relevance, prune).
+
+    Called twice a day by ``.github/workflows/events.yml`` - there is no worker.
+    ``run_step`` caps ``limit`` per step (each source's polite rate) and never raises:
+    a failed step comes back as ``{"error": ...}``. ``source`` is read by ``purge`` only,
+    which needs ``source=eventbrite`` and a signed-in admin: the cron token is refused.
+    """
+    from services.events import refresh
+
+    return await refresh.run_step(step, limit, source=source)
+
+
+@router.post("/news", dependencies=[Depends(require_cron_or_admin)])
+async def ingest_startup_news() -> dict[str, int | str]:
+    """
+    Fetch the startup-news feeds and let funding move the company map.
+
+    Called every 3 h by ``.github/workflows/news.yml``. Never raises.
+    """
+    from services.company_map import news_ingest
+
+    return await news_ingest.ingest_news()
+
+
+@router.post("/outreach-issues", dependencies=[Depends(require_cron_or_admin)])
+async def refresh_outreach_issues(
+    limit: int = Query(default=20, ge=1, le=60),
+) -> dict[str, int | str | None]:
+    """
+    Check a bounded number of companies for good-first-issues on GitHub.
+
+    Called daily by ``.github/workflows/outreach.yml``. This is the only thing
+    that searches GitHub for issues: a page load reads the stored snapshots. The step
+    spaces its requests to GitHub's limits, caps ``limit`` at 20 without a
+    ``GITHUB_TOKEN``, never raises (a failure comes back as ``{"error": ...}``)
+    and says in ``stopped`` why a run ended early: ``budget``, ``rate_limited``,
+    ``auth`` (a rejected token) or ``errors`` (GitHub unreachable).
+    """
+    from services.outreach import oss
+
+    return await oss.refresh_issues(limit=limit)
+
+
+PracticeStep = Literal["challenges", "judge"]
+
+
+@router.post("/practice", dependencies=[Depends(require_cron_or_admin)])
+async def run_practice_step(
+    step: PracticeStep, limit: int = Query(default=4, ge=1, le=10)
+) -> dict[str, Any]:
+    """
+    Run one Practice step: ``challenges`` (editions, statuses, retention) or ``judge``.
+
+    Called every two hours by ``.github/workflows/practice.yml`` - there is no worker.
+    ``limit`` is how many attempts ``judge`` may take (it applies its own, lower ceiling);
+    ``challenges`` ignores it. ``run_step`` never raises: a failure comes back as
+    ``{"error": ...}`` and whatever the step finished stays committed.
+    """
+    from services.practice import steps
+
+    return await steps.run_step(step, limit)

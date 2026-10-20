@@ -27,7 +27,7 @@ from config.settings import get_settings
 # Bearer token scheme
 security = HTTPBearer()
 # For guards that accept something other than a bearer token as well.
-_optional_security = HTTPBearer(auto_error=False)
+optional_security = HTTPBearer(auto_error=False)
 
 settings = get_settings()
 
@@ -139,7 +139,7 @@ async def get_current_user(
 
 async def require_cron_or_admin(
     x_cron_token: str | None = Header(default=None),
-    credentials: HTTPAuthorizationCredentials | None = Depends(_optional_security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(optional_security),
 ) -> None:
     """
     Guard for maintenance endpoints a scheduler calls.
@@ -149,19 +149,49 @@ async def require_cron_or_admin(
     account. Allow that secret, or a signed-in admin; refuse everyone else.
     """
     expected = get_settings().cron_token
-    if expected and x_cron_token and hmac.compare_digest(x_cron_token, expected):
+    if expected and x_cron_token and _same_secret(x_cron_token, expected):
         return
-    if credentials is not None:
-        try:
-            user = decode_access_token(credentials.credentials)
-        except HTTPException:
-            user = {}
-        if user.get("role") == "admin":
-            return
+    if _is_admin(credentials):
+        return
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Insufficient permissions",
     )
+
+
+def _same_secret(given: str, expected: str) -> bool:
+    """Constant-time equality for two secrets that may hold any character.
+
+    ``hmac.compare_digest`` refuses a ``str`` with a non-ASCII character (``TypeError``),
+    and a request header can carry one (Starlette reads header bytes as Latin-1), so a
+    stray byte in ``X-Cron-Token`` was a 500 rather than a refusal. Comparing the encoded
+    bytes treats it as the wrong token it is.
+    """
+    return hmac.compare_digest(given.encode("utf-8"), expected.encode("utf-8"))
+
+
+def _is_admin(credentials: HTTPAuthorizationCredentials | None) -> bool:
+    """The bearer token is a valid one held by an admin; anything else is not."""
+    if credentials is None:
+        return False
+    try:
+        user = decode_access_token(credentials.credentials)
+    except HTTPException:
+        return False
+    return user.get("role") == "admin"
+
+
+def require_admin(credentials: HTTPAuthorizationCredentials | None) -> None:
+    """Refuse (403) unless the bearer token is a signed-in admin's.
+
+    For the one step of a cron-guarded endpoint that must not run on the shared cron
+    secret, such as a bulk delete. The cron token does not count here.
+    """
+    if not _is_admin(credentials):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions",
+        )
 
 
 def require_role(required_role: str) -> Callable[..., Awaitable[dict[str, Any]]]:

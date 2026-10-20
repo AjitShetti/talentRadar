@@ -31,6 +31,9 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from domain.company_taxonomy import sector_from_text
+from services.company_map.store import _unique_slug
+from services.company_map.summary import choose_summary
 from storage.database import AsyncSessionLocal
 from storage.models import Company, CompanyContact, CompanyProfile
 
@@ -44,7 +47,28 @@ _COMPANY_FIELDS = (
     "name", "domain", "website_url", "linkedin_url", "logo_url", "industry",
     "hq_city", "hq_country", "employee_count_range", "founded_year",
     "description", "tier", "github_org", "careers_url", "office_cities",
+    "area", "address", "stage", "sector",
 )
+
+
+def catalogue_fields(record: dict[str, Any]) -> dict[str, Any]:
+    """
+    The Company columns one catalogue record sets.
+
+    Copied fields as given, plus what the company map derives: a ``sector``
+    from the curated ``industry`` when the record names none, and a curated
+    one-line ``summary`` from the first sentence of the description.
+    """
+    fields = {f: record[f] for f in _COMPANY_FIELDS if record.get(f) is not None}
+    fields["is_tech"] = True  # the catalogue is the list of tech employers
+    if not fields.get("sector"):
+        fields["sector"] = sector_from_text(record.get("industry")) or "other"
+    chosen = choose_summary(
+        curated=record.get("description"), site=None, wikidata=None, name=record["name"]
+    )
+    if chosen:
+        fields["summary"], fields["summary_source"] = chosen
+    return fields
 
 
 def load_catalogue(city: str | None = None) -> list[dict[str, Any]]:
@@ -150,9 +174,11 @@ async def seed(city: str | None = None, *, dry_run: bool = False) -> dict[str, i
                 stats["updated"] += 1
                 action = "update"
 
-            for field in _COMPANY_FIELDS:
-                if field in record and record[field] is not None:
-                    setattr(company, field, record[field])
+            # Curated is the highest-precedence source, so it always writes.
+            for field, value in catalogue_fields(record).items():
+                setattr(company, field, value)
+            if not company.slug:
+                company.slug = await _unique_slug(session, company.name)
 
             await session.flush()  # need company.id for the profile and contacts
 

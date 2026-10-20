@@ -24,6 +24,7 @@ from api.main import app
 from api.schemas.job_schemas import JobFilterSchema, SearchRequestSchema
 from domain.platforms import JOB_PLATFORMS, get_platform, platform_of
 from storage.database import Base
+from storage.database import engine as app_engine
 from storage.models import Company, Job, JobStatus
 from storage.repository import JobRepository, UnitOfWork
 
@@ -141,6 +142,15 @@ class TestRepositoryPlatformFilter:
 
 
 class TestSearchEndpoints:
+    @pytest_asyncio.fixture(autouse=True)
+    async def _release_app_engine(self) -> AsyncIterator[None]:
+        # These requests go through the app, whose middleware opens the shared
+        # engine on this test's event loop. A connection left in its pool is
+        # bound to that loop, and the next test to use the engine fails with
+        # "attached to a different loop".
+        yield
+        await app_engine.dispose()
+
     @pytest.mark.asyncio
     async def test_structured_search_filters_and_labels_platform(self, session: AsyncSession, seeded: None) -> None:
         app.dependency_overrides[get_unit_of_work] = lambda: UnitOfWork(session)
