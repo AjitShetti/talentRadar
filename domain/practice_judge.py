@@ -79,13 +79,32 @@ WEIGHTS: dict[str, int] = {
 #: since nothing has been judged with it.
 JUDGE_PROMPT_VERSION = "2026-10-15.1"
 
-#: The user prompt never exceeds this many characters (about 5,500 tokens).
-MAX_INPUT_CHARS = 22_000
+#: The free tier's minute. Groq allows 8,000 tokens a minute for the judge's model (the
+#: ``x-ratelimit-limit-tokens`` header of a live call, 2026-10-20), and sizes a request as its input
+#: plus ``max_tokens``. One judgement is sent a minute apart (``JUDGE_SPACING_SECONDS``), so it is
+#: all the minute holds: the input, the reply with the reasoning that comes out of the same
+#: ``max_tokens``, and a margin for the chat template and for the estimate being an estimate.
+#:
+#: Measured 2026-10-20 with a maximal fictional input (22,000 characters): 1,075 system and 5,766
+#: user tokens, sent with ``max_tokens`` 3,000 (9,941 requested). Groq took it and debited what was
+#: used, 6,943 + 924 reply tokens (646 of them reasoning), nearly the whole minute. The input
+#: could be a third denser than that sample (tree paths and commit lines are about 2.4 characters
+#: a token), so it is bounded by tokens now, not only by characters.
+TPM_LIMIT = 8_000
+#: Room for the reply and its reasoning. The longest verdict the parser keeps is about 1,000
+#: tokens and the live call reasoned for 646; this is twice the two put together.
+MAX_COMPLETION_TOKENS = 2_400
+REQUEST_MARGIN_TOKENS = 200
+#: What the system and user prompts may add up to, by ``estimate_tokens``.
+INPUT_TOKEN_BUDGET = TPM_LIMIT - MAX_COMPLETION_TOKENS - REQUEST_MARGIN_TOKENS
+#: The user prompt never exceeds this many characters, whatever its tokens: the estimate does not
+#: see every kind of text.
+MAX_INPUT_CHARS = 16_000
 CAP_BRIEF = 3_000
 CAP_WRITEUP = 4_300
 CAP_README = 5_000
-CAP_TREE = 2_500
-CAP_COMMITS = 2_500
+CAP_TREE = 1_600
+CAP_COMMITS = 2_000
 CAP_FILE = 2_000
 CAP_SIGNALS = 600
 
@@ -117,6 +136,50 @@ LIST_MAX = 2
 
 #: How much of a text ``injection_markers`` looks at.
 _SCAN_CHARS = 200_000
+
+# -- how many tokens a text costs ----------------------------------------------------------
+
+#: Runs of letters and digits, runs of anything else that is not white space, and white space.
+_TOKEN_PIECES = re.compile(r"[A-Za-z0-9]+|[^\sA-Za-z0-9]+|\s+")
+#: Added to the estimate so that it does not fall below the real count on the kinds of text
+#: tried: prose, code, paths, commit lines, JSON, hex, base64, CJK, emoji, indentation and blank
+#: lines (``SAMPLE_TOKENS`` in the tests). Ordinary text is estimated about 1.3 times high.
+_ESTIMATE_MARGIN = 1.15
+_SYMBOL_TOKENS = 0.5
+
+
+def estimate_tokens(text: str) -> int:
+    """A count of the tokens ``text`` costs a gpt-oss model, never meant to be below the real one.
+
+    No tokenizer ships with the app, and none may be added for this, so the text is cut into
+    runs the way a tokenizer's first pass cuts it: a word is about one token per six letters, a
+    number one per three digits, a mix of letters and digits (a hash, base64) one per 1.5
+    characters, punctuation half a token a character, each newline at least one token and a long
+    run of spaces one per eight, a non-ASCII character two and an emoji three. The total is then
+    raised by 15 percent.
+    """
+    total = 0.0
+    for piece in _TOKEN_PIECES.findall(text):
+        first = piece[0]
+        if first.isspace():
+            if "\n" in piece:
+                total += max(1, math.ceil(len(piece) / 8))
+            elif len(piece) >= 2:
+                total += math.ceil(len(piece) / 8)
+        elif first.isascii() and first.isalnum():
+            if piece.isalpha():
+                total += math.ceil(len(piece) / 6)
+            elif piece.isdigit():
+                total += math.ceil(len(piece) / 3)
+            else:
+                total += math.ceil(len(piece) / 1.5)
+        else:
+            total += sum(
+                _SYMBOL_TOKENS if ord(char) < 128 else 2 if ord(char) < 0x10000 else 3
+                for char in piece
+            )
+    return math.ceil(total * _ESTIMATE_MARGIN)
+
 
 # -- text hygiene -------------------------------------------------------------------------
 
@@ -508,11 +571,8 @@ def _tree_text(tree: Sequence[str]) -> str:
     return _limited_lines(shown, len(tree) - len(looked_at) + len(shown), CAP_TREE, "paths")
 
 
-def _writeup_text(writeup: Mapping[str, str], nonce: str) -> str:
-    return "\n\n".join(
-        fence(WRITEUP, name, clean_block(str(writeup.get(name) or ""), cap), nonce)
-        for name, cap in WRITEUP_FIELDS
-    )
+def _writeup_fields(writeup: Mapping[str, str]) -> list[tuple[str, str]]:
+    return [(name, clean_block(str(writeup.get(name) or ""), cap)) for name, cap in WRITEUP_FIELDS]
 
 
 @dataclass
@@ -525,7 +585,7 @@ class _Prompt:
     tree: str
     readme: str
     files: list[tuple[str, str]]
-    writeup: str
+    writeup: list[tuple[str, str]]
     nonce: str
 
     def render(self) -> str:
@@ -549,13 +609,15 @@ class _Prompt:
                 f"## File tree\n{self.tree or '(none)'}",
                 readme,
                 files,
-                self.writeup,
+                "\n\n".join(fence(WRITEUP, name, text, self.nonce) for name, text in self.writeup),
             ]
         )
 
     def trim(self, over: int) -> bool:
-        """Remove at least ``over`` characters: key files first (the last, least important, first),
-        then the README, then the tree. ``False`` when there is nothing left to take."""
+        """Remove at least ``over`` characters, in this order: the key files (the last, least
+        important, first), the README, the tree and then, only when that is not enough (text
+        in a script that costs many tokens a character), the commits and the longest write-up
+        field. ``False`` when there is nothing left to take."""
         if self.files:
             path, text = self.files[-1]
             if len(text) > over:
@@ -565,11 +627,27 @@ class _Prompt:
         elif self.readme:
             self.readme = self.readme[: max(len(self.readme) - over, 0)]
         elif self.tree:
-            kept = self.tree[: max(len(self.tree) - over, 0)]
-            self.tree = kept.rsplit("\n", 1)[0] if "\n" in kept else ""
+            self.tree = _cut_lines(self.tree, over)
+        elif self.commits and self.commits != "(none)":
+            self.commits = _cut_lines(self.commits, over) or "(none)"
+        elif any(text for _, text in self.writeup):
+            longest = max(range(len(self.writeup)), key=lambda at: len(self.writeup[at][1]))
+            name, text = self.writeup[longest]
+            self.writeup[longest] = (name, text[: max(len(text) - over, 0)])
         else:
             return False
         return True
+
+
+def _cut_lines(text: str, over: int) -> str:
+    """``text`` without its last ``over`` characters, cut back to the end of a whole line."""
+    kept = text[: max(len(text) - over, 0)]
+    return kept.rsplit("\n", 1)[0] if "\n" in kept else ""
+
+
+#: How many characters a pass of trimming takes off for each token the prompt is over budget:
+#: about what a token of ordinary text is, so one pass usually finishes the job.
+_CHARS_PER_TOKEN_TRIMMED = 3
 
 
 def build_judge_prompt(inp: JudgeInput) -> tuple[str, str]:
@@ -577,9 +655,12 @@ def build_judge_prompt(inp: JudgeInput) -> tuple[str, str]:
 
     The user prompt is, in order: the brief, the signals, the commits (each with its *claimed*
     date), the tree, the README, up to four key files, and the four write-up fields; the repo
-    text and write-up each in a fence of its own. It is at most ``MAX_INPUT_CHARS`` long: if
-    it is over, key files are cut first, then the README, then the tree. The brief, signals,
-    commits and write-up are never cut below their caps, and they always fit.
+    text and write-up each in a fence of its own. It is at most ``MAX_INPUT_CHARS`` long, and the
+    system and user prompts together are at most ``INPUT_TOKEN_BUDGET`` by ``estimate_tokens``:
+    if it is over either, key files are cut first, then the README, then the tree. The brief and
+    signals are never cut. The commits and the write-up keep their caps, and are cut only when
+    nothing else is left to cut and the text is of a kind that costs many tokens a character
+    (a write-up in a script such as Devanagari or Kannada, say).
 
     Every fence marker carries ``fence_nonce(inp)``, and the system prompt names it, so the
     system prompt differs between submissions by that code alone.
@@ -594,13 +675,19 @@ def build_judge_prompt(inp: JudgeInput) -> tuple[str, str]:
         files=[
             (str(path), clean_block(text, CAP_FILE)) for path, text in inp.files[:KEY_FILE_LIMIT]
         ],
-        writeup=_writeup_text(inp.writeup, nonce),
+        writeup=_writeup_fields(inp.writeup),
         nonce=nonce,
     )
+    system = system_prompt(nonce)
+    system_tokens = estimate_tokens(system)
     user = prompt.render()
-    while len(user) > MAX_INPUT_CHARS and prompt.trim(len(user) - MAX_INPUT_CHARS):
+    while True:
+        over_tokens = system_tokens + estimate_tokens(user) - INPUT_TOKEN_BUDGET
+        over = max(len(user) - MAX_INPUT_CHARS, over_tokens * _CHARS_PER_TOKEN_TRIMMED)
+        if over <= 0 or not prompt.trim(over):
+            break
         user = prompt.render()
-    return system_prompt(nonce), user
+    return system, user
 
 
 def input_sha256(user_prompt: str) -> str:

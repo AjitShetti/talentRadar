@@ -27,6 +27,7 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
+import groq
 import httpx
 import pytest
 import pytest_asyncio
@@ -35,7 +36,14 @@ from sqlalchemy import event, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from domain import practice_judge
-from domain.practice_judge import CRITERIA, JUDGE_PROMPT_VERSION, WEIGHTS, average_runs
+from domain.practice_judge import (
+    CRITERIA,
+    JUDGE_PROMPT_VERSION,
+    MAX_COMPLETION_TOKENS,
+    TPM_LIMIT,
+    WEIGHTS,
+    average_runs,
+)
 from domain.practice_repo import RepoRef
 from services import cache_backend, llm
 from services.cache_backend import CacheBackend
@@ -383,7 +391,7 @@ async def test_the_model_is_called_the_way_the_spec_says(
     assert call.kwargs == {
         "model": "test-groq-model",
         "temperature": 0,
-        "max_tokens": 3000,
+        "max_tokens": MAX_COMPLETION_TOKENS,
         "json_mode": True,
         "reasoning_effort": "medium",
     }
@@ -1870,6 +1878,144 @@ async def test_available_always_agrees_with_what_request_appeal_accepts(
         await set_attempt(db, queued, appealed_at=None, appeal_reason=None)
 
 
+# =========================================================================== a request too large
+
+
+TOO_LARGE_MESSAGE = (
+    "Request too large for model `test-groq-model` in organization `org_x` service tier "
+    "`on_demand` on tokens per minute (TPM): Limit 8000, Requested 11000, please reduce your "
+    "message size and try again."
+)
+RATE_LIMIT_MESSAGE = (
+    "Rate limit reached for model `test-groq-model` in organization `org_x` service tier "
+    "`on_demand` on tokens per minute (TPM): Limit 8000, Used 7500, Requested 2000. "
+    "Please try again in 4.2s."
+)
+
+
+def groq_failure(status: int, message: str) -> groq.APIStatusError:
+    request = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
+    response = httpx.Response(status, request=request, json={"error": {"message": message}})
+    body = {"message": message, "type": "tokens", "code": "rate_limit_exceeded"}
+    if status == 429:
+        return groq.RateLimitError(message, response=response, body=body)
+    return groq.APIStatusError(message, response=response, body=body)
+
+
+def test_the_judge_asks_for_no_more_than_the_free_tier_minute_holds() -> None:
+    assert judge.JUDGE_MAX_TOKENS == MAX_COMPLETION_TOKENS
+    assert judge.JUDGE_MAX_TOKENS < TPM_LIMIT // 2
+
+
+@pytest.mark.parametrize("failure", [(413, TOO_LARGE_MESSAGE), (429, TOO_LARGE_MESSAGE)])
+async def test_a_request_the_model_calls_too_large_fails_the_attempt_once_with_its_reason(
+    db: Db,
+    github: PerRepoGitHub,
+    chat: AsyncMock,
+    asha: str,
+    queued: uuid.UUID,
+    failure: tuple[int, str],
+) -> None:
+    chat.side_effect = groq_failure(*failure)
+
+    status = await judge.judge_attempt(queued, now=JUDGE_NOW)
+
+    row = await get_attempt(db, queued)
+    assert status == "judge_failed"
+    assert row.status == "judge_failed"
+    assert row.reject_reason == "request_too_large"  # never failed without a reason
+    assert row.scores is None and row.total is None and row.judge_runs is None  # no fallback score
+    assert row.next_judge_at is None  # not backed off six times to the same refusal
+    assert chat.await_count == 1
+    result = await judge.attempt_result(asha, SLUG, now=JUDGE_NOW)
+    assert result["status"] == "judge_failed"
+    assert result["reject_reason"] == judge.REJECT_MESSAGES["request_too_large"]
+    # And it is not taken up again by the next run.
+    counts = await judge.run_judge_step(4, now=JUDGE_NOW + timedelta(days=1))
+    assert counts["processed"] == 0
+    assert chat.await_count == 1
+
+
+async def test_a_request_too_large_counts_as_failed_in_the_step_and_costs_no_wait(
+    db: Db, github: PerRepoGitHub, chat: AsyncMock, edition: PracticeChallenge
+) -> None:
+    ids = await add_due(db, github, edition, 2)
+    chat.side_effect = [groq_failure(413, TOO_LARGE_MESSAGE), reply()]
+    waits, sleep = sleeper()
+
+    counts = await judge.run_judge_step(4, now=JUDGE_NOW, sleep=sleep)
+
+    assert (counts["failed"], counts["judged"]) == (1, 1)
+    assert waits == []  # a refused request spent none of the minute
+    assert (await get_attempt(db, ids[0])).status == "judge_failed"
+    assert (await get_attempt(db, ids[1])).status == "judged"
+
+
+async def test_a_rate_limit_that_is_only_full_for_now_is_still_backed_off_and_retried(
+    db: Db, github: PerRepoGitHub, chat: AsyncMock, queued: uuid.UUID
+) -> None:
+    chat.side_effect = groq_failure(429, RATE_LIMIT_MESSAGE)
+
+    assert await judge.judge_attempt(queued, now=JUDGE_NOW) == "queued"
+
+    row = await get_attempt(db, queued)
+    assert row.status == "queued"
+    assert row.reject_reason is None
+    assert row.judge_attempts == 1
+    assert utc(row.next_judge_at) == JUDGE_NOW + timedelta(hours=2)
+
+
+async def test_a_too_large_second_reading_leaves_the_first_score_and_gives_the_appeal_up(
+    db: Db, github: PerRepoGitHub, chat: AsyncMock, asha: str, queued: uuid.UUID
+) -> None:
+    await judged_attempt(db, chat, queued)
+    await judge.request_appeal(asha, SLUG, "Again, please.", now=APPEAL_AT)
+    chat.side_effect = groq_failure(413, TOO_LARGE_MESSAGE)
+
+    counts = await judge.run_judge_step(4, now=APPEAL_AT)
+
+    assert counts["failed"] == 1
+    row = await get_attempt(db, queued)
+    assert row.status == "judged"
+    assert row.scores == SCORES  # the first reading stands
+    assert row.next_judge_at is None
+    assert chat.await_count == 2  # one call for the first reading, one refused
+    appeal = (await judge.attempt_result(asha, SLUG, now=APPEAL_AT))["appeal"]
+    assert (appeal["state"], appeal["used"], appeal["available"]) == ("gave_up", True, False)
+
+
+async def test_an_admin_can_requeue_a_build_that_was_too_large_and_it_is_judged(
+    db: Db, github: PerRepoGitHub, chat: AsyncMock, asha: str, queued: uuid.UUID
+) -> None:
+    chat.side_effect = groq_failure(413, TOO_LARGE_MESSAGE)
+    await judge.judge_attempt(queued, now=JUDGE_NOW)
+    chat.side_effect = None
+    chat.return_value = reply()
+
+    await judge.admin_requeue(queued, now=JUDGE_NOW)
+
+    assert await judge.judge_attempt(queued, now=JUDGE_NOW) == "judged"
+    assert (await get_attempt(db, queued)).reject_reason is None
+
+
+async def test_the_log_for_a_too_large_request_has_a_class_and_a_status_and_no_text(
+    db: Db,
+    github: PerRepoGitHub,
+    chat: AsyncMock,
+    queued: uuid.UUID,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    github.readme = README_CLEAN + "\nSECRET-README-TEXT\n"
+    chat.side_effect = groq_failure(413, TOO_LARGE_MESSAGE)
+
+    await judge.judge_attempt(queued, now=JUDGE_NOW)
+
+    assert "SECRET" not in caplog.text
+    assert "org_x" not in caplog.text
+    assert "413" in caplog.text
+
+
 # =========================================================================== admin
 
 
@@ -2086,6 +2232,7 @@ def test_every_reject_reason_the_judge_can_give_has_words() -> None:
         "snapshot_gone",
         "proof_missing",
         "repo_too_large",
+        "request_too_large",
     }
     assert reasons <= set(judge.REJECT_MESSAGES)
     assert all(len(code) <= 64 for code in judge.REJECT_MESSAGES)  # the column is varchar(64)

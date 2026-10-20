@@ -69,6 +69,7 @@ from domain.practice_judge import (
     CAP_README,
     CRITERIA,
     JUDGE_PROMPT_VERSION,
+    MAX_COMPLETION_TOKENS,
     WEIGHTS,
     JudgeInput,
     Verdict,
@@ -95,7 +96,7 @@ from domain.practice_repo import (
 from domain.practice_signals import WRITEUP_TEXT_FIELDS, compute_signals
 from services.base import parse_uuid
 from services.cache_backend import CacheBackend
-from services.llm import _chat
+from services.llm import _chat, is_request_too_large
 from services.practice.errors import PracticeConflict, PracticeInvalid, PracticeNotFound
 from services.practice.github_reader import (
     GitHubUnavailable,
@@ -113,8 +114,10 @@ from storage.models import PracticeAttempt, PracticeChallenge
 
 logger = logging.getLogger(__name__)
 
-#: Model calls per day across the whole deployment (about 100k tokens), counted like
-#: ``services/job_enrichment.py::_consume_budget``.
+#: Model calls per day across the whole deployment, counted like
+#: ``services/job_enrichment.py::_consume_budget``. A maximal judgement was measured at 7.9k tokens
+#: on 2026-10-20 and the input is capped lower now (about 4.3k in and 1k out at its largest), so
+#: twelve are about 60k tokens of the free tier's 200k a day, which the rest of the app shares.
 DAILY_JUDGE_BUDGET = 12
 #: Attempts one scheduled run takes; two without a GitHub token (60 requests an hour, shared IP).
 JUDGE_PER_RUN_MAX = 4
@@ -125,8 +128,9 @@ JUDGE_SPACING_SECONDS = 65
 BACKOFF_HOURS = (2, 4, 8, 16, 24)
 MAX_JUDGE_ATTEMPTS = 6
 
-#: Reasoning tokens are billed against ``max_tokens``; 900 truncated the verdict.
-JUDGE_MAX_TOKENS = 3_000
+#: Reasoning tokens are billed against ``max_tokens``; 900 truncated the verdict. Sized with the
+#: input so that the two fit the free tier's 8,000 tokens a minute (``domain.practice_judge``).
+JUDGE_MAX_TOKENS = MAX_COMPLETION_TOKENS
 JUDGE_REASONING_EFFORT = "medium"
 
 APPEAL_WINDOW = timedelta(days=7)
@@ -169,7 +173,14 @@ REJECT_MESSAGES: dict[str, str] = {
         "The .talentradar file with your proof code was not in the repo at the judged commit."
     ),
     "repo_too_large": "The repo is too large to read.",
+    "request_too_large": (
+        "The judge could not read this build in one go: it is more than the free model we use "
+        "takes at once. Nothing in your submission was wrong."
+    ),
 }
+
+#: ``reject_reason`` of an attempt the model refused for its size, which a later try cannot fix.
+REQUEST_TOO_LARGE = "request_too_large"
 
 _NO_ATTEMPT = "We could not find your attempt at that build."
 _NO_SUCH_ATTEMPT = "We could not find that attempt."
@@ -591,8 +602,17 @@ def _reusable(runs: list[dict[str, Any]], input_hash: str, model: str) -> bool:
     )
 
 
+class _TooLarge(Exception):  # noqa: N818 - names the outcome, as _Reject does
+    """The model refused the request for its size. It would refuse it again, so there is no
+    backing off and trying later."""
+
+
 async def _ask(system: str, user: str, model: str) -> Verdict | None:
-    """One model call, read strictly. ``None`` for any error or unreadable reply: never a score."""
+    """One model call, read strictly. ``None`` for any error or unreadable reply: never a score.
+
+    Raises :class:`_TooLarge` when the model says the request is too large for it (a 413, or the
+    429 Groq sends for the same thing): a retry of the same input is refused the same way.
+    """
     try:
         raw = await _chat(
             system,
@@ -609,6 +629,13 @@ async def _ask(system: str, user: str, model: str) -> Verdict | None:
     except VerdictError:
         logger.warning("practice: the judge's reply could not be read")
     except Exception as exc:
+        if is_request_too_large(exc):
+            logger.warning(
+                "practice: the judge's request was too large for the model (%s, status %s)",
+                type(exc).__name__,
+                getattr(exc, "status_code", None),
+            )
+            raise _TooLarge from exc
         logger.warning("practice: the judge's model call failed (%s)", type(exc).__name__)
     return None
 
@@ -647,6 +674,27 @@ async def _fail(attempt_id: uuid.UUID, moment: datetime) -> _Outcome:
         {"status": status, "judge_attempts": prior},
         values,
         _Outcome(after, "failed" if exhausted else "retried"),
+    )
+
+
+async def _give_up(work: _Work) -> _Outcome:
+    """The model will not take this input, now or on a later try: stop, and say why.
+
+    A first judgement becomes ``judge_failed`` with ``request_too_large`` as its reason, which
+    the owner reads as a sentence, and an admin can requeue or score it by hand. An appeal's
+    second reading is given up with the first score standing (the appeal then shows as
+    ``gave_up``). The model refused the request, so none of the minute was spent: ``llm`` is
+    False and the step does not wait.
+    """
+    if work.status == _QUEUED:
+        return await _apply(
+            work.id,
+            {"status": _QUEUED},
+            {"status": "judge_failed", "reject_reason": REQUEST_TOO_LARGE, "next_judge_at": None},
+            _Outcome("judge_failed", "failed"),
+        )
+    return await _apply(
+        work.id, {"status": _JUDGED}, {"next_judge_at": None}, _Outcome(_JUDGED, "failed")
     )
 
 
@@ -756,7 +804,10 @@ async def _first_judgement(work: _Work, moment: datetime) -> _Outcome:
 
     if not await _consume_budget(moment):
         return _Outcome(_QUEUED, "budget")
-    verdict = await _ask(system, user, model)
+    try:
+        verdict = await _ask(system, user, model)
+    except _TooLarge:
+        return await _give_up(work)
     if verdict is None:
         return replace(await _fail(work.id, moment), llm=True)
 
@@ -822,7 +873,10 @@ async def _appeal_rerun(work: _Work, moment: datetime) -> _Outcome:
     if not await _consume_budget(moment):
         return _Outcome(_JUDGED, "budget")
     model = get_settings().groq_model
-    verdict = await _ask(system, user, model)
+    try:
+        verdict = await _ask(system, user, model)
+    except _TooLarge:
+        return await _give_up(work)
     if verdict is None:
         return replace(await _fail(work.id, moment), llm=True)
 

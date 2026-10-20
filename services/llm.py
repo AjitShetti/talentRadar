@@ -36,6 +36,25 @@ def get_llm() -> AsyncGroq:
     return AsyncGroq(api_key=settings.groq_api_key)
 
 
+#: Groq's wording when one request is bigger than the whole per-minute allowance. A 413 says it by
+#: its status; Groq has also sent it as a 429.
+_TOO_LARGE = re.compile(r"request too large|request_too_large|reduce your message size", re.I)
+
+
+def is_request_too_large(exc: BaseException) -> bool:
+    """Whether the provider refused the request for its size alone.
+
+    That is a different thing from a rate limit that is full for now: the same request is
+    refused again however long it waits, so a caller must shrink it or give up, never retry.
+    """
+    status_code = getattr(exc, "status_code", None)
+    if status_code == 413:
+        return True
+    if status_code != 429:
+        return False
+    return bool(_TOO_LARGE.search(f"{getattr(exc, 'message', '')} {exc}"))
+
+
 def _is_retryable(exc: BaseException) -> bool:
     """Only retry failures a retry can plausibly fix.
 
@@ -45,6 +64,8 @@ def _is_retryable(exc: BaseException) -> bool:
     coming. Rate limits and transient server/network errors are worth another
     go; a 4xx that is not a 429 is not.
     """
+    if is_request_too_large(exc):
+        return False
     status_code = getattr(exc, "status_code", None)
     if status_code is None:
         response = getattr(exc, "response", None)

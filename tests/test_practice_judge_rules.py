@@ -8,7 +8,9 @@ a model, the network or the clock.
 
 from __future__ import annotations
 
+import base64
 import dataclasses
+import hashlib
 import json
 import re
 import sys
@@ -30,8 +32,16 @@ from domain.practice_judge import (
     CAP_TREE,
     CAP_WRITEUP,
     CRITERIA,
+    INPUT_TOKEN_BUDGET,
+    ITEM_CHARS,
     JUDGE_PROMPT_VERSION,
+    LIST_MAX,
+    MAX_COMPLETION_TOKENS,
     MAX_INPUT_CHARS,
+    NOTE_CHARS,
+    REQUEST_MARGIN_TOKENS,
+    SUMMARY_CHARS,
+    TPM_LIMIT,
     WEIGHTS,
     JudgeInput,
     Verdict,
@@ -39,6 +49,7 @@ from domain.practice_judge import (
     average_runs,
     build_judge_prompt,
     clean_block,
+    estimate_tokens,
     fence,
     fence_nonce,
     flat_line,
@@ -709,7 +720,7 @@ def test_fence_material_in_repo_text_is_neutralised() -> None:
 def test_prompt_is_bounded() -> None:
     system, user = build_judge_prompt(_big_input())
     assert len(user) <= MAX_INPUT_CHARS
-    assert MAX_INPUT_CHARS == 22_000
+    assert MAX_INPUT_CHARS == 16_000  # was 22,000 before the free tier's minute was measured
     assert system  # the system prompt is not part of the bound
 
 
@@ -740,7 +751,9 @@ def test_the_fixed_sections_leave_room_under_the_total() -> None:
 
 
 def _built(monkeypatch: pytest.MonkeyPatch, limit: int, inp: JudgeInput) -> str:
+    """The user prompt with only the character limit in force (the token budget set aside)."""
     monkeypatch.setattr(judge, "MAX_INPUT_CHARS", limit)
+    monkeypatch.setattr(judge, "INPUT_TOKEN_BUDGET", 10**9)
     _, user = build_judge_prompt(inp)
     return user
 
@@ -758,7 +771,7 @@ def test_trim_order_is_key_files_then_readme_then_tree(monkeypatch: pytest.Monke
     full = _built(monkeypatch, unlimited, big)
     assert len(fixed) < len(with_tree) < len(with_both) < len(full)
     whole_tree = _section(with_tree, "File tree")
-    assert len(whole_tree) > 2_000
+    assert len(whole_tree) > 1_000
 
     # 1) A little over: only the last key file loses text.
     limit = len(full) - 300
@@ -875,9 +888,16 @@ def test_nonce_does_not_depend_on_the_order_a_writeup_mapping_was_built_in() -> 
     assert build_judge_prompt(forward) == build_judge_prompt(backward)
 
 
+def _large_input() -> JudgeInput:
+    """The README and every key file at their caps, the rest ordinary: large, but still whole
+    under the token budget (``_big_input`` is not: the budget cuts its key files)."""
+    blob = "x" * 100_000
+    return _input(readme=blob, files=[(f"src/f{n}.py", blob) for n in range(4)])
+
+
 @pytest.mark.parametrize("big", [False, True])
 def test_every_marker_in_the_prompt_carries_the_nonce(big: bool) -> None:
-    inp = _big_input() if big else _input()
+    inp = _large_input() if big else _input()
     nonce = fence_nonce(inp)
     system, user = build_judge_prompt(inp)
     markers = _markers(user)
@@ -1409,3 +1429,198 @@ def test_the_prompt_and_its_hash_do_not_depend_on_the_key_order_of_stored_json(
 def test_signals_are_listed_in_name_order() -> None:
     _, user = build_judge_prompt(_input(signals={"zeta": 1, "alpha": 2, "mid": True}))
     assert user.index("alpha: 2") < user.index("mid: yes") < user.index("zeta: 1")
+
+
+# -- the request must fit the free tier's minute ---------------------------------------------
+
+#: Real ``o200k_base`` token counts of the deterministic samples below, counted once with tiktoken
+#: on 2026-10-20 (the family Groq's gpt-oss models use). The estimate must never be below them.
+SAMPLE_TOKENS = {
+    "prose": 403,
+    "code": 433,
+    "tree": 1071,
+    "commits": 989,
+    "hex": 1139,
+    "base64": 1364,
+    "json": 913,
+    "cjk": 1767,
+    "emoji": 1000,
+    "indent": 60,
+    "blank-lines": 125,
+}
+_PROSE_SENTENCE = (
+    "The relay stores every incoming delivery before it forwards anything, because a restart in "
+    "the middle of a retry must not lose an event. I weighed a Redis stream and rejected it: one "
+    "more process to run and to watch for a service this small. "
+)
+_CODE_SNIPPET = (
+    "def deliver(event: Event, session: Session) -> Delivery:\n"
+    '    """Send one stored event to its target, recording every attempt."""\n'
+    "    for attempt in range(event.attempts, MAX_ATTEMPTS):\n"
+    "        try:\n"
+    "            response = client.post(event.target, content=event.body, headers=event.headers)\n"
+    "            response.raise_for_status()\n"
+    "        except httpx.HTTPError as exc:\n"
+    "            time.sleep(min(BACKOFF_CAP, 2 ** attempt))\n"
+)
+
+
+def _digests(count: int) -> list[bytes]:
+    return [hashlib.sha256(str(n).encode()).digest() for n in range(count)]
+
+
+def _sample(name: str) -> str:
+    samples = {
+        "prose": (_PROSE_SENTENCE * 20)[:2000],
+        "code": (_CODE_SNIPPET * 20)[:2000],
+        "tree": "\n".join(f"src/m{n:03d}/a.py" for n in range(250))[:2500],
+        "commits": "\n".join(
+            f"{n:07x} claimed 2026-10-17 04:{n % 60:02d}Z: Add retry step {n} and its test"
+            for n in range(60)
+        )[:2500],
+        "hex": "".join(d.hex() for d in _digests(40))[:2000],
+        "base64": "".join(base64.b64encode(d).decode() for d in _digests(60))[:2000],
+        "json": "\n".join(
+            f'{{"id": {n}, "name": "item-{n}", "tags": ["a", "b"], "ok": true}}' for n in range(40)
+        )[:2000],
+        "cjk": "".join(chr(0x4E00 + (n * 37) % 2000) for n in range(1000)),
+        "emoji": "".join(chr(0x1F300 + (n * 7) % 200) for n in range(500)),
+        "indent": ("    " * 30 + "x\n") * 15,
+        "blank-lines": "\n" * 2000,
+    }
+    return samples[name]
+
+
+@pytest.mark.parametrize("name", sorted(SAMPLE_TOKENS))
+def test_the_token_estimate_never_undercounts_a_real_sample(name: str) -> None:
+    assert estimate_tokens(_sample(name)) >= SAMPLE_TOKENS[name]
+
+
+@pytest.mark.parametrize("name", ["prose", "code", "tree", "commits", "json"])
+def test_the_token_estimate_is_not_wasteful_for_ordinary_text(name: str) -> None:
+    assert estimate_tokens(_sample(name)) <= 2.6 * SAMPLE_TOKENS[name]
+
+
+def test_the_token_estimate_counts_each_kind_of_text_and_is_a_whole_number() -> None:
+    assert estimate_tokens("") == 0
+    assert isinstance(estimate_tokens("a b c"), int)
+    assert estimate_tokens("word " * 100) < estimate_tokens("word " * 200)
+    assert estimate_tokens("\n" * 50) > 0  # blank lines are not free
+    assert estimate_tokens(chr(0x1F600) * 10) > estimate_tokens("a" * 10)
+
+
+def test_the_free_tier_minute_is_split_between_input_reply_and_margin() -> None:
+    """Groq's free tier for the judge's model allows 8,000 tokens a minute (the
+    ``x-ratelimit-limit-tokens`` header, read 2026-10-20), and a request is sized as its input
+    plus ``max_tokens``."""
+    assert TPM_LIMIT == 8_000
+    assert INPUT_TOKEN_BUDGET + MAX_COMPLETION_TOKENS + REQUEST_MARGIN_TOKENS == TPM_LIMIT
+
+
+def _maximal_input() -> JudgeInput:
+    """Every section filled to its cap with ordinary text: the largest realistic judge input."""
+    prose = (_PROSE_SENTENCE * 40)[:5_000]
+    return _input(
+        brief={**BRIEF, **{key: [prose[:400]] * 12 for key, _ in judge._BRIEF_LISTS}},
+        writeup={name: prose[:cap] for name, cap in judge.WRITEUP_FIELDS},
+        readme=prose,
+        tree=[f"src/m{n:03d}/a.py" for n in range(260)],
+        commits=[_commit(n, f"Add retry step {n} and its test") for n in range(70)],
+        files=[(f"src/module_{n}.py", (_CODE_SNIPPET * 20)[:2_000]) for n in range(4)],
+    )
+
+
+@pytest.mark.parametrize("make", [_maximal_input, _big_input])
+def test_the_largest_request_fits_the_free_tier_minute(make: Callable[[], JudgeInput]) -> None:
+    system, user = build_judge_prompt(make())
+    sent = estimate_tokens(system) + estimate_tokens(user)
+    assert sent <= INPUT_TOKEN_BUDGET
+    assert sent + MAX_COMPLETION_TOKENS <= TPM_LIMIT - REQUEST_MARGIN_TOKENS
+    assert len(user) <= MAX_INPUT_CHARS
+
+
+def test_dense_text_is_trimmed_by_tokens_where_the_character_cap_would_let_it_through() -> None:
+    """A hash-like README and key files are few characters but many tokens."""
+    dense = _sample("base64")
+    inp = _input(
+        readme=dense,
+        files=[(f"src/blob_{n}.py", dense) for n in range(4)],
+        tree=[f"{hashlib.sha256(str(n).encode()).hexdigest()}.dat" for n in range(250)],
+    )
+    system, user = build_judge_prompt(inp)
+    assert len(user) < MAX_INPUT_CHARS  # the characters alone would have allowed it
+    assert estimate_tokens(system) + estimate_tokens(user) <= INPUT_TOKEN_BUDGET
+    assert len(_repo_files(user)) < 5  # something was cut, key files first
+
+
+def test_a_small_submission_is_not_trimmed_by_the_token_budget() -> None:
+    system, user = build_judge_prompt(_input())
+    assert estimate_tokens(system) + estimate_tokens(user) < INPUT_TOKEN_BUDGET // 2
+    assert "src/app.py" in _repo_files(user)
+
+
+def test_the_fixed_sections_alone_fit_the_token_budget() -> None:
+    """Brief, signals, commits and write-up are never cut, so at their caps they must fit."""
+    inp = dataclasses.replace(_maximal_input(), files=[], readme="", tree=[])
+    system, user = build_judge_prompt(inp)
+    assert estimate_tokens(system) + estimate_tokens(user) <= INPUT_TOKEN_BUDGET
+
+
+def test_a_write_up_in_a_script_that_costs_many_tokens_a_character_still_fits() -> None:
+    """4,300 characters of CJK or Devanagari are several thousand tokens: the fixed sections
+    are cut as a last resort, commits before the write-up, and the request still fits."""
+    script = "".join(chr(0x4E00 + (n * 37) % 2000) for n in range(1_500))
+    inp = _input(
+        writeup={name: script[:cap] for name, cap in judge.WRITEUP_FIELDS},
+        commits=[_commit(n, script[:40]) for n in range(1, 61)],
+    )
+    system, user = build_judge_prompt(inp)
+    assert estimate_tokens(system) + estimate_tokens(user) <= INPUT_TOKEN_BUDGET
+    assert "## Brief" in user and "## Signals" in user
+    writeup = re.findall(
+        r"<<<WRITEUP (\w+) [0-9a-f]{16}>>>\n(.*?)\n<<<END WRITEUP [0-9a-f]{16}>>>", user, re.DOTALL
+    )
+    assert [name for name, _ in writeup] == ["decisions", "tradeoffs", "ai_usage", "next_steps"]
+    assert any(body for _, body in writeup)  # cut, not emptied
+
+
+def test_the_last_resort_cuts_commits_before_the_write_up(monkeypatch: pytest.MonkeyPatch) -> None:
+    script = "".join(chr(0x4E00 + (n * 37) % 2000) for n in range(1_500))
+    inp = dataclasses.replace(
+        _maximal_input(),
+        commits=[_commit(n, script[:60]) for n in range(1, 61)],
+        files=[],
+        readme="",
+        tree=[],
+    )
+
+    def commit_lines(user: str) -> list[str]:
+        shown = _section(user, "Commits")
+        return [line for line in shown.splitlines() if "claimed" in line]
+
+    _, user = build_judge_prompt(inp)
+    monkeypatch.setattr(judge, "INPUT_TOKEN_BUDGET", 10**9)
+    _, uncut = build_judge_prompt(inp)
+
+    assert len(commit_lines(user)) < len(commit_lines(uncut))
+    assert user.endswith(uncut[uncut.index("<<<WRITEUP decisions ") :])  # the write-up is whole
+
+
+#: Reasoning tokens the live call spent (gpt-oss-120b, reasoning_effort medium, a maximal input).
+OBSERVED_REASONING_TOKENS = 646
+
+
+def test_a_verdict_at_every_cap_and_twice_the_observed_reasoning_fit_in_max_tokens() -> None:
+    """Reasoning is billed against max_tokens. A reply cut off there is unreadable and would be
+    retried six times, so the cap must leave room for the longest verdict the parser keeps."""
+    note = (_PROSE_SENTENCE * 3)[:NOTE_CHARS]
+    reply = json.dumps(
+        {
+            "scores": {name: 10 for name in CRITERIA},
+            "notes": {name: note for name in CRITERIA},
+            "strengths": [note[:ITEM_CHARS]] * LIST_MAX,
+            "improvements": [note[:ITEM_CHARS]] * LIST_MAX,
+            "summary": (_PROSE_SENTENCE * 3)[:SUMMARY_CHARS],
+        }
+    )
+    assert estimate_tokens(reply) + 2 * OBSERVED_REASONING_TOKENS <= MAX_COMPLETION_TOKENS
