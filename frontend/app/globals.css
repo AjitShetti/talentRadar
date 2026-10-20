@@ -1852,3 +1852,136 @@ button.or-row:hover{transform:translateX(10px);background:var(--line-soft)}
 .or-actions .or-more{flex:0 0 auto}
 @media(max-width:700px){.or-person>.or-reply{grid-column:1/-1}}
 @media(prefers-reduced-motion:reduce){.or-row{transition:none}}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Events — /events page (spec §9)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ledger line under the heading: what the system holds, sources and when read */
+.ev-ledger{display:flex;flex-wrap:wrap;row-gap:6px;font:10px 'Fragment Mono',monospace;letter-spacing:.9px;text-transform:uppercase;color:var(--faint);margin:-18px 0 24px}
+.ev-ledger span+span::before{content:'·';margin:0 9px;color:var(--ghost)}
+.ev-ledger b{font-weight:400;color:var(--ink);font-variant-numeric:tabular-nums}
+.ev-ledger [data-live] b{color:var(--accent)}
+.ev-ledger .is-off{color:var(--ghost)}
+
+/* toolbar: the floating search bar, then a row of filters */
+.ev-searchbar .ev-addlink{display:flex;align-items:center;gap:8px;border-left:1px solid var(--line);padding-left:12px}
+.ev-searchbar .ev-addlink input{width:260px}
+.ev-addlink button{background:transparent;color:var(--accent-dark);font:600 11px 'Big Shoulders Text';letter-spacing:.6px;text-transform:uppercase;padding:6px 4px}
+.ev-controls{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px 12px;padding:16px 2px 4px}
+.ev-controls .cm-field{width:150px}
+.ev-controls .ci-chip{height:34px}
+.ev-viewswitch{margin-left:auto;display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden;align-self:flex-end}
+.ev-viewswitch button{display:flex;align-items:center;gap:6px;background:transparent;padding:8px 12px;font:600 11px 'Big Shoulders Text';letter-spacing:.6px;text-transform:uppercase;color:var(--muted)}
+.ev-viewswitch button[aria-pressed=true]{background:var(--surface-3);color:var(--ink)}
+.ev-controls .ev-filterbtn{display:none}
+.ev-rail{margin-top:14px}
+.ev-rail b{font:400 10px 'Fragment Mono',monospace;color:var(--faint);margin-left:5px}
+
+/* day groups and rows */
+.ev-day{display:flex;align-items:baseline;gap:12px;padding:30px 4px 9px;border-bottom:1px solid var(--line-strong);font:11px 'Fragment Mono',monospace;letter-spacing:.9px;text-transform:uppercase;color:var(--ink-2)}
+.ev-day small{font-size:10px;color:var(--faint)}
+.ev-group:first-child .ev-day{padding-top:18px}
+.ev-row{position:relative;display:grid;grid-template-columns:9px 62px minmax(0,1fr) auto 38px;gap:14px;align-items:center;padding:15px 4px;border-top:1px solid var(--line-soft);transition:transform .2s ease,background .2s ease}
+.ev-day+.ev-row{border-top:0}
+.ev-row:hover{transform:translateX(10px);background:var(--line-soft)}
+.ev-row.is-selected{box-shadow:inset 3px 0 0 var(--accent);background:var(--line-soft)}
+.ev-lamp{width:7px;height:7px;border-radius:50%}
+.ev-row[data-tone=live] .ev-lamp{background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.ev-row[data-tone=saved] .ev-lamp{background:var(--faint)}
+.ev-time{font:14px 'Fragment Mono',monospace;color:var(--ink);font-variant-numeric:tabular-nums}
+.ev-time small{display:block;font-size:9px;letter-spacing:.6px;color:var(--faint);margin-top:4px;text-transform:uppercase}
+.ev-main{min-width:0;color:inherit}
+.ev-title{display:block;font:600 17px/1.25 'Big Shoulders Text',sans-serif;letter-spacing:-.1px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ev-main:hover .ev-title{color:var(--accent-light)}
+.ev-meta{display:block;font-size:12px;color:var(--muted);margin-top:4px}
+.ev-codes{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}
+.ev-code{font:9px 'Fragment Mono',monospace;letter-spacing:.5px;text-transform:uppercase;border-radius:5px;padding:4px 7px;background:var(--line-soft);color:var(--muted);white-space:nowrap}
+.ev-code.is-cancelled{background:var(--danger-soft);color:var(--danger-dark)}
+.ev-save{width:36px;height:36px;display:grid;place-items:center;background:transparent;border:1px solid transparent;border-radius:7px;color:var(--faint);transition:border-color var(--t-fast) var(--ease-fast),color var(--t-fast) var(--ease-fast)}
+.ev-save:hover{border-color:var(--line);color:var(--ink)}
+.ev-save[aria-pressed=true]{color:var(--ink-2)}
+.ev-save[aria-pressed=true] svg{fill:currentColor}
+.ev-row.is-cancelled .ev-title{text-decoration:line-through;text-decoration-color:var(--faint);color:var(--muted)}
+.ev-online-chip{margin-top:14px}
+
+/* detail drawer additions (inside the existing .ci-drawer) */
+.ev-when{font:12px 'Fragment Mono',monospace;letter-spacing:.3px;color:var(--ink-2);margin:2px 0 8px}
+.ev-where{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:baseline;font-size:12px;color:var(--muted)}
+.ev-where small{font-size:11px;color:var(--faint)}
+.ev-head-codes{display:flex;gap:5px;flex-wrap:wrap;margin-top:10px}
+.ev-actions{display:flex;flex-wrap:wrap;gap:8px;padding:18px 0;border-bottom:1px solid var(--line-soft)}
+.ev-actions .primary-button{margin:0}
+.ev-toggle{display:flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);font-size:11px;font-weight:600;padding:10px 12px;border-radius:7px;transition:border-color .15s,color .15s}
+.ev-toggle:hover{border-color:var(--accent-border);color:var(--accent-dark)}
+.ev-toggle[aria-pressed=true]{border-color:var(--line-strong);color:var(--ink);background:var(--surface-3)}
+.ev-toggle[aria-pressed=true] svg{fill:currentColor}
+.ev-why{font:10.5px 'Fragment Mono',monospace;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);line-height:1.8}
+.ev-why span+span::before{content:'·';margin:0 8px;color:var(--ghost)}
+.ev-hosts a{color:var(--accent-dark)}
+.ev-note{width:100%;min-height:64px;resize:vertical;border:1px solid var(--line);border-radius:7px;background:var(--surface-2);color:var(--ink);font:13px/1.6 'Public Sans';padding:10px 12px}
+.ev-person{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 12px;padding:12px 0;border-top:1px solid var(--line-soft)}
+.ev-person:first-of-type{border-top:0}
+.ev-person strong{font-size:13px}
+.ev-person span{font-size:11px;color:var(--faint)}
+.ev-person p{grid-column:1/-1;font-size:12px!important;color:var(--muted)!important;margin:4px 0 0!important}
+.ev-person-links{grid-row:1/3;grid-column:2;display:flex;gap:6px;align-items:flex-start}
+.ev-person-links a{font-size:11px;font-weight:600;color:var(--accent-dark);border:1px solid var(--line);border-radius:6px;padding:5px 8px}
+.ev-form{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.ev-form label{display:flex;flex-direction:column;gap:5px;font:600 10px 'Big Shoulders Text';letter-spacing:.9px;text-transform:uppercase;color:var(--faint)}
+.ev-form label.full{grid-column:1/-1}
+.ev-form input,.ev-form textarea{border:1px solid var(--line);border-radius:7px;background:var(--surface-2);color:var(--ink);font:13px 'Public Sans';padding:9px 10px;text-transform:none;letter-spacing:0}
+.ev-form small{font:11px 'Public Sans';color:var(--faint);text-transform:none;letter-spacing:0;font-weight:400}
+.ev-form .ev-form-actions{grid-column:1/-1;display:flex;justify-content:flex-end}
+
+/* the page's own markup: the count, a source that is down, show more, the manual form, the sheet's add field, danger and disabled toggles */
+.ev-total strong span{font:inherit;letter-spacing:inherit;text-transform:none;color:inherit;margin:0}
+.ev-ledger .is-down{color:var(--muted)}
+.ev-more{margin:22px auto 0;padding:10px 18px}
+.ev-manual{max-width:640px;margin-top:18px;padding:16px 0 20px;border-top:1px solid var(--line-strong);border-bottom:1px solid var(--line-soft)}
+.ev-sheet-add .outline-button{width:100%;margin-top:10px}
+.ev-sheet-add label input{border:1px solid var(--line);border-radius:7px;padding:9px 10px;background:var(--surface-2);color:var(--ink);font:13px 'Public Sans',sans-serif;min-width:0}
+.ev-actions-wrap{border-bottom:1px solid var(--line-soft)}
+.ev-actions-wrap .ev-actions{border-bottom:0}
+.ev-actions-wrap .form-error{margin:0 0 18px}
+.ev-toggle:disabled{opacity:.55;cursor:default}
+.ev-controls .ci-chip:disabled,.ev-controls .cm-field select:disabled,.cm-sheet .ci-chip:disabled,.cm-sheet select:disabled{opacity:.45;cursor:not-allowed}
+.ev-controls .ci-chip:disabled:hover{border-color:var(--line);color:var(--muted)}
+.ev-toggle.is-danger:hover{border-color:var(--danger-border);color:var(--danger-dark)}
+.ev-person-links{flex-wrap:wrap;justify-content:flex-end}
+.ev-person-remove{background:transparent;color:var(--faint);padding:5px;border-radius:6px;line-height:0}
+.ev-person-remove:hover{background:var(--line-soft);color:var(--danger-dark)}
+.ev-form .form-error{grid-column:1/-1;margin:0}
+.ev-form label.ev-check{flex-direction:row;align-items:center;gap:8px;font:13px 'Public Sans',sans-serif;letter-spacing:0;text-transform:none;color:var(--ink-2)}
+.ev-form input[type=checkbox]{width:auto;padding:0}
+.ev-form .ev-form-actions{align-items:center;gap:10px}
+
+/* the map view: the List | Map switch, and the stage the map fills (its floating parts are the company map's .cm-* rules) */
+.ev-viewswitch button{cursor:pointer}
+.ev-viewswitch button:hover{color:var(--ink)}
+.ev-viewswitch button:focus-visible{outline-offset:-2px}
+.ev-viewswitch button[aria-disabled=true]{color:var(--ghost);cursor:not-allowed}
+.ev-map{--cm-gap:14px;position:relative;isolation:isolate;height:clamp(420px,calc(100vh - var(--nav-h) - 120px),860px);height:clamp(420px,calc(100dvh - var(--nav-h) - 120px),860px);margin-top:18px;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--paper)}
+
+/* 375 px: a row is two lines; filters live in the sheet */
+@media(max-width:700px){
+  .ev-ledger{margin-top:-6px;column-gap:14px}
+  .ev-ledger span+span::before{display:none}
+  .ev-searchbar .ev-addlink,.ev-controls .cm-field,.ev-controls .ci-chip{display:none}
+  .ev-controls .ev-filterbtn{display:flex}
+  .ev-controls{padding-top:12px}
+  .ev-row{grid-template-columns:9px 50px minmax(0,1fr) 44px;grid-template-rows:auto auto;gap:4px 10px;padding:14px 2px}
+  .ev-lamp{grid-row:1}
+  .ev-time{grid-row:1/3;align-self:start;font-size:13px}
+  .ev-main{grid-column:3;grid-row:1}
+  .ev-title{white-space:normal;font-size:16px}
+  .ev-codes{grid-column:3;grid-row:2;justify-content:flex-start;margin-top:4px}
+  .ev-save{grid-column:4;grid-row:1/3;width:44px;height:44px}
+  .ev-row:hover{transform:none}
+  .ev-form{grid-template-columns:1fr}
+}
+/* Start a thread from a person met at an event (components/outreach/MetPersonImport.tsx). */
+.or-met{margin-bottom:28px}
+.or-met p{margin:0 0 10px}
+.or-met-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
+@media(max-width:700px){.or-met-actions .outline-button{flex:1 1 auto;justify-content:center}}

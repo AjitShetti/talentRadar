@@ -354,6 +354,7 @@ module = [
     "structlog.*",
     "sentence_transformers.*",
     "apache_airflow.*",
+    "yaml.*",          # PyYAML ships no py.typed marker; only the workflow test reads YAML
 ]
 ignore_missing_imports = true
 

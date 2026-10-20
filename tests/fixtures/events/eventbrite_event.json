@@ -1,0 +1,114 @@
+{
+  "_comment": "hand-written from the documented v3 shapes; re-record with a token",
+  "name": {
+    "text": "Async Rust in Production: Bengaluru Meetup",
+    "html": "Async Rust in Production: Bengaluru Meetup"
+  },
+  "description": {
+    "text": "An evening of talks on running async Rust services in production. Two 25 minute talks, then open questions and networking over snacks.",
+    "html": "<P>An evening of talks on running async Rust services in production. Two 25 minute talks, then open questions and networking over snacks.</P>"
+  },
+  "id": "712345678901",
+  "url": "https://www.eventbrite.com/e/async-rust-in-production-bengaluru-meetup-tickets-712345678901",
+  "vanity_url": "https://async-rust-in-production.eventbrite.com",
+  "start": {
+    "timezone": "Asia/Kolkata",
+    "local": "2026-11-21T18:00:00",
+    "utc": "2026-11-21T12:30:00Z"
+  },
+  "end": {
+    "timezone": "Asia/Kolkata",
+    "local": "2026-11-21T20:30:00",
+    "utc": "2026-11-21T15:00:00Z"
+  },
+  "organization_id": "800000000001",
+  "created": "2026-10-02T09:14:31Z",
+  "changed": "2026-10-12T05:41:07Z",
+  "published": "2026-10-02T09:20:00Z",
+  "capacity": 120,
+  "capacity_is_custom": true,
+  "status": "live",
+  "currency": "INR",
+  "listed": true,
+  "shareable": true,
+  "online_event": false,
+  "tx_time_limit": 480,
+  "hide_start_date": false,
+  "hide_end_date": false,
+  "locale": "en_IN",
+  "is_locked": false,
+  "privacy_setting": "unlocked",
+  "is_series": false,
+  "is_series_parent": false,
+  "inventory_type": "limited",
+  "is_reserved_seating": false,
+  "show_pick_a_seat": false,
+  "show_seatmap_thumbnail": false,
+  "show_colors_in_seatmap_thumbnail": false,
+  "source": "coyote",
+  "is_free": true,
+  "version": null,
+  "summary": "Two talks on running async Rust services in production, then open questions and networking.",
+  "logo_id": null,
+  "organizer_id": "98765432101",
+  "venue_id": "45678901234",
+  "category_id": "102",
+  "subcategory_id": "2004",
+  "format_id": "2",
+  "resource_uri": "https://www.eventbriteapi.com/v3/events/712345678901/",
+  "is_externally_ticketed": false,
+  "logo": null,
+  "venue": {
+    "address": {
+      "address_1": "14 Quill Lane",
+      "address_2": "5th Block",
+      "city": "Bengaluru",
+      "region": "KA",
+      "postal_code": "560095",
+      "country": "IN",
+      "latitude": "12.9352",
+      "longitude": "77.6245",
+      "localized_address_display": "14 Quill Lane, 5th Block, Koramangala, Bengaluru, KA 560095",
+      "localized_area_display": "Bengaluru, KA",
+      "localized_multi_line_address_display": [
+        "14 Quill Lane",
+        "5th Block, Koramangala",
+        "Bengaluru, KA 560095"
+      ]
+    },
+    "resource_uri": "https://www.eventbriteapi.com/v3/venues/45678901234/",
+    "id": "45678901234",
+    "age_restriction": null,
+    "capacity": null,
+    "name": "Quill Commons Koramangala",
+    "latitude": "12.9352",
+    "longitude": "77.6245"
+  },
+  "organizer": {
+    "description": {
+      "text": "A fictional monthly meetup for engineers who build things.",
+      "html": "<P>A fictional monthly meetup for engineers who build things.</P>"
+    },
+    "long_description": {
+      "text": "",
+      "html": ""
+    },
+    "logo_id": null,
+    "resource_uri": "https://www.eventbriteapi.com/v3/organizers/98765432101/",
+    "id": "98765432101",
+    "name": "Quill Tech Meetups",
+    "url": "https://www.eventbrite.com/o/quill-tech-meetups-98765432101",
+    "num_past_events": 14,
+    "num_future_events": 2,
+    "website": "https://quilltechmeetups.example",
+    "logo": null
+  },
+  "format": {
+    "resource_uri": "https://www.eventbriteapi.com/v3/formats/2/",
+    "id": "2",
+    "name": "Seminar or Talk",
+    "name_localized": "Seminar or Talk",
+    "short_name": "Seminar",
+    "short_name_localized": "Seminar"
+  }
+}

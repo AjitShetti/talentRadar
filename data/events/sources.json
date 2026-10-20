@@ -1,0 +1,48 @@
+{
+  "luma": {
+    "discover": [
+      {
+        "id": "discplace-G0tGUVYwl7T17Sb",
+        "name": "Bengaluru",
+        "trusted_tech": false,
+        "india": true,
+        "checked": "2026-10-16"
+      }
+    ],
+    "calendars": [
+      {
+        "id": "cal-lcQDNr9uH1UwkSa",
+        "name": "SwiftBengaluru",
+        "trusted_tech": true,
+        "india": true,
+        "checked": "2026-10-16"
+      },
+      {
+        "id": "cal-PCTbemcMtu6Xnk4",
+        "name": "Lossfunk",
+        "trusted_tech": true,
+        "india": true,
+        "checked": "2026-10-16"
+      }
+    ]
+  },
+  "gdg": {
+    "chapters": [
+      {
+        "slug": "gdg-bangalore",
+        "name": "GDG Bangalore",
+        "checked": "2026-10-16"
+      },
+      {
+        "slug": "gdg-cloud-bengaluru",
+        "name": "GDG Cloud Bengaluru",
+        "checked": "2026-10-16"
+      }
+    ]
+  },
+  "eventbrite": {
+    "organizers": [],
+    "venues": [],
+    "status": "needs token and vetted organiser ids"
+  }
+}

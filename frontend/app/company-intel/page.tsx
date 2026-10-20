@@ -3,8 +3,8 @@
 import Link from 'next/link'
 import { Fragment, FormEvent, ReactNode, RefObject, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import {
-  Briefcase, Building2, Calendar, ChevronDown, ChevronUp, ExternalLink, Github, Globe, Info, Linkedin, List, Loader2,
-  Mail, Map as MapIcon, Newspaper, Plus, Search, SlidersHorizontal, Sparkles, Star, Trash2, Users, X,
+  Briefcase, Building2, Calendar, CalendarDays, ChevronDown, ChevronUp, ExternalLink, Github, Globe, Info, Linkedin, List,
+  Loader2, Mail, Map as MapIcon, Newspaper, Plus, Search, SlidersHorizontal, Sparkles, Star, Trash2, Users, X,
 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import CompanyMap from '@/components/CompanyMap'
@@ -13,8 +13,9 @@ import RequireAuth from '@/components/RequireAuth'
 import CompanyOutreachBlock, { ListOutreachButton } from '@/components/outreach/CompanyOutreachBlock'
 import {
   api, CompanyCard, CompanyContact, CompanyDetail, CompanyListFilters, CompanyNewsItem, CompanyPerson,
-  ContactCandidate, decodeMapRows, GeoPrecision, isPinned, MapCompany, NewContact, SummarySource,
+  ContactCandidate, decodeMapRows, EventCard, GeoPrecision, isPinned, MapCompany, NewContact, SummarySource,
 } from '@/lib/api'
+import { whenLabel } from '@/lib/event-time'
 import { usePersistentState } from '@/lib/persistent-state'
 import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 import { useDialog } from '@/lib/use-dialog'
@@ -876,6 +877,7 @@ function CompanyDrawer({ companyId, fallbackName, hiringForYou, docked, closeOnE
         <RolesSection detail={detail} />
         <PeopleSection detail={detail} onFounders={reload} />
         <NewsSection detail={detail} />
+        <EventsSection detail={detail} />
         <TechSection detail={detail} />
         <GithubSection detail={detail} />
         <ContactsSection detail={detail} onContactsChange={setContacts} />
@@ -1093,6 +1095,31 @@ function NewsSection({ detail }: { detail: CompanyDetail }) {
             {line && <div className="cm-round">{line}</div>}
           </ExtLink>
         })}
+  </section>
+}
+
+/**
+ * The company's own upcoming events (up to three), under News. Most companies host none, so the
+ * block is not there until there is something to show: a read that is empty or fails draws nothing.
+ */
+function EventsSection({ detail }: { detail: CompanyDetail }) {
+  const [events, setEvents] = useState<EventCard[]>([])
+  useEffect(() => {
+    let cancelled = false
+    setEvents([])
+    api.events.list({ companyId: detail.id, limit: 3 })
+      .then(result => { if (!cancelled) setEvents(result.events) })
+      .catch(() => undefined)
+    return () => { cancelled = true }
+  }, [detail.id])
+
+  if (events.length === 0) return null
+  return <section className="ci-section" data-testid="drawer-events">
+    <h3><CalendarDays size={13} />Hosted by {detail.name}</h3>
+    {events.map(event => <Link key={event.id} className="ci-job" href={`/events?event=${encodeURIComponent(event.id)}`}>
+      <strong>{event.title}</strong>
+      <span>{[whenLabel(event), event.is_online ? 'Online' : event.area, event.is_cancelled ? 'Cancelled' : null].filter(Boolean).join(' · ')}</span>
+    </Link>)}
   </section>
 }
 

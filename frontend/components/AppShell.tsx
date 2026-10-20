@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { BriefcaseBusiness, FileText, Handshake, LayoutDashboard, LogOut, MessageSquare, Search, Sparkles, UserRound } from 'lucide-react'
+import { BriefcaseBusiness, CalendarDays, FileText, Handshake, LayoutDashboard, LogOut, MessageSquare, Search, Sparkles, UserRound } from 'lucide-react'
 import { currentEmail, signOut } from '@/lib/api'
 
 const nav = [
@@ -15,6 +15,7 @@ const nav = [
   ['Resume studio', '/resume-studio', FileText],
   ['Profile & goals', '/settings', UserRound],
   ['Company intel', '/company-intel', Sparkles],
+  ['Events', '/events', CalendarDays],
 ] as const
 
 /**

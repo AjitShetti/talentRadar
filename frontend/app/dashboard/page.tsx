@@ -51,24 +51,33 @@ function fromCard(card: BriefingCard, tags: Action['tags'], fallback: { cta: str
   }
 }
 
+/** What the "event_today" tag says: the card's own title says "Tonight" for an evening start, "Today" for an earlier one. */
+const todayTag = (card: BriefingCard) => card.tone === 'warning'
+  ? { label: 'Cancelled', hot: true }
+  : { label: card.title.startsWith('Tonight') ? 'Tonight' : 'Today', hot: true }
+
 /**
  * Rank today's actions, hardest constraint first.
  *
  * A dated interview is the only thing the user cannot move, so it always leads.
  * The order is:
  *   1. an interview today;
- *   2. finish the setup everything else is computed from;
- *   3. an interview on the calendar within a day (the briefing's card);
- *   4. an Outreach follow-up that is due;
- *   5. the briefing's own next-best action;
- *   6. the one company worth a note (the Outreach suggestion);
- *   7. the cheapest durable win (a first mock), then study, then apply.
+ *   2. an event on the user's list for today;
+ *   3. finish the setup everything else is computed from;
+ *   4. an interview on the calendar within a day (the briefing's card);
+ *   5. an Outreach follow-up that is due;
+ *   6. the briefing's own next-best action;
+ *   7. the week's event, then who the user met;
+ *   8. the one company worth a note (the Outreach suggestion);
+ *   9. the cheapest durable win (a first mock), then study, then apply.
  *
- * A follow-up is a date the user set themselves, so it is a dated commitment and
- * outranks the briefing's next-best action; an interview within a day is a harder
- * one, so the follow-up ranks below it. The suggestion is a nudge, not a
- * commitment, so it goes after the lead. Three at most — a fourth would make this
- * a list to read rather than a decision to act on.
+ * An event for today is the next dated commitment after an interview, and it
+ * expires tonight, so it outranks setup. A follow-up is a date the user set
+ * themselves, so it outranks the briefing's next-best action; an interview within a
+ * day is a harder one, so the follow-up ranks below it. The week's event and the
+ * people just met are time-bound, so they go ahead of the suggestion, which is a
+ * nudge, not a commitment. Three at most - a fourth would make this a list to read
+ * rather than a decision to act on.
  */
 function buildActions(
   agenda: AgendaItem[],
@@ -94,6 +103,10 @@ function buildActions(
       href: '/interview',
     })
   }
+
+  // The server lists the best one first (one the user is going to, then one that starts today), so the first is the one shown.
+  const eventToday = briefing?.cards?.find(card => card.kind === 'event_today')
+  if (eventToday) out.push(fromCard(eventToday, [todayTag(eventToday)], { cta: 'Open event', href: '/events' }))
 
   if (!onboarded) {
     out.push({
@@ -126,6 +139,11 @@ function buildActions(
     out.push(fromCard(soon, [{ label: metaNumber(soon, 'days_away') === 0 ? 'Today' : 'Tomorrow', hot: true }, { label: 'Interview' }], { cta: 'Open prep', href: '/interview' }))
   }
 
+  // practice_deadline goes HERE, between the interview within a day and
+  // outreach_followup, when Practice is merged (controller ruling, 2026-10-20): a
+  // take-home deadline that is missed cannot be recovered, a follow-up can slip a day.
+  // That slot must also exclude 'practice_' from the lead below.
+
   // Everything owed on Outreach arrives as one card; its count is what is due.
   const followUp = cards.find(card => card.kind === 'outreach_followup')
   if (followUp && out.length < 3 && !taken(followUp)) {
@@ -133,11 +151,19 @@ function buildActions(
     out.push(fromCard(followUp, [{ label: `${due} due`, hot: true }, { label: 'Outreach' }], { cta: 'Open Outreach', href: '/outreach' }))
   }
 
-  // The lead is the briefing's next-best action. Outreach cards have their own slots.
-  const lead = cards.find(card => (card.tone === 'primary' || card.tone === 'warning') && !card.kind.startsWith('outreach_') && !taken(card) && !repeatsToday(card))
+  // The lead is the briefing's next-best action. Outreach and event cards have their
+  // own slots: as the lead they would count the same card twice.
+  const lead = cards.find(card => (card.tone === 'primary' || card.tone === 'warning') && !card.kind.startsWith('outreach_') && !card.kind.startsWith('event_') && !taken(card) && !repeatsToday(card))
   if (lead && out.length < 3) {
     out.push(fromCard(lead, [{ label: lead.kind.replace(/_/g, ' '), hot: lead.tone === 'warning' }], { cta: 'Open', href: '/applications' }))
   }
+
+  // Then the week ahead and the people just met, if there is still room. Both are
+  // time-bound, so they go ahead of the Outreach suggestion.
+  const eventSoon = cards.find(card => card.kind === 'event_soon')
+  if (eventSoon && out.length < 3 && !taken(eventSoon)) out.push(fromCard(eventSoon, [{ label: 'This week' }], { cta: 'Open event', href: '/events' }))
+  const eventMet = cards.find(card => card.kind === 'event_met_prompt')
+  if (eventMet && out.length < 3 && !taken(eventMet)) out.push(fromCard(eventMet, [{ label: 'Who you met' }], { cta: 'Add who you met', href: '/events' }))
 
   // One company worth a note, only while the day's target is not met (the server
   // leaves the card out otherwise). It is a nudge, so it ranks below the lead.

@@ -1,5 +1,8 @@
+'use client'
+
 import { RefObject, useCallback, useEffect, useRef } from 'react'
 
+// ── Dialog behaviour ─────────────────────────────────────────────────────────
 export const FOCUSABLE = 'a[href],button:not([disabled]),select:not([disabled]),input:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
 
 /**

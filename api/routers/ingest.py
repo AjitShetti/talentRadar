@@ -15,8 +15,15 @@ import logging
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.security import HTTPAuthorizationCredentials
 
-from api.auth import get_current_user, require_cron_or_admin, require_role
+from api.auth import (
+    get_current_user,
+    optional_security,
+    require_admin,
+    require_cron_or_admin,
+    require_role,
+)
 from api.dependencies import get_unit_of_work
 from api.schemas.query_schemas import IngestRequestSchema, IngestResponseSchema
 
@@ -248,6 +255,40 @@ async def refresh_company_map(
     from services.company_map import refresh
 
     return await refresh.run_step(step, limit)
+
+
+RefreshEventsStep = Literal["luma", "gdg", "eventbrite", "link", "relevance", "prune", "purge"]
+
+
+async def _purge_needs_an_admin(
+    step: RefreshEventsStep,
+    credentials: HTTPAuthorizationCredentials | None = Depends(optional_security),
+) -> None:
+    """``purge`` deletes stored rows (spec 10: admin only), so the cron secret is not enough."""
+    if step == "purge":
+        require_admin(credentials)
+
+
+@router.post(
+    "/events/refresh",
+    dependencies=[Depends(require_cron_or_admin), Depends(_purge_needs_an_admin)],
+)
+async def refresh_events(
+    step: RefreshEventsStep,
+    limit: int = Query(default=30, ge=1, le=2000),
+    source: str | None = Query(default=None, max_length=32),
+) -> dict[str, int | str]:
+    """
+    Run one bounded Events refresh step (Luma, GDG, Eventbrite, link, relevance, prune).
+
+    Called twice a day by ``.github/workflows/events.yml`` - there is no worker.
+    ``run_step`` caps ``limit`` per step (each source's polite rate) and never raises:
+    a failed step comes back as ``{"error": ...}``. ``source`` is read by ``purge`` only,
+    which needs ``source=eventbrite`` and a signed-in admin: the cron token is refused.
+    """
+    from services.events import refresh
+
+    return await refresh.run_step(step, limit, source=source)
 
 
 @router.post("/news", dependencies=[Depends(require_cron_or_admin)])

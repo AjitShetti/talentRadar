@@ -5,7 +5,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 SHELL := /bin/bash
-.PHONY: help up down logs migrate seed seed-companies test lint format typecheck clean verify-deploy build-image verify-sources capture-fixtures
+.PHONY: help up down logs migrate seed seed-companies test lint format typecheck clean verify-deploy build-image verify-sources capture-fixtures capture-fixtures-events
 
 # ── Docker Compose ──────────────────────────────────────────────────────────
 
@@ -110,6 +110,11 @@ verify-sources:
 ## suddenly parses to zero jobs is exactly the change you want to catch.
 capture-fixtures:
 	python scripts/capture_fixtures.py
+
+## Re-record the Events fixtures (Luma iCal feeds, GDG pages, Eventbrite API).
+## Eventbrite is recorded only when EVENTBRITE_TOKEN is set.
+capture-fixtures-events:
+	python scripts/capture_fixtures.py --events
 
 # ── Cleanup ─────────────────────────────────────────────────────────────────
 

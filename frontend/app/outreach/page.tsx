@@ -8,12 +8,14 @@ import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
 import AddCompany, { AddChoice } from '@/components/outreach/AddCompany'
 import DueList from '@/components/outreach/DueList'
+import MetPersonImport from '@/components/outreach/MetPersonImport'
 import SuggestionList from '@/components/outreach/SuggestionList'
 import ThreadDrawer from '@/components/outreach/ThreadDrawer'
 import ThreadList from '@/components/outreach/ThreadList'
 import { track } from '@/lib/analytics'
 import { api, DueItem, OutreachChannelName, OutreachHome, OutreachSource, Suggestion, Suggestions } from '@/lib/api'
 import { NEXT_STEP_DONE, parseThreadTarget, threadHref, ThreadTarget } from '@/lib/outreach'
+import { metRef } from '@/lib/outreach-met'
 
 const TARGETS = Array.from({ length: 11 }, (_, i) => i) // 0 turns the daily target off; the server caps it at 10
 const SNOOZE_DAYS = 3
@@ -48,6 +50,8 @@ function OutreachBoard() {
   const params = useSearchParams()
   const target = parseThreadTarget(params)
   const focusCompany = params.get('company')
+  // /outreach?add=event_contact:<uuid>: a person met at an event, from the Events drawer.
+  const addMet = metRef(params.get('add'))
 
   const [home, setHome] = useState<OutreachHome | null>(null)
   const [suggestions, setSuggestions] = useState<Suggestions | null>(null)
@@ -83,6 +87,11 @@ function OutreachBoard() {
 
   const openThread = (next: ThreadTarget) => router.push(threadHref(next), { scroll: false })
   const closeThread = () => router.replace('/outreach', { scroll: false })
+  // The link is replaced, not pushed, so Back does not start the import again.
+  const finishAddMet = useCallback((threadId: string, personId: string) => {
+    void loadHome()
+    router.replace(threadHref({ threadId, personId, mode: null }), { scroll: false })
+  }, [loadHome, router])
 
   async function saveTarget(daily: number) {
     if (!home) return
@@ -197,6 +206,8 @@ function OutreachBoard() {
     </section>
 
     {error && <p className="form-error">{error}</p>}
+
+    {addMet && <MetPersonImport key={addMet} reference={addMet} onDone={finishAddMet} onCancel={closeThread} />}
 
     <div className="or-layout">
       <div>

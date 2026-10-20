@@ -145,6 +145,34 @@ export type OutreachDraft = { format: DraftFormat; message: string; subject: str
 // The PATCH body. An absent key is left alone; `close` closes the thread with an outcome.
 export type OutreachThreadPatch = { note?: string | null; next_step?: string | null; next_step_at?: string | null; job_id?: string | null; application_id?: string | null; close?: { outcome: OutreachOutcome }; reopen?: boolean }
 
+// Events (api/schemas/event_schemas.py): each type copies its server model key for key.
+export type EventFormat = 'hackathon' | 'conference' | 'demo' | 'workshop' | 'talk' | 'mixer' | 'meetup' | 'hiring' | 'other'
+export type EventSource = 'luma' | 'gdg' | 'eventbrite' | 'user'
+export type EventSaveStatus = 'saved' | 'going'
+export type EventCompanyRef = { id: string; name: string }
+// What a list row and the drawer share. A null `ends_at` means start + 2 h.
+type EventBase = { id: string; title: string; starts_at: string; ends_at: string | null; is_online: boolean; venue_name: string | null; area: string | null; lat: number | null; lng: number | null; geo_precision: 'exact' | 'area' | 'none' | null; is_free: boolean | null; organiser_name: string | null; format: EventFormat | null; topics: string[]; source: EventSource; url: string | null; my_status: EventSaveStatus | null; is_cancelled: boolean }
+export type EventCard = EventBase & { companies: EventCompanyRef[] }
+export type EventMy = { status: EventSaveStatus; note: string | null }
+export type EventAlsoOn = { source: EventSource; url: string }
+// A person the caller met at an event. Private to the caller.
+export type EventContact = { id: string; event_id: string; name: string; title: string | null; company_name: string | null; company_id: string | null; linkedin_url: string | null; x_url: string | null; github_url: string | null; email: string | null; note: string | null; created_at: string | null; linkedin_search_url: string | null }
+export type EventDetail = EventBase & { companies: Array<EventCompanyRef & { role: 'organiser' | 'host' }>; snippet: string | null; reasons: string[]; hosts: string[]; also_on: EventAlsoOn[]; my: EventMy | null; people: EventContact[] }
+export type EventCounts = { upcoming: number; this_week: number; going: number }
+export type EventSourceStatus = { source: 'luma' | 'gdg' | 'eventbrite'; last_read_at: string | null; status: string }
+export type EventPage = { total: number; events: EventCard[]; counts: EventCounts; sources: EventSourceStatus[] }
+// The writable fields of a person met. Only `name` is required when one is added.
+type EventContactFields = { title?: string | null; company_name?: string | null; linkedin_url?: string | null; x_url?: string | null; github_url?: string | null; email?: string | null; note?: string | null }
+export type EventContactIn = EventContactFields & { name: string }
+export type EventContactPatch = EventContactFields & { name?: string }
+export type ManualEventIn = { title: string; starts_at: string; ends_at?: string | null; venue_name?: string | null; is_online?: boolean; url?: string | null }
+export type ImportReason = 'unrecognised' | 'luma_not_indexed' | 'eventbrite_off' | 'not_readable' | 'daily_cap' | 'not_in_bengaluru'
+// POST /events/import: the event, or `needs_details` when the link did not resolve (the client then opens the manual form).
+export type ImportResult = { event: EventCard } | { needs_details: true; reason: ImportReason }
+// What Outreach reads (services/events/met.py): one person met, with the event it was met at.
+export type MetAtEvent = { source_ref: string; name: string; title: string | null; company_name: string | null; company_id: string | null; linkedin_url: string | null; x_url: string | null; github_url: string | null; email: string | null; note: string | null; event_id: string; event_title: string; event_url: string; met_on: string; created_at: string; context_line: string }
+export type EventListParams = { when?: 'today' | 'week' | 'weekend' | 'month'; from?: string; to?: string; mode?: 'in_person' | 'online' | 'any'; topic?: string; format?: EventFormat; hidePaid?: boolean; saved?: 'all' | 'saved' | 'going'; companyId?: string; q?: string; limit?: number; offset?: number }
+
 /** A refusal from the API. `status` lets a caller tell "not found" or "conflict" from a failure; `message` is the server's own words. */
 export class ApiError extends Error {
   status: number
@@ -187,7 +215,8 @@ export function signedIn() {
 export function currentEmail() { return typeof window === 'undefined' ? null : localStorage.getItem(EMAIL_KEY) }
 export function signOut() { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(EMAIL_KEY); clearPersistedState() }
 
-async function request<T>(path: string, options: RequestInit = {}, authenticated = false): Promise<T> {
+/** The one path every API call takes: auth header, cold-start message, 401 and 429 handling. Resolves to an ok response. */
+async function send(path: string, options: RequestInit = {}, authenticated = false): Promise<Response> {
   const headers = new Headers(options.headers)
   if (!(options.body instanceof FormData)) headers.set('Content-Type', 'application/json')
   if (authenticated) {
@@ -222,6 +251,11 @@ async function request<T>(path: string, options: RequestInit = {}, authenticated
     }
     throw new ApiError(errorMessage(body.detail) || body.message || `Request failed (${response.status})`, response.status)
   }
+  return response
+}
+
+async function request<T>(path: string, options: RequestInit = {}, authenticated = false): Promise<T> {
+  const response = await send(path, options, authenticated)
   if (response.status === 204) return undefined as T
   return response.json() as Promise<T>
 }
@@ -241,6 +275,23 @@ function errorMessage(detail: unknown): string {
       .join(' ')
   }
   return ''
+}
+
+/** GET /events/{id}/ics as a Blob. A plain link cannot send the Bearer token the endpoint needs, so this goes through `send`. */
+function eventIcs(id: string): Promise<Blob> {
+  return send(`/api/v1/events/${encodeURIComponent(id)}/ics`, {}, true).then(response => response.blob())
+}
+
+/** Saves an event's .ics file. The Blob reaches the browser through an object URL, which is revoked once the download has started. */
+async function saveEventIcs(id: string, filename = 'event.ics'): Promise<void> {
+  const url = URL.createObjectURL(await eventIcs(id))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.append(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 export const api = {
@@ -367,5 +418,45 @@ export const api = {
     touch: (id: string, payload: { person_id?: string | null; channel: OutreachChannelName; direction: 'out' | 'in'; note?: string | null; body?: string | null; happened_at?: string | null; next_step?: string | null; next_step_at?: string | null }) => request<ThreadDetail>(`/api/v1/outreach/threads/${encodeURIComponent(id)}/touches`, { method: 'POST', body: JSON.stringify(payload) }, true),
     // The only outreach call that may use the model. Nothing is sent or stored.
     draft: (id: string, payload: { person_id?: string; format: DraftFormat; relationship?: string; issue_url?: string }) => request<OutreachDraft>(`/api/v1/outreach/threads/${encodeURIComponent(id)}/draft`, { method: 'POST', body: JSON.stringify(payload) }, true),
+  },
+  events: {
+    list: (params: EventListParams = {}) => {
+      const query = new URLSearchParams()
+      if (params.when) query.set('when', params.when)
+      if (params.from) query.set('from', params.from)
+      if (params.to) query.set('to', params.to)
+      if (params.mode) query.set('mode', params.mode)
+      if (params.topic) query.set('topic', params.topic)
+      if (params.format) query.set('format', params.format)
+      if (params.hidePaid) query.set('hide_paid', 'true')
+      if (params.saved) query.set('saved', params.saved)
+      if (params.companyId) query.set('company_id', params.companyId)
+      if (params.q) query.set('q', params.q)
+      if (params.limit) query.set('limit', String(params.limit))
+      if (params.offset) query.set('offset', String(params.offset))
+      return request<EventPage>(`/api/v1/events?${query.toString()}`, {}, true)
+    },
+    detail: (id: string) => request<EventDetail>(`/api/v1/events/${encodeURIComponent(id)}`, {}, true),
+    // An omitted note leaves the note the user already has; an empty one clears it.
+    save: (id: string, status: EventSaveStatus, note?: string) => request<EventMy>(`/api/v1/events/${encodeURIComponent(id)}/save`, { method: 'PUT', body: JSON.stringify({ status, note }) }, true),
+    unsave: (id: string) => request<void>(`/api/v1/events/${encodeURIComponent(id)}/save`, { method: 'DELETE' }, true),
+    ics: eventIcs,
+    downloadIcs: saveEventIcs,
+    importLink: (url: string) => request<ImportResult>('/api/v1/events/import', { method: 'POST', body: JSON.stringify({ url }) }, true),
+    manual: (payload: ManualEventIn) => request<EventDetail>('/api/v1/events/manual', { method: 'POST', body: JSON.stringify(payload) }, true),
+    // Only an event the caller added by hand; any other event is a 404.
+    deleteEvent: (id: string) => request<void>(`/api/v1/events/${encodeURIComponent(id)}`, { method: 'DELETE' }, true),
+    people: (id: string) => request<EventContact[]>(`/api/v1/events/${encodeURIComponent(id)}/people`, {}, true),
+    addPerson: (id: string, payload: EventContactIn) => request<EventContact>(`/api/v1/events/${encodeURIComponent(id)}/people`, { method: 'POST', body: JSON.stringify(payload) }, true),
+    updatePerson: (personId: string, payload: EventContactPatch) => request<EventContact>(`/api/v1/events/people/${encodeURIComponent(personId)}`, { method: 'PATCH', body: JSON.stringify(payload) }, true),
+    deletePerson: (personId: string) => request<void>(`/api/v1/events/people/${encodeURIComponent(personId)}`, { method: 'DELETE' }, true),
+    // Oldest first. `since` is inclusive, `limit` is 1 to 500 (default 100); Outreach pages through them.
+    peopleMet: (since?: string, limit?: number) => {
+      const query = new URLSearchParams()
+      if (since) query.set('since', since)
+      if (limit) query.set('limit', String(limit))
+      const qs = query.toString()
+      return request<MetAtEvent[]>(`/api/v1/events/people-met${qs ? `?${qs}` : ''}`, {}, true)
+    },
   },
 }

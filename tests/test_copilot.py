@@ -104,6 +104,58 @@ def test_a_follow_up_does_not_hide_an_interview_today() -> None:
     assert "interview" in headline
 
 
+def _event(kind: str, tone: str, card_id: str | None = None) -> dict:
+    return _card(card_id=card_id or f"{kind}:1", kind=kind, title="t", detail="d", tone=tone)
+
+
+def test_headline_does_not_chase_a_cancelled_event() -> None:
+    """A saved event the organiser cancelled is a warning card, but it is not a stale application."""
+    cards = [
+        _card(card_id="p", kind="priority", title="t", detail="d", tone="primary"),
+        _event("event_today", "warning"),
+    ]
+    assert _headline(cards, {"total_applications": 2}) == (
+        "You're on top of things — nothing is going stale."
+    )
+
+
+def test_headline_counts_only_application_items() -> None:
+    cards = [
+        _card(card_id="p", kind="priority", title="t", detail="d", tone="primary"),
+        _card(card_id="s", kind="saved_backlog", title="t", detail="d", tone="action"),
+        _event("event_today", "primary"),
+        _event("event_soon", "action"),
+        _event("event_met_prompt", "action", "event_met:1"),
+    ]
+    assert _headline(cards, {"total_applications": 5}) == (
+        "2 things worth your attention across 5 application(s)."
+    )
+
+
+def test_headline_chases_only_what_is_stale_when_events_are_also_warnings() -> None:
+    cards = [
+        _card(card_id="a", kind="stale_application", title="t", detail="d", tone="warning"),
+        _event("event_today", "warning"),
+    ]
+    assert _headline(cards, {"total_applications": 4}) == "1 thing(s) need chasing today."
+
+
+def test_headline_with_only_event_cards_has_nothing_stale() -> None:
+    cards = [_event("event_today", "primary"), _event("event_soon", "action")]
+    assert "on top of things" in _headline(cards, {"total_applications": 0})
+
+
+def test_headline_still_leads_with_an_interview_today_among_events() -> None:
+    interview = _card(
+        card_id="i", kind="scheduled_interview", title="t", detail="d", tone="primary",
+        meta={"days_away": 0},
+    )
+    cards = [_event("event_today", "warning"), interview]
+    assert _headline(cards, {"total_applications": 1}) == (
+        "You have 1 interview(s) today — everything else can wait."
+    )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Briefing assembly
 # ─────────────────────────────────────────────────────────────────────────────
@@ -120,6 +172,7 @@ def stub_sources(monkeypatch: pytest.MonkeyPatch) -> dict:
             "context": {"total_applications": 8, "saved": 6, "applied": 1, "interviews": 0},
         },
         "application_cards": [],
+        "event_cards": [],
         "interview_card": None,
         "dismissed": set(),
         "outreach": {"followup": None, "suggestion": None},
@@ -130,6 +183,9 @@ def stub_sources(monkeypatch: pytest.MonkeyPatch) -> dict:
 
     async def fake_app_cards(user_id: str) -> list:
         return state["application_cards"]
+
+    async def fake_event_cards(user_id: str, *, now: datetime) -> list:
+        return state["event_cards"]
 
     async def fake_interview(user_id: str, applied: int) -> dict | None:
         return state["interview_card"]
@@ -146,6 +202,7 @@ def stub_sources(monkeypatch: pytest.MonkeyPatch) -> dict:
 
     monkeypatch.setattr(copilot, "recommend_next_action", fake_next_action)
     monkeypatch.setattr(copilot, "_application_cards", fake_app_cards)
+    monkeypatch.setattr(copilot, "_event_cards", fake_event_cards)
     monkeypatch.setattr(copilot, "_interview_card", fake_interview)
     monkeypatch.setattr(copilot, "active_dismissals", fake_dismissals)
     monkeypatch.setattr(outreach_briefing, "outreach_cards", fake_outreach)
@@ -244,6 +301,113 @@ async def test_briefing_places_outreach_cards(
         "interview_momentum",
         "outreach_suggestion",
     ]
+
+
+async def test_briefing_composes_outreach_and_event_cards_in_one_order(
+    stub_sources: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The merged day plan: today's event ranks with the dated commitments, the follow-up
+    after it; the week's event and who was met follow the application cards; the Outreach
+    suggestion is last."""
+    async def fake_scheduled(user_id: str) -> list[dict[str, Any]]:
+        return [_card(card_id="scheduled_interview:1", kind="scheduled_interview",
+                      title="Interview tomorrow", detail="d", tone="warning")]
+
+    monkeypatch.setattr(copilot, "_scheduled_interview_cards", fake_scheduled)
+    stub_sources["application_cards"] = [
+        _card(card_id="saved_backlog", kind="saved_backlog", title="6 saved", detail="d"),
+    ]
+    stub_sources["interview_card"] = _card(
+        card_id="interview_cold_start", kind="interview_momentum", title="practise", detail="d"
+    )
+    stub_sources["outreach"] = {
+        "followup": _card(card_id="outreach_followup", kind="outreach_followup",
+                          title="Follow up", detail="d", tone="primary", dismissible=False),
+        "suggestion": _card(card_id="outreach_suggestion:c1", kind="outreach_suggestion",
+                            title="Reach out", detail="d"),
+    }
+    # `_event_cards` returns today's cards first, then the week's, then who was met.
+    stub_sources["event_cards"] = [
+        _card(card_id="event_today:1", kind="event_today", title="Tonight: Rust meetup",
+              detail="d", tone="primary"),
+        _card(card_id="event_soon:2", kind="event_soon", title="Friday: Swift meetup",
+              detail="d", tone="action"),
+        _card(card_id="event_met:3", kind="event_met_prompt", title="Who did you meet?",
+              detail="d", tone="action"),
+    ]
+
+    briefing = await build_briefing(user_id="u1")
+
+    assert [c["kind"] for c in briefing["cards"]] == [
+        "scheduled_interview",
+        "event_today",
+        "outreach_followup",
+        "priority",
+        "saved_backlog",
+        "event_soon",
+        "event_met_prompt",
+        "interview_momentum",
+        "outreach_suggestion",
+    ]
+
+
+async def test_event_cards_in_a_briefing_never_reach_the_model(
+    stub_sources: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The prompt is built from the real briefing: an event's title and detail name a
+    place and a host, and none of them may be sent, in any field of the call."""
+    marker = "ZQ7-RUST-BENGALURU-MEETUP"
+    stub_sources["event_cards"] = [
+        _card(card_id="event_today:1", kind="event_today", title=f"Tonight: {marker}",
+              detail=f"18:30 at Indiranagar, hosted by {marker}.", tone="primary",
+              meta={"event_id": marker}),
+        _card(card_id="event_soon:2", kind="event_soon", title=f"Friday: {marker}",
+              detail=marker, tone="action"),
+        _card(card_id="event_met:3", kind="event_met_prompt", title=f"Who did you meet at {marker}?",
+              detail=marker, tone="action"),
+    ]
+    seen: dict[str, Any] = {}
+
+    async def fake_memories(**kwargs: object) -> list[Any]:
+        return []
+
+    async def fake_reply(**kwargs: Any) -> str:
+        seen.update(kwargs)
+        return "ok"
+
+    monkeypatch.setattr(copilot, "get_memories", fake_memories)
+    monkeypatch.setattr("services.llm.generate_copilot_reply", fake_reply)
+
+    assert await copilot._general_reply("u1", "what now?", None) == "ok"
+
+    assert marker not in json.dumps(seen, default=str)
+    assert [item["title"] for item in seen["context"]["open_items"]] == ["Apply to your saved jobs"]
+
+
+async def test_the_fallback_reply_never_names_an_event(
+    stub_sources: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With the model down the fallback is replayed as chat history, so it names only
+    cards the model may see. The headline is part of it: it must not speak for an event."""
+    marker = "ZQ7-GDG-DEVFEST"
+    stub_sources["event_cards"] = [
+        _card(card_id="event_today:1", kind="event_today", title=f"{marker} was cancelled",
+              detail=marker, tone="warning"),
+    ]
+
+    async def fake_memories(**kwargs: object) -> list[Any]:
+        return []
+
+    async def boom(**kwargs: object) -> str:
+        raise RuntimeError("no api key")
+
+    monkeypatch.setattr(copilot, "get_memories", fake_memories)
+    monkeypatch.setattr("services.llm.generate_copilot_reply", boom)
+
+    reply = await copilot._general_reply("u1", "what now?", None)
+
+    assert marker not in reply
+    assert "Apply to your saved jobs" in reply
 
 
 async def test_a_dismissed_outreach_suggestion_is_filtered_like_any_card(

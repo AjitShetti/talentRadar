@@ -255,6 +255,7 @@ from api.routers import (  # noqa: E402
     career,
     company_intel,
     dashboard,
+    events,
     ingest,
     interview,
     match,
@@ -285,6 +286,7 @@ app.include_router(company_intel.router, prefix="/api/v1")
 app.include_router(career.router, prefix="/api/v1")
 app.include_router(agent.router, prefix="/api/v1")
 app.include_router(dashboard.router, prefix="/api/v1")
+app.include_router(events.router, prefix="/api/v1")
 
 
 # API documentation

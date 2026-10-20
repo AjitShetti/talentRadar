@@ -29,11 +29,14 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import UTC, datetime
+import uuid
+from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from domain.event_time import IST, as_utc, effective_end, ist_date
 from services.agent_memory import (
     active_dismissals,
     get_memories,
@@ -45,6 +48,9 @@ from storage.database import AsyncSessionLocal
 from storage.models import (
     ApplicationStatus,
     Company,
+    Event,
+    EventContact,
+    EventSave,
     InterviewSession,
     Job,
     JobApplication,
@@ -85,6 +91,22 @@ MODEL_VISIBLE_CARD_KINDS = frozenset({
 })
 #: The kind of the one Outreach card for everything owed today.
 FOLLOWUP_CARD_KIND = "outreach_followup"
+#: Every event card's ``kind`` starts with this (event_today, event_soon, event_met_prompt).
+EVENT_CARD_PREFIX = "event_"
+#: How far ahead the single "coming up" event card looks.
+EVENT_SOON_WINDOW_DAYS = 7
+#: How long after an event ends the briefing still asks who the user met.
+EVENT_MET_PROMPT_DAYS = 2
+#: Starts read for the event cards: far enough back for a multi-day event that ended yesterday.
+_EVENT_LOOKBACK_DAYS = 9
+_EVENT_ROWS = 200
+#: An event that starts at this hour of the IST day or later is "Tonight"; earlier, "Today".
+_EVENT_EVENING_HOUR = 17
+
+
+def _now() -> datetime:
+    """The clock. A module-level function so a test can pin it."""
+    return datetime.now(tz=UTC)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -299,6 +321,203 @@ def _clock(iso: str) -> str:
         return "a time on your tracker"
 
 
+def _event_link(event_id: uuid.UUID, anchor: str = "") -> str:
+    return f"/events?event={event_id}{anchor}"
+
+
+def _event_card(
+    event: Event,
+    status: str,
+    *,
+    card_id: str,
+    kind: str,
+    title: str,
+    detail: str,
+    tone: str,
+    label: str = "Open event",
+    anchor: str = "",
+) -> dict[str, Any]:
+    """One event card. The ids, the link and the meta are the same for all three kinds."""
+    return _card(
+        card_id=card_id,
+        kind=kind,
+        title=title,
+        detail=detail,
+        tone=tone,
+        actions=[{"label": label, "href": _event_link(event.id, anchor), "style": "primary"}],
+        meta={
+            "event_id": str(event.id),
+            "starts_at": as_utc(event.starts_at).isoformat(),
+            "status": status,
+        },
+    )
+
+
+def _event_today_word(starts: datetime, *, today: date) -> str:
+    """``"Tonight"`` for an evening start on ``today`` (IST); ``"Today"`` for anything else.
+
+    A morning meetup is not tonight, and neither is a conference that began on an earlier day
+    and is still running.
+    """
+    local = starts.astimezone(IST)
+    evening = local.date() == today and local.hour >= _EVENT_EVENING_HOUR
+    return "Tonight" if evening else "Today"
+
+
+def _event_today_detail(event: Event, *, today: date) -> str:
+    """``"18:30 at Indiranagar, hosted by Rust Bengaluru. …"`` naming only what is stored.
+
+    An event that began on an earlier IST date has no start clock worth reading: "22:00" next
+    to "Today:" looks like a time ahead. It says it is on now and when it ends instead, as a
+    clock if that is today and as a date if it runs on.
+    """
+    begins = as_utc(event.starts_at).astimezone(IST)
+    if begins.date() == today:
+        clock = begins.strftime("%H:%M")
+    else:
+        ends = effective_end(event.starts_at, event.ends_at).astimezone(IST)
+        until = ends.strftime("%H:%M") if ends.date() == today else f"{ends.day} {ends:%b}"
+        clock = f"On now · until {until}"
+    place = event.area or event.venue_name
+    if event.is_online:
+        where = " online"
+    elif place:
+        where = f" at {place}"
+    else:
+        where = ""
+    host = f", hosted by {event.organiser_name}" if event.organiser_name else ""
+    return f"{clock}{where}{host}. Add the people you meet afterwards."
+
+
+async def _event_cards(user_id: str, *, now: datetime) -> list[dict[str, Any]]:
+    """
+    Day-plan cards from the events the user saved or marked going (spec 9.4).
+
+    * ``event_today``: starts on today's IST date and has not ended, or began on an earlier
+      day and is still running. It reads "Today: …" when it starts before 17:00 IST and
+      "Tonight: …" from then. A cancelled one is a warning in the same slot, because the plan
+      for today just changed. Several come best first, because the Overview shows only the
+      first: events the user is going to, then ones that start today, then by start time.
+    * ``event_soon``: the one soonest event in the next week that is not today.
+    * ``event_met_prompt``: an event the user was going to, which ended within the
+      last two days, with nobody noted yet.
+
+    Only the user's own saves count, and a cancelled event is only ever the warning. Like
+    every producer here it never raises: a failure is logged and the briefing carries on
+    without these cards.
+    """
+    session: AsyncSession | None = None
+    try:
+        me = parse_uuid(user_id)
+        if not me:
+            return []
+        from services.events.read import readable
+
+        session = AsyncSessionLocal()
+        current = as_utc(now)
+        today = ist_date(current)
+        recent_since = current - timedelta(days=EVENT_MET_PROMPT_DAYS)
+        result = await session.execute(
+            select(Event, EventSave.status)
+            .join(EventSave, EventSave.event_id == Event.id)
+            .where(
+                EventSave.user_id == me,
+                readable(me),
+                Event.starts_at >= current - timedelta(days=_EVENT_LOOKBACK_DAYS),
+                Event.starts_at <= current + timedelta(days=EVENT_SOON_WINDOW_DAYS),
+            )
+            .order_by(Event.starts_at, Event.id)
+            .limit(_EVENT_ROWS)
+        )
+
+        today_cards: list[tuple[tuple[bool, bool], dict[str, Any]]] = []
+        soonest: tuple[Event, str] | None = None
+        ended: list[tuple[Event, str]] = []
+        for event, status in result.all():
+            starts = as_utc(event.starts_at)
+            over = effective_end(event.starts_at, event.ends_at)
+            if (ist_date(starts) == today and over > current) or starts <= current < over:
+                # The Overview leads with the first of these: one the user is going to, then
+                # one that starts today. Rows are in start order, so the sort is stable on it.
+                rank = (status != "going", ist_date(starts) != today)
+                if event.is_cancelled:
+                    today_cards.append((rank, _event_card(
+                        event,
+                        status,
+                        card_id=f"event_today:{event.id}",
+                        kind="event_today",
+                        title=f"{event.title} was cancelled by the organiser",
+                        detail="It was on your list for today. Check the organiser's page "
+                        "before you plan around it.",
+                        tone="warning",
+                    )))
+                else:
+                    today_cards.append((rank, _event_card(
+                        event,
+                        status,
+                        card_id=f"event_today:{event.id}",
+                        kind="event_today",
+                        title=f"{_event_today_word(starts, today=today)}: {event.title}",
+                        detail=_event_today_detail(event, today=today),
+                        tone="primary",
+                    )))
+            elif event.is_cancelled:
+                continue
+            elif starts > current:  # rows are in start order, so the first is the soonest
+                soonest = soonest or (event, status)
+            elif status == "going" and recent_since < over <= current:
+                ended.append((event, status))
+
+        cards = [card for _, card in sorted(today_cards, key=lambda ranked: ranked[0])]
+
+        if soonest is not None:
+            event, status = soonest
+            weekday = as_utc(event.starts_at).astimezone(IST).strftime("%A")
+            cards.append(_event_card(
+                event,
+                status,
+                card_id=f"event_soon:{event.id}",
+                kind="event_soon",
+                title=f"{weekday}: {event.title}",
+                detail=(
+                    "You're going. Add it to your calendar."
+                    if status == "going"
+                    else "You saved it — decide whether you're going."
+                ),
+                tone="action",
+            ))
+
+        if ended:
+            noted = set((await session.execute(
+                select(EventContact.event_id)
+                .where(
+                    EventContact.user_id == me,
+                    EventContact.event_id.in_([event.id for event, _ in ended]),
+                )
+                .distinct()
+            )).scalars())
+            for event, status in ended:
+                if event.id not in noted:
+                    cards.append(_event_card(
+                        event,
+                        status,
+                        card_id=f"event_met:{event.id}",
+                        kind="event_met_prompt",
+                        title=f"Who did you meet at {event.title}?",
+                        detail="Note them now; each one can become an Outreach thread.",
+                        tone="action",
+                        label="Add who you met",
+                        anchor="#people",
+                    ))
+        return cards
+    except Exception as exc:  # a broken card must never break the briefing
+        logger.warning("Event cards unavailable: %s", exc)
+        return []
+    finally:
+        if session is not None:
+            await session.close()
+
+
 async def _interview_card(user_id: str, applied: int) -> dict[str, Any] | None:
     """
     The one interview nudge the briefing owns: applications in flight and no
@@ -368,19 +587,30 @@ async def build_briefing(*, user_id: str) -> dict[str, Any]:
     """
     Assemble today's briefing.
 
-    Ordering is deliberate: a dated commitment (an interview on the calendar)
-    outranks everything, then the follow-ups the user owes on Outreach (a date
-    they set themselves), then the single next-best action, then anything
-    decaying (stale applications), then the practice nudge, and last the one
-    company worth a note. Cards the user dismissed or snoozed are filtered out
-    at the end so the id-based dismissal works no matter which producer emitted
-    the card.
+    Ordering is deliberate. A dated commitment outranks everything: an interview on
+    the calendar, then an event the user is going to today, then the follow-ups they
+    owe on Outreach (a date they set themselves). Then comes the single next-best
+    action, anything decaying (stale applications), the events coming up or just over,
+    the practice nudge, and last the one company worth a note. Cards the user
+    dismissed or snoozed are filtered out at the end so the id-based dismissal works
+    no matter which producer emitted the card.
     """
+    now = _now()
     next_action = await recommend_next_action(user_id=user_id)
     context = next_action.get("context", {}) if isinstance(next_action, dict) else {}
     outreach = await _outreach_cards(user_id)
+    # One producer, two slots: what is on today ranks with the dated commitments, and
+    # what is coming up or just over ranks after the application cards.
+    events = await _event_cards(user_id, now=now)
+    events_today = [c for c in events if c["kind"] == "event_today"]
+    events_later = [c for c in events if c["kind"] != "event_today"]
 
     cards: list[dict[str, Any]] = await _scheduled_interview_cards(user_id)
+    # practice_deadline goes HERE, between the scheduled interviews and event_today, when
+    # Practice is merged. A take-home deadline that is missed cannot be recovered, so on the
+    # Overview it must rank above outreach_followup (which can slip a day); see
+    # buildActions in frontend/app/dashboard/page.tsx.
+    cards.extend(events_today)
 
     if followup_card := outreach.get("followup"):
         cards.append(followup_card)
@@ -402,6 +632,7 @@ async def build_briefing(*, user_id: str) -> dict[str, Any]:
         ))
 
     cards.extend(await _application_cards(user_id))
+    cards.extend(events_later)
 
     interview_card = await _interview_card(user_id, int(context.get("applied", 0) or 0))
     if interview_card:
@@ -414,7 +645,7 @@ async def build_briefing(*, user_id: str) -> dict[str, Any]:
     visible = [c for c in cards if c["id"] not in dismissed]
 
     return {
-        "generated_at": datetime.now(tz=UTC).isoformat(),
+        "generated_at": now.isoformat(),
         "headline": _headline(visible, context),
         "cards": visible,
         "hidden_count": len(cards) - len(visible),
@@ -444,7 +675,13 @@ def _follow_ups_due(cards: list[dict[str, Any]]) -> int:
 
 
 def _headline(cards: list[dict[str, Any]], context: dict[str, Any]) -> str:
-    """One line summarising the state of the queue."""
+    """One line summarising the state of the application queue.
+
+    Event cards are about the day, not the pipeline: a cancelled event is a warning card, but
+    it is not an application to chase, and "N things across M applications" must not count a
+    meetup. They stay on the page; the headline just does not speak for them.
+    """
+    cards = [c for c in cards if not str(c["kind"]).startswith(EVENT_CARD_PREFIX)]
     today = [
         c for c in cards
         if c["kind"] == "scheduled_interview" and c["meta"].get("days_away") == 0

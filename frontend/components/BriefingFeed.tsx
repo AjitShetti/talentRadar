@@ -14,6 +14,9 @@ const KIND_LABELS: Record<string, string> = {
   interview_momentum: 'MOMENTUM',
   outreach_followup: 'FOLLOW-UP DUE',
   outreach_suggestion: 'WORTH A NOTE',
+  event_today: 'ON TODAY',
+  event_soon: 'THIS WEEK',
+  event_met_prompt: 'WHO YOU MET',
 }
 
 function Card({ card, onDismiss }: { card: BriefingCard; onDismiss: (id: string, days?: number) => void }) {
