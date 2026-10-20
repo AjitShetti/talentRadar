@@ -88,10 +88,11 @@ ATTEMPT_KEYS = {
     "submitted_at",
     "editable_until",
     "total",
+    "held",
 }
 WRITEUP_KEYS = {"decisions", "tradeoffs", "ai_usage", "next_steps"}
 OVERVIEW_KEYS = {"current", "next_opens_at", "past"}
-PAST_KEYS = {"slug", "title", "track", "opens_at", "status", "total"}
+PAST_KEYS = {"slug", "title", "track", "opens_at", "status", "total", "held"}
 
 OWNER, NAME = "demo-builder", "webhook-relay"
 REPO_URL = f"https://github.com/{OWNER}/{NAME}"
@@ -849,6 +850,23 @@ class TestOverview:
         assert by_slug[edition.slug]["total"] == 78.5
         assert by_slug[other_week.slug]["status"] is None
         assert by_slug[other_week.slug]["total"] is None
+
+    async def test_a_held_attempt_says_so_to_its_owner_and_a_clean_one_does_not(
+        self, db: Db, asha: str, edition: PracticeChallenge
+    ) -> None:
+        """The owner sees that the build is under review, never why: no flags in the payload."""
+        await add_attempt(db, asha, edition, status="queued", held=True, flags=["injection_text"])
+        bina = await add_user(db, "bina")
+        await add_attempt(db, bina, edition, status="queued")
+
+        held = await challenges.challenge_detail(asha, edition.slug, now=CLOSES)
+        clean = await challenges.challenge_detail(bina, edition.slug, now=CLOSES)
+        overview = await challenges.challenges_overview(asha, now=CLOSES + timedelta(days=1))
+
+        assert held["attempt"]["held"] is True
+        assert clean["attempt"]["held"] is False
+        assert "injection_text" not in json.dumps(held)
+        assert [p["held"] for p in overview["past"] if p["slug"] == edition.slug] == [True]
 
     async def test_the_payload_has_exactly_the_keys_the_page_types(
         self, db: Db, asha: str, edition: PracticeChallenge, started: dict[str, Any]

@@ -61,7 +61,7 @@ STARTED = OPENS + timedelta(hours=20)  # Saturday 14:30 IST
 
 # --------------------------------------------------------------------------- Task 15 shapes
 
-BOARD_KEYS = {"provisional", "total_entries", "queued", "rows", "me"}
+BOARD_KEYS = {"provisional", "total_entries", "queued", "held", "rows", "me"}
 ROW_KEYS = {"rank", "name", "total", "hours_used", "repo_url", "you"}
 OVERALL_KEYS = {"window_challenges", "rows", "me"}
 OVERALL_ROW_KEYS = {"rank", "name", "score", "entries", "you"}
@@ -609,6 +609,7 @@ class TestChallengeBoard:
             "provisional": False,
             "total_entries": 0,
             "queued": 0,
+            "held": 0,
             "rows": [],
             "me": None,
         }
@@ -644,7 +645,35 @@ class TestChallengeBoard:
         payload = await board.challenge_board(asha, edition.slug, now=AFTER)
 
         assert payload["provisional"] is True
-        assert payload["queued"] == 2
+        assert payload["queued"] == 1  # the held one is waiting for a person, not for the judge
+        assert payload["held"] == 1
+
+    async def test_a_held_attempt_alone_does_not_keep_a_closed_board_provisional(
+        self, db: Db, asha: str, bina: str, edition: PracticeChallenge
+    ) -> None:
+        """A hold can last as long as nobody clears it: it must not leave "Provisional" on for good."""
+        await add_attempt(db, asha, edition)
+        await add_attempt(
+            db, bina, edition, status="queued", total=None, held=True, flags=["injection_text"]
+        )
+
+        payload = await board.challenge_board(asha, edition.slug, now=AFTER)
+
+        assert payload["provisional"] is False
+        assert payload["queued"] == 0
+        assert payload["held"] == 1
+
+    async def test_a_judged_attempt_held_again_by_its_appeal_is_counted_as_held(
+        self, db: Db, asha: str, bina: str, edition: PracticeChallenge
+    ) -> None:
+        await add_attempt(db, asha, edition)
+        await add_attempt(db, bina, edition, total=88.0, held=True)
+
+        payload = await board.challenge_board(asha, edition.slug, now=AFTER)
+
+        assert payload["total_entries"] == 1
+        assert payload["queued"] == 0
+        assert payload["held"] == 1
 
     async def test_a_submission_still_to_be_queued_keeps_a_closed_board_provisional(
         self, db: Db, asha: str, bina: str, edition: PracticeChallenge
@@ -845,6 +874,18 @@ class TestChallengeBoard:
         payload = await board.challenge_board(asha, edition.slug, now=AFTER)
 
         assert payload["total_entries"] == 1
+
+    async def test_a_cache_entry_from_before_held_was_counted_is_rebuilt(
+        self, db: Db, asha: str, edition: PracticeChallenge
+    ) -> None:
+        await add_attempt(db, asha, edition, total=90.0)
+        old_shape = {"provisional": False, "queued": 0, "entries": []}
+        await CacheBackend.set_json(f"tr:practice:board:{edition.slug}", old_shape, 600)
+
+        payload = await board.challenge_board(asha, edition.slug, now=AFTER)
+
+        assert payload["total_entries"] == 1
+        assert payload["held"] == 0
 
 
 # =========================================================================== the overall board

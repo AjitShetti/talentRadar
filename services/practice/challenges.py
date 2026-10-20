@@ -317,6 +317,8 @@ def _attempt_payload(attempt: PracticeAttempt) -> dict[str, Any]:
         "submitted_at": _iso(attempt.submitted_at) if attempt.submitted_at else None,
         "editable_until": _iso(_aware(attempt.deadline_at) + GRACE),
         "total": float(attempt.total) if attempt.total is not None else None,
+        # Only whether, never why: the owner reads "Under review", not the flags.
+        "held": bool(attempt.held),
     }
 
 
@@ -343,6 +345,7 @@ def _past_payload(challenge: PracticeChallenge, attempt: PracticeAttempt | None)
         "total": float(attempt.total)
         if attempt is not None and attempt.total is not None
         else None,
+        "held": bool(attempt.held) if attempt is not None else False,
     }
 
 

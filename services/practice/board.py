@@ -20,7 +20,8 @@ attempts.
   cache: a miss, or a value that does not look right, is rebuilt from the database.
 * **Provisional.** A challenge board says so until the edition's last possible submission has
   been saved and nothing for it is waiting to be judged (queued, or submitted and not yet
-  queued).
+  queued). An attempt held for a person is counted apart (``held``) and does not keep a board
+  provisional: a hold lasts until an admin clears it, which may be never.
 * **Held list.** ``held_attempts`` is for an admin: which attempts the judge held, so a false
   hold can be found and cleared with ``judge.admin_clear``. It names the attempt and the
   edition and nothing the candidate wrote.
@@ -32,7 +33,7 @@ import logging
 import uuid
 from collections import defaultdict
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, NamedTuple
 
 from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -195,22 +196,37 @@ def _decode_entry(raw: Any) -> Entry | None:
     return Entry(user, name, float(total), when, None if hours is None else float(hours), repo)
 
 
-def _decode_challenge(raw: Any) -> tuple[bool, int, list[Entry]] | None:
+class _ChallengeBoard(NamedTuple):
+    """What is kept of an edition's board: whether it is provisional, how many attempts wait for
+    the judge (``queued``) and for a person (``held``), and the ranked-to-be entries."""
+
+    provisional: bool
+    queued: int
+    held: int
+    entries: list[Entry]
+
+
+def _count(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _decode_challenge(raw: Any) -> _ChallengeBoard | None:
     """A cached challenge board, or ``None`` when it is not exactly what was stored."""
     if not isinstance(raw, dict):
         return None
-    provisional, queued, stored = raw.get("provisional"), raw.get("queued"), raw.get("entries")
-    if not isinstance(provisional, bool) or isinstance(queued, bool):
+    provisional, stored = raw.get("provisional"), raw.get("entries")
+    queued, held = _count(raw.get("queued")), _count(raw.get("held"))
+    if not isinstance(provisional, bool) or queued is None or held is None:
         return None
-    if not isinstance(queued, int) or not isinstance(stored, list):
+    if not isinstance(stored, list):
         return None
     entries = [_decode_entry(item) for item in stored]
     if any(entry is None for entry in entries):
         return None
-    return provisional, queued, [entry for entry in entries if entry is not None]
+    return _ChallengeBoard(provisional, queued, held, [e for e in entries if e is not None])
 
 
-async def _build_challenge(slug: str, moment: datetime) -> tuple[bool, int, list[Entry]]:
+async def _build_challenge(slug: str, moment: datetime) -> _ChallengeBoard:
     async with AsyncSessionLocal() as session:
         challenge = (
             await session.execute(select(PracticeChallenge).where(PracticeChallenge.slug == slug))
@@ -235,14 +251,23 @@ async def _build_challenge(slug: str, moment: datetime) -> tuple[bool, int, list
             )
         ).all()
         counted = await session.execute(
-            select(PracticeAttempt.status, func.count())
+            select(PracticeAttempt.status, PracticeAttempt.held, func.count())
             .where(
                 PracticeAttempt.challenge_id == challenge.id,
-                PracticeAttempt.status.in_((_QUEUED, _SUBMITTED)),
+                or_(
+                    PracticeAttempt.status.in_((_QUEUED, _SUBMITTED)),
+                    PracticeAttempt.held.is_(True),
+                ),
             )
-            .group_by(PracticeAttempt.status)
+            .group_by(PracticeAttempt.status, PracticeAttempt.held)
         )
-        waiting: dict[str, int] = {status: int(count) for status, count in counted}
+        waiting: dict[str, int] = defaultdict(int)  # for the judge: not held
+        held = 0  # for a person: held, in whatever status
+        for status, is_held, count in counted:
+            if is_held:
+                held += int(count)
+            else:
+                waiting[status] += int(count)
         opted = await _opted_in(session)
         closes_at = _aware(challenge.closes_at)
     entries: list[Entry] = []
@@ -259,9 +284,9 @@ async def _build_challenge(slug: str, moment: datetime) -> tuple[bool, int, list
                 _repo_link(owner, repo) if show_repo else None,
             )
         )
-    queued = int(waiting.get(_QUEUED, 0))
-    provisional = moment < closes_at + GRACE or queued > 0 or int(waiting.get(_SUBMITTED, 0)) > 0
-    return provisional, queued, entries
+    queued = waiting[_QUEUED]
+    provisional = moment < closes_at + GRACE or queued > 0 or waiting[_SUBMITTED] > 0
+    return _ChallengeBoard(provisional, queued, held, entries)
 
 
 def _challenge_row(rank: int, entry: Entry, viewer: str) -> dict[str, Any]:
@@ -291,19 +316,20 @@ async def challenge_board(
         await CacheBackend.set_json(
             key,
             {
-                "provisional": cached[0],
-                "queued": cached[1],
-                "entries": _encode_entries(rank_entries(cached[2])),
+                "provisional": cached.provisional,
+                "queued": cached.queued,
+                "held": cached.held,
+                "entries": _encode_entries(rank_entries(cached.entries)),
             },
             BOARD_TTL_SECONDS,
         )
-    provisional, queued, entries = cached
-    ranked = rank_entries(entries)
+    ranked = rank_entries(cached.entries)
     rows, mine = board_view(ranked, viewer, CHALLENGE_TOP)
     return {
-        "provisional": provisional,
+        "provisional": cached.provisional,
         "total_entries": len(ranked),
-        "queued": queued,
+        "queued": cached.queued,
+        "held": cached.held,
         "rows": [_challenge_row(rank, entry, viewer) for rank, entry in rows],
         "me": _challenge_row(*mine, viewer) if mine is not None else None,
     }

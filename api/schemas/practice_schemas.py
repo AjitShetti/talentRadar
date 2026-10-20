@@ -162,6 +162,7 @@ class AttemptSchema(BaseModel):
     submitted_at: str | None
     editable_until: str
     total: float | None
+    held: bool
 
 
 class ChallengeSchema(BaseModel):
@@ -184,6 +185,7 @@ class PastChallengeSchema(BaseModel):
     opens_at: str
     status: AttemptStatus | None
     total: float | None
+    held: bool
 
 
 class ChallengesOverviewSchema(BaseModel):
@@ -270,12 +272,14 @@ class BoardRowSchema(BaseModel):
 
 
 class ChallengeBoardSchema(BaseModel):
-    """One edition's board: the top rows, how many are ranked, how many wait to be judged, and
-    the signed-in person's own row wherever it falls."""
+    """One edition's board: the top rows, how many are ranked, how many wait to be judged
+    (``queued``) or for a person to check them (``held``), and the signed-in person's own row
+    wherever it falls."""
 
     provisional: bool
     total_entries: int
     queued: int
+    held: int
     rows: list[BoardRowSchema]
     me: BoardRowSchema | None
 
