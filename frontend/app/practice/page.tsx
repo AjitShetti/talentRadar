@@ -56,7 +56,9 @@ function buildState(challenge: Challenge, now: number): { tone: 'live' | 'done' 
     case 'submitted':
       return { tone: 'done', big: 'Submitted', small: now < editableUntil ? `editable until ${clock(attempt.editable_until)}` : 'waiting for the judge', calm: true }
     case 'queued':
-      return { tone: 'done', big: 'Submitted', small: 'queued for the judge', calm: true }
+      return attempt.held
+        ? { tone: 'done', big: 'Under review', small: 'a person checks it before it is ranked', calm: true }
+        : { tone: 'done', big: 'Submitted', small: 'queued for the judge', calm: true }
     case 'judged':
       return { tone: 'done', big: attempt.total != null ? <FlapText value={attempt.total.toFixed(1)} /> : 'Judged', small: 'judged · of 100', calm: true }
     case 'rejected':
@@ -64,7 +66,7 @@ function buildState(challenge: Challenge, now: number): { tone: 'live' | 'done' 
     case 'judge_failed':
       return { tone: 'idle', big: 'Not judged', small: 'we could not judge this yet', calm: true }
     default:
-      return { tone: 'idle', big: 'Missed', small: 'not submitted', calm: true }
+      return { tone: 'idle', big: 'Not submitted', small: 'this build closed', calm: true }
   }
 }
 
@@ -289,6 +291,7 @@ export default function PracticePage() {
           <div className="pr-section-head">
             <h2>This week&apos;s build</h2>
             {current && <span>opens {weekdayTime(current.opens_at)} · closes {dayTime(current.closes_at)}</span>}
+            <Link className="pr-section-link" href="/practice/leaderboard">Leaderboard →</Link>
           </div>
           {errors.overview && <p className="form-error" role="alert">{errors.overview}</p>}
           {overview && (current && currentState
@@ -304,12 +307,12 @@ export default function PracticePage() {
             </>
             : <p className="muted-copy">Next build opens {nextBuild}.</p>)}
           {!!overview?.past.length && <>
-            <div className="pr-label" style={{ marginTop: 26 }}>Past builds</div>
+            <div className="pr-label" style={{ marginTop: 26 }}>Past builds · <Link href="/practice/leaderboard">Leaderboard →</Link></div>
             <div className="history-list">
               {overview.past.map(item => <div key={item.slug}>
                 <span className="history-topic"><Link href={`/practice/challenges/${encodeURIComponent(item.slug)}`}>{item.title}</Link></span>
                 <strong>{item.total != null ? item.total.toFixed(1) : '—'}</strong>
-                <small>{shortDate(item.opens_at)} · {trackName(item.track).toUpperCase()} · {(item.status ? STATUS_WORDS[item.status] ?? item.status : 'not started').toUpperCase()}</small>
+                <small>{shortDate(item.opens_at)} · {trackName(item.track).toUpperCase()} · {(item.status === 'queued' && item.held ? 'under review' : item.status ? STATUS_WORDS[item.status] ?? item.status : 'not started').toUpperCase()}</small>
               </div>)}
             </div>
           </>}

@@ -7,7 +7,7 @@ import AppShell from '@/components/AppShell'
 import CopyButton from '@/components/CopyButton'
 import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
-import { api, AttemptResult, Challenge, ChallengeBoard, Criterion, Writeup } from '@/lib/api'
+import { api, AppealState, AttemptResult, Challenge, ChallengeBoard, Criterion, Writeup } from '@/lib/api'
 import { clock, dayTime, duration, NBSP, weekdayTime } from '@/lib/practice-time'
 import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 
@@ -99,7 +99,9 @@ function stripClock(challenge: Challenge, now: number): { big: ReactNode; small:
       if (left > 0) return { big: <FlapText value={duration(left, false).replace(/ /g, NBSP)} />, small: `left · until ${weekdayTime(attempt.deadline_at)}` }
       return { big: 'Time is up', small: now < new Date(attempt.editable_until).getTime() ? `write-up editable until ${clock(attempt.editable_until)}` : 'window closed' }
     case 'queued':
-      return { big: 'Queued', small: 'waiting for the judge' }
+      return attempt.held
+        ? { big: 'Under review', small: 'a person checks this before it is ranked' }
+        : { big: 'Queued', small: 'waiting for the judge' }
     case 'judged':
       return { big: attempt.total != null ? <FlapText value={attempt.total.toFixed(1)} /> : 'Judged', small: 'of 100' }
     case 'rejected':
@@ -107,8 +109,18 @@ function stripClock(challenge: Challenge, now: number): { big: ReactNode; small:
     case 'judge_failed':
       return { big: 'Not judged', small: 'we could not judge this yet' }
     default:
-      return { big: 'Missed', small: 'not submitted' }
+      return { big: 'Not submitted', small: 'this build closed' }
   }
+}
+
+/** What an appeal that is not on offer says: it is in progress, it ended, or it was never open. */
+const APPEAL_NOTES: Partial<Record<AppealState, string>> = {
+  pending: 'Appeal sent. The judge will read your submission again, and your score then becomes the average of the two readings.',
+  done: 'Your appeal has been read.',
+  gave_up: 'We could not make the second reading, so your first score stands.',
+  refused: 'A second reading would not have been of the same material as the first, so your first score stands.',
+  reviewed: 'A person has already reviewed this result.',
+  closed: 'The appeal window for this result has closed.',
 }
 
 export default function ChallengePage({ params }: { params: { slug: string } }) {
@@ -422,9 +434,11 @@ function ChallengeView({ slug }: { slug: string }) {
       {resultError && <p className="form-error" role="alert">{resultError}</p>}
       {hasResult && !result && !resultError && <p className="muted-copy">Loading your result…</p>}
 
-      {attempt.status === 'queued' && <p className="muted-copy">Queued for the judge — results within a day.</p>}
+      {attempt.status === 'queued' && (attempt.held
+        ? <p><span className="pr-pill">Under review</span> <span className="pr-meta">A person checks this build before it is ranked.</span></p>
+        : <p className="muted-copy">Queued for the judge — results within a day.</p>)}
       {attempt.status === 'missed' && <p className="muted-copy">This build closed without a submission.</p>}
-      {attempt.status === 'judge_failed' && <p className="muted-copy">We could not judge this yet.</p>}
+      {attempt.status === 'judge_failed' && <p className="muted-copy">We could not judge this yet.{result?.reject_reason ? ` ${result.reject_reason}` : ''}</p>}
       {attempt.status === 'rejected' && result && <p className="form-error" role="status">This build could not be judged. {result.reject_reason ?? 'The repo did not meet the rules.'}</p>}
       {result?.held && <p><span className="pr-pill">Under review</span> <span className="pr-meta">Held off the leaderboard until a person has checked it.</span></p>}
 
@@ -432,7 +446,7 @@ function ChallengeView({ slug }: { slug: string }) {
         <div className="results-head">
           <div className="results-total">
             <strong><FlapText value={result.total.toFixed(1)} /></strong>
-            <span>{`of 100${standing ? ` · ${standing}` : ''}`.toUpperCase()}</span>
+            <span>OF 100{standing && <> · <Link href="/practice/leaderboard">{standing.toUpperCase()}</Link></>}</span>
           </div>
           <div className="results-dims">
             {CRITERIA.map(item => <div key={item.key} className={weakest === item.key ? 'weakest' : undefined}>
@@ -479,9 +493,9 @@ function ChallengeView({ slug }: { slug: string }) {
               <button className="pr-ghost" style={{ marginTop: 10 }} disabled={appealing}>{appealing ? 'Sending…' : 'Send appeal'}</button>
             </form>
           </details>
-          : result.appeal.used
-            ? <p className="pr-help">{result.rejudged ? 'Your appeal has been read.' : 'Appeal sent. The judge will read your submission again, and your score then becomes the average of the two readings.'}</p>
-            : <p className="pr-help">The appeal window for this result has closed.</p>}
+          : APPEAL_NOTES[result.appeal.state] && <p className="pr-help">{APPEAL_NOTES[result.appeal.state]}</p>}
+
+        <p className="pr-help"><Link href="/practice/leaderboard">See the leaderboard →</Link></p>
       </>}
     </section>}
   </>

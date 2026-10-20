@@ -1735,6 +1735,10 @@ body::before{content:'';position:fixed;inset:0;z-index:2000;pointer-events:none;
 .pr-section-head{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin:0 0 12px}
 .pr-section-head h2{font:600 19px/1.2 'Big Shoulders Text',sans-serif;letter-spacing:-.4px;margin:0}
 .pr-section-head span{font:10px 'Fragment Mono',monospace;letter-spacing:.9px;text-transform:uppercase;color:var(--faint)}
+.pr-section-head .pr-section-link{margin-left:auto;font:10px 'Fragment Mono',monospace;letter-spacing:.9px;text-transform:uppercase;color:var(--ink-2);border-bottom:1px solid var(--line)}
+.pr-section-head .pr-section-link:hover,.pr-help a:hover,.results-total a:hover{color:var(--accent)}
+.pr-help a,.results-total a{color:var(--ink-2);border-bottom:1px solid var(--line)}
+.pr-label a{color:var(--ink-2);border-bottom:1px solid var(--line);text-transform:uppercase}
 .pr-lamp{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);margin-top:9px}
 [data-done] > .pr-lamp{background:var(--success);box-shadow:0 0 0 3px var(--success-soft)}
 [data-idle] > .pr-lamp{background:var(--faint);box-shadow:none}

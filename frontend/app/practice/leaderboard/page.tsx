@@ -149,7 +149,7 @@ function LeaderboardView() {
           <Rows lines={lines} me={me} />
           <div className="pr-foot">
             <span>{board
-              ? `${plural(board.total_entries, 'entry', 'entries')} judged · ${queued.toLocaleString('en-US')} queued · names hidden unless chosen`
+              ? `${plural(board.total_entries, 'entry', 'entries')} judged · ${queued.toLocaleString('en-US')} queued${board.held ? ` · ${board.held.toLocaleString('en-US')} under review` : ''} · names hidden unless chosen`
               : `Best four totals from the last ${overall?.window_challenges ?? 12} builds · names hidden unless chosen`}</span>
             <span><Link href="/practice">Change your leaderboard name in Practice settings</Link></span>
           </div>
