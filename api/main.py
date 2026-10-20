@@ -260,6 +260,7 @@ from api.routers import (  # noqa: E402
     interview,
     match,
     outreach,
+    practice,
     profile,
     public,
     query,
@@ -287,6 +288,7 @@ app.include_router(career.router, prefix="/api/v1")
 app.include_router(agent.router, prefix="/api/v1")
 app.include_router(dashboard.router, prefix="/api/v1")
 app.include_router(events.router, prefix="/api/v1")
+app.include_router(practice.router, prefix="/api/v1")
 
 
 # API documentation

@@ -320,3 +320,23 @@ async def refresh_outreach_issues(
     from services.outreach import oss
 
     return await oss.refresh_issues(limit=limit)
+
+
+PracticeStep = Literal["challenges", "judge"]
+
+
+@router.post("/practice", dependencies=[Depends(require_cron_or_admin)])
+async def run_practice_step(
+    step: PracticeStep, limit: int = Query(default=4, ge=1, le=10)
+) -> dict[str, Any]:
+    """
+    Run one Practice step: ``challenges`` (editions, statuses, retention) or ``judge``.
+
+    Called every two hours by ``.github/workflows/practice.yml`` - there is no worker.
+    ``limit`` is how many attempts ``judge`` may take (it applies its own, lower ceiling);
+    ``challenges`` ignores it. ``run_step`` never raises: a failure comes back as
+    ``{"error": ...}`` and whatever the step finished stays committed.
+    """
+    from services.practice import steps
+
+    return await steps.run_step(step, limit)

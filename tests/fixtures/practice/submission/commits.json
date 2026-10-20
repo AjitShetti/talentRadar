@@ -1,0 +1,62 @@
+[
+  {
+    "sha": "c35e92a7b0f64d1c83e2a9075bd4f61e8c0a3d29",
+    "commit": {
+      "author": {"name": "Demo Builder", "email": "demo-builder@example.com", "date": "2026-10-19T03:50:00Z"},
+      "committer": {"name": "Demo Builder", "email": "demo-builder@example.com", "date": "2026-10-19T03:50:00Z"},
+      "message": "Add retry and signature tests"
+    },
+    "author": {"login": "demo-builder"},
+    "committer": {"login": "demo-builder"}
+  },
+  {
+    "sha": "e3b8d2f41a09e6c73d5a1f02b8e9c46d70a2f35c",
+    "commit": {
+      "author": {"name": "Demo Builder", "email": "demo-builder@example.com", "date": "2026-10-19T03:20:00Z"},
+      "committer": {"name": "Demo Builder", "email": "demo-builder@example.com", "date": "2026-10-19T03:20:00Z"},
+      "message": "Persist delivery log to SQLite"
+    },
+    "author": {"login": "demo-builder"},
+    "committer": {"login": "demo-builder"}
+  },
+  {
+    "sha": "e219c6b3e8f0d27a54c9e13b86f2a0d7c5e84b19",
+    "commit": {
+      "author": {"name": "Demo Builder", "email": "demo-builder@example.com", "date": "2026-10-18T14:30:00Z"},
+      "committer": {"name": "Demo Builder", "email": "demo-builder@example.com", "date": "2026-10-18T14:30:00Z"},
+      "message": "Retry failed deliveries with backoff"
+    },
+    "author": {"login": "demo-builder"},
+    "committer": {"login": "demo-builder"}
+  },
+  {
+    "sha": "e14a9d0f72c1b85e36d0a47f19c28b5e6d3f0a71",
+    "commit": {
+      "author": {"name": "Demo Builder", "email": "demo-builder@example.com", "date": "2026-10-01T00:00:00Z"},
+      "committer": {"name": "Demo Builder", "email": "demo-builder@example.com", "date": "2026-10-01T00:00:00Z"},
+      "message": "Relay design notes"
+    },
+    "author": {"login": "demo-builder"},
+    "committer": {"login": "demo-builder"}
+  },
+  {
+    "sha": "b27c41e0d9a3b65f28e017c94d2b8a6f30e5d1c7",
+    "commit": {
+      "author": {"name": "Demo Builder", "email": "demo-builder@example.com", "date": "2026-10-18T09:40:00Z"},
+      "committer": {"name": "Demo Builder", "email": "demo-builder@example.com", "date": "2026-10-18T09:40:00Z"},
+      "message": "Verify HMAC signature on every delivery"
+    },
+    "author": {"login": "demo-builder"},
+    "committer": {"login": "demo-builder"}
+  },
+  {
+    "sha": "a1f3e9c0b7d24e8a95c61f0b3d8e7a2c4f9b0d11",
+    "commit": {
+      "author": {"name": "Demo Builder", "email": "demo-builder@example.com", "date": "2026-10-17T05:20:00Z"},
+      "committer": {"name": "Demo Builder", "email": "demo-builder@example.com", "date": "2026-10-17T05:20:00Z"},
+      "message": "Scaffold webhook relay and health route"
+    },
+    "author": {"login": "demo-builder"},
+    "committer": {"login": "demo-builder"}
+  }
+]

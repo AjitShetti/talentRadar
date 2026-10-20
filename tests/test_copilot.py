@@ -174,6 +174,8 @@ def stub_sources(monkeypatch: pytest.MonkeyPatch) -> dict:
         "application_cards": [],
         "event_cards": [],
         "interview_card": None,
+        "practice_deadline_cards": [],
+        "practice_suggestion": None,
         "dismissed": set(),
         "outreach": {"followup": None, "suggestion": None},
     }
@@ -190,6 +192,12 @@ def stub_sources(monkeypatch: pytest.MonkeyPatch) -> dict:
     async def fake_interview(user_id: str, applied: int) -> dict | None:
         return state["interview_card"]
 
+    async def fake_practice_deadlines(user_id: str) -> list:
+        return state["practice_deadline_cards"]
+
+    async def fake_practice_suggestion(user_id: str) -> dict | None:
+        return state["practice_suggestion"]
+
     async def fake_dismissals(*, user_id: str) -> set:
         return state["dismissed"]
 
@@ -204,6 +212,8 @@ def stub_sources(monkeypatch: pytest.MonkeyPatch) -> dict:
     monkeypatch.setattr(copilot, "_application_cards", fake_app_cards)
     monkeypatch.setattr(copilot, "_event_cards", fake_event_cards)
     monkeypatch.setattr(copilot, "_interview_card", fake_interview)
+    monkeypatch.setattr(copilot, "_practice_deadline_cards", fake_practice_deadlines)
+    monkeypatch.setattr(copilot, "_practice_suggestion_card", fake_practice_suggestion)
     monkeypatch.setattr(copilot, "active_dismissals", fake_dismissals)
     monkeypatch.setattr(outreach_briefing, "outreach_cards", fake_outreach)
     return state
@@ -303,12 +313,12 @@ async def test_briefing_places_outreach_cards(
     ]
 
 
-async def test_briefing_composes_outreach_and_event_cards_in_one_order(
+async def test_briefing_composes_outreach_event_and_practice_cards_in_one_order(
     stub_sources: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The merged day plan: today's event ranks with the dated commitments, the follow-up
-    after it; the week's event and who was met follow the application cards; the Outreach
-    suggestion is last."""
+    """The merged day plan: a take-home deadline, then today's event, then the follow-up, rank
+    with the dated commitments; the week's event and who was met follow the application cards;
+    the Outreach suggestion comes before the one Practice suggestion, which is last."""
     async def fake_scheduled(user_id: str) -> list[dict[str, Any]]:
         return [_card(card_id="scheduled_interview:1", kind="scheduled_interview",
                       title="Interview tomorrow", detail="d", tone="warning")]
@@ -326,6 +336,14 @@ async def test_briefing_composes_outreach_and_event_cards_in_one_order(
         "suggestion": _card(card_id="outreach_suggestion:c1", kind="outreach_suggestion",
                             title="Reach out", detail="d"),
     }
+    stub_sources["practice_deadline_cards"] = [
+        _card(card_id="practice_deadline:1", kind="practice_deadline", title="Build closes at 18:00",
+              detail="d", tone="warning"),
+    ]
+    stub_sources["practice_suggestion"] = _card(
+        card_id="practice_today:2026-10-20", kind="practice_today", title="Today's question",
+        detail="d", tone="action",
+    )
     # `_event_cards` returns today's cards first, then the week's, then who was met.
     stub_sources["event_cards"] = [
         _card(card_id="event_today:1", kind="event_today", title="Tonight: Rust meetup",
@@ -340,6 +358,7 @@ async def test_briefing_composes_outreach_and_event_cards_in_one_order(
 
     assert [c["kind"] for c in briefing["cards"]] == [
         "scheduled_interview",
+        "practice_deadline",
         "event_today",
         "outreach_followup",
         "priority",
@@ -348,6 +367,7 @@ async def test_briefing_composes_outreach_and_event_cards_in_one_order(
         "event_met_prompt",
         "interview_momentum",
         "outreach_suggestion",
+        "practice_today",
     ]
 
 
@@ -382,6 +402,43 @@ async def test_event_cards_in_a_briefing_never_reach_the_model(
 
     assert marker not in json.dumps(seen, default=str)
     assert [item["title"] for item in seen["context"]["open_items"]] == ["Apply to your saved jobs"]
+
+
+async def test_practice_cards_in_a_briefing_never_reach_the_model(
+    stub_sources: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Practice card names a challenge the user started and the day's question: none of
+    it is sent, in any field of the call, and the fallback reply does not name it either."""
+    marker = "ZQ7-IDEMPOTENT-WEBHOOK-RELAY"
+    stub_sources["practice_deadline_cards"] = [
+        _card(card_id="practice_deadline:1", kind="practice_deadline",
+              title=f"{marker} closes at 18:00", detail=marker, tone="warning",
+              meta={"challenge": marker}),
+    ]
+    stub_sources["practice_suggestion"] = _card(
+        card_id="practice_contest:2026-10-25", kind="practice_contest", title=marker, detail=marker,
+        tone="action",
+    )
+    seen: dict[str, Any] = {}
+
+    async def fake_memories(**kwargs: object) -> list[Any]:
+        return []
+
+    async def fake_reply(**kwargs: Any) -> str:
+        seen.update(kwargs)
+        return "ok"
+
+    async def boom(**kwargs: object) -> str:
+        raise RuntimeError("no api key")
+
+    monkeypatch.setattr(copilot, "get_memories", fake_memories)
+    monkeypatch.setattr("services.llm.generate_copilot_reply", fake_reply)
+    assert await copilot._general_reply("u1", "what now?", None) == "ok"
+    assert marker not in json.dumps(seen, default=str)
+    assert [item["title"] for item in seen["context"]["open_items"]] == ["Apply to your saved jobs"]
+
+    monkeypatch.setattr("services.llm.generate_copilot_reply", boom)
+    assert marker not in await copilot._general_reply("u1", "what now?", None)
 
 
 async def test_the_fallback_reply_never_names_an_event(

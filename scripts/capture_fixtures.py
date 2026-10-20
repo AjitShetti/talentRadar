@@ -9,6 +9,7 @@ Record real source responses so the contract tests can replay them offline.
     python scripts/capture_fixtures.py --events         # Events: Luma iCal feeds, GDG pages, Eventbrite API
     python scripts/capture_fixtures.py --events --events-source gdg   # just the GDG pages
     EVENTBRITE_TOKEN=... python scripts/capture_fixtures.py --events --events-source eventbrite
+    python scripts/capture_fixtures.py --practice       # practice GitHub responses
 
 Rather than guessing each scraper's request URLs, this wraps
 ``ScraplingManager.fetch_html_or_json`` and records every call the scraper
@@ -33,6 +34,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
+from urllib.parse import urlsplit
 
 # Run as a file (``python scripts/capture_fixtures.py``) the script's own folder is sys.path[0],
 # so the repository root is added here, as scripts/refresh_events.py does.
@@ -597,6 +599,142 @@ async def capture_events(redact: Sequence[str] = (), sources: Sequence[str] = ()
     return 0 if all(code == 0 for code in codes) else 1
 
 
+PRACTICE_DIR = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "practice"
+#: Practice reads GitHub only. Its LeetCode fixtures are written by hand; no script fetches the LeetCode site.
+_PRACTICE_HOSTS = ("api.github.com",)
+_GITHUB_JSON = "application/vnd.github+json"
+_GITHUB_RAW = "application/vnd.github.raw"
+
+
+def _blank_commit_emails(commits: list[dict[str, Any]]) -> None:
+    """Blank the author and committer emails: a commit's contact address is a real person's, and the fixture never keeps one."""
+    for entry in commits:
+        for role in ("author", "committer"):
+            entry["commit"][role]["email"] = None
+
+
+#: Fictional stand-ins for the people GitHub reports. The GitHub mascot account is
+#: not a person, so it is kept as published.
+FAKE_LOGIN = "demo-builder"
+FAKE_NAME = "Demo Builder"
+FAKE_USER_ID = 90000001
+_MASCOT = frozenset({"octocat", "The Octocat"})
+
+
+def _fictional_user(user: dict[str, Any] | None) -> dict[str, Any] | None:
+    """A fictional GitHub account in place of a real one. None and the mascot pass through."""
+    if user is None or user.get("login") in _MASCOT:
+        return user
+    return {
+        "login": FAKE_LOGIN,
+        "id": FAKE_USER_ID,
+        "avatar_url": f"https://avatars.githubusercontent.com/u/{FAKE_USER_ID}?v=4",
+        "html_url": f"https://github.com/{FAKE_LOGIN}",
+        "url": f"https://api.github.com/users/{FAKE_LOGIN}",
+        "type": "User",
+    }
+
+
+def _pseudonymise(commits: list[dict[str, Any]], events: list[dict[str, Any]]) -> dict[str, str]:
+    """
+    Replace every real person in the commit history and the activity feed with a
+    fictional one, in place. Returns the real names and logins replaced, mapped to
+    their stand-ins, so the same renames also reach commit messages and URLs.
+    """
+    renames: dict[str, str] = {}
+    _blank_commit_emails(commits)
+    for entry in commits:
+        for role in ("author", "committer"):
+            person = entry["commit"][role]
+            account = entry.get(role)
+            login = account.get("login") if account else None
+            if login in _MASCOT or person.get("name") in _MASCOT:
+                continue
+            if person.get("name"):
+                renames[person["name"]] = FAKE_NAME
+            if login:
+                renames[login] = FAKE_LOGIN
+            person["name"] = FAKE_NAME
+            entry[role] = _fictional_user(account)
+    for event in events:
+        actor = event.get("actor")
+        login = actor.get("login") if actor else None
+        if actor and login not in _MASCOT:
+            if login:
+                renames[login] = FAKE_LOGIN
+            event["actor"] = _fictional_user(actor)
+    return renames
+
+
+def _apply_renames(text: str, renames: dict[str, str]) -> str:
+    """
+    Rename real identities in serialised JSON, in any casing. Longest first, so a
+    full name is replaced before a prefix of it could be.
+    """
+    for real in sorted(renames, key=len, reverse=True):
+        # Doubled backslashes keep the stand-in literal in re.sub's replacement syntax.
+        literal = renames[real].replace("\\", "\\\\")
+        text = re.sub(re.escape(real), literal, text, flags=re.IGNORECASE)
+    return text
+
+
+async def capture_practice(client: httpx.AsyncClient) -> None:
+    """
+    Record the GitHub responses the Practice reader replays: the octocat sample
+    repository (repo, commits, tree, README) and the activity feed of the repository
+    named by PRACTICE_ACTIVITY_REPO (owner/name). Unauthenticated unless GITHUB_TOKEN is set.
+    """
+    activity_repo = os.environ.get("PRACTICE_ACTIVITY_REPO", "")
+    if not activity_repo:
+        raise SystemExit(
+            "set PRACTICE_ACTIVITY_REPO=owner/name to record that repository's activity"
+        )
+    PRACTICE_DIR.mkdir(parents=True, exist_ok=True)
+    auth = (
+        {"Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}"}
+        if os.environ.get("GITHUB_TOKEN")
+        else {}
+    )
+
+    async def get(path: str, accept: str) -> httpx.Response:
+        url = f"https://api.github.com{path}"
+        assert urlsplit(url).hostname in _PRACTICE_HOSTS, url
+        response = await client.get(url, headers={**auth, "Accept": accept})
+        response.raise_for_status()
+        return response
+
+    json_responses = {
+        "github_repo.json": await get("/repos/octocat/Hello-World", _GITHUB_JSON),
+        "github_activity.json": await get(
+            f"/repos/{activity_repo}/activity?per_page=20", _GITHUB_JSON
+        ),
+        "github_commits.json": await get(
+            "/repos/octocat/Hello-World/commits?per_page=5", _GITHUB_JSON
+        ),
+        "github_tree.json": await get(
+            "/repos/octocat/Hello-World/git/trees/master?recursive=1", _GITHUB_JSON
+        ),
+    }
+    payloads = {name: response.json() for name, response in json_responses.items()}
+    renames = _pseudonymise(payloads["github_commits.json"], payloads["github_activity.json"])
+    for name, payload in payloads.items():
+        text = _apply_renames(json.dumps(payload, indent=2, ensure_ascii=False), renames)
+        (PRACTICE_DIR / name).write_text(text + "\n", encoding="utf-8", newline="\n")
+        print(f"  practice  {name}")
+
+    readme = await get("/repos/octocat/Hello-World/readme", _GITHUB_RAW)
+    (PRACTICE_DIR / "github_readme.md").write_bytes(readme.content)
+    print("  practice  github_readme.md")
+
+
+async def _capture_practice_main() -> int:
+    import httpx
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        await capture_practice(client)
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Record live source responses as test fixtures.")
     parser.add_argument("--source", action="append", help="Capture only this source (repeatable)")
@@ -622,11 +760,16 @@ def main() -> int:
         metavar="NAME",
         help="With --events: also rename this person wherever a recording names them (repeatable)",
     )
+    parser.add_argument(
+        "--practice", action="store_true", help="Record the practice GitHub fixtures"
+    )
     args = parser.parse_args()
     if args.company_map:
         return asyncio.run(capture_company_map())
     if args.events:
         return asyncio.run(capture_events(args.redact, args.events_source))
+    if args.practice:
+        return asyncio.run(_capture_practice_main())
     return asyncio.run(main_async(args))
 
 

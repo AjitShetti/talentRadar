@@ -1,0 +1,40 @@
+{
+  "slug": "metro-ridership-dashboard",
+  "title": "Metro ridership dashboard, one honest chart per question",
+  "track": "data",
+  "hours": 24,
+  "summary": "From ridership data you generate, answer five questions with five truthful charts, and say what the data cannot answer.",
+  "context": [
+    "Lakeline Metro is a fictional city metro that wants to understand its riders. You generate a year of hourly tap-in counts for about 20 stations on three lines, with the patterns a real system has: weekday peaks, a different weekend shape, a festival week, a station closed for a month, and a few sensor glitches.",
+    "Then answer five questions a planner would ask. For each, build exactly one chart or table and put one or two sentences under it saying what it shows and what it does not.",
+    "Honest means axes that start where they should, no misleading bars, no colour that implies a ranking that is not there, and outliers explained rather than quietly dropped."
+  ],
+  "must_have": [
+    "The seeded generator and the data it writes, with the planted patterns documented in a file kept apart from the dashboard code.",
+    "Five questions written down before you chart anything.",
+    "One chart per question, titled with its finding, with labelled units and a data-quality note covering the glitches and how you treated them.",
+    "A dashboard page (static HTML, a notebook or a small app) that opens with only what the README says to install.",
+    "A short 'cannot answer' section: two questions this data cannot settle, and why."
+  ],
+  "nice_to_have": [
+    "A date-range or line filter that changes the charts without changing what they mean.",
+    "A colour-blind-safe palette, checked with a simulator.",
+    "One command that regenerates the data, the charts and the page."
+  ],
+  "constraints": [
+    "No paid services, APIs or accounts. Free charting libraries are fine.",
+    "Generated, fictional data only. Do not scrape or download any real transit data.",
+    "Do not use a sample dataset that ships with a library as your data."
+  ],
+  "deliverables": [
+    "A public repo created after you press Start, with commits spread across the window.",
+    "A README with how to run it (regenerate the data, open the dashboard), your five questions, and what is missing."
+  ],
+  "judge_focus": [
+    "Whether each chart answers its question, and whether you checked how it could mislead.",
+    "How glitches and outliers were found and treated, and whether that choice is visible to a reader.",
+    "Whether the charts recover the planted patterns instead of just assuming them.",
+    "A trail of commits: the data and its checks first, charts after, each revised for a reason you can state."
+  ],
+  "bengaluru_context": "Analytics teams at Bengaluru mobility, civic-tech and consulting organisations are asked daily to turn a messy log into one chart a decision-maker will trust."
+}

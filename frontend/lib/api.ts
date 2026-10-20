@@ -173,6 +173,27 @@ export type ImportResult = { event: EventCard } | { needs_details: true; reason:
 export type MetAtEvent = { source_ref: string; name: string; title: string | null; company_name: string | null; company_id: string | null; linkedin_url: string | null; x_url: string | null; github_url: string | null; email: string | null; note: string | null; event_id: string; event_title: string; event_url: string; met_on: string; created_at: string; context_line: string }
 export type EventListParams = { when?: 'today' | 'week' | 'weekend' | 'month'; from?: string; to?: string; mode?: 'in_person' | 'online' | 'any'; topic?: string; format?: EventFormat; hidePaid?: boolean; saved?: 'all' | 'saved' | 'going'; companyId?: string; q?: string; limit?: number; offset?: number }
 
+// Practice (services/practice, api/routers/practice.py). A question is a pointer: the server never stores its statement, and the page links out to leetcode.com.
+export type PracticeFeel = 'easy' | 'right' | 'hard'
+export type PracticeQuestion = { id: number; slug: string; title: string; difficulty: 'easy' | 'medium' | 'hard'; topics: string[]; url: string }
+export type Contest = { starts_at: string; ends_at: string; show: boolean; live: boolean; url: string }
+export type PracticeToday = { day: string; catalogue: 'ok' | 'empty'; catalogue_size: number; track: string; track_label: string; question: PracticeQuestion | null; reason: string; relaxed: string[]; done_at: string | null; feel: PracticeFeel | null; swaps_left: number; leetcode_daily_url: string; contest: Contest }
+export type PracticeHistory = { days: Array<{ day: string; done: boolean; difficulty: string | null; topic: string | null }>; counts: { this_month: number; last_30: number; longest_run: number }; topics: Array<{ topic: string; count: number }> }
+export type ChallengeBrief = { slug: string; title: string; track: string; hours: 24 | 48; summary: string; context: string[]; must_have: string[]; nice_to_have: string[]; constraints: string[]; deliverables: string[]; judge_focus: string[]; bengaluru_context: string }
+export type AttemptStatus = 'started' | 'submitted' | 'queued' | 'judged' | 'rejected' | 'judge_failed' | 'missed'
+export type Writeup = { decisions: string; tradeoffs: string; ai_usage: string; next_steps: string }
+export type Attempt = { status: AttemptStatus; started_at: string; deadline_at: string; proof_code: string; repo_url: string | null; writeup: Writeup | null; video_url: string | null; submitted_at: string | null; editable_until: string; total: number | null; held: boolean }
+export type Challenge = { slug: string; opens_at: string; closes_at: string; last_start_at: string; brief: ChallengeBrief; attempt: Attempt | null }
+export type ChallengesOverview = { current: Challenge | null; next_opens_at: string | null; past: Array<{ slug: string; title: string; track: string; opens_at: string; status: AttemptStatus | null; total: number | null; held: boolean }> }
+export type Criterion = 'thinking' | 'tradeoffs' | 'ai_usage' | 'build_process' | 'meets_brief' | 'code_quality'
+// none: nothing judged yet · open: the form is offered · closed: the seven days are over · reviewed: a person decided this result · pending / done: an appeal in progress / read · gave_up / refused: the second reading could not be made (the first score stands)
+export type AppealState = 'none' | 'open' | 'closed' | 'reviewed' | 'pending' | 'done' | 'gave_up' | 'refused'
+export type AttemptResult = { status: AttemptStatus; held: boolean; reject_reason: string | null; total: number | null; scores: Record<Criterion, number> | null; weights: Record<Criterion, number>; notes: (Record<Criterion, string> & { strengths: string[]; improvements: string[]; summary: string }) | null; signals: Record<string, number | boolean> | null; snapshot_sha: string | null; snapshot_url: string | null; appeal: { available: boolean; used: boolean; until: string | null; state: AppealState }; rejudged: boolean }
+export type BoardRow = { rank: number; name: string; total: number; hours_used: number | null; repo_url?: string | null; you?: boolean }
+export type ChallengeBoard = { provisional: boolean; total_entries: number; queued: number; held: number; rows: BoardRow[]; me: BoardRow | null }
+export type OverallBoard = { window_challenges: number; rows: Array<{ rank: number; name: string; score: number; entries: number; you?: boolean }>; me: { rank: number; name: string; score: number; entries: number } | null }
+export type PracticeSettings = { display_name: string | null; show_repo: boolean; contest_reminder: boolean; handle: string }
+
 /** A refusal from the API. `status` lets a caller tell "not found" or "conflict" from a failure; `message` is the server's own words. */
 export class ApiError extends Error {
   status: number
@@ -458,5 +479,24 @@ export const api = {
       const qs = query.toString()
       return request<MetAtEvent[]>(`/api/v1/events/people-met${qs ? `?${qs}` : ''}`, {}, true)
     },
+  },
+  practice: {
+    today: () => request<PracticeToday>('/api/v1/practice/today', {}, true),
+    // Marking done is idempotent. The one-tap rating is optional and rides in the same request.
+    done: (feel?: PracticeFeel) => request<PracticeToday>('/api/v1/practice/today/done', { method: 'POST', body: feel ? JSON.stringify({ feel }) : undefined }, true),
+    feel: (feel: PracticeFeel) => request<PracticeToday>('/api/v1/practice/today/feel', { method: 'PATCH', body: JSON.stringify({ feel }) }, true),
+    undo: () => request<PracticeToday>('/api/v1/practice/today/done', { method: 'DELETE' }, true),
+    swap: () => request<PracticeToday>('/api/v1/practice/today/swap', { method: 'POST' }, true),
+    history: (weeks = 12) => request<PracticeHistory>(`/api/v1/practice/history?weeks=${weeks}`, {}, true),
+    challenges: () => request<ChallengesOverview>('/api/v1/practice/challenges', {}, true),
+    challenge: (slug: string) => request<Challenge>(`/api/v1/practice/challenges/${encodeURIComponent(slug)}`, {}, true),
+    start: (slug: string) => request<Challenge>(`/api/v1/practice/challenges/${encodeURIComponent(slug)}/start`, { method: 'POST' }, true),
+    submit: (slug: string, payload: { repo_url: string; writeup: Writeup; video_url?: string | null }) => request<Challenge>(`/api/v1/practice/challenges/${encodeURIComponent(slug)}/submission`, { method: 'PUT', body: JSON.stringify(payload) }, true),
+    result: (slug: string) => request<AttemptResult>(`/api/v1/practice/challenges/${encodeURIComponent(slug)}/result`, {}, true),
+    appeal: (slug: string, reason: string) => request<AttemptResult>(`/api/v1/practice/challenges/${encodeURIComponent(slug)}/appeal`, { method: 'POST', body: JSON.stringify({ reason }) }, true),
+    board: (slug: string) => request<ChallengeBoard>(`/api/v1/practice/challenges/${encodeURIComponent(slug)}/leaderboard`, {}, true),
+    overall: () => request<OverallBoard>('/api/v1/practice/leaderboard', {}, true),
+    settings: () => request<PracticeSettings>('/api/v1/practice/settings', {}, true),
+    saveSettings: (payload: Pick<PracticeSettings, 'display_name' | 'show_repo' | 'contest_reminder'>) => request<PracticeSettings>('/api/v1/practice/settings', { method: 'PUT', body: JSON.stringify(payload) }, true),
   },
 }

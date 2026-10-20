@@ -1,0 +1,40 @@
+{
+  "slug": "restaurant-listing-merge",
+  "title": "Merge two messy restaurant listings",
+  "track": "data",
+  "hours": 48,
+  "summary": "Generate two inconsistent listings of the same fictional restaurants, merge them into one deduplicated catalogue, and explain every match and every non-match.",
+  "context": [
+    "Plateful is a fictional food-discovery app that buys restaurant listings from two vendors. They describe many of the same places differently: abbreviations, a missing pin code, flipped word order, a branch listed as its own restaurant, a closed place one vendor never removed.",
+    "You do not have their files, so you generate them. Start from about 300 fictional true restaurants, write a seeded generator that adds noise to produce the two listings, and keep the answer key apart from the merge code.",
+    "Then build the merge. Wrongly merging two places is worse than missing a duplicate: a customer sent to the wrong branch has a bad day."
+  ],
+  "must_have": [
+    "The generator, its seed, and the two listings it writes, with at least five distinct kinds of noise.",
+    "A merge that outputs one catalogue with a stable id per restaurant, the source records behind each, and a stated rule for every field where the vendors disagree.",
+    "A stored explanation for every pair considered: which fields agreed, which differed, the score and the threshold.",
+    "An evaluation against the answer key: precision, recall, and the worst wrong merges and missed merges listed.",
+    "A review queue: borderline pairs go to a file for a human instead of into the catalogue."
+  ],
+  "nice_to_have": [
+    "Blocking, so ten times the records does not mean every pair is compared; state the effect on recall.",
+    "Branches modelled as children of a brand, neither merged nor treated as duplicates.",
+    "A note on what would change at five million records."
+  ],
+  "constraints": [
+    "No paid services, APIs or accounts, and no geocoding or maps API. Free open-source packages only.",
+    "Fictional data only: restaurant names, owners and phone numbers are made up, and numbers are obviously non-working. Real locality names are fine.",
+    "Everything regenerates from one command."
+  ],
+  "deliverables": [
+    "A public repo created after you press Start, with commits spread across the window.",
+    "A README with how to run everything (regenerate the data, run the merge and the evaluation), your results, and what is missing."
+  ],
+  "judge_focus": [
+    "How you chose the threshold, and what cost you decided a wrong merge carries.",
+    "Whether an explanation would convince a sceptical reader, including for a pair you got wrong.",
+    "Whether the evaluation is honest about the generator's noise being easier or harder than real vendors' files.",
+    "A trail of commits: a crude matcher first, measured, then improvements justified by the failures."
+  ],
+  "bengaluru_context": "Data and catalogue teams at Bengaluru food-delivery, local-search and maps companies spend much of their year on entity matching like this, where the cost of a wrong merge is measured in complaints."
+}

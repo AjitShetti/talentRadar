@@ -2,13 +2,14 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowRight, CheckCircle2, Mic, Search, Sparkles, SquareCheck, X } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, CheckCircle2, Mic, Search, Sparkles, SquareCheck, X } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import BriefingFeed from '@/components/BriefingFeed'
 import CopilotWorkspace from '@/components/CopilotWorkspace'
 import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
 import { ActivityItem, AgendaItem, api, Briefing, BriefingCard, JobMatch, SkillsFocus } from '@/lib/api'
+import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 
 type Dimension = { key: string; label: string; score: number; weakest: boolean }
 type TrackStat = { track: string; label: string; score: number; sessions: number }
@@ -65,16 +66,19 @@ const todayTag = (card: BriefingCard) => card.tone === 'warning'
  *   2. an event on the user's list for today;
  *   3. finish the setup everything else is computed from;
  *   4. an interview on the calendar within a day (the briefing's card);
- *   5. an Outreach follow-up that is due;
- *   6. the briefing's own next-best action;
- *   7. the week's event, then who the user met;
- *   8. the one company worth a note (the Outreach suggestion);
- *   9. the cheapest durable win (a first mock), then study, then apply.
+ *   5. a take-home due within hours (Practice);
+ *   6. an Outreach follow-up that is due;
+ *   7. the briefing's own next-best action;
+ *   8. the week's event, then who the user met;
+ *   9. the one company worth a note (the Outreach suggestion);
+ *  10. the cheapest durable win (a first mock), then study, then apply;
+ *  11. the one Practice suggestion (the weekly contest, else today's question).
  *
  * An event for today is the next dated commitment after an interview, and it
  * expires tonight, so it outranks setup. A follow-up is a date the user set
  * themselves, so it outranks the briefing's next-best action; an interview within a
- * day is a harder one, so the follow-up ranks below it. The week's event and the
+ * day is a harder one, so the follow-up ranks below it. A take-home deadline is
+ * dated too and a missed one cannot be recovered, so it ranks above the follow-up. The week's event and the
  * people just met are time-bound, so they go ahead of the suggestion, which is a
  * nudge, not a commitment. Three at most - a fourth would make this a list to read
  * rather than a decision to act on.
@@ -139,10 +143,13 @@ function buildActions(
     out.push(fromCard(soon, [{ label: metaNumber(soon, 'days_away') === 0 ? 'Today' : 'Tomorrow', hot: true }, { label: 'Interview' }], { cta: 'Open prep', href: '/interview' }))
   }
 
-  // practice_deadline goes HERE, between the interview within a day and
-  // outreach_followup, when Practice is merged (controller ruling, 2026-10-20): a
-  // take-home deadline that is missed cannot be recovered, a follow-up can slip a day.
-  // That slot must also exclude 'practice_' from the lead below.
+  // A take-home due within hours. A missed deadline cannot be recovered and a follow-up
+  // can slip a day, so this ranks above the Outreach follow-up (controller ruling,
+  // 2026-10-20) and has its own slot, which is why the lead below skips 'practice_' cards.
+  const deadline = cards.find(card => card.kind === 'practice_deadline')
+  if (deadline && out.length < 3 && !taken(deadline)) {
+    out.push(fromCard(deadline, [{ label: 'Take-home', hot: true }, { label: 'Due soon' }], { cta: 'Open submission', href: '/practice' }))
+  }
 
   // Everything owed on Outreach arrives as one card; its count is what is due.
   const followUp = cards.find(card => card.kind === 'outreach_followup')
@@ -151,9 +158,9 @@ function buildActions(
     out.push(fromCard(followUp, [{ label: `${due} due`, hot: true }, { label: 'Outreach' }], { cta: 'Open Outreach', href: '/outreach' }))
   }
 
-  // The lead is the briefing's next-best action. Outreach and event cards have their
-  // own slots: as the lead they would count the same card twice.
-  const lead = cards.find(card => (card.tone === 'primary' || card.tone === 'warning') && !card.kind.startsWith('outreach_') && !card.kind.startsWith('event_') && !taken(card) && !repeatsToday(card))
+  // The lead is the briefing's next-best action. Outreach, event and Practice cards have
+  // their own slots: as the lead they would count the same card twice.
+  const lead = cards.find(card => (card.tone === 'primary' || card.tone === 'warning') && !card.kind.startsWith('outreach_') && !card.kind.startsWith('event_') && !card.kind.startsWith('practice_') && !taken(card) && !repeatsToday(card))
   if (lead && out.length < 3) {
     out.push(fromCard(lead, [{ label: lead.kind.replace(/_/g, ' '), hot: lead.tone === 'warning' }], { cta: 'Open', href: '/applications' }))
   }
@@ -231,6 +238,22 @@ function buildActions(
       tags: [{ label: `${matches.length} waiting` }, { label: 'India · from the sweep' }],
       cta: 'Read them',
       href: '#sweep',
+    })
+  }
+
+  // The one Practice suggestion (services/copilot.py): the weekly contest, else today's
+  // question. A suggestion, not a commitment, so it only takes a slot nothing else wanted.
+  // A take-home due within hours is a `practice_deadline` card and already led, above.
+  const practice = briefing?.cards?.find(card => card.kind === 'practice_contest' || card.kind === 'practice_today')
+  if (practice && out.length < 3) {
+    const action = practice.actions?.[0]
+    out.push({
+      key: `briefing-${practice.id}`,
+      title: practice.title,
+      why: practice.detail,
+      tags: [{ label: practice.kind === 'practice_contest' ? 'Weekly contest' : 'Daily question' }],
+      cta: action?.label || 'Open',
+      href: action?.href || '/practice',
     })
   }
 
@@ -475,6 +498,20 @@ function Measure({ fill }: { fill: number }) {
   </span>
 }
 
+/** An absolute http(s) URL opens in a new tab with the safe link props; an in-app path stays a Link. */
+function ActionButton({ action, lead }: { action: Action; lead: boolean }) {
+  const className = `ov-btn ${lead ? 'ov-btn-accent' : 'ov-btn-line'}`
+  const external = externalHref(action.href)
+  if (external) {
+    return <a className={className} href={external} {...EXTERNAL_LINK_PROPS}>
+      {action.cta} <ArrowUpRight size={14} />
+    </a>
+  }
+  return <Link className={className} href={action.href}>
+    {action.cta} <ArrowRight size={14} />
+  </Link>
+}
+
 /**
  * The focus list and its one travelling marker.
  *
@@ -540,9 +577,7 @@ function FocusList({ actions }: { actions: Action[] }) {
             {action.tags.map(tag => <span key={tag.label} data-hot={tag.hot ? 'true' : undefined}>{tag.label}</span>)}
           </div>}
         </div>
-        <Link className={`ov-btn ${i === 0 ? 'ov-btn-accent' : 'ov-btn-line'}`} href={action.href}>
-          {action.cta} <ArrowRight size={14} />
-        </Link>
+        <ActionButton action={action} lead={i === 0} />
       </li>)}
     </ol>
   </div>

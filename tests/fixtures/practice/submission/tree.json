@@ -1,0 +1,14 @@
+{
+  "sha": "4d0a8e2c6f1b9375e0d4a2c8b6f1e3d7a9c50b28",
+  "truncated": false,
+  "tree": [
+    {"path": "README.md", "mode": "100644", "type": "blob", "sha": "9c1d4e2a7b3f60e8d5a1c9b2f47e0d3a6b8c5e21"},
+    {"path": ".talentradar", "mode": "100644", "type": "blob", "sha": "3e8a0f5c2d9b71e46a0c3f8d2b5e97a1c4d60f38"},
+    {"path": "src/app.py", "mode": "100644", "type": "blob", "sha": "7b2f9d0e4c1a83f65e0d2b7c9a4f1e8d3b6c0a92"},
+    {"path": "src/relay.py", "mode": "100644", "type": "blob", "sha": "d5a03e9f7c2b14e8a6d0f3c9b5e2a7d1c8f40b64"},
+    {"path": "tests/test_app.py", "mode": "100644", "type": "blob", "sha": "2f6c8b1d0e9a47c3f5b2e8d1a0c6f9b3e7d4a158"},
+    {"path": "node_modules/x/index.js", "mode": "100644", "type": "blob", "sha": "a8e4d1c07f3b9e25d6a0c8f1b4e7d2a90c5f3e76"},
+    {"path": "package-lock.json", "mode": "100644", "type": "blob", "sha": "60b9f2e3a1d8c5074e9b2f6a3d1c8e0f5b7a2d49"},
+    {"path": "docs/diagram.png", "mode": "100644", "type": "blob", "sha": "f1c7a5d2e8b03f96c4a1e7d0b8f2c5a3e9d6b104"}
+  ]
+}

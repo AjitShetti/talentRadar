@@ -1,0 +1,40 @@
+{
+  "slug": "resume-jd-matcher",
+  "title": "Resume-to-JD matcher that explains itself",
+  "track": "ai",
+  "hours": 24,
+  "summary": "Rate how well a resume fits a job description, point to the evidence for every match in both texts, and publish the cases where the matcher fails.",
+  "context": [
+    "Candidates and recruiters both want to know why a resume does or does not fit a role, and a bare 73 percent helps nobody. You build a matcher whose every conclusion points at the words that caused it.",
+    "You make the data: write or generate at least 8 fictional resumes and 5 fictional job descriptions for invented companies. Pair them so some are clearly good, some clearly bad, and a few fool a keyword matcher (a synonym, a skill used but never named, a keyword in the wrong context).",
+    "Hand-label at least 30 pairs before you run anything."
+  ],
+  "must_have": [
+    "A matcher that takes one resume and one job description as plain text and returns a fit band (not a falsely precise number), each matched requirement with a quote from the resume and a quote from the job description, and the requirements it found no evidence for.",
+    "Your hand labels for the pairs, committed before the first results.",
+    "An evaluation script comparing the matcher's bands with your labels, with a confusion table.",
+    "A failure-cases section: at least five pairs it gets wrong, each with why, and whether the fix is code, a better method or an honest limit.",
+    "A guard that stops the matcher from asserting a skill the resume does not contain, with a test."
+  ],
+  "nice_to_have": [
+    "An approach without a model and one with, compared on the same pairs.",
+    "Years-of-experience handling, stated and tested.",
+    "The three changes most likely to improve a candidate's match, offered truthfully."
+  ],
+  "constraints": [
+    "No paid services, APIs or accounts. A model, if used, runs locally or on a free tier with no card, and its outputs on your committed pairs are recorded so results reproduce without a key.",
+    "Fictional people and companies only. Never use a name, gender, age, photo, religion or caste as an input.",
+    "The matcher advises; it never rejects anyone."
+  ],
+  "deliverables": [
+    "A public repo created after you press Start, with commits spread across the window.",
+    "A README with how to run the matcher and the evaluation, your results, what you deliberately ignore, and what is missing."
+  ],
+  "judge_focus": [
+    "Whether each explanation can be checked against the two texts.",
+    "How hard you tried to break your own matcher, and how honest the failure cases are.",
+    "What the matcher must ignore, and how you tested that it does.",
+    "A trail of commits: labels first, a baseline measured, then each change justified by a failure."
+  ],
+  "bengaluru_context": "Hiring-tech and talent-platform teams at Bengaluru companies build and defend matchers like this, and an explanation that survives a recruiter's question is worth more than a score."
+}
