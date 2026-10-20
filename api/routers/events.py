@@ -106,7 +106,10 @@ async def list_events(
             description="Last day, inclusive, an IST date. Default: a 30-day window from `from`.",
         ),
     ] = None,
-    mode: Annotated[Literal["in_person", "online", "any"], Query()] = "in_person",
+    mode: Annotated[
+        Literal["in_person", "online", "any"] | None,
+        Query(description="Default: in_person, or any for saved=saved|going."),
+    ] = None,
     topic: Annotated[str | None, Query(max_length=32)] = None,
     event_format: Annotated[str | None, Query(alias="format", max_length=16)] = None,
     hide_paid: Annotated[bool, Query()] = False,

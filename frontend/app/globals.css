@@ -1822,6 +1822,8 @@ body::before{content:'';position:fixed;inset:0;z-index:2000;pointer-events:none;
 .ev-actions-wrap .ev-actions{border-bottom:0}
 .ev-actions-wrap .form-error{margin:0 0 18px}
 .ev-toggle:disabled{opacity:.55;cursor:default}
+.ev-controls .ci-chip:disabled,.ev-controls .cm-field select:disabled,.cm-sheet .ci-chip:disabled,.cm-sheet select:disabled{opacity:.45;cursor:not-allowed}
+.ev-controls .ci-chip:disabled:hover{border-color:var(--line);color:var(--muted)}
 .ev-toggle.is-danger:hover{border-color:var(--danger-border);color:var(--danger-dark)}
 .ev-person-links{flex-wrap:wrap;justify-content:flex-end}
 .ev-person-remove{background:transparent;color:var(--faint);padding:5px;border-radius:6px;line-height:0}

@@ -595,6 +595,73 @@ async def test_saved_and_going_views_list_everything_the_caller_saved(
     assert (await listing(client))["counts"]["going"] == 2
 
 
+async def test_saved_and_going_views_ignore_the_browse_defaults(
+    client: AsyncClient, add: Callable[..., Any], me: User
+) -> None:
+    """Online and far-off saves are the caller's own: the default mode and window hide neither."""
+    online_going = make_event(days(3), title="Online, going", is_online=True, venue_name=None)
+    far_going = make_event(days(60), title="In 60 days, going")
+    far_online_saved = make_event(
+        days(85), title="Online in 85 days, saved", is_online=True, venue_name=None
+    )
+    nearby = make_event(days(2), title="Nearby, in person, going")
+    unsaved_online = make_event(days(4), title="Online, unsaved", is_online=True, venue_name=None)
+    await add(online_going, far_going, far_online_saved, nearby, unsaved_online)
+    await add(
+        EventSave(user_id=me.id, event_id=online_going.id, status="going"),
+        EventSave(user_id=me.id, event_id=far_going.id, status="going"),
+        EventSave(user_id=me.id, event_id=far_online_saved.id, status="saved"),
+        EventSave(user_id=me.id, event_id=nearby.id, status="going"),
+    )
+
+    going = await listing(client, saved="going")  # no mode, no window: the API's defaults
+    saved = await listing(client, saved="saved")
+
+    assert titles(going) == ["Nearby, in person, going", "Online, going", "In 60 days, going"]
+    assert going["total"] == 3
+    assert going["counts"]["going"] == 3  # the ledger and the Going view agree
+    assert titles(saved) == [
+        "Nearby, in person, going",
+        "Online, going",
+        "In 60 days, going",
+        "Online in 85 days, saved",
+    ]
+    # The browse view keeps its defaults: in person, the next 30 days.
+    assert titles(await listing(client)) == ["Nearby, in person, going"]
+
+
+async def test_saved_views_still_hide_what_is_over_and_honour_an_explicit_choice(
+    client: AsyncClient, add: Callable[..., Any], me: User
+) -> None:
+    over = make_event(days(-3), title="Over, going")
+    online = make_event(days(3), title="Online, going", is_online=True, venue_name=None)
+    near = make_event(days(2), title="Near, going")
+    far = make_event(days(60), title="Far, going")
+    await add(over, online, near, far)
+    await add(
+        *(
+            EventSave(user_id=me.id, event_id=event.id, status="going")
+            for event in (over, online, near, far)
+        )
+    )
+
+    assert titles(await listing(client, saved="going")) == [
+        "Near, going",
+        "Online, going",
+        "Far, going",
+    ]
+    # Said out loud, a mode or a window narrows the saves like any other filter.
+    assert titles(await listing(client, saved="going", mode="online")) == ["Online, going"]
+    assert titles(await listing(client, saved="going", mode="in_person")) == [
+        "Near, going",
+        "Far, going",
+    ]
+    assert titles(await listing(client, saved="going", when="week")) == [
+        "Near, going",
+        "Online, going",
+    ]
+
+
 async def test_counts(client: AsyncClient, add: Callable[..., Any], me: User) -> None:
     other = await new_user(add)
     going = make_event(days(2), title="Going, this week")
@@ -950,6 +1017,25 @@ async def test_ics_download(client: AsyncClient, add: Callable[..., Any]) -> Non
     assert "URL:https://luma.com/rust-night" in body
     assert "STATUS:CANCELLED" not in body
     assert body.count("BEGIN:VEVENT") == 1
+
+
+async def test_ics_description_is_cut_to_200_characters(
+    client: AsyncClient, add: Callable[..., Any]
+) -> None:
+    """Spec 4.1: a source's description is shown cut to 200, in the calendar file too."""
+    from domain.ical import parse_ical
+
+    snippet = "Talks, pizza and demos. " * 25  # 600 characters, commas included
+    assert len(snippet) == 600
+    event = make_event(days(2), snippet=snippet)
+    await add(event)
+
+    body = (await client.get(f"{LIST}/{event.id}/ics")).text
+
+    description = parse_ical(body.encode())[0].description
+    assert description is not None
+    assert len(description) <= read.SNIPPET_SHOWN == 200
+    assert description == snippet[:200]
 
 
 async def test_ics_title_cannot_close_the_event_and_open_another(

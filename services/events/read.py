@@ -12,7 +12,10 @@ Who sees what
 * **A public event** is seen by everyone, in lists only when it is *listed* and is not a
   cross-source duplicate (the primary carries the listing and an "also on" link). The
   Saved and Going views are the exception: they list every event the caller saved, listed or
-  not, because the caller chose it (a pasted link need not be a listed event).
+  not, because the caller chose it (a pasted link need not be a listed event). They are the
+  caller's own commitments rather than a directory, so with no ``mode`` and no window they
+  list online events and events of any date that have not ended; a ``mode``, ``when`` or
+  ``from``/``to`` that is asked for still narrows them.
 * **A private event** (``owner_user_id`` set: one a user added by hand) is seen by its
   owner alone, whether or not it is "listed", and every other user gets ``None`` for its
   id exactly as for an id that does not exist.
@@ -75,12 +78,16 @@ _FILENAME_MAX = 60
 
 @dataclass(frozen=True)
 class EventQuery:
-    """One request to the list. ``when`` overrides ``start``/``end``."""
+    """One request to the list. ``when`` overrides ``start``/``end``.
+
+    ``mode`` left as ``None`` takes the view's own default: in person on the browse list,
+    any on the Saved and Going views (see :func:`_filters`).
+    """
 
     when: Window | None = None
     start: date | None = None
     end: date | None = None
-    mode: _Mode = "in_person"
+    mode: _Mode | None = None
     topic: str | None = None
     format: str | None = None
     hide_paid: bool = False
@@ -163,12 +170,20 @@ def _search_text(raw: str | None) -> str:
 def _filters(
     query: EventQuery, me: uuid.UUID, now: datetime, dialect: str
 ) -> list[ColumnElement[bool]]:
-    lo, hi = _bounds(query, now)
+    own = query.saved != "all"
     # What the caller saved is theirs to see whether or not the relevance verdict listed it.
-    where = [readable(me) if query.saved != "all" else _visible(me), _in_window(lo, hi, now)]
-    if query.mode == "in_person":
+    where = [readable(me) if own else _visible(me)]
+    if own and query.when is None and query.start is None and query.end is None:
+        # Their own saves are not a directory to browse: an online event or one 60 days off is
+        # still what they saved. Only "not over" bounds the view unless they ask for a window.
+        where.append(_ends_after(now))
+    else:
+        lo, hi = _bounds(query, now)
+        where.append(_in_window(lo, hi, now))
+    mode = query.mode or ("any" if own else "in_person")
+    if mode == "in_person":
         where.append(Event.is_online.is_(False))
-    elif query.mode == "online":
+    elif mode == "online":
         where.append(Event.is_online.is_(True))
     if query.topic:
         where.append(topic_clause(dialect, query.topic))
@@ -505,7 +520,7 @@ async def event_ics(
         ends_at=effective_end(event.starts_at, event.ends_at),
         location=_location(event),
         url=event.url or "",
-        description=event.snippet,
+        description=event.snippet[:SNIPPET_SHOWN] if event.snippet else None,
         cancelled=bool(event.is_cancelled),
         stamp=as_utc(now),
     )

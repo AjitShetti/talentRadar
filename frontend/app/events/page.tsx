@@ -179,16 +179,19 @@ function EventsView() {
     ;(setters[key] as (next: typeof value) => void)(value)
   }, [setQ, setWhen, setTopic, setFormat, setOnline, setHidePaid, setRail])
 
+  // Saved and Going are the user's own commitments, not the directory: an online event or one beyond
+  // the window is still theirs, so "Online too" and When do not narrow those two views.
+  const ownRail = rail !== 'all'
   const query = useMemo<EventListParams>(() => ({
-    when,
-    mode: online ? 'any' : 'in_person',
+    when: ownRail ? undefined : when,
+    mode: ownRail || online ? 'any' : 'in_person',
     topic: topic || undefined,
     format: (format || undefined) as EventFormat | undefined,
     hidePaid: hidePaid || undefined,
     saved: rail === 'all' ? undefined : rail,
     q: debouncedQuery.trim() || undefined,
     limit: PAGE_SIZE,
-  }), [when, online, topic, format, hidePaid, rail, debouncedQuery])
+  }), [ownRail, when, online, topic, format, hidePaid, rail, debouncedQuery])
 
   // Only the newest read may land: a slow answer to an old filter must not replace a newer one.
   const readSeq = useRef(0)
@@ -264,7 +267,7 @@ function EventsView() {
     void load({ silent: true })
   }, [closeDrawer, load])
 
-  const activeCount = (topic ? 1 : 0) + (format ? 1 : 0) + (online ? 1 : 0) + (hidePaid ? 1 : 0) + (when !== 'month' ? 1 : 0)
+  const activeCount = (topic ? 1 : 0) + (format ? 1 : 0) + (hidePaid ? 1 : 0) + (ownRail ? 0 : (online ? 1 : 0) + (when !== 'month' ? 1 : 0))
   const anyFilter = activeCount > 0 || Boolean(q.trim())
   const clearFilters = useCallback(() => {
     setQ(''); setWhen('month'); setTopic(''); setFormat(''); setOnline(false); setHidePaid(false)
@@ -325,6 +328,7 @@ function EventsView() {
               anyFilter={anyFilter}
               online={online}
               upcoming={meta ? meta.counts.upcoming : null}
+              going={meta ? meta.counts.going : null}
               nextRead={nextReadTime(now)}
               onClear={clearFilters}
               onOnline={() => setOnline(true)}
@@ -395,10 +399,12 @@ function Ledger({ counts, sources, now }: { counts: EventPage['counts']; sources
 }
 
 // ── Toolbar ──────────────────────────────────────────────────────────────────
-function WhenSelect({ value, bare, onChange }: { value: When; bare?: boolean; onChange: (value: When) => void }) {
+const OWN_RAIL_NOTE = 'Saved and Going show everything you marked'
+
+function WhenSelect({ value, bare, disabled, onChange }: { value: When; bare?: boolean; disabled?: boolean; onChange: (value: When) => void }) {
   return <label className={bare ? undefined : 'cm-field'}>
     <span>When</span>
-    <select data-set={value !== 'month'} value={value} onChange={e => onChange(e.target.value as When)}>
+    <select data-set={value !== 'month' && !disabled} disabled={disabled} title={disabled ? OWN_RAIL_NOTE : undefined} value={value} onChange={e => onChange(e.target.value as When)}>
       {WHEN_OPTIONS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
     </select>
   </label>
@@ -424,8 +430,8 @@ function FormatSelect({ value, bare, onChange }: { value: string; bare?: boolean
   </label>
 }
 
-function ToggleChip({ pressed, onToggle, children }: { pressed: boolean; onToggle: () => void; children: ReactNode }) {
-  return <button type="button" className={`ci-chip ci-chip-toggle ${pressed ? 'active' : ''}`} aria-pressed={pressed} onClick={onToggle}>{children}</button>
+function ToggleChip({ pressed, disabled, onToggle, children }: { pressed: boolean; disabled?: boolean; onToggle: () => void; children: ReactNode }) {
+  return <button type="button" className={`ci-chip ci-chip-toggle ${pressed ? 'active' : ''}`} aria-pressed={pressed} disabled={disabled} title={disabled ? OWN_RAIL_NOTE : undefined} onClick={onToggle}>{children}</button>
 }
 
 const RAIL: ReadonlyArray<readonly [Rail, string]> = [['all', 'All'], ['saved', 'Saved'], ['going', 'Going']]
@@ -454,10 +460,10 @@ function Toolbar({ filters, set, counts, activeCount, view, mapDown, onView, onO
       {addLink}
     </div>
     <div className="ev-controls">
-      <WhenSelect value={filters.when} onChange={value => set('when', value)} />
+      <WhenSelect value={filters.when} disabled={filters.rail !== 'all'} onChange={value => set('when', value)} />
       <TopicSelect value={filters.topic} onChange={value => set('topic', value)} />
       <FormatSelect value={filters.format} onChange={value => set('format', value)} />
-      <ToggleChip pressed={filters.online} onToggle={() => set('online', !filters.online)}>Online too</ToggleChip>
+      <ToggleChip pressed={filters.online} disabled={filters.rail !== 'all'} onToggle={() => set('online', !filters.online)}>Online too</ToggleChip>
       <ToggleChip pressed={filters.hidePaid} onToggle={() => set('hidePaid', !filters.hidePaid)}>Hide paid</ToggleChip>
       <button type="button" className="ci-chip ev-filterbtn" aria-haspopup="dialog" onClick={onOpenSheet}>
         <SlidersHorizontal size={13} aria-hidden="true" />{activeCount > 0 ? `Filters (${activeCount})` : 'Filters'}
@@ -533,11 +539,11 @@ function FilterSheet({ filters, set, count, onClear, onClose, addLink }: {
         <h2 id="ev-sheet-title">Filters</h2>
         <button type="button" className="ci-close" onClick={onClose} aria-label="Close filters" data-autofocus><X size={18} /></button>
       </div>
-      <WhenSelect bare value={filters.when} onChange={value => set('when', value)} />
+      <WhenSelect bare value={filters.when} disabled={filters.rail !== 'all'} onChange={value => set('when', value)} />
       <TopicSelect bare value={filters.topic} onChange={value => set('topic', value)} />
       <FormatSelect bare value={filters.format} onChange={value => set('format', value)} />
       <div className="cm-sheet-toggles">
-        <ToggleChip pressed={filters.online} onToggle={() => set('online', !filters.online)}>Online too</ToggleChip>
+        <ToggleChip pressed={filters.online} disabled={filters.rail !== 'all'} onToggle={() => set('online', !filters.online)}>Online too</ToggleChip>
         <ToggleChip pressed={filters.hidePaid} onToggle={() => set('hidePaid', !filters.hidePaid)}>Hide paid</ToggleChip>
       </div>
       {addLink}
@@ -632,12 +638,14 @@ function EventRow({ event, now, selected, onToggleSave }: {
 }
 
 // ── Empty states ─────────────────────────────────────────────────────────────
-function EmptyState({ rail, anyFilter, online, upcoming, nextRead, onClear, onOnline }: {
+function EmptyState({ rail, anyFilter, online, upcoming, going, nextRead, onClear, onOnline }: {
   rail: Rail
   anyFilter: boolean
   online: boolean
   /** The count of upcoming events on record, or null before it is known. */
   upcoming: number | null
+  /** How many events the user is going to, or null before it is known. */
+  going: number | null
   nextRead: string
   onClear: () => void
   onOnline: () => void
@@ -647,6 +655,14 @@ function EmptyState({ rail, anyFilter, online, upcoming, nextRead, onClear, onOn
       <CalendarDays size={18} aria-hidden="true" />
       <h2>Nothing matches these filters.</h2>
       <button type="button" className="outline-button" style={{ marginTop: 12 }} onClick={onClear}>Clear filters</button>
+    </div>
+  }
+  // The ledger says they are going to something: never answer "you haven't" over that.
+  if (rail !== 'all' && going) {
+    return <div className="empty-state">
+      <Check size={18} aria-hidden="true" />
+      <h2>You&apos;re going to {going} {going === 1 ? 'event' : 'events'}.</h2>
+      <p>{going === 1 ? 'It is' : 'They are'} not in this view yet. Reload, or look under All.</p>
     </div>
   }
   if (rail === 'saved') {

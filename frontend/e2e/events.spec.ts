@@ -173,6 +173,25 @@ test('save toggles aria-pressed', async ({ page, account, errors }) => {
   expect(calls).toContain('PUT /e1/save')
 })
 
+test('Saved and Going ask for every save: any mode, no window', async ({ page, account, errors }) => {
+  void account; void errors
+  const calls = await serveEvents(page)
+  await page.goto('/events')
+  await expect(page.locator('.ev-row')).toHaveCount(3)
+
+  const rail = page.getByRole('group', { name: 'Your events' })
+  await rail.getByRole('button', { name: /^Going/ }).click()
+  await expect(rail.getByRole('button', { name: /^Going/ })).toHaveAttribute('aria-pressed', 'true')
+
+  // "Online too" stays off, yet the Going read must not narrow to in-person or to 30 days.
+  await expect.poll(() => calls.filter(call => call.startsWith('LIST') && call.includes('saved=going')).length).toBeGreaterThan(0)
+  const going = new URLSearchParams(calls.filter(call => call.startsWith('LIST') && call.includes('saved=going'))[0].slice('LIST '.length))
+  expect(going.get('mode')).toBe('any')
+  expect(going.has('when')).toBe(false)
+  // The filters that would have no effect here are shown as such.
+  await expect(page.getByRole('button', { name: 'Online too' })).toBeDisabled()
+})
+
 test('filters sheet at 375px', async ({ page, account, errors }) => {
   void account; void errors
   await serveEvents(page)
