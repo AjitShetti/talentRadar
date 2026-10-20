@@ -470,8 +470,12 @@ def _signal_value(value: object) -> str:
 
 
 def _signals_text(signals: Mapping[str, Any]) -> str:
+    """One line per signal, in name order. The first reading is built from signals just computed
+    and an appeal's from the stored JSONB column, which does not keep key order; the prompt, and so
+    its hash, must be the same for both."""
     lines: list[str] = []
-    for key, value in list(signals.items())[:_MAX_SIGNALS]:
+    for key in sorted(signals, key=str)[:_MAX_SIGNALS]:
+        value = signals[key]
         name = _line(key, 40)
         if name:
             lines.append(f"{name}: {_line(_signal_value(value), 60)}")

@@ -1372,3 +1372,40 @@ def test_nonce_binds_how_many_pieces_each_section_has() -> None:
         fence_nonce(_input(commits=[_commit(1, ""), _commit(2, "")], tree=[])),
     }
     assert len(nonces) == 6
+
+
+# -- JSONB hands keys back in its own order --------------------------------------------------
+
+
+def _as_jsonb_returns_it(mapping: dict[str, Any]) -> dict[str, Any]:
+    """The keys in the order Postgres JSONB hands them back: shorter keys first, then by bytes."""
+    return {key: mapping[key] for key in sorted(mapping, key=lambda key: (len(key), key))}
+
+
+def _reversed(mapping: dict[str, Any]) -> dict[str, Any]:
+    return dict(reversed(list(mapping.items())))
+
+
+@pytest.mark.parametrize("reorder", [_as_jsonb_returns_it, _reversed])
+def test_the_prompt_and_its_hash_do_not_depend_on_the_key_order_of_stored_json(
+    reorder: Callable[[dict[str, Any]], dict[str, Any]],
+) -> None:
+    """The first reading is built from freshly computed signals, the appeal from the stored JSONB
+    column. JSONB does not keep key order, so the prompt, its hash, the fence code and the
+    markers must not depend on it."""
+    fresh = _input()
+    stored = _input(
+        brief=reorder(dict(BRIEF)),
+        writeup=reorder(dict(WRITEUP)),
+        signals=reorder(dict(SIGNALS)),
+    )
+    assert list(stored.signals) != list(fresh.signals)  # the test really reorders something
+    assert build_judge_prompt(stored) == build_judge_prompt(fresh)
+    assert input_sha256(build_judge_prompt(stored)[1]) == input_sha256(build_judge_prompt(fresh)[1])
+    assert fence_nonce(stored) == fence_nonce(fresh)
+    assert injection_markers(stored) == injection_markers(fresh)
+
+
+def test_signals_are_listed_in_name_order() -> None:
+    _, user = build_judge_prompt(_input(signals={"zeta": 1, "alpha": 2, "mid": True}))
+    assert user.index("alpha: 2") < user.index("mid: yes") < user.index("zeta: 1")

@@ -1697,6 +1697,75 @@ async def test_an_appeal_rerun_over_a_different_input_is_refused_not_averaged(
     assert chat.await_count == 1
 
 
+def _as_jsonb_returns_it(mapping: dict[str, Any]) -> dict[str, Any]:
+    """The same keys in the order Postgres JSONB hands them back: shorter first, then by bytes."""
+    return {key: mapping[key] for key in sorted(mapping, key=lambda key: (len(key), key))}
+
+
+async def _reorder_stored_json(db: Db, attempt_id: uuid.UUID) -> None:
+    """Rewrite the attempt's and its edition's JSON columns as a JSONB round trip returns them.
+    SQLite keeps the order a document was written in, so this is what a Postgres read looks like."""
+    row = await get_attempt(db, attempt_id)
+    async with db.factory() as session:
+        edition = await session.get(PracticeChallenge, row.challenge_id)
+        assert edition is not None
+        await session.execute(
+            update(PracticeChallenge)
+            .where(PracticeChallenge.id == edition.id)
+            .values(brief=_as_jsonb_returns_it(edition.brief))
+        )
+        await session.commit()
+    assert list(_as_jsonb_returns_it(row.signals)) != list(row.signals)
+    await set_attempt(
+        db,
+        attempt_id,
+        signals=_as_jsonb_returns_it(row.signals),
+        writeup=_as_jsonb_returns_it(row.writeup),
+    )
+
+
+async def test_an_appeal_is_not_refused_when_the_stored_json_comes_back_in_another_key_order(
+    db: Db, github: PerRepoGitHub, chat: AsyncMock, asha: str, queued: uuid.UUID
+) -> None:
+    """Postgres JSONB does not keep key order. The second reading is built from the stored
+    signals, brief and write-up; it must be the very input of the first, or the appeal dies as
+    ``appeal_input_changed``."""
+    await judged_attempt(db, chat, queued)
+    await _reorder_stored_json(db, queued)
+    await judge.request_appeal(asha, SLUG, "Again, please.", now=APPEAL_AT)
+    chat.return_value = reply(SECOND_SCORES)
+
+    counts = await judge.run_judge_step(4, now=APPEAL_AT)
+
+    assert counts["judged"] == 1
+    row = await get_attempt(db, queued)
+    assert "appeal_input_changed" not in row.flags
+    assert len(row.judge_runs) == 2
+    assert row.judge_runs[0]["input_sha256"] == row.judge_runs[1]["input_sha256"]
+    assert row.scores == average_runs(SCORES, SECOND_SCORES)
+    first_call, second_call = chat.await_args_list
+    assert first_call.args == second_call.args
+
+
+async def test_a_cleared_hold_is_not_imposed_again_when_the_stored_json_is_reordered(
+    db: Db, github: PerRepoGitHub, chat: AsyncMock, asha: str, queued: uuid.UUID
+) -> None:
+    """The clear is for one input hash. A reordered JSONB read must not change that input."""
+    await judged_after_a_cleared_hold(db, github, chat, queued)
+    await _reorder_stored_json(db, queued)
+    await judge.request_appeal(asha, SLUG, "Again, please.", now=APPEAL_AT)
+    chat.return_value = reply(SECOND_SCORES)
+
+    counts = await judge.run_judge_step(4, now=APPEAL_AT)
+
+    assert counts["held"] == 0
+    assert counts["judged"] == 1
+    row = await get_attempt(db, queued)
+    assert row.held is False
+    assert "appeal_input_changed" not in row.flags
+    assert len(row.judge_runs) == 2
+
+
 # =========================================================================== admin
 
 
