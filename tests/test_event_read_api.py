@@ -1185,10 +1185,23 @@ def test_topic_filter_compiles_to_an_array_containment_on_postgres() -> None:
     assert "events.topics @>" in compiled
 
 
-async def test_topic_filter_runs_on_a_text_array_column_in_postgres() -> None:
-    """The migration makes ``events.topics`` ``text[]``; ``text[] @> varchar[]`` is a 500.
+def _model_topics_type() -> str:
+    """The PostgreSQL type a schema built from the model (``create_all``) gives ``topics``."""
+    return Event.__table__.c.topics.type.compile(dialect=postgresql.dialect())
 
-    SQLite cannot show this, so it runs on a temporary table of the same shape in the shared
+
+@pytest.mark.parametrize(
+    "column_type",
+    [
+        pytest.param("text[]", id="alembic: what migration 018 creates"),
+        pytest.param(None, id="create_all: what the model declares"),
+    ],
+)
+async def test_topic_filter_runs_on_either_schema_in_postgres(column_type: str | None) -> None:
+    """``varchar[] @> text[]`` has no operator, so a model and a migration that disagree on the
+    array type make the topic filter a 500 on one of the two schemas.
+
+    SQLite cannot show this, so it runs on a temporary table of each column type in the
     Postgres test database: nothing is left behind, and the real tables are not touched.
     """
     from sqlalchemy import select, text
@@ -1198,7 +1211,9 @@ async def test_topic_filter_runs_on_a_text_array_column_in_postgres() -> None:
     engine = create_async_engine(get_settings().database_url)
     try:
         async with engine.connect() as connection:
-            await connection.execute(text("CREATE TEMP TABLE events (id uuid, topics text[])"))
+            await connection.execute(
+                text(f"CREATE TEMP TABLE events (id uuid, topics {column_type or _model_topics_type()})")
+            )
             await connection.execute(
                 text(
                     "INSERT INTO events VALUES"

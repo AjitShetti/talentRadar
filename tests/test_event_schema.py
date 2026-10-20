@@ -22,6 +22,7 @@ from typing import Any
 import pytest
 import pytest_asyncio
 from sqlalchemy import UniqueConstraint, delete, event, select
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -353,6 +354,84 @@ def _migration_foreign_keys(statements: list[str]) -> set[tuple[str, str, str, s
 def test_migration_on_delete_clauses_match_the_orm(monkeypatch: pytest.MonkeyPatch) -> None:
     in_migration = _migration_foreign_keys(_upgrade_statements(monkeypatch))
     assert in_migration == set(FOREIGN_KEY_ACTIONS)
+
+
+# The migration and a schema built from the model (``create_all``: ``make seed`` on a fresh
+# database, and the pytest ``db_session``) must give a column the same PostgreSQL type, or a
+# query that is right on one is a 500 on the other (``varchar[] @> text[]`` has no operator).
+
+_COLUMN_END = re.compile(
+    r"\s+(?:NOT NULL|NULL|DEFAULT|PRIMARY KEY|REFERENCES|UNIQUE|CONSTRAINT)\b.*$"
+)
+# The spellings SQLAlchemy and the migration use for one and the same PostgreSQL type.
+_SAME_TYPE = {
+    "TIMESTAMPTZ": "TIMESTAMP WITH TIME ZONE",
+    "DOUBLE PRECISION": "FLOAT",
+}
+
+
+def _top_level_parts(body: str) -> list[str]:
+    """Split a CREATE TABLE body at the commas that are not inside parentheses."""
+    parts: list[str] = []
+    depth = 0
+    start = 0
+    for index, char in enumerate(body):
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        elif char == "," and depth == 0:
+            parts.append(body[start:index].strip())
+            start = index + 1
+    parts.append(body[start:].strip())
+    return [part for part in parts if part]
+
+
+def _canonical_type(spelling: str) -> str:
+    text = " ".join(spelling.upper().split()).replace("CHARACTER VARYING", "VARCHAR")
+    return _SAME_TYPE.get(text, text)
+
+
+def _migration_column_types(statements: list[str]) -> dict[tuple[str, str], str]:
+    """``{(table, column): type}`` for every column of the CREATE TABLE statements."""
+    found: dict[tuple[str, str], str] = {}
+    for statement in statements:
+        created = re.match(r"CREATE TABLE IF NOT EXISTS (\w+) \((.*)\);?$", statement)
+        if created is None:
+            continue
+        for part in _top_level_parts(created.group(2)):
+            if re.match(r"(?:CONSTRAINT|PRIMARY KEY|UNIQUE|FOREIGN KEY)\b", part):
+                continue
+            name, _, rest = part.partition(" ")
+            found[(created.group(1), name)] = _canonical_type(_COLUMN_END.sub("", rest))
+    return found
+
+
+def _model_column_types() -> dict[tuple[str, str], str]:
+    dialect = postgresql.dialect()
+    return {
+        (table, column.name): _canonical_type(column.type.compile(dialect=dialect))
+        for table in EVENT_TABLES
+        for column in Base.metadata.tables[table].columns
+    }
+
+
+def test_migration_column_types_match_the_orm(monkeypatch: pytest.MonkeyPatch) -> None:
+    in_migration = _migration_column_types(_upgrade_statements(monkeypatch))
+    in_model = _model_column_types()
+
+    assert set(in_migration) == set(in_model)  # the same columns...
+    differing = {
+        key: (in_migration[key], in_model[key])
+        for key in in_migration
+        if in_migration[key] != in_model[key]
+    }
+    assert differing == {}, "(migration, model) type per column"  # ...of the same types
+
+
+def test_event_array_columns_are_text_arrays_in_both() -> None:
+    for name in ("hosts", "topics", "reasons"):
+        assert _model_column_types()[("events", name)] == "TEXT[]", name
 
 
 # ─────────────────────────────────────────────────────────────────────────────

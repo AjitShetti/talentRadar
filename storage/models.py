@@ -80,6 +80,24 @@ class StringArray(TypeDecorator):
         return dialect.type_descriptor(ARRAY(String))
 
 
+class TextArray(StringArray):
+    """PostgreSQL ``text[]`` with the same SQLite JSON fallback.
+
+    For a column a migration creates as ``text[]``. ``varchar[]`` and ``text[]`` are different
+    types to PostgreSQL, with no operator between them, so ``varchar[] @> text[]`` is an error:
+    a model that says ``varchar[]`` over a ``text[]`` column (or the reverse, on a schema built
+    by ``create_all``) turns an array filter into a 500 that SQLite never shows.
+    """
+
+    impl = ARRAY(Text)
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect: Any) -> Any:
+        if dialect.name == "sqlite":
+            return dialect.type_descriptor(JSON())
+        return dialect.type_descriptor(ARRAY(Text))
+
+
 class Vector(UserDefinedType):
     """pgvector's ``vector(N)`` column type.
 
@@ -1656,7 +1674,7 @@ class Event(Base):
     organiser_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     organiser_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     hosts: Mapped[list[str] | None] = mapped_column(
-        StringArray, nullable=True, comment="'Hosted by' names, when the source states them"
+        TextArray, nullable=True, comment="'Hosted by' names, when the source states them"
     )
     format: Mapped[str | None] = mapped_column(
         String(16),
@@ -1664,7 +1682,7 @@ class Event(Base):
         comment="meetup | talk | workshop | hackathon | conference | mixer | demo | hiring | other",
     )
     topics: Mapped[list[str] | None] = mapped_column(
-        StringArray, nullable=True, comment="Closed vocabulary (domain.event_relevance)"
+        TextArray, nullable=True, comment="Closed vocabulary (domain.event_relevance)"
     )
     listed: Mapped[bool] = mapped_column(
         Boolean,
@@ -1674,7 +1692,7 @@ class Event(Base):
         comment="The relevance verdict",
     )
     reasons: Mapped[list[str] | None] = mapped_column(
-        StringArray, nullable=True, comment="The evidence behind listed, in display order"
+        TextArray, nullable=True, comment="The evidence behind listed, in display order"
     )
     is_cancelled: Mapped[bool] = mapped_column(
         Boolean,
