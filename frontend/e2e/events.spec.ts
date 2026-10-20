@@ -23,7 +23,7 @@ const BASE = {
 
 const CARDS: Array<Omit<EventCard, 'my_status'>> = [
   {
-    ...BASE, id: 'e2', title: 'Reimagining education in the age of AI with Dr. Prathosh A.P. (IISc)',
+    ...BASE, id: 'e2', title: 'Reimagining education in the age of AI with Dr. Ila Quill (IISc)',
     starts_at: '2026-10-15T13:00:00Z', ends_at: '2026-10-15T14:00:00Z', area: 'Indiranagar', organiser_name: 'Team Lossfunk',
     format: 'talk', topics: ['ai'], url: 'https://luma.com/reimagining-education',
   },
@@ -34,7 +34,7 @@ const CARDS: Array<Omit<EventCard, 'my_status'>> = [
   },
   {
     ...BASE, id: 'e3', title: 'Namma AI Design Social', starts_at: '2026-10-16T12:30:00Z', ends_at: '2026-10-16T14:30:00Z',
-    area: 'Koramangala', organiser_name: 'Jayneil Dalal', format: 'mixer', topics: ['design'], url: 'https://luma.com/namma-ai-design',
+    area: 'Koramangala', organiser_name: 'Isha Quill', format: 'mixer', topics: ['design'], url: 'https://luma.com/namma-ai-design',
   },
 ]
 

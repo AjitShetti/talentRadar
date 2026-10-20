@@ -428,7 +428,7 @@ comes from the Eventbrite organiser's website through
 
 **An event never creates a company.** An ambiguous name links nothing (the
 same rule as the map: name matching never guesses). Person names ("Hosted by
-Paras Chopra") match no company, so they link nothing.
+Ila Quill") match no company, so they link nothing.
 
 ## 6. Relevance — `domain/event_relevance.py` (pure)
 
