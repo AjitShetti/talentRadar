@@ -34,6 +34,11 @@ BUDGET_TTL_SECONDS = 48 * 3600
 #: and outreach drafts together.
 PER_USER_DAILY_DRAFTS = 20
 
+#: Units of the shared outreach pool (``DAILY_OUTREACH_DRAFT_BUDGET``) one user may
+#: spend in an IST day, so one busy user cannot drain it for everyone. A full daily
+#: pack takes five; the rest is left for thread drafts and follow-ups.
+PER_USER_SHARED_DRAFTS = 8
+
 
 async def claim(key: str, limit: int, ttl_seconds: int = BUDGET_TTL_SECONDS) -> bool:
     """
@@ -72,6 +77,17 @@ def user_draft_key(user_id: str, now: datetime | None = None) -> str:
 async def claim_user_draft(user_id: str) -> bool:
     """Claim one of today's model-written drafts for this user."""
     return await claim(user_draft_key(user_id), PER_USER_DAILY_DRAFTS)
+
+
+def user_shared_key(user_id: str, now: datetime | None = None) -> str:
+    """The counter for one user's share of the shared outreach pool on one IST day."""
+    day = ist_today(now or datetime.now(UTC))
+    return f"tr:budget:outreach-shared:{user_id}:{day.isoformat()}"
+
+
+async def claim_user_shared(user_id: str) -> bool:
+    """Claim one unit of this user's daily share of the shared outreach pool."""
+    return await claim(user_shared_key(user_id), PER_USER_SHARED_DRAFTS)
 
 
 async def user_drafts_left(user_id: str) -> int:

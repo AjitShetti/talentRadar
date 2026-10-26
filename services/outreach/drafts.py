@@ -23,8 +23,9 @@ Rules this module keeps:
   company, the thread's own note and that person's own kept messages.
 * **Refusals spend nothing.** The format, the person, the state and the issue are
   all checked before a unit of either budget is claimed.
-* **Two budgets.** The user's daily cap (shared with the referral ask) is
-  claimed first and the global one only for a user who is under it. Over either,
+* **Three budgets, in order.** The user's daily cap (shared with the referral
+  ask), then the user's share of the shared pool (``PER_USER_SHARED_DRAFTS``), then
+  the shared pool itself; a refusal at any step claims nothing further. Over any,
   or when the model fails or answers with nothing, the template comes back with
   the ``reason``.
 * **Untrusted text is fenced.** The company summary, a posting, an issue, an
@@ -38,6 +39,7 @@ Rules this module keeps:
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from dataclasses import dataclass, replace
@@ -62,7 +64,7 @@ from domain.outreach_drafts import (
     split_subject,
 )
 from services.llm import _chat
-from services.llm_budget import claim, claim_user_draft, user_drafts_left
+from services.llm_budget import claim, claim_user_draft, claim_user_shared, user_drafts_left
 from services.outreach.errors import Conflict, Invalid
 from services.outreach.oss import snapshot_for
 from services.outreach.people import (
@@ -82,7 +84,7 @@ from services.referral import (
 )
 from services.resumes import get_active_resume
 from storage.database import AsyncSessionLocal
-from storage.models import Company, Job, OutreachThread, Profile
+from storage.models import Company, Job, OutreachPackItem, OutreachThread, Profile
 
 logger = logging.getLogger(__name__)
 
@@ -356,6 +358,38 @@ def _first_target_role(roles: list[str] | None) -> str | None:
     return next((r.strip() for r in roles or [] if isinstance(r, str) and r.strip()), None)
 
 
+def _company_fields(company: Company | None, last_round: str | None) -> dict[str, Any]:
+    """The ``DraftContext`` fields read from a stored company."""
+    funded = None if company is None else company.last_funding_at
+    return {
+        "company_summary": None if company is None else company.summary,
+        "company_stage": None if company is None else _label(STAGES, company.stage),
+        "last_round": last_round,
+        "last_funding_month": None if funded is None else aware(funded).strftime("%b %Y"),
+    }
+
+
+def _profile_fields(profile: Any) -> dict[str, Any]:
+    """The ``DraftContext`` fields read from a ``(target_roles, years_experience,
+    current_role)`` profile row, or nothing for no profile."""
+    roles, years, current_role = (None, None, None) if profile is None else tuple(profile)
+    return {
+        "target_role": _first_target_role(roles),
+        "years_experience": years,
+        "current_role": current_role,
+    }
+
+
+async def _profile_row(session: AsyncSession, user_id: uuid.UUID) -> Any:
+    return (
+        await session.execute(
+            select(Profile.target_roles, Profile.years_experience, Profile.current_role).where(
+                Profile.user_id == user_id
+            )
+        )
+    ).one_or_none()
+
+
 async def _posting(session: AsyncSession, thread: OutreachThread) -> dict[str, Any] | None:
     """The role attached to the thread, as ``build_role_context`` takes it. A posting
     since pruned leaves the title the thread kept; nothing attached is ``None``."""
@@ -469,23 +503,13 @@ async def _gather(
             last_round = (await _funding_rounds(session, [company.id])).get(company.id)
         posting = await _posting(session, thread)
 
-        profile = (
-            await session.execute(
-                select(Profile.target_roles, Profile.years_experience, Profile.current_role).where(
-                    Profile.user_id == thread.user_id
-                )
-            )
-        ).one_or_none()
-        roles, years, current_role = (
-            (None, None, None) if profile is None else (profile[0], profile[1], profile[2])
-        )
+        profile = await _profile_row(session, thread.user_id)
 
         follow_up = kind == "follow_up" and person is not None
         last_outbound = None if person is None else person.last_outbound_at
         days_since = None
         if follow_up and last_outbound is not None:
             days_since = max(0, (now - aware(last_outbound)).days)
-        funded = None if company is None else company.last_funding_at
 
         ctx = DraftContext(
             fmt=fmt,
@@ -497,18 +521,13 @@ async def _gather(
             recipient_kind=None if person is None else person.kind,
             relationship=None if person is None else _relationship(relationship),
             company_name=thread.company_name,
-            company_summary=None if company is None else company.summary,
-            company_stage=None if company is None else _label(STAGES, company.stage),
-            last_round=last_round,
-            last_funding_month=None if funded is None else aware(funded).strftime("%b %Y"),
             posting=posting,
             earlier_message=(
                 _earlier_message(thread, person.id) if follow_up and person is not None else None
             ),
             user_note=thread.note,
-            target_role=_first_target_role(roles),
-            years_experience=years,
-            current_role=current_role,
+            **_company_fields(company, last_round),
+            **_profile_fields(profile),
         )
         return _Gathered(
             ctx=ctx,
@@ -583,7 +602,7 @@ async def draft(
     reason: str | None = None
     subject: str | None = None
     message = ""
-    if not await claim_user_draft(user_id):
+    if not await claim_user_draft(user_id) or not await claim_user_shared(user_id):
         reason = REASON_DAILY_CAP
     elif not await claim(global_key(moment), DAILY_OUTREACH_DRAFT_BUDGET):
         reason = REASON_BUDGET
@@ -639,3 +658,207 @@ async def draft(
         "remaining_today": await user_drafts_left(user_id),
         "max_chars": spec.max_chars,
     }
+
+
+# --- the daily pack: every message for one company in one call -----------------------------
+
+
+def context_for_pack(
+    item: OutreachPackItem,
+    company: Company | None,
+    profile: Any,
+    *,
+    last_round: str | None = None,
+    posting: dict[str, Any] | None = None,
+) -> DraftContext:
+    """A first message to one pack recipient, from the item's person snapshot, the
+    stored company and the user's ``(target_roles, years_experience, current_role)``.
+    A pack recipient is a stranger: the pack never assumes a connection."""
+    return DraftContext(
+        fmt=FORMATS[item.format].key,
+        kind="first",
+        recipient_name=item.person_name,
+        recipient_title=item.person_title,
+        recipient_kind=item.person_kind,
+        relationship=_relationship(None),
+        company_name=item.company_name,
+        posting=posting,
+        **_company_fields(company, last_round),
+        **_profile_fields(profile),
+    )
+
+
+def _pack_shape(index: int, fmt: DraftFormat) -> str:
+    spec = FORMATS[fmt]
+    if fmt == "email":
+        return (
+            f"Recipient {index}: an email whose body is at most {spec.max_chars} characters, "
+            "with a subject of at most 8 words."
+        )
+    return f"Recipient {index}: a {spec.label} of at most {spec.max_chars} characters, no subject."
+
+
+def build_pack_prompt(contexts: list[DraftContext]) -> tuple[str, str]:
+    """The ``(system, user)`` pair for every first message to one company. Pure.
+
+    The recipients are numbered from 0 in ``contexts`` order. The company, the posting,
+    the profile and the resume are the first context's (they are the same for all) and
+    appear once, fenced and bounded exactly as in ``build_prompt``. The reply is JSON:
+    ``{"messages": [{"i", "subject", "message"}]}``.
+    """
+    first = contexts[0]
+    shapes = "\n".join(_pack_shape(i, ctx.fmt) for i, ctx in enumerate(contexts))
+    system = (
+        f"{_RULES}\n\n{_FIRST}\n\n"
+        "Write one separate message for each numbered recipient below; do not mention the "
+        f"other recipients.\n{shapes}\n\n"
+        'Reply with JSON only, in this shape: {"messages": [{"i": 0, "subject": "<for an '
+        'email only, else null>", "message": "<the message>"}]}, one entry per recipient.'
+    )
+    sections = []
+    for i, ctx in enumerate(contexts):
+        sections.append(
+            f"RECIPIENT {i}\n"
+            + _fields(
+                ("Format", FORMATS[ctx.fmt].label),
+                ("Name", _flat(ctx.recipient_name, _PERSON_CHARS) or "not given"),
+                ("Title", _flat(ctx.recipient_title, _PERSON_CHARS) or "not given"),
+                ("Kind", _flat(ctx.recipient_kind, _PERSON_CHARS) or "not given"),
+            )
+        )
+    sections.append(f"RELATIONSHIP\n{RELATIONSHIPS[_relationship(first.relationship)]}")
+    sections.append(_company_section(first))
+    posting = _posting_section(first)
+    if posting is not None:
+        sections.append(posting)
+    profile = _fields(
+        ("Target role", _flat(first.target_role, _PERSON_CHARS)),
+        ("Experience", _years(first.years_experience)),
+        ("Current role", _flat(first.current_role, _PERSON_CHARS)),
+    )
+    sections.append(f"PROFILE\n{profile or 'Not given.'}")
+    sections.append(
+        _fenced("RESUME", _flat(first.resume_text, _RESUME_CHARS) or "No resume on file.")
+    )
+    return system, "\n\n".join(sections)
+
+
+def parse_pack_reply(reply: str, formats: list[DraftFormat]) -> list[tuple[str | None, str] | None]:
+    """``(subject, message)`` per recipient from the model's JSON, each held to its
+    format; ``None`` where the reply gave nothing usable for that recipient. Pure.
+
+    Anything but the documented shape is ignored: unknown keys, an index out of range
+    or repeated, a message that is not text. A subject is kept only for an email.
+    """
+    found: list[tuple[str | None, str] | None] = [None] * len(formats)
+    try:
+        data = json.loads(reply)
+    except ValueError:
+        return found
+    entries = data.get("messages") if isinstance(data, dict) else None
+    if not isinstance(entries, list):
+        return found
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        index, text = entry.get("i"), entry.get("message")
+        if (
+            not isinstance(index, int)
+            or isinstance(index, bool)
+            or not 0 <= index < len(formats)
+            or found[index] is not None
+            or not isinstance(text, str)
+        ):
+            continue
+        fmt = formats[index]
+        subject, message = _shape(text, fmt)
+        given = entry.get("subject")
+        if fmt == "email" and isinstance(given, str) and given.strip():
+            subject = split_subject(f"Subject: {given}")[0] or subject
+        if message:
+            found[index] = (subject, message)
+    return found
+
+
+@dataclass(frozen=True)
+class Written:
+    """One message the pack stores: the model's, or the template with its reason."""
+
+    subject: str | None
+    message: str
+    generated: bool
+    reason: str | None
+
+
+async def write_pack_messages(
+    user_id: str, contexts: list[DraftContext], now: datetime
+) -> list[Written]:
+    """Every first message to one company, in one model call when the budgets allow.
+
+    Claims, in order: one of the user's daily drafts per message, one unit of the
+    user's share of the shared pool, one unit of the shared pool. A refusal at any step
+    claims nothing further and every message is the template (``daily_cap`` or
+    ``budget``). A failed call or an unreadable reply makes the template too
+    (``model_unavailable``), per message where only some came back. Logs carry counts.
+    """
+    reason: str | None = None
+    for _ in contexts:
+        if not await claim_user_draft(user_id):
+            reason = REASON_DAILY_CAP
+            break
+    if reason is None and not await claim_user_shared(user_id):
+        reason = REASON_DAILY_CAP
+    if reason is None and not await claim(global_key(now), DAILY_OUTREACH_DRAFT_BUDGET):
+        reason = REASON_BUDGET
+
+    formats = [ctx.fmt for ctx in contexts]
+    parsed: list[tuple[str | None, str] | None] = [None] * len(contexts)
+    if reason is None:
+        resume = await _resume_text(user_id)
+        system, user = build_pack_prompt([replace(contexts[0], resume_text=resume), *contexts[1:]])
+        reply = ""
+        try:
+            reply = await _chat(
+                system,
+                user,
+                model=get_settings().groq_fast_model,
+                temperature=0.5,
+                max_tokens=1600,
+                json_mode=True,
+                reasoning_effort="low",
+            )
+        except Exception as exc:
+            logger.warning("Outreach pack fell back to templates (%s)", type(exc).__name__)
+        parsed = parse_pack_reply(reply or "", formats)
+
+    written: list[Written] = []
+    for ctx, result in zip(contexts, parsed, strict=True):
+        template_subject, template_message = fallback_draft(
+            fmt=ctx.fmt,
+            kind="first",
+            recipient_name=ctx.recipient_name,
+            company=ctx.company_name or "",
+            role=ctx.target_role,
+            last_sent_on=None,
+        )
+        if result is None:
+            written.append(
+                Written(
+                    subject=template_subject,
+                    message=template_message,
+                    generated=False,
+                    reason=reason or REASON_MODEL_UNAVAILABLE,
+                )
+            )
+            continue
+        subject, message = result
+        if ctx.fmt == "email" and not subject:
+            subject = template_subject
+        written.append(Written(subject=subject, message=message, generated=True, reason=None))
+    logger.info(
+        "outreach pack messages: %d written, %d generated, reason=%s",
+        len(written),
+        sum(w.generated for w in written),
+        reason,
+    )
+    return written

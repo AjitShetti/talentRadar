@@ -24,8 +24,10 @@ Rules this module keeps:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
+import weakref
 from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -45,7 +47,7 @@ from domain.outreach_pack import (
 )
 from services.base import parse_uuid
 from services.company_map.read import _title_matches, target_roles
-from services.outreach import suggest, touches
+from services.outreach import drafts, suggest, touches
 from services.outreach.errors import NotFound
 from services.outreach.people import (
     _build_channels,
@@ -398,13 +400,10 @@ async def _roles(
     return roles
 
 
-async def _payload(uid: uuid.UUID, stored: OutreachPack, due: list[DueItem]) -> dict[str, Any]:
-    still_due = {d.person_id for d in due}
-    items = [
-        item
-        for item in stored.items
-        if item.kind == "first" or item.status != "new" or str(item.outreach_person_id) in still_due
-    ]
+async def _render(
+    uid: uuid.UUID, items: Sequence[OutreachPackItem]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """``(companies, follow_ups)`` as the page shows them, for these items."""
     company_ids = sorted({item.company_id for item in items if item.company_id is not None})
     person_ids = [item.outreach_person_id for item in items if item.outreach_person_id]
 
@@ -470,14 +469,24 @@ async def _payload(uid: uuid.UUID, stored: OutreachPack, due: list[DueItem]) -> 
             }
         entry["applied"] = entry["applied"] or item.applied_at is not None
         entry["items"].append(payload(item))
+    return list(grouped.values()), follow_ups
 
-    every = [i for c in grouped.values() for i in c["items"]] + follow_ups
+
+async def _payload(uid: uuid.UUID, stored: OutreachPack, due: list[DueItem]) -> dict[str, Any]:
+    still_due = {d.person_id for d in due}
+    items = [
+        item
+        for item in stored.items
+        if item.kind == "first" or item.status != "new" or str(item.outreach_person_id) in still_due
+    ]
+    companies, follow_ups = await _render(uid, items)
+    every = [i for c in companies for i in c["items"]] + follow_ups
     return {
         "day": stored.day.isoformat(),
-        "companies": list(grouped.values()),
+        "companies": companies,
         "follow_ups": follow_ups,
         "counts": {
-            "companies": len(grouped),
+            "companies": len(companies),
             "messages_ready": sum(
                 1 for i in every if i["message"] is not None and i["status"] == "new"
             ),
@@ -550,3 +559,163 @@ async def mark_seen(user_id: str, item_ids: list[str], *, now: datetime | None =
             .values(seen_at=moment)
         )
         await session.commit()
+
+
+# --- writing the messages -------------------------------------------------------------
+
+#: One lock per (user, company or item) in this process, so two writes at once spend
+#: once. Across processes the ``FOR UPDATE`` on the items does the same on Postgres.
+_write_locks: weakref.WeakValueDictionary[tuple[uuid.UUID, uuid.UUID], asyncio.Lock] = (
+    weakref.WeakValueDictionary()
+)
+
+
+def _lock_for(key: tuple[uuid.UUID, uuid.UUID]) -> asyncio.Lock:
+    lock = _write_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _write_locks[key] = lock
+    return lock
+
+
+async def _company_items(
+    session: AsyncSession, uid: uuid.UUID, cid: uuid.UUID, moment: datetime, *, lock: bool
+) -> list[OutreachPackItem]:
+    """Today's ``first`` items for this company in the caller's pack, in order."""
+    stmt = (
+        select(OutreachPackItem)
+        .join(OutreachPack, OutreachPack.id == OutreachPackItem.pack_id)
+        .where(
+            OutreachPack.user_id == uid,
+            OutreachPack.day == ist_today(moment),
+            OutreachPackItem.kind == "first",
+            OutreachPackItem.company_id == cid,
+        )
+        .order_by(OutreachPackItem.position)
+    )
+    if lock:
+        stmt = stmt.with_for_update(of=OutreachPackItem)
+    return list((await session.execute(stmt)).scalars())
+
+
+async def _posting(session: AsyncSession, uid: uuid.UUID, cid: uuid.UUID) -> dict[str, Any] | None:
+    """The first open role listed for the company, as ``build_role_context`` takes it."""
+    listed = (await _roles(session, uid, [cid])).get(cid)
+    if not listed:
+        return None
+    job = await session.get(Job, uuid.UUID(listed[0]["job_id"]))
+    if job is None:
+        return None
+    return {
+        "title": job.title,
+        "company": None,
+        "skills": list(job.skills or []),
+        "description": job.description_clean or "",
+    }
+
+
+async def write_company(
+    user_id: str, company_id: str, *, now: datetime | None = None
+) -> dict[str, Any]:
+    """Write every unwritten message for one company in today's pack: ``{items}``.
+
+    One model call for all the company's recipients (``drafts.write_pack_messages``,
+    which claims the budgets and falls back to templates), stored on the items. Items
+    that already have a message are returned as they are and spend nothing. A company
+    not in the caller's pack today is a ``NotFound``.
+    """
+    uid = _owner(user_id)
+    cid = parse_uuid(company_id)
+    if cid is None:
+        raise NotFound("Company not in today's pack")
+    moment = datetime.now(UTC) if now is None else aware(now)
+
+    async with _lock_for((uid, cid)), AsyncSessionLocal() as session:
+        items = await _company_items(session, uid, cid, moment, lock=True)
+        if not items:
+            raise NotFound("Company not in today's pack")
+        pending = [item for item in items if item.message is None and item.status == "new"]
+        if pending:
+            company = await session.get(Company, cid)
+            profile = await drafts._profile_row(session, uid)
+            last_round = (await suggest._funding_rounds(session, [cid])).get(cid)
+            posting = await _posting(session, uid, cid)
+            contexts = [
+                drafts.context_for_pack(
+                    item, company, profile, last_round=last_round, posting=posting
+                )
+                for item in pending
+            ]
+            written = await drafts.write_pack_messages(user_id, contexts, moment)
+            for item, message in zip(pending, written, strict=True):
+                item.subject = message.subject
+                item.message = message.message
+                item.generated = message.generated
+                item.reason = message.reason
+            await session.commit()
+            logger.info("outreach pack company %s: %d messages written", cid, len(pending))
+
+    async with AsyncSessionLocal() as session:
+        items = await _company_items(session, uid, cid, moment, lock=False)
+    companies, _ = await _render(uid, items)
+    return {"items": companies[0]["items"] if companies else []}
+
+
+async def _owned_item(session: AsyncSession, uid: uuid.UUID, iid: uuid.UUID) -> OutreachPackItem:
+    item = (
+        await session.execute(
+            select(OutreachPackItem)
+            .join(OutreachPack, OutreachPack.id == OutreachPackItem.pack_id)
+            .where(OutreachPackItem.id == iid, OutreachPack.user_id == uid)
+        )
+    ).scalar_one_or_none()
+    if item is None:
+        raise NotFound("Pack item not found")
+    return item
+
+
+async def write_follow_up(
+    user_id: str, item_id: str, *, now: datetime | None = None
+) -> dict[str, Any]:
+    """Write a due follow-up in the caller's pack: ``{item}``.
+
+    Through the thread draft (``drafts.draft``, which knows the clock, the earlier
+    message and its own budgets), stored on the item so a second call spends nothing.
+    Another user's item, or a first-message item, is a ``NotFound``.
+    """
+    uid = _owner(user_id)
+    iid = parse_uuid(item_id)
+    if iid is None:
+        raise NotFound("Pack item not found")
+    moment = datetime.now(UTC) if now is None else aware(now)
+
+    async with _lock_for((uid, iid)):
+        async with AsyncSessionLocal() as session:
+            item = await _owned_item(session, uid, iid)
+            if item.kind != "follow_up":
+                raise NotFound("Pack item not found")
+            thread_id, person_id = item.thread_id, item.outreach_person_id
+            written = item.message is not None
+        if not written:
+            if thread_id is None or person_id is None:
+                raise NotFound("Thread not found")
+            result = await drafts.draft(
+                user_id, str(thread_id), person_id=str(person_id), fmt=item.format, now=moment
+            )
+            async with AsyncSessionLocal() as session:
+                await session.execute(
+                    update(OutreachPackItem)
+                    .where(OutreachPackItem.id == iid, OutreachPackItem.message.is_(None))
+                    .values(
+                        subject=result["subject"],
+                        message=result["message"],
+                        generated=result["generated"],
+                        reason=result["reason"],
+                    )
+                )
+                await session.commit()
+
+    async with AsyncSessionLocal() as session:
+        item = await _owned_item(session, uid, iid)
+    _, follow_ups = await _render(uid, [item])
+    return {"item": follow_ups[0]}

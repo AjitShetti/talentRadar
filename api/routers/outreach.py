@@ -121,6 +121,18 @@ async def pack_seen(payload: PackSeenRequest, user_id: CurrentUserId) -> None:
     await _call(pack.mark_seen(user_id, payload.item_ids))
 
 
+@router.post("/pack/companies/{company_id}/write")
+async def write_pack_company(company_id: str, user_id: CurrentUserId) -> dict[str, Any]:
+    """Write every message for one company in today's pack (one model call, kept)."""
+    return await _call(pack.write_company(user_id, company_id))
+
+
+@router.post("/pack/items/{item_id}/write")
+async def write_pack_item(item_id: str, user_id: CurrentUserId) -> dict[str, Any]:
+    """Write a due follow-up in today's pack (kept on the item)."""
+    return await _call(pack.write_follow_up(user_id, item_id))
+
+
 # --- suggestions and companies -----------------------------------------------------------------
 
 
