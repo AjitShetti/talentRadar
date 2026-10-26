@@ -88,7 +88,7 @@ def test_fixture_links_are_same_site_about_and_contact_only() -> None:
 
 def test_relative_about_link_is_made_absolute() -> None:
     facts = extract_site_facts(_fixture("site_groww.html"), "https://groww.in/")
-    assert facts.links == ("https://groww.in/about-us",)
+    assert facts.links == ("https://groww.in/about-us", "https://groww.in/careers")
 
 
 def test_fixture_company_social_link_is_not_a_person() -> None:
@@ -343,7 +343,8 @@ async def test_read_site_skips_contact_page_when_home_has_an_address() -> None:
         facts = await read_site(client, "https://acme.in/")
 
     assert facts is not None and facts.pincode == "560034"
-    assert seen == ["/robots.txt", "/"]
+    # The about page is read for people and addresses; the contact page is not needed.
+    assert seen == ["/robots.txt", "/", "/about"]
 
 
 async def test_read_site_contact_page_disallowed_by_robots_is_not_fetched() -> None:

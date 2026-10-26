@@ -1501,6 +1501,11 @@ class CompanyContact(Base):
     source_url: Mapped[str | None] = mapped_column(
         String(512), nullable=True, comment="Public page this contact was read from"
     )
+    # Migration 020: where ``email`` was published, which may be another page than
+    # ``source_url``. A curated address is stored only with this set.
+    email_source_url: Mapped[str | None] = mapped_column(
+        String(512), nullable=True, comment="Public page the email address was read from"
+    )
     verified: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false",
         comment="True only when a human confirmed the contact still works",
@@ -2748,3 +2753,124 @@ class OutreachSettings(Base):
 
     def __repr__(self) -> str:
         return f"<OutreachSettings user={self.user_id} daily_target={self.daily_target}>"
+
+
+# ---------------------------------------------------------------------------
+# outreach_packs / outreach_pack_items — the daily pack (migration 020)
+# ---------------------------------------------------------------------------
+
+class OutreachPack(Base):
+    """One user's pack for one IST day, built on the day's first read.
+
+    Design: docs/superpowers/specs/2026-10-26-daily-outreach-pack-design.md. No email
+    address is stored here or on an item: a found one lives on the contact, a guessed
+    one is computed at read time and never stored.
+    """
+    __tablename__ = "outreach_packs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    day: Mapped[date] = mapped_column(Date, nullable=False, comment="IST day")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    items: Mapped[list["OutreachPackItem"]] = relationship(
+        "OutreachPackItem",
+        back_populates="pack",
+        cascade="all, delete-orphan",
+        order_by="OutreachPackItem.position",
+    )
+
+    __table_args__ = (UniqueConstraint("user_id", "day", name="uq_outreach_packs_user_day"),)
+
+    def __repr__(self) -> str:
+        return f"<OutreachPack user={self.user_id} day={self.day}>"
+
+
+class OutreachPackItem(Base):
+    """One recipient in a pack (``first``), or a due follow-up (``follow_up``).
+
+    ``person_*`` is a snapshot so the card survives a contact edit. ``message`` is
+    written by a POST (one model call per company, or the template) and kept, so a
+    reload never spends again.
+    """
+    __tablename__ = "outreach_pack_items"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    pack_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("outreach_packs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    kind: Mapped[str] = mapped_column(
+        String(12), nullable=False, default="first", server_default="first",
+        comment="first | follow_up",
+    )
+    company_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    company_name: Mapped[str] = mapped_column(String(256), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    contact_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("company_contacts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    outreach_person_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("outreach_people.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    person_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    person_title: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    person_kind: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    channel: Mapped[str] = mapped_column(String(12), nullable=False, comment="email | linkedin")
+    format: Mapped[str] = mapped_column(String(24), nullable=False)
+    subject: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    generated: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(12), nullable=False, default="new", server_default="new",
+        comment="new | sent | skipped",
+    )
+    thread_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("outreach_threads.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    reasons: Mapped[list[str] | None] = mapped_column(
+        TextArray, nullable=True, default=list, server_default="{}",
+        comment="Why the company was picked, in display order",
+    )
+    seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    acted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    pack: Mapped["OutreachPack"] = relationship("OutreachPack", back_populates="items")
+
+    __table_args__ = (Index("ix_outreach_pack_items_pack_position", "pack_id", "position"),)
+
+    def __repr__(self) -> str:
+        return f"<OutreachPackItem id={self.id} kind={self.kind!r} status={self.status!r}>"

@@ -250,6 +250,16 @@ async def prune_stale_jobs() -> dict[str, Any]:
                 logger.warning("Outreach retention step failed: %s", exc)
                 await session.rollback()
 
+            # Daily packs, in their own unit: a database before migration 020 has no
+            # such table, and that must not lose the prunes around it.
+            try:
+                from services.outreach.retention import prune_packs
+
+                summary["deleted_outreach_packs"] = await prune_packs(session)
+            except Exception as exc:
+                logger.warning("Outreach pack retention step failed: %s", exc)
+                await session.rollback()
+
             # Past events go after Outreach. ``prune_events`` rolls back on its own
             # failure (a database that predates migration 018 has no such tables), so
             # neither step can stop the other or the job prune around them.

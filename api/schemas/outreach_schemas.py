@@ -26,7 +26,8 @@ from domain.outreach import (
     Outcome,
     Source,
 )
-from domain.outreach_drafts import DraftFormat
+from domain.outreach_drafts import SUBJECT_MAX, DraftFormat
+from services.outreach.pack import MAX_SEEN_IDS
 from services.outreach.people import EMAIL_MAX, LINKEDIN_URL_MAX, NAME_MAX, TITLE_MAX
 from services.outreach.threads import COMPANY_NAME_MAX
 
@@ -102,3 +103,18 @@ class DraftRequest(BaseModel):
 
 class SettingsRequest(BaseModel):
     daily_target: int = Field(..., ge=0, le=MAX_DAILY_TARGET)
+
+
+class PackSeenRequest(BaseModel):
+    item_ids: list[str] = Field(..., max_length=MAX_SEEN_IDS)
+
+
+class PackSentRequest(BaseModel):
+    """What the user sent, as they edited it."""
+
+    message: str = Field(..., min_length=1, max_length=BODY_MAX)
+    subject: str | None = Field(None, max_length=SUBJECT_MAX)
+
+
+class PackAppliedRequest(BaseModel):
+    job_id: str = Field(..., min_length=1, max_length=64)

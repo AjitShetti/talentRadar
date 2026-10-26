@@ -34,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config.settings import get_settings
 from domain.company_identity import normalize_name
+from domain.email_patterns import email_domain_ok
 from services.base import parse_uuid
 from services.cache_backend import CacheBackend
 from services.company_contacts import is_broker_source
@@ -66,6 +67,8 @@ _PROFILE_TITLE = re.compile(
     re.IGNORECASE,
 )
 _FOUNDER_WORD = re.compile(r"\bfounder\b|\bco-?founder\b", re.IGNORECASE)
+#: A public profile email, as GitHub returns it: the user chose to publish it.
+_EMAIL = re.compile(r"[a-z0-9][a-z0-9._%+-]{0,63}@[a-z0-9-]+(?:\.[a-z0-9-]+)+")
 _NAME_SHAPE = re.compile(r"^[^\d@/|<>]{2,80}$")
 
 #: People kinds, strongest first. The same person seen as founder by one
@@ -79,6 +82,7 @@ _LINK_FIELDS = ("linkedin_url", "x_url", "github_url", "profile_url")
 _TEXT_MAX = 128
 _URL_MAX = {"linkedin_url": 512, "x_url": 256, "github_url": 256, "profile_url": 512}
 _SOURCE_URL_MAX = 512
+_EMAIL_MAX = 256
 
 
 def _bounded(person: PersonCandidate) -> PersonCandidate | None:
@@ -97,6 +101,12 @@ def _bounded(person: PersonCandidate) -> PersonCandidate | None:
         x_url=link("x_url", person.x_url),
         github_url=link("github_url", person.github_url),
         profile_url=link("profile_url", person.profile_url),
+        email=person.email if person.email and len(person.email) <= _EMAIL_MAX else None,
+        email_source_url=(
+            person.email_source_url
+            if person.email_source_url and len(person.email_source_url) <= _SOURCE_URL_MAX
+            else None
+        ),
     )
 
 
@@ -119,6 +129,8 @@ def parse_github_user(payload: dict[str, Any]) -> PersonCandidate:
     html_url = str(payload.get("html_url") or f"https://github.com/{login}")
     name = str(payload.get("name") or "").strip() or login
     twitter = str(payload.get("twitter_username") or "").strip().lstrip("@")
+    email = str(payload.get("email") or "").strip().lower()
+    address = email if _EMAIL.fullmatch(email) else None
     return PersonCandidate(
         name=name,
         kind="engineer",
@@ -127,6 +139,8 @@ def parse_github_user(payload: dict[str, Any]) -> PersonCandidate:
         github_url=html_url,
         x_url=f"https://x.com/{twitter}" if twitter else None,
         profile_url=_http_url(payload.get("blog")),
+        email=address,
+        email_source_url=html_url if address else None,
     )
 
 
@@ -304,7 +318,11 @@ def _stronger(kind: str, than: str) -> bool:
 
 
 async def upsert_people(
-    session: AsyncSession, company_id: uuid.UUID, people: Iterable[PersonCandidate]
+    session: AsyncSession,
+    company_id: uuid.UUID,
+    people: Iterable[PersonCandidate],
+    *,
+    company_domain: str | None = None,
 ) -> int:
     """
     Store sourced people as curated contacts; returns how many were inserted.
@@ -312,6 +330,10 @@ async def upsert_people(
     A person already stored under any people kind with the same name (case
     folded) is the same person: their empty links and title are filled, the
     stronger kind is kept, and nothing is ever overwritten or verified.
+
+    An address the source printed is kept only when it is on ``company_domain`` (no
+    domain, no address), with the page it was printed on, and only on a row that has
+    none yet.
     """
     result = await session.execute(
         select(CompanyContact).where(
@@ -331,6 +353,11 @@ async def upsert_people(
         name = person.name
         if not name or not person.source_url.strip() or person.kind not in _PEOPLE_KINDS:
             continue
+        email_ok = bool(
+            person.email
+            and person.email_source_url
+            and email_domain_ok(person.email, company_domain)
+        )
         row = existing.get(name.casefold())
         if row is None:
             row = CompanyContact(
@@ -345,6 +372,8 @@ async def upsert_people(
                 profile_url=person.profile_url,
                 source_url=person.source_url,
                 source_kind=person.source_kind,
+                email=person.email if email_ok else None,
+                email_source_url=person.email_source_url if email_ok else None,
                 verified=False,
             )
             session.add(row)
@@ -356,6 +385,9 @@ async def upsert_people(
                 setattr(row, field, getattr(person, field))
         if not row.title and person.title:
             row.title = person.title
+        if email_ok and not row.email:
+            row.email = person.email
+            row.email_source_url = person.email_source_url
         if _stronger(person.kind, row.kind):
             row.kind = person.kind
     await session.flush()

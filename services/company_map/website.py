@@ -42,7 +42,8 @@ import httpx
 from bs4 import BeautifulSoup, Comment, Tag
 
 from domain.company_identity import normalize_domain
-from services.company_map.types import PersonCandidate, SiteFacts
+from domain.email_patterns import local_part_kind
+from services.company_map.types import PersonCandidate, SiteEmail, SiteFacts
 
 logger = logging.getLogger(__name__)
 
@@ -156,6 +157,13 @@ _ROLE = re.compile(r"\b(?:co-?\s?founder|founder|ceo|cto|chief)\b", re.IGNORECAS
 _FOUNDER = re.compile(r"\b(?:co-?\s?founder|founder)\b", re.IGNORECASE)
 # A card is small; anything bigger is a section that merely mentions a role.
 _CARD_TEXT_LIMIT = 300
+_LINKED_PAGES = ("/about", "/contact", "/careers", "/jobs", "/team")
+#: The extra pages read for addresses, at most one of each group, in this order.
+_ADDRESS_PAGES = (("/careers", "/jobs"), ("/team", "/about"))
+#: An address as printed: a ``mailto:`` target or plain text. ``name [at] host`` and
+#: other obfuscations are not undone; a printed address is read, never reconstructed.
+_EMAIL = re.compile(r"(?<![\w.+-])([a-z0-9][a-z0-9._%+-]{0,63}@[a-z0-9-]+(?:\.[a-z0-9-]+)+)", re.I)
+_EMAIL_MAX = 256
 _CARD_MAX_LEVELS = 5
 _NAME_SPLIT = re.compile(r"\s*[,|–—]\s*|\s+-\s+")
 _NOT_A_NAME = frozenset(
@@ -368,6 +376,34 @@ def _role_title(card: Tag) -> str | None:
     return min(roles, key=len) if roles else None
 
 
+def _emails_in(node: Tag) -> list[str]:
+    """Every address ``node`` prints, lowercase, first seen first: ``mailto:`` targets
+    (without their ``?subject=``) and addresses in the text."""
+    found: list[str] = []
+    candidates: list[str] = []
+    for anchor in node.find_all("a", href=True):
+        if isinstance(anchor, Tag):
+            href = _attr(anchor, "href").strip()
+            if href.lower().startswith("mailto:"):
+                candidates.append(href[len("mailto:") :].split("?", 1)[0])
+    candidates.extend(match.group(1) for match in _EMAIL.finditer(" ".join(node.stripped_strings)))
+    for candidate in candidates:
+        address = candidate.strip().rstrip(".").lower()
+        if len(address) <= _EMAIL_MAX and _EMAIL.fullmatch(address) and address not in found:
+            found.append(address)
+    return found
+
+
+def _site_emails(root: Tag, base_url: str) -> tuple[SiteEmail, ...]:
+    """The hiring inboxes a page prints. Role addresses (``hello@``) and people's own
+    addresses are not inboxes; a person's address is read from their card instead."""
+    return tuple(
+        SiteEmail(address=address, source_url=base_url)
+        for address in _emails_in(root)
+        if local_part_kind(address.split("@", 1)[0]) == "hiring"
+    )
+
+
 @dataclass
 class _Person:
     name: str
@@ -375,6 +411,7 @@ class _Person:
     title: str
     linkedin_url: str | None = None
     x_url: str | None = None
+    email: str | None = None
 
 
 def _people(root: Tag, base_url: str) -> tuple[PersonCandidate, ...]:
@@ -401,6 +438,15 @@ def _people(root: Tag, base_url: str) -> tuple[PersonCandidate, ...]:
             person.linkedin_url = url
         elif platform == "x" and person.x_url is None:
             person.x_url = url
+        if person.email is None:
+            person.email = next(
+                (
+                    address
+                    for address in _emails_in(card)
+                    if local_part_kind(address.split("@", 1)[0]) == "personal"
+                ),
+                None,
+            )
     return tuple(
         PersonCandidate(
             name=p.name,
@@ -410,13 +456,16 @@ def _people(root: Tag, base_url: str) -> tuple[PersonCandidate, ...]:
             x_url=p.x_url,
             source_url=base_url,
             source_kind="site",
+            email=p.email,
+            email_source_url=base_url if p.email else None,
         )
         for p in found.values()
     )
 
 
 def _links(root: Tag, base_url: str) -> tuple[str, ...]:
-    """Same-site ``/about*`` and ``/contact*`` pages, absolute, no query/fragment."""
+    """Same-site ``/about*``, ``/contact*``, ``/careers*``, ``/jobs*`` and ``/team*``
+    pages, absolute, no query/fragment."""
     site = _host(base_url)
     links: list[str] = []
     for anchor in root.find_all("a", href=True):
@@ -425,7 +474,7 @@ def _links(root: Tag, base_url: str) -> tuple[str, ...]:
         parts = urlsplit(urljoin(base_url, _attr(anchor, "href").strip()))
         if parts.scheme not in ("http", "https") or _host(parts.geturl()) != site:
             continue
-        if not parts.path.lower().startswith(("/about", "/contact")):
+        if not parts.path.lower().startswith(_LINKED_PAGES):
             continue
         url = urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
         if url not in links:
@@ -451,6 +500,7 @@ def extract_site_facts(html: str, base_url: str) -> SiteFacts:
     address, pincode = _address(root)
     people = _people(root, base_url)
     links = _links(root, base_url)
+    emails = _site_emails(root, base_url)
 
     for tag in root.find_all(_MENU_TAGS):
         if isinstance(tag, Tag):
@@ -465,6 +515,7 @@ def extract_site_facts(html: str, base_url: str) -> SiteFacts:
         pincode=pincode,
         people=people,
         links=links,
+        emails=emails,
     )
 
 
@@ -683,10 +734,45 @@ async def _page(visit: _Visit, url: str) -> SiteFacts | None:
     return extract_site_facts(fetched.body, fetched.url)
 
 
+def _first_link(links: tuple[str, ...], prefixes: tuple[str, ...]) -> str | None:
+    for prefix in prefixes:
+        for link in links:
+            if urlsplit(link).path.lower().startswith(prefix):
+                return link
+    return None
+
+
+async def _with_address_pages(visit: _Visit, facts: SiteFacts) -> SiteFacts:
+    """``facts`` plus the people and hiring inboxes of one careers page and one team
+    page, when the homepage links them. Same visit, so the same host, robots rules and
+    limits; a page that fails is skipped."""
+    people = list(facts.people)
+    emails = list(facts.emails)
+    for prefixes in _ADDRESS_PAGES:
+        link = _first_link(facts.links, prefixes)
+        if link is None:
+            continue
+        try:
+            extra = await _page(visit, link)
+        except Exception as exc:  # the homepage alone is still a result
+            logger.info("company site page %s unreadable: %s", link, type(exc).__name__)
+            continue
+        if extra is None:
+            continue
+        names = {p.name.casefold() for p in people}
+        people.extend(p for p in extra.people if p.name.casefold() not in names)
+        known = {e.address for e in emails}
+        emails.extend(e for e in extra.emails if e.address not in known)
+    return dataclasses.replace(facts, people=tuple(people), emails=tuple(emails))
+
+
 async def _read_site(client: httpx.AsyncClient, url: str) -> SiteFacts | None:
     visit = _Visit(client)
-    facts = await _page(visit, url)
-    if facts is None or facts.address is not None:
+    home = await _page(visit, url)
+    if home is None:
+        return None
+    facts = await _with_address_pages(visit, home)
+    if facts.address is not None:
         return facts
 
     # Links are resolved against the page's final URL, so the contact page is

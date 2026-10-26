@@ -26,12 +26,15 @@ from api.schemas.outreach_schemas import (
     AddPersonRequest,
     CreateThreadRequest,
     DraftRequest,
+    PackAppliedRequest,
+    PackSeenRequest,
+    PackSentRequest,
     PatchPersonRequest,
     PatchThreadRequest,
     SettingsRequest,
     TouchRequest,
 )
-from services.outreach import drafts, people, suggest, threads, touches
+from services.outreach import drafts, pack, people, suggest, threads, touches
 from services.outreach.errors import OutreachError
 from services.outreach.threads import ThreadPatch
 
@@ -103,6 +106,56 @@ async def read_settings(user_id: CurrentUserId) -> dict[str, int]:
 @router.put("/settings")
 async def save_settings(payload: SettingsRequest, user_id: CurrentUserId) -> dict[str, int]:
     return {"daily_target": await _call(touches.set_target(user_id, payload.daily_target))}
+
+
+# --- the daily pack ---------------------------------------------------------------------------
+
+
+@router.get("/pack")
+async def daily_pack(user_id: CurrentUserId) -> dict[str, Any]:
+    """Today's pack (IST), built on the day's first read. No model, no network."""
+    return await _call(pack.get_pack(user_id))
+
+
+@router.post("/pack/seen", status_code=status.HTTP_204_NO_CONTENT)
+async def pack_seen(payload: PackSeenRequest, user_id: CurrentUserId) -> None:
+    """Record that /outreach displayed these items."""
+    await _call(pack.mark_seen(user_id, payload.item_ids))
+
+
+@router.post("/pack/companies/{company_id}/write")
+async def write_pack_company(company_id: str, user_id: CurrentUserId) -> dict[str, Any]:
+    """Write every message for one company in today's pack (one model call, kept)."""
+    return await _call(pack.write_company(user_id, company_id))
+
+
+@router.post("/pack/items/{item_id}/write")
+async def write_pack_item(item_id: str, user_id: CurrentUserId) -> dict[str, Any]:
+    """Write a due follow-up in today's pack (kept on the item)."""
+    return await _call(pack.write_follow_up(user_id, item_id))
+
+
+@router.post("/pack/items/{item_id}/sent")
+async def pack_item_sent(
+    item_id: str, payload: PackSentRequest, user_id: CurrentUserId
+) -> dict[str, Any]:
+    """Record that the user sent this message themselves. Nothing is sent from here."""
+    return await _call(
+        pack.mark_sent(user_id, item_id, message=payload.message, subject=payload.subject)
+    )
+
+
+@router.post("/pack/items/{item_id}/skip", status_code=status.HTTP_204_NO_CONTENT)
+async def pack_item_skip(item_id: str, user_id: CurrentUserId) -> None:
+    await _call(pack.mark_skipped(user_id, item_id))
+
+
+@router.post("/pack/companies/{company_id}/applied")
+async def pack_company_applied(
+    company_id: str, payload: PackAppliedRequest, user_id: CurrentUserId
+) -> dict[str, Any]:
+    """Record that the user applied to one of the company's roles."""
+    return await _call(pack.mark_applied(user_id, company_id, payload.job_id))
 
 
 # --- suggestions and companies -----------------------------------------------------------------

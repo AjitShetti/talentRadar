@@ -24,6 +24,7 @@ from typing import Any
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from domain.outreach import DueItem, ist_today
@@ -35,6 +36,7 @@ from services.outreach.people import add_person
 from services.outreach.suggest import dismiss_suggestion, suggestion_card_id
 from services.outreach.threads import create_thread, update_thread
 from services.outreach.touches import record_touch
+from storage.models import OutreachPack
 from tests.outreach_support import (  # noqa: F401
     make_company,
     make_contact,
@@ -114,7 +116,14 @@ def ranked(
 def feeds(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """Replace the four reads the cards are made of. The defaults mean nothing is due,
     nobody has been reached today, the target is 3 and no company is worth a note."""
-    state: dict[str, Any] = {"due": [], "reached": 0, "target": 3, "ranked": [], "asked": 0}
+    state: dict[str, Any] = {
+        "due": [],
+        "reached": 0,
+        "target": 3,
+        "ranked": [],
+        "asked": 0,
+        "pack": None,
+    }
 
     async def fake_due(user_id: str, *, now: datetime | None = None) -> list[DueItem]:
         return list(state["due"])
@@ -134,7 +143,14 @@ def feeds(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setattr(briefing, "due_items", fake_due)
     monkeypatch.setattr(briefing, "reached_today", fake_reached)
     monkeypatch.setattr(briefing, "get_target", fake_target)
+
+    async def fake_pack_counts(
+        user_id: str, *, now: datetime | None = None
+    ) -> tuple[int, int] | None:
+        return state["pack"]  # type: ignore[no-any-return]
+
     monkeypatch.setattr(briefing, "suggestions", fake_suggestions)
+    monkeypatch.setattr(briefing, "pack_counts", fake_pack_counts)
     return state
 
 
@@ -319,14 +335,16 @@ async def test_both_cards_together(feeds: dict[str, Any]) -> None:
 
     cards = await outreach_cards("u1", now=NOW)
 
-    assert set(cards) == {"followup", "suggestion"}
+    assert set(cards) == {"followup", "suggestion", "pack"}
     assert cards["followup"] is not None and cards["suggestion"] is not None
 
 
 # --- never raises -----------------------------------------------------------------
 
 
-@pytest.mark.parametrize("broken", ["due_items", "reached_today", "get_target", "suggestions"])
+@pytest.mark.parametrize(
+    "broken", ["due_items", "reached_today", "get_target", "suggestions", "pack_counts"]
+)
 async def test_outreach_cards_never_raise(
     feeds: dict[str, Any], monkeypatch: pytest.MonkeyPatch, broken: str
 ) -> None:
@@ -337,7 +355,11 @@ async def test_outreach_cards_never_raise(
     feeds["ranked"] = [ranked(str(uuid.uuid4()), reasons=("1 open role",))]
     monkeypatch.setattr(briefing, broken, explode)
 
-    assert await outreach_cards("u1", now=NOW) == {"followup": None, "suggestion": None}
+    assert await outreach_cards("u1", now=NOW) == {
+        "followup": None,
+        "suggestion": None,
+        "pack": None,
+    }
 
 
 async def test_a_failure_is_logged_without_its_message(
@@ -449,3 +471,43 @@ async def test_suggestion_card_id_is_what_not_now_dismisses(outreach_db: Factory
     await dismiss_suggestion(uid, cid)
 
     assert (await outreach_cards(uid, now=NOW))["suggestion"] is None
+
+
+# --- the daily pack card ------------------------------------------------------------
+
+
+async def test_pack_card_counts_only_and_no_names(feeds: dict[str, Any]) -> None:
+    feeds["pack"] = (3, 2)
+
+    card = (await outreach_cards("u1", now=NOW))["pack"]
+
+    assert card is not None
+    assert card["kind"] == "outreach_pack"
+    assert card["title"] == "Today's pack: 3 companies"
+    assert card["detail"] == "2 messages ready"
+    assert card["meta"] == {"companies": 3, "messages_ready": 2}
+    assert card["actions"][0]["href"] == "/outreach#today"
+
+
+async def test_pack_card_absent_without_todays_pack(outreach_db: Factory) -> None:
+    async with outreach_db() as session:
+        user = await make_user(session)
+
+    cards = await outreach_cards(str(user.id), now=NOW)
+
+    assert cards["pack"] is None
+    async with outreach_db() as session:
+        built = (await session.execute(select(func.count()).select_from(OutreachPack))).scalar()
+    assert built == 0  # the briefing reads a pack; it never builds one
+
+
+async def test_suggestion_card_omitted_when_pack_card_present(feeds: dict[str, Any]) -> None:
+    feeds["pack"] = (1, 0)
+    feeds["ranked"] = [ranked(str(uuid.uuid4()), reasons=("1 open role",))]
+
+    cards = await outreach_cards("u1", now=NOW)
+
+    assert cards["pack"] is not None
+    assert cards["pack"]["title"] == "Today's pack: 1 company"
+    assert cards["suggestion"] is None
+    assert feeds["asked"] == 0

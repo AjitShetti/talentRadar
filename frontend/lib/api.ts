@@ -144,6 +144,14 @@ export type DraftFormat = 'linkedin_note' | 'linkedin_message' | 'email' | 'x_dm
 export type OutreachDraft = { format: DraftFormat; message: string; subject: string | null; generated: boolean; reason: 'daily_cap' | 'budget' | 'model_unavailable' | null; remaining_today: number; max_chars: number }
 // The PATCH body. An absent key is left alone; `close` closes the thread with an outcome.
 export type OutreachThreadPatch = { note?: string | null; next_step?: string | null; next_step_at?: string | null; job_id?: string | null; application_id?: string | null; close?: { outcome: OutreachOutcome }; reopen?: boolean }
+// The daily pack (services/outreach/pack.py). An address says where it came from: saved by the user, found on a cited page,
+// or guessed from the company's format (`learned_from` names the found address the format came from). A guess is never stored.
+export type PackAddress = { value: string; basis: 'saved' | 'found' | 'guessed'; source_host: string | null; learned_from: string | null }
+export type PackItemStatus = 'new' | 'sent' | 'skipped'
+// `message` is null until it is written (POST .../write); `reason` says why a template was used instead of the model.
+export type PackItem = { id: string; kind: 'first' | 'follow_up'; person: { name: string | null; title: string | null; kind: string | null }; channel: 'email' | 'linkedin'; address: PackAddress | null; linkedin_url: string | null; format: DraftFormat; subject: string | null; message: string | null; generated: boolean; reason: string | null; status: PackItemStatus; thread_id: string | null }
+export type PackCompany = { company_id: string | null; name: string; summary: string | null; reasons: string[]; roles: Array<{ job_id: string; title: string }>; applied: boolean; items: PackItem[] }
+export type OutreachPack = { day: string; companies: PackCompany[]; follow_ups: PackItem[]; counts: { companies: number; messages_ready: number } }
 
 // Events (api/schemas/event_schemas.py): each type copies its server model key for key.
 export type EventFormat = 'hackathon' | 'conference' | 'demo' | 'workshop' | 'talk' | 'mixer' | 'meetup' | 'hiring' | 'other'
@@ -439,6 +447,18 @@ export const api = {
     touch: (id: string, payload: { person_id?: string | null; channel: OutreachChannelName; direction: 'out' | 'in'; note?: string | null; body?: string | null; happened_at?: string | null; next_step?: string | null; next_step_at?: string | null }) => request<ThreadDetail>(`/api/v1/outreach/threads/${encodeURIComponent(id)}/touches`, { method: 'POST', body: JSON.stringify(payload) }, true),
     // The only outreach call that may use the model. Nothing is sent or stored.
     draft: (id: string, payload: { person_id?: string; format: DraftFormat; relationship?: string; issue_url?: string }) => request<OutreachDraft>(`/api/v1/outreach/threads/${encodeURIComponent(id)}/draft`, { method: 'POST', body: JSON.stringify(payload) }, true),
+    // Today's pack. The first read of the IST day builds it; no read calls the model, and nothing is ever sent for the user.
+    pack: {
+      get: () => request<OutreachPack>('/api/v1/outreach/pack', {}, true),
+      seen: (itemIds: string[]) => request<void>('/api/v1/outreach/pack/seen', { method: 'POST', body: JSON.stringify({ item_ids: itemIds }) }, true),
+      // One model call for all of a company's unwritten messages; written ones come back as they are.
+      writeCompany: (companyId: string) => request<{ items: PackItem[] }>(`/api/v1/outreach/pack/companies/${encodeURIComponent(companyId)}/write`, { method: 'POST' }, true),
+      writeItem: (itemId: string) => request<{ item: PackItem }>(`/api/v1/outreach/pack/items/${encodeURIComponent(itemId)}/write`, { method: 'POST' }, true),
+      // Records what the user says they sent (the text they edited), opening the thread on the first one.
+      sent: (itemId: string, payload: { message: string; subject: string | null }) => request<{ item: PackItem }>(`/api/v1/outreach/pack/items/${encodeURIComponent(itemId)}/sent`, { method: 'POST', body: JSON.stringify(payload) }, true),
+      skip: (itemId: string) => request<void>(`/api/v1/outreach/pack/items/${encodeURIComponent(itemId)}/skip`, { method: 'POST' }, true),
+      applied: (companyId: string, jobId: string) => request<{ application_id: string; applied: boolean }>(`/api/v1/outreach/pack/companies/${encodeURIComponent(companyId)}/applied`, { method: 'POST', body: JSON.stringify({ job_id: jobId }) }, true),
+    },
   },
   events: {
     list: (params: EventListParams = {}) => {
