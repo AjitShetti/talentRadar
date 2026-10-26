@@ -47,7 +47,7 @@ from domain.outreach_pack import (
 )
 from services.base import parse_uuid
 from services.company_map.read import _title_matches, target_roles
-from services.outreach import drafts, suggest, touches
+from services.outreach import drafts, people, suggest, threads, touches
 from services.outreach.errors import NotFound
 from services.outreach.people import (
     _build_channels,
@@ -57,6 +57,8 @@ from services.outreach.people import (
 )
 from storage.database import AsyncSessionLocal
 from storage.models import (
+    ApplicationEvent,
+    ApplicationStatus,
     Company,
     CompanyContact,
     Job,
@@ -719,3 +721,217 @@ async def write_follow_up(
         item = await _owned_item(session, uid, iid)
     _, follow_ups = await _render(uid, [item])
     return {"item": follow_ups[0]}
+
+
+# --- acting on the pack ---------------------------------------------------------------
+
+
+async def _render_item(uid: uuid.UUID, iid: uuid.UUID) -> dict[str, Any]:
+    async with AsyncSessionLocal() as session:
+        item = await _owned_item(session, uid, iid)
+    companies, follow_ups = await _render(uid, [item])
+    return companies[0]["items"][0] if companies else follow_ups[0]
+
+
+async def _person_for_contact(thread_id: str, contact_id: uuid.UUID) -> str | None:
+    async with AsyncSessionLocal() as session:
+        found = (
+            await session.execute(
+                select(OutreachPerson.id).where(
+                    OutreachPerson.thread_id == uuid.UUID(thread_id),
+                    OutreachPerson.contact_id == contact_id,
+                )
+            )
+        ).scalar_one_or_none()
+    return None if found is None else str(found)
+
+
+async def mark_sent(
+    user_id: str,
+    item_id: str,
+    *,
+    message: str,
+    subject: str | None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Record that the user sent this item's message themselves: ``{item}``.
+
+    A first message opens (or finds) the company's thread with ``source="suggestion"``,
+    adds the person from the contact (no address is passed: a found one already lives
+    on the contact, a guessed one must never be stored) and records an outbound touch
+    with the text the user sent. A follow-up records the touch on its thread. The item
+    becomes ``sent`` last, so a refusal from a cap (``Conflict``) leaves it ``new``.
+    A second call on a sent item changes nothing.
+    """
+    uid = _owner(user_id)
+    iid = parse_uuid(item_id)
+    if iid is None:
+        raise NotFound("Pack item not found")
+    moment = datetime.now(UTC) if now is None else aware(now)
+
+    async with _lock_for((uid, iid)):
+        async with AsyncSessionLocal() as session:
+            item = await _owned_item(session, uid, iid)
+        if item.status != "sent":
+            if item.kind == "first":
+                if item.company_id is None or item.contact_id is None:
+                    raise NotFound("Company not found")
+                summary, _ = await threads.create_thread(
+                    user_id,
+                    company_id=str(item.company_id),
+                    company_name=None,
+                    job_id=None,
+                    source="suggestion",
+                )
+                thread_id = str(summary["id"])
+                person_id = await _person_for_contact(thread_id, item.contact_id)
+                if person_id is None:
+                    await people.add_person(user_id, thread_id, contact_id=str(item.contact_id))
+                    person_id = await _person_for_contact(thread_id, item.contact_id)
+                if person_id is None:  # pragma: no cover - add_person raised instead
+                    raise NotFound("Person not found")
+            else:
+                if item.thread_id is None or item.outreach_person_id is None:
+                    raise NotFound("Thread not found")
+                thread_id, person_id = str(item.thread_id), str(item.outreach_person_id)
+
+            await touches.record_touch(
+                user_id,
+                thread_id,
+                person_id=person_id,
+                channel=item.channel,
+                direction="out",
+                body=message,
+                now=moment,
+            )
+            async with AsyncSessionLocal() as session:
+                await session.execute(
+                    update(OutreachPackItem)
+                    .where(OutreachPackItem.id == iid)
+                    .values(
+                        status="sent",
+                        thread_id=uuid.UUID(thread_id),
+                        acted_at=moment,
+                        message=message,
+                        subject=subject if item.format == "email" else None,
+                    )
+                )
+                await session.commit()
+            logger.info("outreach pack item %s sent", iid)
+    return {"item": await _render_item(uid, iid)}
+
+
+async def mark_skipped(user_id: str, item_id: str, *, now: datetime | None = None) -> None:
+    """Skip one item. When every first-message item of its company in that pack is
+    skipped, the company's suggestion is dismissed for 30 days, so it stays out of the
+    next packs too. A sent item stays sent."""
+    uid = _owner(user_id)
+    iid = parse_uuid(item_id)
+    if iid is None:
+        raise NotFound("Pack item not found")
+    moment = datetime.now(UTC) if now is None else aware(now)
+
+    async with AsyncSessionLocal() as session:
+        item = await _owned_item(session, uid, iid)
+        if item.status == "new":
+            item.status = "skipped"
+            item.acted_at = moment
+        company_id = item.company_id if item.kind == "first" else None
+        siblings: list[str] = []
+        if company_id is not None:
+            siblings = list(
+                (
+                    await session.execute(
+                        select(OutreachPackItem.status).where(
+                            OutreachPackItem.pack_id == item.pack_id,
+                            OutreachPackItem.kind == "first",
+                            OutreachPackItem.company_id == company_id,
+                            OutreachPackItem.id != iid,
+                        )
+                    )
+                ).scalars()
+            )
+        all_skipped = item.status == "skipped" and all(s == "skipped" for s in siblings)
+        await session.commit()
+    if company_id is not None and all_skipped:
+        await suggest.dismiss_suggestion(user_id, str(company_id))
+    logger.info("outreach pack item %s skipped", iid)
+
+
+async def mark_applied(
+    user_id: str, company_id: str, job_id: str, *, now: datetime | None = None
+) -> dict[str, Any]:
+    """Record that the user applied to one of the company's roles from today's pack.
+
+    The role must be the company's. The tracker row is created as ``applied`` (or a
+    saved one is moved to ``applied``; one already further along is left alone), the
+    company's items get ``applied_at`` (which keeps it out of packs for 30 days), and
+    the company's thread, if there is one without an application, is linked to it.
+    Saying it twice is one application.
+    """
+    uid = _owner(user_id)
+    cid, jid = parse_uuid(company_id), parse_uuid(job_id)
+    if cid is None or jid is None:
+        raise NotFound("Role not found")
+    moment = datetime.now(UTC) if now is None else aware(now)
+
+    async with _lock_for((uid, cid)), AsyncSessionLocal() as session:
+        items = await _company_items(session, uid, cid, moment, lock=False)
+        if not items:
+            raise NotFound("Company not in today's pack")
+        job = await session.get(Job, jid)
+        if job is None or job.company_id != cid:
+            raise NotFound("Role not found")
+
+        application = (
+            await session.execute(
+                select(JobApplication).where(
+                    JobApplication.user_id == uid, JobApplication.job_id == jid
+                )
+            )
+        ).scalar_one_or_none()
+        if application is None:
+            application = JobApplication(
+                user_id=uid,
+                job_id=jid,
+                status=ApplicationStatus.APPLIED,
+                applied_at=moment,
+                applied_at_explicit=moment,
+            )
+            session.add(application)
+            await session.flush()
+            session.add(
+                ApplicationEvent(
+                    application_id=application.id,
+                    from_status=None,
+                    to_status=ApplicationStatus.APPLIED.value,
+                )
+            )
+        elif application.status == ApplicationStatus.SAVED:
+            application.status = ApplicationStatus.APPLIED
+            application.applied_at = application.applied_at or moment
+            application.applied_at_explicit = moment
+            session.add(
+                ApplicationEvent(
+                    application_id=application.id,
+                    from_status=ApplicationStatus.SAVED.value,
+                    to_status=ApplicationStatus.APPLIED.value,
+                )
+            )
+
+        for item in items:
+            if item.applied_at is None:
+                item.applied_at = moment
+        thread = (
+            await session.execute(
+                select(OutreachThread).where(
+                    OutreachThread.user_id == uid, OutreachThread.company_id == cid
+                )
+            )
+        ).scalar_one_or_none()
+        if thread is not None and thread.application_id is None:
+            thread.application_id = application.id
+        application_id = str(application.id)
+        await session.commit()
+    logger.info("outreach pack company %s applied", cid)
+    return {"application_id": application_id, "applied": True}

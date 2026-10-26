@@ -26,7 +26,9 @@ from api.schemas.outreach_schemas import (
     AddPersonRequest,
     CreateThreadRequest,
     DraftRequest,
+    PackAppliedRequest,
     PackSeenRequest,
+    PackSentRequest,
     PatchPersonRequest,
     PatchThreadRequest,
     SettingsRequest,
@@ -131,6 +133,29 @@ async def write_pack_company(company_id: str, user_id: CurrentUserId) -> dict[st
 async def write_pack_item(item_id: str, user_id: CurrentUserId) -> dict[str, Any]:
     """Write a due follow-up in today's pack (kept on the item)."""
     return await _call(pack.write_follow_up(user_id, item_id))
+
+
+@router.post("/pack/items/{item_id}/sent")
+async def pack_item_sent(
+    item_id: str, payload: PackSentRequest, user_id: CurrentUserId
+) -> dict[str, Any]:
+    """Record that the user sent this message themselves. Nothing is sent from here."""
+    return await _call(
+        pack.mark_sent(user_id, item_id, message=payload.message, subject=payload.subject)
+    )
+
+
+@router.post("/pack/items/{item_id}/skip", status_code=status.HTTP_204_NO_CONTENT)
+async def pack_item_skip(item_id: str, user_id: CurrentUserId) -> None:
+    await _call(pack.mark_skipped(user_id, item_id))
+
+
+@router.post("/pack/companies/{company_id}/applied")
+async def pack_company_applied(
+    company_id: str, payload: PackAppliedRequest, user_id: CurrentUserId
+) -> dict[str, Any]:
+    """Record that the user applied to one of the company's roles."""
+    return await _call(pack.mark_applied(user_id, company_id, payload.job_id))
 
 
 # --- suggestions and companies -----------------------------------------------------------------
