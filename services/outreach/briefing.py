@@ -1,13 +1,17 @@
 """
 services/outreach/briefing.py
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The two Outreach cards on the Overview day plan (spec section 10).
+The Outreach cards on the Overview day plan (spec section 10, and the daily pack's
+spec of 2026-10-26).
 
 * ``outreach_followup`` - one card for everything owed today. It is a date the
   user set themselves, so it cannot be dismissed: it clears when they act on
   /outreach or snooze the person there.
+* ``outreach_pack`` - today's pack: how many companies are left to review and how
+  many messages are ready. Counts only, and only from a pack that already exists:
+  the briefing never builds one. While it shows, the suggestion card does not.
 * ``outreach_suggestion`` - the single best company to write to, only while the
-  user is under their daily target.
+  user is under their daily target and there is no pack card.
 
 Both come from rows that already exist (the due list, the day's count and the
 cached ranking), so no model is called and nothing is fetched. ``outreach_cards``
@@ -23,6 +27,7 @@ from typing import Any
 
 from domain.outreach import IST, MAX_FOLLOW_UPS, DueItem, aware, ist_today
 from services.copilot import _card
+from services.outreach.pack import pack_counts
 from services.outreach.suggest import suggestion_card_id, suggestions
 from services.outreach.touches import due_items, get_target, reached_today
 
@@ -92,6 +97,27 @@ def _followup_card(items: list[DueItem], now: datetime) -> dict[str, Any] | None
     )
 
 
+def _plural(count: int, one: str, many: str) -> str:
+    return f"{count} {one if count == 1 else many}"
+
+
+async def _pack_card(user_id: str, now: datetime) -> dict[str, Any] | None:
+    """Today's pack, while it still has a company to review."""
+    counts = await pack_counts(user_id, now=now)
+    if counts is None or counts[0] == 0:
+        return None
+    companies, ready = counts
+    return _card(
+        card_id=f"outreach_pack:{ist_today(now).isoformat()}",
+        kind="outreach_pack",
+        title=f"Today's pack: {_plural(companies, 'company', 'companies')}",
+        detail=f"{_plural(ready, 'message', 'messages')} ready",
+        tone="action",
+        actions=[{"label": "Review", "href": "/outreach#today", "style": "primary"}],
+        meta={"companies": companies, "messages_ready": ready},
+    )
+
+
 async def _suggestion_card(user_id: str, now: datetime) -> dict[str, Any] | None:
     """The top suggestion, while ``reached_today`` is under a target above zero.
 
@@ -137,16 +163,18 @@ async def _suggestion_card(user_id: str, now: datetime) -> dict[str, Any] | None
 async def outreach_cards(
     user_id: str, *, now: datetime | None = None
 ) -> dict[str, dict[str, Any] | None]:
-    """The follow-up card and the suggestion card, each ``None`` when it has nothing to say.
+    """The follow-up, pack and suggestion cards, each ``None`` when it has nothing to say.
 
-    ``{"followup": card | None, "suggestion": card | None}``. Never raises: any failure
-    yields ``None`` for both, since one broken read means neither card can be trusted.
-    ``now`` is for tests.
+    ``{"followup", "suggestion", "pack"}``. The suggestion is not ranked while a pack
+    card shows. Never raises: any failure yields ``None`` for all three, since one
+    broken read means none of them can be trusted. ``now`` is for tests.
     """
     moment = datetime.now(UTC) if now is None else aware(now)
     try:
         followup = _followup_card(await due_items(user_id, now=moment), moment)
-        return {"followup": followup, "suggestion": await _suggestion_card(user_id, moment)}
+        pack = await _pack_card(user_id, moment)
+        suggestion = None if pack is not None else await _suggestion_card(user_id, moment)
+        return {"followup": followup, "suggestion": suggestion, "pack": pack}
     except Exception as exc:
         logger.warning("outreach briefing cards unavailable: %s", type(exc).__name__)
-        return {"followup": None, "suggestion": None}
+        return {"followup": None, "suggestion": None, "pack": None}

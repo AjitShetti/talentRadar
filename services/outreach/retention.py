@@ -33,13 +33,21 @@ from sqlalchemy import CursorResult, Delete, and_, delete, exists, not_, or_, se
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from domain.outreach import COLD_AFTER_DAYS, MAX_FOLLOW_UPS, THREAD_RETENTION_DAYS, aware
-from storage.models import OutreachPerson, OutreachThread, OutreachTouch
+from domain.outreach import (
+    COLD_AFTER_DAYS,
+    MAX_FOLLOW_UPS,
+    THREAD_RETENTION_DAYS,
+    aware,
+    ist_today,
+)
+from storage.models import OutreachPack, OutreachPerson, OutreachThread, OutreachTouch
 
 logger = logging.getLogger(__name__)
 
 #: Ceiling on one pass.
 MAX_THREADS_PER_RUN = 500
+#: Daily packs are kept this many IST days; their items go with them.
+PACK_RETENTION_DAYS = 30
 
 
 def prune_statement(now: datetime) -> Delete:
@@ -119,4 +127,18 @@ async def prune_outreach(session: AsyncSession, now: datetime | None = None) -> 
             deleted,
             THREAD_RETENTION_DAYS,
         )
+    return deleted
+
+
+async def prune_packs(session: AsyncSession, now: datetime | None = None) -> int:
+    """Delete daily packs whose IST day is more than ``PACK_RETENTION_DAYS`` old and
+    commit; returns how many went. Their items go by ``ON DELETE CASCADE``. The repeat
+    and applied rules look back at most 30 days, so nothing they read is lost."""
+    moment = datetime.now(UTC) if now is None else aware(now)
+    cutoff = ist_today(moment) - timedelta(days=PACK_RETENTION_DAYS)
+    result = await session.execute(delete(OutreachPack).where(OutreachPack.day < cutoff))
+    await session.commit()
+    deleted = int(cast("CursorResult[Any]", result).rowcount or 0)
+    if deleted:
+        logger.info("Outreach retention: removed %d daily pack(s)", deleted)
     return deleted

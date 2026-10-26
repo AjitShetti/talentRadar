@@ -105,6 +105,9 @@ MODEL_VISIBLE_CARD_KINDS = frozenset({
 })
 #: The kind of the one Outreach card for everything owed today.
 FOLLOWUP_CARD_KIND = "outreach_followup"
+#: The kind of the daily outreach pack's card. Like the follow-up card it reaches the
+#: model as counts only, never by title or detail.
+PACK_CARD_KIND = "outreach_pack"
 #: Every event card's ``kind`` starts with this (event_today, event_soon, event_met_prompt).
 EVENT_CARD_PREFIX = "event_"
 #: How far ahead the single "coming up" event card looks.
@@ -594,7 +597,7 @@ async def _outreach_cards(user_id: str) -> dict[str, dict[str, Any] | None]:
         return await outreach_cards(user_id)
     except Exception as exc:
         logger.warning("Outreach cards unavailable: %s", type(exc).__name__)
-        return {"followup": None, "suggestion": None}
+        return {"followup": None, "suggestion": None, "pack": None}
 
 
 def _utc(moment: datetime) -> datetime:
@@ -833,7 +836,9 @@ async def build_briefing(*, user_id: str) -> dict[str, Any]:
     if interview_card:
         cards.append(interview_card)
 
-    if suggestion_card := outreach.get("suggestion"):
+    if pack_card := outreach.get("pack"):
+        cards.append(pack_card)
+    elif suggestion_card := outreach.get("suggestion"):
         cards.append(suggestion_card)
 
     practice_card = await _practice_suggestion_card(user_id)
@@ -871,6 +876,21 @@ def _follow_ups_due(cards: list[dict[str, Any]]) -> int:
         return max(int(card["meta"].get("count", 1)), 1)
     except (AttributeError, TypeError, ValueError):
         return 1
+
+
+def _pack_counts(cards: list[dict[str, Any]]) -> tuple[int, int] | None:
+    """``(companies, messages ready)`` from the pack card's ``meta``, or ``None``.
+
+    Read from ``meta`` and nothing else, like ``_follow_ups_due``, so it is safe to put
+    in the prompt of ``_general_reply``.
+    """
+    card = next((c for c in cards if c["kind"] == PACK_CARD_KIND), None)
+    if card is None or not isinstance(card.get("meta"), dict):
+        return None
+    try:
+        return int(card["meta"]["companies"]), int(card["meta"]["messages_ready"])
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def _headline(cards: list[dict[str, Any]], context: dict[str, Any]) -> str:
@@ -1081,6 +1101,8 @@ async def _general_reply(
     }
     if owed := _follow_ups_due(briefing["cards"]):
         context["outreach_follow_ups_due"] = owed
+    if pack := _pack_counts(briefing["cards"]):
+        context["outreach_pack_companies"], context["outreach_pack_messages_ready"] = pack
 
     try:
         return await generate_copilot_reply(question=message, context=context)

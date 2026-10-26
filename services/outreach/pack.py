@@ -935,3 +935,23 @@ async def mark_applied(
         await session.commit()
     logger.info("outreach pack company %s applied", cid)
     return {"application_id": application_id, "applied": True}
+
+
+# --- the briefing's read -----------------------------------------------------------------
+
+
+async def pack_counts(user_id: str, *, now: datetime | None = None) -> tuple[int, int] | None:
+    """``(companies still to review, messages ready)`` in today's pack, or ``None`` when
+    the user has no pack today. Reads only: a briefing never builds a pack."""
+    uid = parse_uuid(user_id)
+    if uid is None:
+        return None
+    moment = datetime.now(UTC) if now is None else aware(now)
+    async with AsyncSessionLocal() as session:
+        stored = await _load_pack(session, uid, moment)
+    if stored is None:
+        return None
+    waiting = [item for item in stored.items if item.status == "new"]
+    companies = {item.company_id for item in waiting if item.kind == "first" and item.company_id}
+    ready = sum(1 for item in waiting if item.message is not None)
+    return len(companies), ready
