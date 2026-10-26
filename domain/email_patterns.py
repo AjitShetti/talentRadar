@@ -26,6 +26,8 @@ import unicodedata
 from collections.abc import Callable, Iterable
 from typing import Literal, get_args
 
+from domain.company_identity import normalize_domain
+
 Pattern = Literal[
     "first",
     "last",
@@ -167,6 +169,19 @@ def learn(examples: Iterable[tuple[str, str]]) -> Pattern | None:
     if agreed is None or len(agreed) != 1 or not unambiguous:
         return None
     return next(iter(agreed))
+
+
+def email_domain_ok(address: str, company_domain: str | None) -> bool:
+    """Whether ``address`` is on the company's own registrable domain (or a subdomain).
+
+    A personal Gmail on a founder's GitHub profile is their private address, and an
+    agency's inbox on a careers page is someone else's: neither is the company's.
+    """
+    company = normalize_domain(company_domain)
+    _, _, host = address.strip().lower().rpartition("@")
+    if not company or not host:
+        return False
+    return host == company or host.endswith(f".{company}")
 
 
 def guess(pattern: Pattern, name: str, domain: str) -> str | None:

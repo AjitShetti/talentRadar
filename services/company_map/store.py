@@ -31,15 +31,16 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Select, and_, case, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from domain.areas import area_for_point, in_bengaluru
 from domain.company_identity import merge_fields, normalize_domain, normalize_name, slugify
+from domain.email_patterns import email_domain_ok
 from services.company_map.people import upsert_people
 from services.company_map.tech import apply_tech
-from services.company_map.types import GeoHit, ImportedCompany
-from storage.models import Company, Job, JobStatus
+from services.company_map.types import GeoHit, ImportedCompany, SiteEmail
+from storage.models import Company, CompanyContact, Job, JobStatus
 
 #: Importers whose every result is a Bengaluru company (Wikidata asks for
 #: HQ = Bengaluru, Overpass for offices inside the Bengaluru bbox, YC for a
@@ -269,7 +270,7 @@ async def upsert_company_ex(
 
     await session.flush()
     if imported.people:
-        await upsert_people(session, company.id, imported.people)
+        await upsert_people(session, company.id, imported.people, company_domain=company.domain)
     return company, created
 
 
@@ -330,14 +331,78 @@ async def due(session: AsyncSession, step: str, limit: int) -> list[Company]:
         .group_by(Job.company_id)
         .subquery()
     )
+    order = [func.coalesce(open_roles.c.n, 0).desc(), Company.name]
+    if step == "sites":
+        # A company with named people and no published address yet is read first: its
+        # site is where the address that teaches the company's format would be printed.
+        order.insert(0, case((_people_without_email(), 0), else_=1))
     query = (
         select(Company)
         .outerjoin(open_roles, open_roles.c.company_id == Company.id)
         .where(*where)
-        .order_by(func.coalesce(open_roles.c.n, 0).desc(), Company.name)
+        .order_by(*order)
         .limit(limit)
     )
     return list((await session.execute(query)).scalars())
+
+
+_PEOPLE_KINDS = ("founder", "leader", "engineer")
+
+
+def _people_without_email() -> Any:
+    """True for a company with a curated named person and no curated published address."""
+    curated = and_(CompanyContact.company_id == Company.id, CompanyContact.user_id.is_(None))
+    has_people = exists().where(
+        curated, CompanyContact.kind.in_(_PEOPLE_KINDS), CompanyContact.name.is_not(None)
+    )
+    has_email = exists().where(curated, CompanyContact.email_source_url.is_not(None))
+    return and_(has_people, ~has_email)
+
+
+async def upsert_site_emails(
+    session: AsyncSession, company: Company, emails: list[SiteEmail] | tuple[SiteEmail, ...]
+) -> int:
+    """Store the hiring inboxes a company printed as curated ``careers_inbox`` contacts.
+
+    Only addresses on the company's own domain; each once (by address). Returns rows
+    inserted. The page each was printed on is both ``source_url`` and
+    ``email_source_url``.
+    """
+    stored = set(
+        (
+            await session.execute(
+                select(CompanyContact.email).where(
+                    CompanyContact.company_id == company.id,
+                    CompanyContact.user_id.is_(None),
+                    CompanyContact.kind == "careers_inbox",
+                    CompanyContact.email.is_not(None),
+                )
+            )
+        ).scalars()
+    )
+    inserted = 0
+    for found in emails:
+        address = found.address.strip().lower()
+        if address in stored or not email_domain_ok(address, company.domain):
+            continue
+        if len(address) > 256 or len(found.source_url) > 512:
+            continue
+        session.add(
+            CompanyContact(
+                company_id=company.id,
+                user_id=None,
+                kind="careers_inbox",
+                email=address,
+                source_url=found.source_url,
+                email_source_url=found.source_url,
+                source_kind="site",
+                verified=False,
+            )
+        )
+        stored.add(address)
+        inserted += 1
+    await session.flush()
+    return inserted
 
 
 def mark_tried(company: Company, key: str) -> None:
