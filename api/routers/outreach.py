@@ -26,12 +26,13 @@ from api.schemas.outreach_schemas import (
     AddPersonRequest,
     CreateThreadRequest,
     DraftRequest,
+    PackSeenRequest,
     PatchPersonRequest,
     PatchThreadRequest,
     SettingsRequest,
     TouchRequest,
 )
-from services.outreach import drafts, people, suggest, threads, touches
+from services.outreach import drafts, pack, people, suggest, threads, touches
 from services.outreach.errors import OutreachError
 from services.outreach.threads import ThreadPatch
 
@@ -103,6 +104,21 @@ async def read_settings(user_id: CurrentUserId) -> dict[str, int]:
 @router.put("/settings")
 async def save_settings(payload: SettingsRequest, user_id: CurrentUserId) -> dict[str, int]:
     return {"daily_target": await _call(touches.set_target(user_id, payload.daily_target))}
+
+
+# --- the daily pack ---------------------------------------------------------------------------
+
+
+@router.get("/pack")
+async def daily_pack(user_id: CurrentUserId) -> dict[str, Any]:
+    """Today's pack (IST), built on the day's first read. No model, no network."""
+    return await _call(pack.get_pack(user_id))
+
+
+@router.post("/pack/seen", status_code=status.HTTP_204_NO_CONTENT)
+async def pack_seen(payload: PackSeenRequest, user_id: CurrentUserId) -> None:
+    """Record that /outreach displayed these items."""
+    await _call(pack.mark_seen(user_id, payload.item_ids))
 
 
 # --- suggestions and companies -----------------------------------------------------------------

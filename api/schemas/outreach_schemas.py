@@ -27,6 +27,7 @@ from domain.outreach import (
     Source,
 )
 from domain.outreach_drafts import DraftFormat
+from services.outreach.pack import MAX_SEEN_IDS
 from services.outreach.people import EMAIL_MAX, LINKEDIN_URL_MAX, NAME_MAX, TITLE_MAX
 from services.outreach.threads import COMPANY_NAME_MAX
 
@@ -102,3 +103,7 @@ class DraftRequest(BaseModel):
 
 class SettingsRequest(BaseModel):
     daily_target: int = Field(..., ge=0, le=MAX_DAILY_TARGET)
+
+
+class PackSeenRequest(BaseModel):
+    item_ids: list[str] = Field(..., max_length=MAX_SEEN_IDS)

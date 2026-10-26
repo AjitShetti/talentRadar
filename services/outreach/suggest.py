@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -57,6 +58,8 @@ from domain.outreach_rank import (
     FUNDING_BANDS,
     CompanySignals,
     PersonSignals,
+    RankedPerson,
+    Suggestion,
     UserSignals,
     rank_companies,
     rank_people,
@@ -283,6 +286,7 @@ def _candidates_statement(uid: uuid.UUID, now: datetime, sectors: frozenset[str]
             Company.employee_count,
             Company.employee_count_range,
             Company.last_funding_at,
+            Company.domain,
         )
         .where(listed_clause(AREA_CITY), or_(*signals), ~has_thread)
         .order_by(
@@ -428,12 +432,34 @@ async def _people(
     return people
 
 
+async def _inboxes(session: AsyncSession, ids: list[uuid.UUID]) -> dict[str, CompanyContact]:
+    """``{company: its published hiring inbox}``: the oldest curated ``careers_inbox``
+    contact with an address. A user's own saved inbox is a person they chose, not this."""
+    rows = await session.execute(
+        select(CompanyContact)
+        .where(
+            CompanyContact.company_id.in_(ids),
+            CompanyContact.kind == "careers_inbox",
+            CompanyContact.user_id.is_(None),
+            CompanyContact.email.is_not(None),
+        )
+        .order_by(CompanyContact.created_at, CompanyContact.id)
+    )
+    inboxes: dict[str, CompanyContact] = {}
+    for contact in rows.scalars():
+        inboxes.setdefault(str(contact.company_id), contact)
+    return inboxes
+
+
 # --- weighing them -------------------------------------------------------------------
 
 
-def _top_person(company: Row[Any], contacts: list[CompanyContact]) -> dict[str, Any] | None:
-    """The person to write to first at this company, by the same ranking the thread
-    drawer uses for its suggested people."""
+def _ranked_people(
+    company: Row[Any], contacts: list[CompanyContact]
+) -> list[tuple[RankedPerson, CompanyContact]]:
+    """The people at this company, best first, by the ranking the thread drawer uses
+    for its suggested people. Only a found or saved address counts towards reach."""
+    by_id = {str(contact.id): contact for contact in contacts}
     signals: list[PersonSignals] = []
     for contact in contacts:
         name = _contact_name(contact)
@@ -463,37 +489,53 @@ def _top_person(company: Row[Any], contacts: list[CompanyContact]) -> dict[str, 
             company.tier, company.employee_count, company.employee_count_range, company.stage
         ),
     )
+    return [(person, by_id[person.contact_id]) for person in ranked]
+
+
+def _top_person(company: Row[Any], contacts: list[CompanyContact]) -> dict[str, Any] | None:
+    """The person to write to first at this company."""
+    ranked = _ranked_people(company, contacts)
     if not ranked:
         return None
-    return {"name": ranked[0].name, "title": ranked[0].title, "kind": ranked[0].kind}
+    top = ranked[0][0]
+    return {"name": top.name, "title": top.title, "kind": top.kind}
 
 
-async def _compute(uid: uuid.UUID, now: datetime, dismissed: set[str]) -> dict[str, Any]:
-    """Rank the candidates and return what the cache keeps.
+@dataclass(frozen=True)
+class _Gathered:
+    complete: bool
+    user: UserSignals
+    rows: list[Row[Any]]
+    signals: list[CompanySignals]
+    people: dict[uuid.UUID, list[CompanyContact]]
+
+
+async def _gather(
+    session: AsyncSession, uid: uuid.UUID, now: datetime, dismissed: set[str]
+) -> _Gathered:
+    """The candidates and every fact the ranking weighs, in batched statements.
 
     Companies with a thread are left out by the candidate query itself; ``dismissed``
-    (read once by the caller) is removed from what it returns. Statements sent, for any
-    number of companies, besides the two that read threads and dismissals: the user's
-    roles, goals and skills (3), the candidates (1), and one each for role counts,
-    stacks (2 with skills to match), issue counts, funding rounds (only if any company
-    raised) and people.
+    (read once by the caller) is removed here. Statements sent, for any number of
+    companies: the user's roles, goals and skills (3), the candidates (1), and one each
+    for role counts, stacks (2 with skills to match), issue counts, funding rounds (only
+    if any company raised) and people.
     """
-    async with AsyncSessionLocal() as session:
-        roles, user, complete = await _user_signals(session, uid)
-        rows = [
-            row
-            for row in await _candidates(session, uid, now, user.sectors)
-            if str(row.id) not in dismissed
-        ]
-        if not rows:
-            return {"profile_complete": complete, "suggestions": []}
-        ids = [row.id for row in rows]
-        role_counts = await _role_counts(session, ids, roles)
-        stacks = await _stacks(session, ids, with_postings=bool(user.skills))
-        issues = await _issue_counts(session, ids)
-        funded = [row.id for row in rows if row.last_funding_at is not None]
-        rounds = await _funding_rounds(session, funded) if funded else {}
-        people = await _people(session, ids, uid)
+    roles, user, complete = await _user_signals(session, uid)
+    rows = [
+        row
+        for row in await _candidates(session, uid, now, user.sectors)
+        if str(row.id) not in dismissed
+    ]
+    if not rows:
+        return _Gathered(complete=complete, user=user, rows=[], signals=[], people={})
+    ids = [row.id for row in rows]
+    role_counts = await _role_counts(session, ids, roles)
+    stacks = await _stacks(session, ids, with_postings=bool(user.skills))
+    issues = await _issue_counts(session, ids)
+    funded = [row.id for row in rows if row.last_funding_at is not None]
+    rounds = await _funding_rounds(session, funded) if funded else {}
+    people = await _people(session, ids, uid)
 
     signals = [
         CompanySignals(
@@ -514,6 +556,16 @@ async def _compute(uid: uuid.UUID, now: datetime, dismissed: set[str]) -> dict[s
         )
         for row in rows
     ]
+    return _Gathered(complete=complete, user=user, rows=rows, signals=signals, people=people)
+
+
+async def _compute(uid: uuid.UUID, now: datetime, dismissed: set[str]) -> dict[str, Any]:
+    """Rank the candidates and return what the cache keeps."""
+    async with AsyncSessionLocal() as session:
+        gathered = await _gather(session, uid, now, dismissed)
+    rows, people = gathered.rows, gathered.people
+    if not rows:
+        return {"profile_complete": gathered.complete, "suggestions": []}
     by_id = {str(row.id): row for row in rows}
     ranked = [
         {
@@ -527,10 +579,47 @@ async def _compute(uid: uuid.UUID, now: datetime, dismissed: set[str]) -> dict[s
             "reasons": list(s.reasons),
             "top_person": _top_person(by_id[s.company_id], people.get(by_id[s.company_id].id, [])),
         }
-        for s in rank_companies(signals, user, now, CACHED_TOP)
+        for s in rank_companies(gathered.signals, gathered.user, now, CACHED_TOP)
     ]
     logger.info("outreach suggestions: %d candidates, %d ranked", len(rows), len(ranked))
-    return {"profile_complete": complete, "suggestions": ranked}
+    return {"profile_complete": gathered.complete, "suggestions": ranked}
+
+
+@dataclass(frozen=True)
+class PackCandidates:
+    """What the daily pack chooses from (``services/outreach/pack.py``)."""
+
+    ranked: list[Suggestion]
+    #: ``{company id: [(person, their contact)], best first}``.
+    people: dict[str, list[tuple[RankedPerson, CompanyContact]]]
+    #: ``{company id: every person the user may be told about}``, for the address format.
+    contacts: dict[str, list[CompanyContact]]
+    inboxes: dict[str, CompanyContact]
+    domains: dict[str, str | None]
+
+
+async def ranked_for_pack(uid: uuid.UUID, now: datetime) -> PackCandidates:
+    """The ranked companies (threads and dismissals already out), their people and
+    hiring inboxes, uncached: the pack is built once a day and kept."""
+    dismissed = await _dismissed(uid)
+    async with AsyncSessionLocal() as session:
+        gathered = await _gather(session, uid, now, dismissed)
+        ranked = rank_companies(gathered.signals, gathered.user, now, CACHED_TOP)
+        inboxes = (
+            await _inboxes(session, [uuid.UUID(s.company_id) for s in ranked]) if ranked else {}
+        )
+    rows = {str(row.id): row for row in gathered.rows}
+    contacts = {str(cid): list(found) for cid, found in gathered.people.items()}
+    return PackCandidates(
+        ranked=ranked,
+        people={
+            s.company_id: _ranked_people(rows[s.company_id], contacts.get(s.company_id, []))
+            for s in ranked
+        },
+        contacts=contacts,
+        inboxes=inboxes,
+        domains={s.company_id: rows[s.company_id].domain for s in ranked},
+    )
 
 
 # --- the reads and writes ------------------------------------------------------------
