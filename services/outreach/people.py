@@ -22,9 +22,11 @@ Rules this module keeps:
   (curated, or their own). A name-only thread has no company to hold contacts, so
   the person keeps what was typed (``email``, ``linkedin_url``) and nothing is
   written to the shared ``company_contacts`` table.
-* **Channels are built from what is stored, never guessed.** An email channel
-  exists only when the user saved the address, or a curated contact's address
-  cites the page it came from. LinkedIn is a deep link the user opens in their
+* **Channels say where an address came from.** An email channel is ``saved`` (the
+  user's own contact), ``found`` (a curated address that cites the page it was
+  published on), or ``guessed``: the company's format, learned from a found address
+  on its own domain, applied to a named person who has none. A guess is built here
+  at read time, labelled, and never stored (spec 2026-10-26, section 2). LinkedIn is a deep link the user opens in their
   own session: a stored profile (rebuilt from its slug, never echoed), else a
   people search. Nothing here fetches LinkedIn, X, GitHub or an address.
 * **No model call.** Ranking and the detail are deterministic reads.
@@ -48,6 +50,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from domain.company_taxonomy import SECTORS, STAGES
+from domain.email_patterns import Pattern, email_domain_ok, guess, learn
 from domain.linkedin_links import company_people_links, person_search_link
 from domain.outreach import (
     MAX_PEOPLE_PER_THREAD,
@@ -150,6 +153,38 @@ def _valid_email(value: str | None) -> str | None:
 # --- channels ----------------------------------------------------------------------
 
 
+AddressFormat = tuple[Pattern, str]
+
+
+def address_format_from(
+    contacts: list[CompanyContact], company_domain: str | None
+) -> AddressFormat | None:
+    """``(format, the found address that taught it)`` for a company, or ``None``.
+
+    Learned only from curated named people whose address was published
+    (``email_source_url``) on the company's own domain. A user's saved contact is
+    private and teaches nothing; an inbox has no name and teaches nothing.
+    """
+    examples = [
+        (contact.name or "", (contact.email or "").strip().lower())
+        for contact in contacts
+        if contact.user_id is None
+        and contact.name
+        and contact.email
+        and contact.email_source_url
+        and email_domain_ok(contact.email, company_domain)
+    ]
+    pattern = learn(examples)
+    if pattern is None:
+        return None
+    teacher = next(
+        address
+        for name, address in examples
+        if guess(pattern, name, address.rpartition("@")[2]) == address
+    )
+    return pattern, teacher
+
+
 def _build_channels(
     *,
     name: str,
@@ -157,11 +192,15 @@ def _build_channels(
     contact: CompanyContact | None,
     typed_email: str | None,
     typed_linkedin: str | None,
+    address_format: AddressFormat | None = None,
+    company_domain: str | None = None,
 ) -> list[dict[str, Any]]:
     """The ways to reach someone: LinkedIn, then email, X and GitHub, where stored.
 
     ``contact`` is the truth when there is one. Without it the person is something
-    the user typed in a name-only thread, so what they typed is theirs to use.
+    the user typed in a name-only thread, so what they typed is theirs to use. With
+    an ``address_format`` and no address on record, a named contact gets a
+    ``guessed`` email channel on ``company_domain``.
     """
     if contact is None:
         email, linkedin, x_url, github_url = typed_email, typed_linkedin, None, None
@@ -189,7 +228,8 @@ def _build_channels(
         )
 
     address = _valid_email(email)
-    host = _source_host(source_url)
+    email_source = None if contact is None else contact.email_source_url
+    host = _source_host(email_source or source_url)
     if address is not None and (user_saved or host is not None):
         channels.append(
             _channel(
@@ -198,8 +238,21 @@ def _build_channels(
                 address,
                 direct=True,
                 source_host=None if user_saved else host,
+                basis="saved" if user_saved else "found",
             )
         )
+    elif contact is not None and contact.name and address_format and company_domain:
+        pattern, learned_from = address_format
+        guessed = guess(pattern, contact.name, learned_from.rpartition("@")[2])
+        if guessed is not None and email_domain_ok(guessed, company_domain):
+            channels.append(
+                {
+                    **_channel(
+                        "email", f"mailto:{guessed}", guessed, direct=False, basis="guessed"
+                    ),
+                    "learned_from": learned_from,
+                }
+            )
 
     x_profile = _profile(_X_PROFILE, "https://x.com/", x_url)
     if x_profile is not None:
@@ -211,7 +264,13 @@ def _build_channels(
 
 
 def _channel(
-    channel: str, url: str, label: str, *, direct: bool, source_host: str | None = None
+    channel: str,
+    url: str,
+    label: str,
+    *,
+    direct: bool,
+    source_host: str | None = None,
+    basis: str | None = None,
 ) -> dict[str, Any]:
     return {
         "channel": channel,
@@ -219,20 +278,28 @@ def _channel(
         "label": label,
         "direct": direct,
         "source_host": source_host,
+        "basis": basis,
     }
 
 
 def channels_for(
-    *, contact: CompanyContact | None, person: OutreachPerson, company_name: str
+    *,
+    contact: CompanyContact | None,
+    person: OutreachPerson,
+    company_name: str,
+    address_format: AddressFormat | None = None,
+    company_domain: str | None = None,
 ) -> list[dict[str, Any]]:
     """The channels a person in a thread has, built from stored data only.
 
     * **LinkedIn**: a stored profile link is ``"LinkedIn"`` and ``direct``; with none,
       a people search for the name at the company is ``"Search LinkedIn"`` and not
       ``direct``. A contact with no name (a shared inbox) gets no search.
-    * **Email**: only an address the user saved, or a curated contact's address that
-      cites a ``source_url``. ``source_host`` is that page's host, or ``None`` for an
-      address the user saved. An address is never built from a name and a domain.
+    * **Email**: an address the user saved (``basis="saved"``), a curated contact's
+      address that cites the page it was published on (``"found"``; ``source_host``
+      is that page's host), or, with an ``address_format``, the company's format
+      applied to the contact's name (``"guessed"``, with ``learned_from``; never
+      ``direct`` and never stored).
     * **X** and **GitHub**: the contact's stored profile links.
 
     ``contact`` is ``None`` for someone typed into a name-only thread, whose own
@@ -244,6 +311,8 @@ def channels_for(
         contact=contact,
         typed_email=person.email,
         typed_linkedin=person.linkedin_url,
+        address_format=address_format,
+        company_domain=company_domain,
     )
 
 
@@ -605,6 +674,8 @@ def _person_payload(
     company_name: str,
     typed_here: bool,
     now: datetime,
+    address_format: AddressFormat | None = None,
+    company_domain: str | None = None,
 ) -> dict[str, Any]:
     """One ``Person``. ``typed_here`` is true in a name-only thread, where everyone
     was typed in by the user."""
@@ -621,7 +692,13 @@ def _person_payload(
         "user_saved": typed_here if contact is None else contact.user_id is not None,
         "source_url": source_url,
         "source_host": _source_host(source_url),
-        "channels": channels_for(contact=contact, person=person, company_name=company_name),
+        "channels": channels_for(
+            contact=contact,
+            person=person,
+            company_name=company_name,
+            address_format=address_format,
+            company_domain=company_domain,
+        ),
         "first_sent_at": _iso(person.first_sent_at),
         "last_outbound_at": _iso(person.last_outbound_at),
         "follow_ups_sent": person.follow_ups_sent,
@@ -656,7 +733,9 @@ def _suggested_people(
                 verified=contact.verified,
                 user_saved=contact.user_id is not None,
                 has_direct_link=any(c["direct"] and c["channel"] != "email" for c in channels),
-                has_public_email=any(c["channel"] == "email" for c in channels),
+                has_public_email=any(
+                    c["channel"] == "email" and c["basis"] in ("found", "saved") for c in channels
+                ),
                 source_host=_source_host(contact.source_url),
             )
         )
@@ -727,6 +806,8 @@ async def get_thread(
     issues: dict[str, Any] | None = None if company_id is None else await snapshot_for(company_id)
 
     by_id = {contact.id: contact for contact in contacts}
+    company_domain = None if company is None else company.domain
+    address_format = address_format_from(contacts, company_domain)
     people = _in_added_order(thread.people)
     names = {person.id: person.name for person in people}
     touches = sorted(
@@ -749,6 +830,8 @@ async def get_thread(
                 company_name=thread.company_name,
                 typed_here=thread.company_id is None,
                 now=moment,
+                address_format=address_format,
+                company_domain=company_domain,
             )
             for person in people
         ],

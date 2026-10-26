@@ -59,6 +59,13 @@ HANDLERS: list[tuple[str, str, dict[str, Any] | None, str]] = [
     ("GET", "", None, "touches.home"),
     ("GET", "/settings", None, "touches.get_target"),
     ("PUT", "/settings", {"daily_target": 3}, "touches.set_target"),
+    ("GET", "/pack", None, "pack.get_pack"),
+    ("POST", "/pack/seen", {"item_ids": []}, "pack.mark_seen"),
+    ("POST", f"/pack/companies/{CID}/write", None, "pack.write_company"),
+    ("POST", f"/pack/items/{PID}/write", None, "pack.write_follow_up"),
+    ("POST", f"/pack/items/{PID}/sent", {"message": "Hi."}, "pack.mark_sent"),
+    ("POST", f"/pack/items/{PID}/skip", None, "pack.mark_skipped"),
+    ("POST", f"/pack/companies/{CID}/applied", {"job_id": PID}, "pack.mark_applied"),
     ("GET", "/suggestions", None, "suggest.suggestions"),
     ("POST", f"/suggestions/{CID}/dismiss", None, "suggest.dismiss_suggestion"),
     ("GET", "/companies/search?q=te", None, "threads.search_companies"),
@@ -105,6 +112,13 @@ def test_the_route_table_is_the_documented_one() -> None:
         ("GET", ""),
         ("GET", "/settings"),
         ("PUT", "/settings"),
+        ("GET", "/pack"),
+        ("POST", "/pack/seen"),
+        ("POST", "/pack/companies/{company_id}/write"),
+        ("POST", "/pack/items/{item_id}/write"),
+        ("POST", "/pack/items/{item_id}/sent"),
+        ("POST", "/pack/items/{item_id}/skip"),
+        ("POST", "/pack/companies/{company_id}/applied"),
         ("GET", "/suggestions"),
         ("POST", "/suggestions/{company_id}/dismiss"),
         ("GET", "/companies/search"),
@@ -132,6 +146,7 @@ async def test_routes_require_auth(api_client: AsyncClient) -> None:
             template.replace("{thread_id}", TID)
             .replace("{person_id}", PID)
             .replace("{company_id}", CID)
+            .replace("{item_id}", PID)
         )
         if path.endswith("/companies/search"):
             path += "?q=te"

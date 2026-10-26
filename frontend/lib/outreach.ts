@@ -125,13 +125,14 @@ export function personLine(p: OutreachPerson, now: Date = new Date()): string {
 /**
  * A mailto: link that opens the user's own mail client with the draft in it.
  * Nothing is sent from here. The address is encoded too, so a stored value
- * cannot add a recipient or a header with "?", "&" or ",".
+ * cannot add a recipient or a header with "?", "&" or ",". A line break is
+ * written as CRLF (%0D%0A), as RFC 6068 asks.
  */
 export function mailtoHref(email: string, subject: string | null, body: string): string {
   const to = encodeURIComponent(email.trim()).replace(/%40/g, '@')
   const parts: string[] = []
   if (subject) parts.push(`subject=${encodeURIComponent(subject)}`)
-  parts.push(`body=${encodeURIComponent(body)}`)
+  parts.push(`body=${encodeURIComponent(body.replace(/\r\n|\r|\n/g, '\r\n'))}`)
   return `mailto:${to}?${parts.join('&')}`
 }
 

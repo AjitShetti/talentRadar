@@ -52,7 +52,13 @@ from services.company_map import github_orgs, hiring_list, osm, wikidata, yc
 from services.company_map.geocode import geocode, resolve_location
 from services.company_map.people import github_members, upsert_people
 from services.company_map.sourced import SourcedCompany
-from services.company_map.store import apply_location, due, mark_tried, upsert_company_ex
+from services.company_map.store import (
+    apply_location,
+    due,
+    mark_tried,
+    upsert_company_ex,
+    upsert_site_emails,
+)
 from services.company_map.summary import choose_summary, has_source_text, llm_summary
 from services.company_map.tech import apply_tech, reclassify_tech
 from services.company_map.types import GeoHit, ImportedCompany, SiteFacts
@@ -344,16 +350,20 @@ async def _step_sites(session: AsyncSession, limit: int) -> dict[str, int]:
         facts = await asyncio.gather(
             *(read(client, c.website_url or "") for c in companies), return_exceptions=True
         )
-    read_ok = people = 0
+    read_ok = people = inboxes = 0
     for company, result in zip(companies, facts, strict=True):
         site = result if isinstance(result, SiteFacts) else None
         _apply_site(company, site)
         if site is not None:
             read_ok += 1
             if site.people:
-                people += await upsert_people(session, company.id, site.people)
+                people += await upsert_people(
+                    session, company.id, site.people, company_domain=company.domain
+                )
+            if site.emails:
+                inboxes += await upsert_site_emails(session, company, site.emails)
     await session.commit()
-    return {"due": len(companies), "read": read_ok, "people": people}
+    return {"due": len(companies), "read": read_ok, "people": people, "inboxes": inboxes}
 
 
 async def _locate(client: httpx.AsyncClient, company: Company) -> GeoHit | None:
@@ -420,7 +430,9 @@ async def _step_github(session: AsyncSession, limit: int) -> dict[str, int]:
     async with httpx.AsyncClient() as client:
         for company in companies:
             members = await github_members(company.github_org or "", client=client)
-            inserted += await upsert_people(session, company.id, members)
+            inserted += await upsert_people(
+                session, company.id, members, company_domain=company.domain
+            )
             mark_tried(company, "github_people_at")
             await session.commit()
     return {"due": len(companies), "people": inserted}

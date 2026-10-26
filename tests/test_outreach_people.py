@@ -108,7 +108,7 @@ PERSON_KEYS = {
     "replied_at",
     "draft",
 }
-CHANNEL_KEYS = {"channel", "url", "label", "direct", "source_host"}
+CHANNEL_KEYS = {"channel", "url", "label", "direct", "source_host", "basis"}
 SUGGESTED_KEYS = {
     "contact_id",
     "name",
@@ -661,7 +661,8 @@ async def test_people_cap(outreach_db: Factory) -> None:
 def test_channels_never_guess() -> None:
     sourced = _contact(email="asha@tessel.example", source_url=None)
     channels = channels_for(contact=sourced, person=_person(), company_name="Tessel AI")
-    # An address with no cited page is not offered, and one is never built from a pattern.
+    # An address with no cited page is not offered, and without the company's learned
+    # format none is built from a pattern (tests/test_outreach_channels_basis.py).
     assert [c["channel"] for c in channels] == ["linkedin"]
 
     cited = _contact(email="asha@tessel.example")
@@ -675,6 +676,7 @@ def test_channels_never_guess() -> None:
             "label": "asha@tessel.example",
             "direct": True,
             "source_host": "tessel.example",
+            "basis": "found",
         }
     ]
 
@@ -751,6 +753,7 @@ def test_x_and_github_channels_are_stored_profiles_only() -> None:
             "label": "X",
             "direct": True,
             "source_host": None,
+            "basis": None,
         }
     ]
     [github] = _by_channel(channels, "github")

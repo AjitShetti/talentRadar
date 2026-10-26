@@ -165,7 +165,9 @@ async def _store_item(session: AsyncSession, item: FeedItem, stats: dict[str, in
             PersonCandidate(name=n, kind="founder", source_url=item.url, source_kind="news")
             for n in names
         ]
-        stats["people"] += await upsert_people(session, company.id, people)
+        stats["people"] += await upsert_people(
+            session, company.id, people, company_domain=company.domain
+        )
     await session.flush()
 
 

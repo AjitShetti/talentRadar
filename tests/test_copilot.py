@@ -715,6 +715,23 @@ async def test_outreach_contributes_a_count_to_the_model_and_nothing_else(
     assert seen["context"]["open_items"] == []
 
 
+async def test_copilot_model_facts_include_pack_counts_not_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cards = [
+        _card(card_id="outreach_pack:2026-10-15", kind="outreach_pack",
+              title="secret-title", detail="secret-detail",
+              meta={"companies": 4, "messages_ready": 3}),
+    ]
+
+    seen = await _capture_model_context(monkeypatch, cards)
+
+    assert seen["context"]["outreach_pack_companies"] == 4
+    assert seen["context"]["outreach_pack_messages_ready"] == 3
+    assert "secret" not in json.dumps(seen, default=str)
+    assert seen["context"]["open_items"] == []
+
+
 async def test_a_kind_nobody_has_cleared_stays_out_of_the_prompt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -315,6 +315,7 @@ class _JobPruneSession:
         counts = {
             "DELETE FROM events": 4,
             "DELETE FROM outreach_threads": 2,
+            "DELETE FROM outreach_packs": 1,
             "DELETE FROM company_news": 3,
             "DELETE FROM jobs": 5,
         }
@@ -392,6 +393,7 @@ async def test_a_failed_outreach_prune_does_not_stop_the_event_prune(
 
     assert summary["ran"] is True
     assert summary["deleted_outreach_threads"] == 0
+    assert summary["deleted_outreach_packs"] == 1
     assert summary["deleted_events"] == 4
     assert summary["deleted_news"] == 3
     assert fake.rollbacks == 1

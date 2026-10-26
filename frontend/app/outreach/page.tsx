@@ -12,6 +12,7 @@ import MetPersonImport from '@/components/outreach/MetPersonImport'
 import SuggestionList from '@/components/outreach/SuggestionList'
 import ThreadDrawer from '@/components/outreach/ThreadDrawer'
 import ThreadList from '@/components/outreach/ThreadList'
+import TodayPack from '@/components/outreach/TodayPack'
 import { track } from '@/lib/analytics'
 import { api, DueItem, OutreachChannelName, OutreachHome, OutreachSource, Suggestion, Suggestions } from '@/lib/api'
 import { NEXT_STEP_DONE, parseThreadTarget, threadHref, ThreadTarget } from '@/lib/outreach'
@@ -208,6 +209,8 @@ function OutreachBoard() {
     {error && <p className="form-error" role="alert">{error}</p>}
 
     {addMet && <MetPersonImport key={addMet} reference={addMet} onDone={finishAddMet} onCancel={closeThread} />}
+
+    <TodayPack onChanged={() => { void loadHome() }} />
 
     <div className="or-layout">
       <div>
