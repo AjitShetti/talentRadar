@@ -65,7 +65,13 @@ from services.llm import _chat
 from services.llm_budget import claim, claim_user_draft, user_drafts_left
 from services.outreach.errors import Conflict, Invalid
 from services.outreach.oss import snapshot_for
-from services.outreach.people import _find_person, _label, _visible_contacts, channels_for
+from services.outreach.people import (
+    _find_person,
+    _label,
+    _visible_contacts,
+    address_format_from,
+    channels_for,
+)
 from services.outreach.suggest import _funding_rounds
 from services.outreach.threads import load_owned_thread, person_clock
 from services.referral import (
@@ -312,7 +318,9 @@ def build_prompt(ctx: DraftContext) -> tuple[str, str]:
         ("Current role", _flat(ctx.current_role, _PERSON_CHARS)),
     )
     sections.append(f"PROFILE\n{profile or 'Not given.'}")
-    sections.append(_fenced("RESUME", _flat(ctx.resume_text, _RESUME_CHARS) or "No resume on file."))
+    sections.append(
+        _fenced("RESUME", _flat(ctx.resume_text, _RESUME_CHARS) or "No resume on file.")
+    )
 
     return _system_prompt(ctx), "\n\n".join(sections)
 
@@ -378,9 +386,7 @@ async def _posting(session: AsyncSession, thread: OutreachThread) -> dict[str, A
 def _earlier_message(thread: OutreachThread, person_id: uuid.UUID) -> str | None:
     """The newest copy this person was sent that the user chose to keep."""
     kept = [
-        t
-        for t in thread.touches
-        if t.person_id == person_id and t.direction == "out" and t.body
+        t for t in thread.touches if t.person_id == person_id and t.direction == "out" and t.body
     ]
     if not kept:
         return None
@@ -438,8 +444,16 @@ async def _gather(
                 else await _visible_contacts(session, thread.company_id, thread.user_id)
             )
             contact = next((c for c in contacts if c.id == person.contact_id), None)
+            stored_company = (
+                None if thread.company_id is None else await session.get(Company, thread.company_id)
+            )
+            company_domain = None if stored_company is None else stored_company.domain
             channels = channels_for(
-                contact=contact, person=person, company_name=thread.company_name
+                contact=contact,
+                person=person,
+                company_name=thread.company_name,
+                address_format=address_format_from(contacts, company_domain),
+                company_domain=company_domain,
             )
             if fmt not in formats_for_channels(c["channel"] for c in channels):
                 raise Invalid(
