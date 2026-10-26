@@ -206,7 +206,7 @@ function OutreachBoard() {
       <div className="tracker-total"><strong><FlapText value={home?.conversations_started ?? 0} /></strong><span>conversations started</span></div>
     </section>
 
-    {error && <p className="form-error">{error}</p>}
+    {error && <p className="form-error" role="alert">{error}</p>}
 
     {addMet && <MetPersonImport key={addMet} reference={addMet} onDone={finishAddMet} onCancel={closeThread} />}
 

@@ -125,7 +125,7 @@ export default function SettingsPage() {
       {dirty && !saving && <p className="muted-copy">You have unsaved changes.</p>}
       {error && <p className="form-error">{error}</p>}
       {message && <p className="success-message">{message}</p>}
-      <button className="primary-button" disabled={saving}>{saving ? 'Saving…' : 'Save profile'}</button>
+      <button type="submit" className="primary-button" disabled={saving}>{saving ? 'Saving…' : 'Save profile'}</button>
     </form>
 
     <section className="card-form resume-goals-card">
@@ -138,7 +138,7 @@ export default function SettingsPage() {
           <UploadCloud size={14} />
           {extracting ? 'Reading file…' : resumeName ? 'Replace resume' : 'Upload PDF or DOCX'}
         </label>
-        <input id="profile-resume" type="file" accept=".pdf,.docx,.txt" hidden onChange={handleResume} />
+        <input id="profile-resume" type="file" accept=".pdf,.docx,.txt" className="file-input" onChange={handleResume} />
         {!resumeName && !extracting && <small className="upload-hint">PDF, DOCX or TXT · saved to your account</small>}
       </div>
       {resumeError && <p className="form-error">{resumeError}</p>}

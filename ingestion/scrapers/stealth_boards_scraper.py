@@ -136,8 +136,6 @@ class StealthBoardsScraper:
                 # Extract tags / skills
                 tag_items = container.find_all("li", class_=re.compile(r"tags-gt|tag", re.I))
                 extracted_tags = [t.get_text(strip=True) for t in tag_items if t.get_text(strip=True)]
-                if not extracted_tags and query:
-                    extracted_tags = [s for s in query.split() if len(s) > 2]
 
                 country, city, remote_flag = normalize_location(loc_text)
 
@@ -258,7 +256,7 @@ class StealthBoardsScraper:
                 country=country,
                 city=city,
                 is_remote=remote_flag or bool(is_remote),
-                skills=[s for s in query.split() if len(s) > 2] if query else [],
+                skills=[],
                 tags=["indeed", "india"],
                 posted_at=datetime.now(UTC),
                 created_at=datetime.now(UTC),
@@ -326,7 +324,7 @@ class StealthBoardsScraper:
                 country=country,
                 city=city,
                 is_remote=remote_flag or bool(is_remote),
-                skills=[s for s in query.split() if len(s) > 2] if query else [],
+                skills=[],
                 tags=["instahyre", "india", "startup"],
                 posted_at=datetime.now(UTC),
                 created_at=datetime.now(UTC),

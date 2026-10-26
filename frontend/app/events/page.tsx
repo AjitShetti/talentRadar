@@ -385,7 +385,6 @@ function EventsView() {
 /** What the system holds, and when each source was last read. A source that is down says so; the rest still list. */
 function Ledger({ counts, sources, now }: { counts: EventPage['counts']; sources: EventPage['sources']; now: number }) {
   return <p className="ev-ledger" aria-label="What we hold">
-    <span><b>{counts.upcoming}</b> upcoming</span>
     <span><b>{counts.this_week}</b> this week</span>
     <span data-live={counts.going > 0 ? '' : undefined}><b>{counts.going}</b> you&apos;re going to</span>
     {sources.map(source => {
@@ -606,7 +605,7 @@ function EventRow({ event, now, selected, onToggleSave }: {
 }) {
   const start = ist(startMs(event))
   const duration = durationLabel(event)
-  const place = event.is_online ? 'Online' : event.area
+  const place = event.is_online ? 'Online' : event.area || event.venue_name
   const meta = [event.organiser_name, place].filter(Boolean).join(' · ')
   const saved = event.my_status !== null
   const format = event.format && event.format !== 'other' ? FORMAT_LABELS[event.format] : null
@@ -618,7 +617,7 @@ function EventRow({ event, now, selected, onToggleSave }: {
     <span className="ev-time">{clock(start)}{duration && <small>{duration}</small>}</span>
     <Link className="ev-main" href={`/events?event=${encodeURIComponent(event.id)}`} scroll={false} aria-current={selected ? 'true' : undefined}>
       <span className="ev-title">{event.title}</span>
-      <span className="ev-meta">{meta}{event.my_status === 'going' && `${meta ? ' · ' : ''}you're going`}</span>
+      <span className="ev-meta">{meta}{event.my_status === 'going' && (meta ? " · you're going" : "You're going")}</span>
     </Link>
     <span className="ev-codes">
       {event.is_cancelled && <span className="ev-code is-cancelled">Cancelled</span>}
@@ -760,11 +759,11 @@ function EventDrawer({ eventId, fallback, now, closeOnEscape, onClose, onStatus,
     </header>
 
     <div className="ci-drawer-body" ref={bodyRef}>
-      {error && <p className="form-error" style={{ marginTop: 18 }}>{error}</p>}
+      {error && <p className="form-error" role="alert" style={{ marginTop: 18 }}>{error}</p>}
       {!detail && !error && <div className="cm-drawer-loading" aria-busy="true"><Loader2 size={16} className="spin" />Loading…</div>}
       {detail && <>
         <Actions detail={detail} started={started} onChange={patch} onStatus={onStatus} onDeleted={onDeleted} />
-        <WhySection reasons={detail.reasons} />
+        {detail.source !== 'user' && <WhySection reasons={detail.reasons} />}
         <HostsSection detail={detail} />
         <AboutSection detail={detail} />
         <AlsoOnSection detail={detail} />

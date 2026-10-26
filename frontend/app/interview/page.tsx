@@ -5,6 +5,7 @@ import {
   ArrowRight, BarChart3, Blocks, BookOpen, Clock3, Code2, CornerDownRight, Keyboard, Loader2, Mic, Play,
   RefreshCw, Send, SkipForward, StopCircle, Users, Volume2,
 } from 'lucide-react'
+import Link from 'next/link'
 import AppShell from '@/components/AppShell'
 import PrepTabs from '@/components/PrepTabs'
 import FlapText from '@/components/FlapText'
@@ -425,8 +426,8 @@ export default function InterviewPage() {
     <PrepTabs />
     <section className="page-heading">
       <div>
-        <span className="board-kicker">LangGraph interview lab</span>
-        <h1>Practice the conversation before it counts<span>.</span></h1>
+        <span className="board-kicker">Mock interviews</span>
+        <h1>Practise the conversation before it counts<span>.</span></h1>
         <p>Pick any subject. Your interviewer asks, listens, probes the weak spots, and tells you what to sharpen.</p>
       </div>
       {history.length > 0 && <div className="tracker-total"><strong><FlapText value={history.length} /></strong><span>sessions logged</span></div>}
@@ -437,7 +438,7 @@ export default function InterviewPage() {
 
     {role && <p className="prep-role">
       <span className="prep-role-label">Preparing for</span>
-      <a href={`/roles/${encodeURIComponent(role.id)}`}>{role.title || 'this role'}{role.company ? ` at ${role.company}` : ''}</a>
+      <Link href={`/roles/${encodeURIComponent(role.id)}`}>{role.title || 'this role'}{role.company ? ` at ${role.company}` : ''}</Link>
       {!active && <button type="button" className="text-button" onClick={() => setRole(null)}>Practise without a role</button>}
     </p>}
 
@@ -482,10 +483,12 @@ export default function InterviewPage() {
         >{label}</button>)}
       </div>
 
-      <div className="mode-picker">
+      <div className="mode-picker" role="radiogroup" aria-label="Interview format">
         <button
           type="button"
           className={mode === 'voice' ? 'mode-card selected' : 'mode-card'}
+          role="radio"
+          aria-checked={mode === 'voice' && voiceReady}
           onClick={() => setMode('voice')}
           disabled={!voiceReady}
         >
@@ -498,6 +501,8 @@ export default function InterviewPage() {
         <button
           type="button"
           className={mode === 'text' || !voiceReady ? 'mode-card selected' : 'mode-card'}
+          role="radio"
+          aria-checked={mode === 'text' || !voiceReady}
           onClick={() => setMode('text')}
         >
           <Keyboard size={17} />
@@ -559,11 +564,12 @@ export default function InterviewPage() {
 
         {(!liveVoice || shownStage === 'typing') && <form onSubmit={submitTyped} className="answer-form">
           <textarea
+            aria-label="Your answer"
             value={answer}
             onChange={event => setAnswer(event.target.value)}
             placeholder="Think out loud. Explain your approach, decisions, and trade-offs…"
           />
-          <button className="primary-button" disabled={loading || busy}>
+          <button type="submit" className="primary-button" disabled={loading || busy || !answer.trim()}>
             {loading || busy ? 'Evaluating…' : <>Submit answer <Send size={15} /></>}
           </button>
         </form>}

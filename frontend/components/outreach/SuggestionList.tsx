@@ -41,7 +41,7 @@ export default function SuggestionList({ data, focusId, onAdd, onDismiss }: Prop
 
   return <>
     {!data.profile_complete &&
-      <p className="or-hint"><Link href="/onboarding">Add a target role and your skills to rank these by who is hiring for you &rarr;</Link></p>}
+      <p className="or-hint"><Link href="/settings">Add a target role and your skills to rank these by who is hiring for you &rarr;</Link></p>}
 
     {!data.suggestions.length
       ? <div className="empty-state"><p>Nothing to suggest yet. The company map is still filling in &mdash; add a company by name.</p></div>

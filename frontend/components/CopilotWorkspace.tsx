@@ -195,7 +195,7 @@ export default function CopilotWorkspace({ acceptUrlQuestion = false }: { accept
   }
 
   return <>
-    {error && <p className="form-error">{error}</p>}
+    {error && <p className="form-error" role="alert">{error}</p>}
 
     <div className="cp-layout">
       <div className="cp-main">
@@ -227,7 +227,7 @@ export default function CopilotWorkspace({ acceptUrlQuestion = false }: { accept
             <input
               value={draft}
               onChange={event => setDraft(event.target.value)}
-              placeholder="Ask about your search, your applications, or a company…"
+              placeholder="Ask about roles, applications or a company…"
               aria-label="Message your career copilot"
             />
             <button className="primary-button" type="submit" disabled={thinking || !draft.trim()}>
@@ -251,7 +251,7 @@ export default function CopilotWorkspace({ acceptUrlQuestion = false }: { accept
                   <strong>{memory.memory_type.replace(/_/g, ' ')}</strong>
                   <p>{memory.content}</p>
                 </div>
-                <button className="icon-refresh" title="Forget this" onClick={() => forget(memory.id)}>
+                <button type="button" className="icon-refresh" title="Forget this" aria-label={`Forget: ${memory.content}`} onClick={() => forget(memory.id)}>
                   <Trash2 size={13}/>
                 </button>
               </div>)}</div>
@@ -263,7 +263,7 @@ export default function CopilotWorkspace({ acceptUrlQuestion = false }: { accept
               placeholder="Teach it something — “I want to stay in Pune”"
               aria-label="Teach your copilot"
             />
-            <button className="icon-refresh" type="submit" title="Save"><Plus size={15}/></button>
+            <button className="icon-refresh" type="submit" title="Save" aria-label="Save to your copilot's memory" disabled={!newMemory.trim()}><Plus size={15}/></button>
           </form>
         </section>
 

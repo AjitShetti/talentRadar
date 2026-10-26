@@ -298,7 +298,7 @@ async def discover_founders(company_id: str) -> dict[str, Any]:
         "available": True,
         "people": [asdict(p) for p in founders],
         "message": (
-            f"Found {len(founders)} public founder profile(s)."
+            f"Found {len(founders)} public founder profile{'' if len(founders) == 1 else 's'}."
             if founders
             else f"No public LinkedIn profile names a founder of {name}."
         ),

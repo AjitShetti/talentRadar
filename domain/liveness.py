@@ -117,6 +117,12 @@ def _ago(delta: timedelta) -> str:
     return f"{days} day{'s' if days != 1 else ''} ago"
 
 
+def _days_ago(days: int | None) -> str:
+    if not days:
+        return "today"
+    return f"{days} day{'s' if days != 1 else ''} ago"
+
+
 def _day(value: datetime) -> str:
     return f"{value.day} {value.strftime('%b %Y')}"
 
@@ -200,11 +206,11 @@ def assess(e: LivenessEvidence, *, now: datetime) -> LivenessVerdict:
     if closed:
         lines.append(f"The employer's careers site stopped listing it on {_day(closed)}")
     if posted:
-        lines.append(f"First published {_day(posted)} - {open_days} days ago")
+        lines.append(f"First published {_day(posted)} - {_days_ago(open_days)}")
     elif first_seen:
         lines.append(
             f"The source gives no publish date; we first saw it {_day(first_seen)} "
-            f"- {open_days} days ago"
+            f"- {_days_ago(open_days)}"
         )
     if e.times_reposted:
         times = "once" if e.times_reposted == 1 else f"{e.times_reposted} times"

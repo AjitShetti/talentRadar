@@ -223,7 +223,7 @@ async def recommend_next_action(
     elif saved > 0:
         action = "apply_saved"
         title = "Apply to your saved jobs"
-        detail = f"You have {saved} saved job(s). Tailor a resume and apply to move them forward."
+        detail = f"You have {saved} saved job{'' if saved == 1 else 's'}. Tailor a resume and apply to move them forward."
         href = "/applications"
     elif applied > 0 and interviews == 0:
         action = "prepare_interview"

@@ -239,19 +239,19 @@
 .lp-mock-kind.tone-good{color:var(--success-dark)}
 .lp-mock-head{font:600 13px var(--font-text);color:var(--ink)}
 .lp-mock-sub{margin:5px 0 0;font-size:12px;line-height:1.6;color:var(--muted)}
-.lp-mock-time{font:400 10px var(--font-label);color:var(--faint);flex-shrink:0;margin-top:5px}
+.lp-mock-time{font:400 11px var(--font-label);color:var(--faint);flex-shrink:0;margin-top:5px}
 
 /* Small mocks used inside the feature bento cells */
 .lp-mini{padding:16px;display:flex;flex-direction:column;gap:10px}
 .lp-mini-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line-soft)}
 .lp-mini-row:first-child{border-top:0}
-.lp-mini-mark{width:26px;height:26px;border-radius:10px;display:grid;place-items:center;flex-shrink:0;background:var(--surface-3);color:var(--ink-2);font:700 10px var(--font-label)}
+.lp-mini-mark{width:26px;height:26px;border-radius:10px;display:grid;place-items:center;flex-shrink:0;background:var(--surface-3);color:var(--ink-2);font:700 11px var(--font-label)}
 .lp-mini-main{min-width:0;flex:1}
 .lp-mini-main strong{display:block;font:600 12px var(--font-text);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lp-mini-main span{display:block;font-size:11px;color:var(--faint);margin-top:2px}
 .lp-mini-pill{
   flex-shrink:0;padding:4px 9px;border-radius:999px;
-  font:400 10px var(--font-label);font-variant-numeric:tabular-nums;
+  font:400 11px var(--font-label);font-variant-numeric:tabular-nums;
   background:var(--accent-soft);color:var(--accent-light);border:1px solid var(--accent-border);
 }
 .lp-mini-pill.tone-good{background:var(--success-soft);color:var(--success-dark);border-color:var(--success-border)}
@@ -363,6 +363,7 @@
 .lp-footer-inner{display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap}
 .lp-footer-links{display:flex;gap:26px;flex-wrap:wrap}
 .lp-footer-links a{font-size:12px;color:var(--muted);transition:color .45s var(--ease)}
+@media(max-width:700px){.lp-footer-links{gap:4px 20px}.lp-footer-links a{display:inline-block;padding:10px 0}}
 .lp-footer-links a:hover{color:var(--accent)}
 
 /* ── Responsive: aggressive single-column collapse below 768px ───────────── */

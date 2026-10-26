@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { BriefcaseBusiness, ChevronDown, Dumbbell, FileText, Handshake, LogOut, Map as MapIcon, MessageSquare, Search, Trophy, UserRound, type LucideIcon } from 'lucide-react'
-import { api, currentEmail, signOut } from '@/lib/api'
+import { api, currentEmail, PROFILE_NAME_EVENT, signOut } from '@/lib/api'
 
 type NavLink = { label: string; href: string; icon: LucideIcon; blurb: string }
 type NavEntry = { label: string; short?: string; href: string; items?: undefined } | { label: string; short?: string; href?: undefined; items: NavLink[] }
@@ -249,6 +249,17 @@ function UserMenu({ email, open, setOpen }: { email: string; open: boolean; setO
       setName(full)
       try { localStorage.setItem(nameKey(email), full) } catch { /* storage blocked */ }
     }).catch(() => {})
+  }, [email])
+
+  // A name saved in Settings or onboarding replaces the cached one.
+  useEffect(() => {
+    const onName = (e: Event) => {
+      const next = (e as CustomEvent<string>).detail || null
+      setName(next)
+      try { if (next) localStorage.setItem(nameKey(email), next); else localStorage.removeItem(nameKey(email)) } catch { /* storage blocked */ }
+    }
+    window.addEventListener(PROFILE_NAME_EVENT, onName)
+    return () => window.removeEventListener(PROFILE_NAME_EVENT, onName)
   }, [email])
 
   useEffect(() => {

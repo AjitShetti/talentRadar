@@ -1,6 +1,7 @@
 'use client'
 
 import { ChangeEvent, FormEvent, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, ArrowRight, BriefcaseBusiness, Check, Compass, Dumbbell, UploadCloud } from 'lucide-react'
 import RequireAuth from '@/components/RequireAuth'
@@ -52,6 +53,15 @@ export default function OnboardingPage() {
     goal !== '',
     role.trim() !== '',
   ]
+  // A greyed-out Continue does not say what is missing; this does, once they try.
+  function missing(): string {
+    if (step === 0) {
+      if (name.trim() === '') return 'Tell us what to call you.'
+      return 'Add your years of experience (0 to 60).'
+    }
+    if (step === 1) return 'Pick what brings you here.'
+    return 'Add the role you are aiming for.'
+  }
 
   // The upload saves straight to the account, so it stands on its own rather
   // than riding on the form submit — and skipping it never blocks onboarding.
@@ -72,7 +82,8 @@ export default function OnboardingPage() {
 
   async function submit(e: FormEvent) {
     e.preventDefault()
-    if (step < STEPS.length - 1) { if (canNext[step]) { setError(''); setStep(step + 1) } return }
+    if (!canNext[step]) { setError(missing()); return }
+    if (step < STEPS.length - 1) { setError(''); setStep(step + 1); return }
     if (!canNext.every(Boolean)) return
     const chosen = GOALS.find(g => g.value === goal) ?? GOALS[2]
     setSaving(true)
@@ -148,11 +159,11 @@ export default function OnboardingPage() {
             <h1>{goal === 'prepare' ? 'What are you preparing for?' : 'What are you looking for?'}</h1>
             <p className="onb-lead">This sets your searches, your daily question and the gaps we point out.</p>
             <label className="onb-field">Target role<input autoFocus value={role} onChange={e => setRole(e.target.value)} placeholder="e.g. Frontend engineer" /></label>
-            <label className="onb-field">Preferred city <small>Optional</small>
+            <label className="onb-field"><span>Preferred city <small>Optional</small></span>
               <input list="onb-cities" value={location} onChange={e => setLocation(e.target.value)} placeholder="Bengaluru, or Remote" />
               <datalist id="onb-cities">{INDIAN_CITIES.map(city => <option key={city} value={city} />)}</datalist>
             </label>
-            <label className="onb-field">Core skills <small>Separate with commas</small><input value={skills} onChange={e => setSkills(e.target.value)} placeholder="React, TypeScript, System design" /></label>
+            <label className="onb-field"><span>Core skills <small>Separate with commas</small></span><input value={skills} onChange={e => setSkills(e.target.value)} placeholder="React, TypeScript, System design" /></label>
             <div className="onb-field">
               <span>Your resume <small>Optional · we read it against your target role</small></span>
               <div className="onb-upload">
@@ -160,19 +171,19 @@ export default function OnboardingPage() {
                   {resumeName ? <Check size={15} /> : <UploadCloud size={15} />}
                   {extracting ? 'Reading file…' : resumeName ? resumeName : 'Upload PDF or DOCX'}
                 </label>
-                <input id="onboarding-resume" type="file" accept=".pdf,.docx,.txt" hidden onChange={handleResume} />
+                <input id="onboarding-resume" type="file" accept=".pdf,.docx,.txt" className="file-input" onChange={handleResume} />
               </div>
-              {resumeError && <p className="form-error">{resumeError}</p>}
+              {resumeError && <p className="form-error" role="alert">{resumeError}</p>}
             </div>
           </>}
         </div>
 
-        {error && <p className="form-error">{error}</p>}
+        {error && <p className="form-error" role="alert">{error}</p>}
         <div className="onb-actions">
           {step > 0
-            ? <button type="button" className="outline-button" onClick={() => setStep(step - 1)}><ArrowLeft size={15} /> Back</button>
-            : <span />}
-          <button className="primary-button" disabled={!canNext[step] || saving}>
+            ? <button type="button" className="outline-button" onClick={() => { setError(''); setStep(step - 1) }}><ArrowLeft size={15} /> Back</button>
+            : <Link className="text-button onb-skip" href="/dashboard">Skip for now</Link>}
+          <button type="submit" className="primary-button" disabled={saving} aria-disabled={!canNext[step] || undefined}>
             {last ? (saving ? 'Setting up…' : 'Take me there') : 'Continue'} <ArrowRight size={15} />
           </button>
         </div>

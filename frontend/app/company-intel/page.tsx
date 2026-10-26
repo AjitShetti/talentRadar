@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { Fragment, FormEvent, ReactNode, RefObject, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import {
-  Briefcase, Building2, Calendar, CalendarDays, ChevronDown, ChevronUp, ExternalLink, Github, Globe, Info, Linkedin, List,
+  Briefcase, Building2, CalendarDays, ChevronDown, ChevronUp, ExternalLink, Github, Globe, Info, Linkedin, List,
   Loader2, Mail, Map as MapIcon, Newspaper, Plus, Search, SlidersHorizontal, Sparkles, Star, Trash2, Users, X,
 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
@@ -18,6 +18,7 @@ import {
 import { whenLabel } from '@/lib/event-time'
 import { usePersistentState } from '@/lib/persistent-state'
 import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
+import { seniorityLabel } from '@/lib/seniority'
 import { useDialog } from '@/lib/use-dialog'
 
 const CITY = 'Bengaluru'
@@ -47,7 +48,7 @@ const SECTORS: Record<string, string> = {
 }
 const SIZES: Record<string, string> = { '1-50': '1–50', '51-200': '51–200', '201-1000': '201–1,000', '1000+': '1,000+' }
 const SUMMARY_SOURCE: Record<SummarySource, string> = {
-  curated: 'curated', site: 'from their website', wikidata: 'from Wikidata', yc: 'from Y Combinator', github_org: 'from GitHub', llm: 'AI summary',
+  curated: 'from our catalogue', site: 'from their website', wikidata: 'from Wikidata', yc: 'from Y Combinator', github_org: 'from GitHub', llm: 'AI summary',
 }
 const PEOPLE_KINDS = new Set(['founder', 'leader', 'engineer'])
 
@@ -776,7 +777,7 @@ function CompanyRow({ company, selected, onPick }: { company: CompanyCard; selec
   const stageName = company.stage ? STAGES[company.stage] || company.stage : null
   const sectorName = company.sector ? SECTORS[company.sector] || company.sector : null
   // The row is a button, and a button cannot hold one, so "+ Outreach" is its sibling inside a wrapper.
-  return <div className="cm-row">
+  return <div className="cm-list-row">
     <button type="button" className={`ci-card ${selected ? 'selected' : ''}`} aria-pressed={selected} onClick={() => onPick(company.id)}>
       <div className="ci-card-head">
         <Logo company={company} />
@@ -960,7 +961,7 @@ function RolesSection({ detail }: { detail: CompanyDetail }) {
             <Link className="ci-job" href={`/roles/${encodeURIComponent(job.id)}`}>
               <strong>{job.title}</strong>
               <span>
-                {[job.location, job.is_remote ? 'Remote' : null, job.seniority, job.salary_raw]
+                {[job.location, job.is_remote ? 'Remote' : null, seniorityLabel(job.seniority), job.salary_raw]
                   .filter(Boolean).join(' · ') || 'Details on the posting'}
               </span>
             </Link>
@@ -968,7 +969,7 @@ function RolesSection({ detail }: { detail: CompanyDetail }) {
           </div>
         })}
     {detail.jobs.length > 0 && careers &&
-      <div className="ci-links"><ExtLink className="ci-link" href={careers}><Calendar size={13} />All roles on their careers page</ExtLink></div>}
+      <div className="ci-links"><ExtLink className="ci-link" href={careers}><ExternalLink size={13} />All roles on their careers page</ExtLink></div>}
   </section>
 }
 
@@ -1016,7 +1017,6 @@ function PeopleSection({ detail, onFounders }: { detail: CompanyDetail; onFounde
   }
 
   const bigger = Boolean(detail.is_bigger)
-  const headcount = detail.employee_count ? `${fmt(detail.employee_count)} people` : detail.employee_count_range
 
   const foundersBlock = <div key="founders">
     <div className="cm-sub"><span className="ci-stack-label">Founders</span>{founders.length > 0 && <em>{founders.length} on record</em>}</div>
@@ -1072,7 +1072,6 @@ function PeopleSection({ detail, onFounders }: { detail: CompanyDetail; onFounde
     <h3><Users size={13} />People</h3>
     {bigger
       ? <>
-          <div className="cm-sub"><span className="ci-stack-label">Headcount</span><em>{headcount || 'not on record'}</em></div>
           {leadersBlock}{linkedinBlock}{githubBlock}{foundersBlock}
         </>
       : <>{foundersBlock}{leadersBlock}{githubBlock}{linkedinBlock}</>}

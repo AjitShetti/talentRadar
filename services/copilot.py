@@ -121,6 +121,11 @@ _EVENT_ROWS = 200
 _EVENT_EVENING_HOUR = 17
 
 
+def _count(count: int, noun: str) -> str:
+    """"1 role", "3 roles": user-facing copy never says "role(s)"."""
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
 def _now() -> datetime:
     """The clock. A module-level function so a test can pin it."""
     return datetime.now(tz=UTC)
@@ -265,7 +270,7 @@ async def _application_cards(user_id: str) -> list[dict[str, Any]]:
             cards.append(_card(
                 card_id="saved_backlog",
                 kind="saved_backlog",
-                title=f"{len(stale_saved)} saved role(s) you never applied to",
+                title=f"{_count(len(stale_saved), 'saved role')} you never applied to",
                 detail=(
                     f"Oldest has been sitting for {oldest} days ({', '.join(names)}"
                     f"{'…' if len(stale_saved) > 3 else ''}). Postings close — "
@@ -569,7 +574,7 @@ async def _interview_card(user_id: str, applied: int) -> dict[str, Any] | None:
             kind="interview_momentum",
             title="You've applied, but never practised",
             detail=(
-                f"{applied} application(s) are in flight and you have no completed mock "
+                f"{_count(applied, 'application')} {'is' if applied == 1 else 'are'} in flight and you have no completed mock "
                 "interviews. One 15-minute session now beats cramming the night before."
             ),
             tone="action",
@@ -906,17 +911,29 @@ def _headline(cards: list[dict[str, Any]], context: dict[str, Any]) -> str:
         if c["kind"] == "scheduled_interview" and c["meta"].get("days_away") == 0
     ]
     if today:
-        return f"You have {len(today)} interview(s) today — everything else can wait."
+        return f"You have {_count(len(today), 'interview')} today — everything else can wait."
     urgent = sum(1 for c in cards if c["tone"] == "warning")
     if urgent:
-        return f"{urgent} thing(s) need chasing today."
+        return f"{_count(urgent, 'thing')} {'needs' if urgent == 1 else 'need'} chasing today."
     owed = _follow_ups_due(cards)
     if owed:
         return f"{owed} follow-up{'s' if owed != 1 else ''} due on Outreach."
+    total = int(context.get("total_applications", 0) or 0)
+    # A new account has nothing to go stale yet; "on top of things" would read as praise for
+    # an empty tracker while the card under it says to set up the profile.
+    starting = any(
+        c["kind"] == "priority" and c["meta"].get("action") in {"complete_onboarding", "discover_jobs"}
+        for c in cards
+    )
+    if total == 0 and starting:
+        return "No applications tracked yet. Here is where to start."
     if len(cards) <= 1:
         return "You're on top of things — nothing is going stale."
-    total = context.get("total_applications", 0)
-    return f"{len(cards)} things worth your attention across {total} application(s)."
+    # No count of "things" here: the Overview's Up next adds its own rows (a first mock, a
+    # practice question), so a number would contradict the list right under it.
+    if total == 0:
+        return "No applications tracked yet. Here is where to start."
+    return f"{_count(total, 'application')} in your tracker. Here is what needs you next."
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1036,7 +1053,7 @@ async def chat(
         await _remember_preferences(user_id, (response.metadata or {}).get("context", {}))
         if jobs:
             reply = _plain(response.summary or "") or (
-                f"I found {len(jobs)} role(s) worth a look. The closest match is "
+                f"I found {_count(len(jobs), 'role')} worth a look. The closest match is "
                 f"{jobs[0]['title']} at {jobs[0]['company']}."
             )
         else:

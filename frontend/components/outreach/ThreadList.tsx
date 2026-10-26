@@ -30,12 +30,13 @@ export default function ThreadList({ threads, onOpen }: Props) {
   const shown = tab === 'all' ? threads : threads.filter(t => t.stage === tab)
 
   return <>
-    <div className="status-tabs" role="group" aria-label="Filter threads by status">
+    {/* Five filters over nothing would only be noise until there is a thread. */}
+    {threads.length > 0 && <div className="status-tabs" role="group" aria-label="Filter threads by status">
       {STAGE_TABS.map(name =>
         <button type="button" key={name} className={tab === name ? 'selected' : ''} aria-pressed={tab === name} onClick={() => setTab(name)}>
           {tabLabel(name)}
         </button>)}
-    </div>
+    </div>}
 
     {!threads.length
       ? <div className="empty-state">

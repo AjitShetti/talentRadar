@@ -21,7 +21,9 @@ export default function BoardPeek() {
   return <section className="pr-section board-peek" aria-labelledby="board-peek-title">
     <div className="pr-section-head">
       <h2 id="board-peek-title">Top of the leaderboard</h2>
-      {board && <span>best 4 of the last {board.window_challenges} builds</span>}
+      {board && board.window_challenges > 0 && <span>{board.window_challenges === 1
+        ? 'from the last build'
+        : `best ${Math.min(4, board.window_challenges)} of the last ${board.window_challenges} builds`}</span>}
       <Link className="pr-section-link" href="/practice/leaderboard">See all <ArrowRight size={13} /></Link>
     </div>
     {!board

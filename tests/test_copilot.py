@@ -128,8 +128,10 @@ def test_headline_counts_only_application_items() -> None:
         _event("event_met_prompt", "action", "event_met:1"),
     ]
     assert _headline(cards, {"total_applications": 5}) == (
-        "2 things worth your attention across 5 application(s)."
+        "5 applications in your tracker. Here is what needs you next."
     )
+    # One application card among the events is "on top of things": the events do not count.
+    assert "on top of things" in _headline(cards[1:], {"total_applications": 5})
 
 
 def test_headline_chases_only_what_is_stale_when_events_are_also_warnings() -> None:
@@ -137,7 +139,14 @@ def test_headline_chases_only_what_is_stale_when_events_are_also_warnings() -> N
         _card(card_id="a", kind="stale_application", title="t", detail="d", tone="warning"),
         _event("event_today", "warning"),
     ]
-    assert _headline(cards, {"total_applications": 4}) == "1 thing(s) need chasing today."
+    assert _headline(cards, {"total_applications": 4}) == "1 thing needs chasing today."
+
+
+def test_headline_points_a_new_account_at_the_start() -> None:
+    setup = {"kind": "priority", "tone": "primary", "meta": {"action": "complete_onboarding"}}
+    assert _headline([setup], {"total_applications": 0}) == (
+        "No applications tracked yet. Here is where to start."
+    )
 
 
 def test_headline_with_only_event_cards_has_nothing_stale() -> None:
@@ -152,7 +161,7 @@ def test_headline_still_leads_with_an_interview_today_among_events() -> None:
     )
     cards = [_event("event_today", "warning"), interview]
     assert _headline(cards, {"total_applications": 1}) == (
-        "You have 1 interview(s) today — everything else can wait."
+        "You have 1 interview today — everything else can wait."
     )
 
 

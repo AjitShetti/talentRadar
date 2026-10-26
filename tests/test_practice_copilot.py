@@ -768,7 +768,7 @@ class TestBriefing:
 
         briefing = await build_briefing(user_id="u1")
 
-        assert "need chasing" in briefing["headline"]
+        assert "chasing today" in briefing["headline"]
 
     async def test_at_most_one_of_the_two_suggestions_is_ever_in_the_briefing(
         self, db: Db, asha: str, sources: dict[str, Any], monkeypatch: pytest.MonkeyPatch

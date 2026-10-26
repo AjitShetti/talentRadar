@@ -292,9 +292,11 @@ export default function ResumeStudioPage() {
     updateDoc(mapSection(sectionId, section => ({ ...section, title })))
   }
 
-  function removeSection(sectionId: string) {
+  function removeSection(section: ResumeSection) {
+    const hasContent = section.items.some(item => Object.values(item).some(v => (Array.isArray(v) ? v.some(Boolean) : Boolean(v))))
+    if (hasContent && !window.confirm(`Remove ${section.title || 'this section'} and everything in it?`)) return
     const current = docRef.current as ResumeDocument
-    updateDoc({ ...current, sections: current.sections.filter(s => s.id !== sectionId) })
+    updateDoc({ ...current, sections: current.sections.filter(s => s.id !== section.id) })
   }
 
   function moveSection(sectionId: string, dir: -1 | 1) {
@@ -418,9 +420,9 @@ export default function ResumeStudioPage() {
                 <label htmlFor="resume-import-file" className="outline-button upload-trigger">
                   <UploadCloud size={13} /> {importing ? 'Importing…' : 'Import resume'}
                 </label>
-                <input id="resume-import-file" type="file" accept=".pdf,.docx,.txt" hidden onChange={handleImport} disabled={importing} />
+                <input id="resume-import-file" type="file" accept=".pdf,.docx,.txt" className="file-input" onChange={handleImport} disabled={importing} />
               </div>
-              {importError && <p className="form-error" style={{ marginBottom: 10 }}>{importError}</p>}
+              {importError && <p className="form-error" role="alert" style={{ marginBottom: 10 }}>{importError}</p>}
 
               <div className="editor-section-card">
                 <div className="editor-section-head" onClick={() => setExpanded(expanded === 'personal' ? null : 'personal')}>
@@ -428,7 +430,11 @@ export default function ResumeStudioPage() {
                     <strong>Personal details</strong>
                     <span>Contact information</span>
                   </div>
-                  {expanded === 'personal' ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                  <button
+                    type="button" className="editor-icon-btn" aria-expanded={expanded === 'personal'}
+                    aria-label={expanded === 'personal' ? 'Collapse personal details' : 'Expand personal details'}
+                    onClick={e => { e.stopPropagation(); setExpanded(expanded === 'personal' ? null : 'personal') }}
+                  >{expanded === 'personal' ? <ChevronUp size={15} /> : <ChevronDown size={15} />}</button>
                 </div>
                 {expanded === 'personal' && (
                   <div className="editor-section-body">
@@ -442,8 +448,8 @@ export default function ResumeStudioPage() {
                     <div className="editor-bullets">
                       {doc.personal.links.map((link, i) => (
                         <div key={i} className="editor-bullet-row">
-                          <input placeholder="Label (e.g. GitHub)" value={link.label} onChange={e => updateLink(i, 'label', e.target.value)} />
-                          <input placeholder="URL" value={link.url} onChange={e => updateLink(i, 'url', e.target.value)} />
+                          <input aria-label={`Link ${i + 1} label`} placeholder="Label (e.g. GitHub)" value={link.label} onChange={e => updateLink(i, 'label', e.target.value)} />
+                          <input aria-label={`Link ${i + 1} URL`} placeholder="URL" value={link.url} onChange={e => updateLink(i, 'url', e.target.value)} />
                           <button type="button" className="editor-icon-btn" onClick={() => removeLink(i)} title="Remove link"><Trash2 size={13} /></button>
                         </div>
                       ))}
@@ -469,6 +475,7 @@ export default function ResumeStudioPage() {
                       </div>
                       <div className="editor-section-title">
                         <input
+                          aria-label="Section title"
                           value={section.title}
                           onChange={e => updateSectionTitle(section.id, e.target.value)}
                           onClick={e => e.stopPropagation()}
@@ -485,15 +492,20 @@ export default function ResumeStudioPage() {
                       </button>
                       <button
                         type="button" className="editor-icon-btn"
-                        onClick={e => { e.stopPropagation(); removeSection(section.id) }} title="Remove section"
+                        onClick={e => { e.stopPropagation(); removeSection(section) }} title="Remove section"
                       ><Trash2 size={14} /></button>
-                      {expanded === section.id ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                      <button
+                        type="button" className="editor-icon-btn" aria-expanded={expanded === section.id}
+                        aria-label={`${expanded === section.id ? 'Collapse' : 'Expand'} ${section.title || 'section'}`}
+                        onClick={e => { e.stopPropagation(); setExpanded(expanded === section.id ? null : section.id) }}
+                      >{expanded === section.id ? <ChevronUp size={15} /> : <ChevronDown size={15} />}</button>
                     </div>
 
                     {expanded === section.id && (
                       <div className="editor-section-body">
                         {section.type === 'summary' ? (
                           <textarea
+                            aria-label={section.title || 'Professional summary'}
                             value={section.items[0]?.text || ''}
                             onChange={e => updateItemField(section.id, 0, 'text', e.target.value)}
                             placeholder="A 2-3 sentence career pitch…"
@@ -523,7 +535,7 @@ export default function ResumeStudioPage() {
                                     <div className="editor-bullets">
                                       {((item[listKey] as string[]) || []).map((value, valueIndex) => (
                                         <div key={valueIndex} className="editor-bullet-row">
-                                          <input value={value} onChange={e => updateListValue(section.id, itemIndex, listKey, valueIndex, e.target.value)} />
+                                          <input aria-label={`${LIST_LABEL[section.type]} ${valueIndex + 1}`} value={value} onChange={e => updateListValue(section.id, itemIndex, listKey, valueIndex, e.target.value)} />
                                           <button
                                             type="button" className="editor-icon-btn"
                                             onClick={() => removeListValue(section.id, itemIndex, listKey, valueIndex)} title="Remove"
@@ -550,7 +562,7 @@ export default function ResumeStudioPage() {
               </div>
 
               <select
-                className="job-picker" style={{ marginTop: 12 }} defaultValue=""
+                className="job-picker" style={{ marginTop: 12 }} defaultValue="" aria-label="Add a section"
                 onChange={e => { if (e.target.value) { addSection(e.target.value as ResumeSectionType); e.target.value = '' } }}
               >
                 <option value="" disabled>+ Add a section…</option>
@@ -562,7 +574,11 @@ export default function ResumeStudioPage() {
               <div className="editor-section-card" style={{ marginTop: 12 }}>
                 <div className="editor-latex-toggle" onClick={() => setShowLatex(v => !v)}>
                   <span>LaTeX source</span>
-                  {showLatex ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                  <button
+                    type="button" className="editor-icon-btn" aria-expanded={showLatex}
+                    aria-label={showLatex ? 'Hide LaTeX source' : 'Show LaTeX source'}
+                    onClick={e => { e.stopPropagation(); setShowLatex(v => !v) }}
+                  >{showLatex ? <ChevronUp size={15} /> : <ChevronDown size={15} />}</button>
                 </div>
                 {showLatex && (
                   <div className="editor-latex-source">

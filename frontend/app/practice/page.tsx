@@ -264,7 +264,7 @@ export default function PracticePage() {
           </article>
           : <div className="empty-state"><h2>The question list is not loaded yet.</h2></div>)}
         {today && <div className="pr-links">
-          {today.track === 'general' && question && <Link href="/settings">Add a target role in Profile &amp; goals to tune picks ↗</Link>}
+          {today.track === 'general' && question && <Link href="/settings">Add a target role in Profile &amp; goals to tune picks →</Link>}
           {dailyHref && <a href={dailyHref} {...EXTERNAL_LINK_PROPS}>LeetCode&apos;s own daily is on their problem set ↗</a>}
           {contest?.show && <span>
             Weekly contest · {weekdayTime(contest.starts_at)} · <b>{contest.live || now >= contestStart ? `live now, ends in ${duration(contestEnd - now, true)}` : `starts in ${duration(contestStart - now, true)}`}</b>
@@ -296,8 +296,7 @@ export default function PracticePage() {
         <section className="pr-section">
           <div className="pr-section-head">
             <h2>This week&apos;s build</h2>
-            {current && <span>opens {weekdayTime(current.opens_at)} · closes {dayTime(current.closes_at)}</span>}
-            <Link className="pr-section-link" href="/practice/leaderboard">Leaderboard →</Link>
+            {current && <span>{now >= new Date(current.opens_at).getTime() ? 'opened' : 'opens'} {dayTime(current.opens_at)} · closes {dayTime(current.closes_at)}</span>}
           </div>
           {errors.overview && <p className="form-error" role="alert">{errors.overview}</p>}
           {overview && (current && currentState
@@ -337,7 +336,7 @@ export default function PracticePage() {
               <label className="toggle-row"><input type="checkbox" checked={contestReminder} onChange={e => { setContestReminder(e.target.checked); setSettingsSaved(false) }} /> Show the weekly contest reminder</label>
               {settingsError && <p className="form-error" role="alert">{settingsError}</p>}
               {settingsSaved && <p className="success-message">Saved.</p>}
-              <button className="primary-button" disabled={saving || !settings}>{saving ? 'Saving…' : 'Save settings'}</button>
+              <button type="submit" className="primary-button" disabled={saving || !settings}>{saving ? 'Saving…' : 'Save settings'}</button>
             </form>
           </details>
         </section>

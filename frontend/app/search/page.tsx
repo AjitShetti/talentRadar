@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { FormEvent, useEffect, useRef, useState } from 'react'
 import { Bookmark, ChevronDown, ExternalLink, Globe, MapPin, RefreshCw, Search, SlidersHorizontal } from 'lucide-react'
 import AppShell from '@/components/AppShell'
@@ -45,6 +46,7 @@ export default function SearchPage() {
   // the count is kept so the page can say so instead of silently showing fewer.
   const [showClosed, setShowClosed] = usePersistentState('search.showClosed', false)
   const [closedHidden, setClosedHidden] = usePersistentState('search.closedHidden', 0)
+  const queryRef = useRef<HTMLInputElement>(null)
 
   // Profile defaults are applied once, and only to filters the user has not set
   // themselves — a stored choice always wins over the profile.
@@ -140,8 +142,8 @@ export default function SearchPage() {
     </section>
     <form className="search-form" onSubmit={find}>
       <Search size={20}/>
-      <input value={query} onChange={e => setQuery(e.target.value)} placeholder="e.g. Senior product design roles in fintech" />
-      <button className="primary-button" disabled={loading}>{loading ? 'Searching…' : 'Search roles'}</button>
+      <input ref={queryRef} value={query} onChange={e => setQuery(e.target.value)} placeholder="e.g. Senior product design roles in fintech" aria-label="Describe the role you want" required />
+      <button type="submit" className="primary-button" disabled={loading}>{loading ? 'Searching…' : 'Search roles'}</button>
     </form>
     <div className="filter-bar">
       <span className="filter-bar-label"><SlidersHorizontal size={13}/> Filters</span>
@@ -160,14 +162,14 @@ export default function SearchPage() {
       <label className="check-label"><input type="checkbox" checked={showClosed} onChange={e => setShowClosed(e.target.checked)} /> Show closed roles</label>
       {hasFilters && <button type="button" className="text-button" onClick={clearFilters}>Clear filters</button>}
     </div>
-    {error && <p className="form-error">{error}</p>}
+    {error && <p className="form-error" role="alert">{error}</p>}
     {sourcing && <SourcingNote sourcing={sourcing} />}
     {closedHidden > 0 && <p className="sourcing-note"><span className="sourcing-dot indexed" /> {closedHidden} {closedHidden === 1 ? 'role was' : 'roles were'} left out because the employer no longer lists {closedHidden === 1 ? 'it' : 'them'}.</p>}
     <div className="results-layout">
       <aside className="search-tips">
         <div className="tips-head"><p className="eyebrow">Search better</p><button type="button" className="icon-refresh" title="Show different ideas" onClick={shuffleTips}><RefreshCw size={13}/></button></div>
         <strong>Try asking for:</strong>
-        {tips.map(tip => <button type="button" key={tip} onClick={() => setQuery(tip)}>{tip}</button>)}
+        {tips.map(tip => <button type="button" key={tip} onClick={() => { setQuery(tip); queryRef.current?.focus() }}>{tip}</button>)}
       </aside>
       <section className="job-results">
         {loading && <div className="loading-state search-loading">
@@ -185,7 +187,7 @@ export default function SearchPage() {
         {jobs.map(job => <article className="job-card" key={job.id}>
           <div className="job-card-top">
             <div className="company-logo violet">{(job.company_name || job.company || '?').slice(0, 1)}</div>
-            <div><h2>{isStoredRole(job.id) ? <a href={`/roles/${job.id}`}>{job.title}</a> : job.title}</h2><p>{job.company_name || job.company || 'Company not listed'}</p></div>
+            <div><h2>{isStoredRole(job.id) ? <Link href={`/roles/${job.id}`}>{job.title}</Link> : job.title}</h2><p>{job.company_name || job.company || 'Company not listed'}</p></div>
             {job.match_score != null && <span className="match-pill">{Math.round(job.match_score * (job.match_score <= 1 ? 100 : 1))}% match</span>}
           </div>
           <div className="job-meta">
@@ -197,8 +199,11 @@ export default function SearchPage() {
           <LivenessStamp liveness={job.liveness} />
           <div className="chips">{(job.skills || []).slice(0, 5).map(skill => <span key={skill}>{skill}</span>)}</div>
           <div className="job-actions">
-            {isStoredRole(job.id) && <a className="outline-button" href={`/roles/${job.id}`}>Open dossier</a>}
-            <button className="outline-button" onClick={() => save(job)} disabled={saved.includes(job.id)}><Bookmark size={14}/>{saved.includes(job.id) ? 'Saved' : 'Save to tracker'}</button>
+            {isStoredRole(job.id) && <Link className="outline-button" href={`/roles/${job.id}`}>Open dossier</Link>}
+            {/* The tracker needs the stored row; a role scraped a moment ago is still being written, and saving it answered "Invalid job_id". */}
+            {isStoredRole(job.id)
+              ? <button type="button" className="outline-button" onClick={() => save(job)} disabled={saved.includes(job.id)}><Bookmark size={14}/>{saved.includes(job.id) ? 'Saved' : 'Save to tracker'}</button>
+              : <span className="job-fresh-note">Just found · search again in a minute to save it</span>}
             {externalHref(job.source_url) && <a className="text-button" href={externalHref(job.source_url)!} {...EXTERNAL_LINK_PROPS}>View original <ExternalLink size={14}/></a>}
           </div>
         </article>)}

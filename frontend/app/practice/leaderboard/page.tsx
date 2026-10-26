@@ -57,6 +57,12 @@ function Rows({ lines, me }: { lines: Line[]; me: Line | null }) {
   </div>
 }
 
+/** "Each person's best four builds from the last 12", said correctly when fewer builds have run. */
+function windowLine(builds: number) {
+  if (builds <= 1) return "Each person's build from the last week"
+  return `Each person's best ${builds < 4 ? builds : 'four'} builds from the last ${builds}`
+}
+
 export default function LeaderboardPage() {
   return <RequireAuth><AppShell><PrepTabs /><LeaderboardView /></AppShell></RequireAuth>
 }
@@ -109,8 +115,8 @@ function LeaderboardView() {
         <span className="board-kicker">Practice · leaderboard</span>
         <h1>Who built it best<span>.</span></h1>
         <p>{tab === 'overall'
-          ? `Each person's best four builds from the last ${overall?.window_challenges ?? 12} · judged on process first`
-          : `${title ? `${title} · ` : ''}Judged on process first`}</p>
+          ? `${windowLine(overall?.window_challenges ?? 12)} · judged on process first.`
+          : `${title ? `${title} · ` : ''}Judged on process first.`}</p>
       </div>
       <div className="tracker-total">
         <strong>{overall ? <FlapText value={overall.window_challenges} /> : board ? <FlapText value={board.total_entries} /> : '–'}</strong>
@@ -134,7 +140,7 @@ function LeaderboardView() {
     {waiting
       ? <div className="loading-state"><Loader2 className="spin" /> Loading the leaderboard…</div>
       : <>
-        {tab === 'week' && overview && !current && <div className="empty-state"><h2>No build is open right now.</h2><p>The next one opens on Friday at 18:00 IST. Pick a past build above to see its board.</p></div>}
+        {tab === 'week' && overview && !current && <div className="empty-state"><h2>No build is open right now.</h2><p>The next one opens on Friday at 18:00 IST.{overview.past.length > 0 && ' Pick a past build above to see its board.'}</p></div>}
 
         {board?.provisional && <p style={{ margin: '14px 0' }}>
           <span className="pr-pill">Provisional</span>{' '}
