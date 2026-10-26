@@ -25,6 +25,10 @@ class PersonCandidate:
     x_url: str | None = None
     github_url: str | None = None
     profile_url: str | None = None
+    #: An address the source printed for this person, and the page it was printed on.
+    #: Whether it is on the company's own domain is decided where it is stored.
+    email: str | None = None
+    email_source_url: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -54,6 +58,14 @@ class ImportedCompany:
 
 
 @dataclass(frozen=True, kw_only=True)
+class SiteEmail:
+    """A hiring inbox (``careers@``, ``jobs@``) a company printed on its own pages."""
+
+    address: str
+    source_url: str
+
+
+@dataclass(frozen=True)
 class SiteFacts:
     """What a company's own homepage (and one contact page) says."""
 
@@ -64,6 +76,7 @@ class SiteFacts:
     pincode: str | None
     people: tuple[PersonCandidate, ...] = ()
     links: tuple[str, ...] = ()
+    emails: tuple[SiteEmail, ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)

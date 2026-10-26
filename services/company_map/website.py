@@ -42,7 +42,8 @@ import httpx
 from bs4 import BeautifulSoup, Comment, Tag
 
 from domain.company_identity import normalize_domain
-from services.company_map.types import PersonCandidate, SiteFacts
+from domain.email_patterns import local_part_kind
+from services.company_map.types import PersonCandidate, SiteEmail, SiteFacts
 
 logger = logging.getLogger(__name__)
 
@@ -156,6 +157,10 @@ _ROLE = re.compile(r"\b(?:co-?\s?founder|founder|ceo|cto|chief)\b", re.IGNORECAS
 _FOUNDER = re.compile(r"\b(?:co-?\s?founder|founder)\b", re.IGNORECASE)
 # A card is small; anything bigger is a section that merely mentions a role.
 _CARD_TEXT_LIMIT = 300
+#: An address as printed: a ``mailto:`` target or plain text. ``name [at] host`` and
+#: other obfuscations are not undone; a printed address is read, never reconstructed.
+_EMAIL = re.compile(r"(?<![\w.+-])([a-z0-9][a-z0-9._%+-]{0,63}@[a-z0-9-]+(?:\.[a-z0-9-]+)+)", re.I)
+_EMAIL_MAX = 256
 _CARD_MAX_LEVELS = 5
 _NAME_SPLIT = re.compile(r"\s*[,|–—]\s*|\s+-\s+")
 _NOT_A_NAME = frozenset(
@@ -368,6 +373,34 @@ def _role_title(card: Tag) -> str | None:
     return min(roles, key=len) if roles else None
 
 
+def _emails_in(node: Tag) -> list[str]:
+    """Every address ``node`` prints, lowercase, first seen first: ``mailto:`` targets
+    (without their ``?subject=``) and addresses in the text."""
+    found: list[str] = []
+    candidates: list[str] = []
+    for anchor in node.find_all("a", href=True):
+        if isinstance(anchor, Tag):
+            href = _attr(anchor, "href").strip()
+            if href.lower().startswith("mailto:"):
+                candidates.append(href[len("mailto:") :].split("?", 1)[0])
+    candidates.extend(match.group(1) for match in _EMAIL.finditer(" ".join(node.stripped_strings)))
+    for candidate in candidates:
+        address = candidate.strip().rstrip(".").lower()
+        if len(address) <= _EMAIL_MAX and _EMAIL.fullmatch(address) and address not in found:
+            found.append(address)
+    return found
+
+
+def _site_emails(root: Tag, base_url: str) -> tuple[SiteEmail, ...]:
+    """The hiring inboxes a page prints. Role addresses (``hello@``) and people's own
+    addresses are not inboxes; a person's address is read from their card instead."""
+    return tuple(
+        SiteEmail(address=address, source_url=base_url)
+        for address in _emails_in(root)
+        if local_part_kind(address.split("@", 1)[0]) == "hiring"
+    )
+
+
 @dataclass
 class _Person:
     name: str
@@ -375,6 +408,7 @@ class _Person:
     title: str
     linkedin_url: str | None = None
     x_url: str | None = None
+    email: str | None = None
 
 
 def _people(root: Tag, base_url: str) -> tuple[PersonCandidate, ...]:
@@ -401,6 +435,15 @@ def _people(root: Tag, base_url: str) -> tuple[PersonCandidate, ...]:
             person.linkedin_url = url
         elif platform == "x" and person.x_url is None:
             person.x_url = url
+        if person.email is None:
+            person.email = next(
+                (
+                    address
+                    for address in _emails_in(card)
+                    if local_part_kind(address.split("@", 1)[0]) == "personal"
+                ),
+                None,
+            )
     return tuple(
         PersonCandidate(
             name=p.name,
@@ -410,6 +453,8 @@ def _people(root: Tag, base_url: str) -> tuple[PersonCandidate, ...]:
             x_url=p.x_url,
             source_url=base_url,
             source_kind="site",
+            email=p.email,
+            email_source_url=base_url if p.email else None,
         )
         for p in found.values()
     )
@@ -451,6 +496,7 @@ def extract_site_facts(html: str, base_url: str) -> SiteFacts:
     address, pincode = _address(root)
     people = _people(root, base_url)
     links = _links(root, base_url)
+    emails = _site_emails(root, base_url)
 
     for tag in root.find_all(_MENU_TAGS):
         if isinstance(tag, Tag):
@@ -465,6 +511,7 @@ def extract_site_facts(html: str, base_url: str) -> SiteFacts:
         pincode=pincode,
         people=people,
         links=links,
+        emails=emails,
     )
 
 

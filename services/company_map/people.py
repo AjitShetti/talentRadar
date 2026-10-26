@@ -66,6 +66,8 @@ _PROFILE_TITLE = re.compile(
     re.IGNORECASE,
 )
 _FOUNDER_WORD = re.compile(r"\bfounder\b|\bco-?founder\b", re.IGNORECASE)
+#: A public profile email, as GitHub returns it: the user chose to publish it.
+_EMAIL = re.compile(r"[a-z0-9][a-z0-9._%+-]{0,63}@[a-z0-9-]+(?:\.[a-z0-9-]+)+")
 _NAME_SHAPE = re.compile(r"^[^\d@/|<>]{2,80}$")
 
 #: People kinds, strongest first. The same person seen as founder by one
@@ -119,6 +121,8 @@ def parse_github_user(payload: dict[str, Any]) -> PersonCandidate:
     html_url = str(payload.get("html_url") or f"https://github.com/{login}")
     name = str(payload.get("name") or "").strip() or login
     twitter = str(payload.get("twitter_username") or "").strip().lstrip("@")
+    email = str(payload.get("email") or "").strip().lower()
+    address = email if _EMAIL.fullmatch(email) else None
     return PersonCandidate(
         name=name,
         kind="engineer",
@@ -127,6 +131,8 @@ def parse_github_user(payload: dict[str, Any]) -> PersonCandidate:
         github_url=html_url,
         x_url=f"https://x.com/{twitter}" if twitter else None,
         profile_url=_http_url(payload.get("blog")),
+        email=address,
+        email_source_url=html_url if address else None,
     )
 
 
