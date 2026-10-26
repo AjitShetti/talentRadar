@@ -34,7 +34,32 @@ export const test = base.extend<{ account: Account; errors: string[] }>({
 
 export { expect }
 
-/** Navigate the way a user does — through the top nav, a client-side transition. */
+/** Pages that sit in a top-nav group menu, by the group's label. */
+const IN_GROUP: Record<string, string> = {
+  'Find roles': 'Job hunt', Applications: 'Job hunt', Outreach: 'Job hunt', Companies: 'Job hunt',
+  Practice: 'Prep', 'Mock interviews': 'Prep', Leaderboard: 'Prep',
+}
+/** Pages reached from the account menu. */
+const IN_ACCOUNT = ['Profile & goals', 'Resume studio']
+
+/** Navigate the way a user does — through the top nav or the account menu, a client-side transition. */
 export async function goTo(page: Page, label: string) {
+  if (IN_ACCOUNT.includes(label)) {
+    await page.locator('.user-trigger').click()
+    await page.getByRole('menuitem', { name: label }).click()
+    return
+  }
+  const group = IN_GROUP[label]
+  if (group) {
+    await page.locator('.topnav-links').getByRole('button', { name: group }).click()
+    await page.locator('.nav-menu[data-open="true"]').getByRole('link', { name: label }).click()
+    return
+  }
   await page.locator('.topnav-links').getByRole('link', { name: label }).click()
+}
+
+/** Sign out through the account menu. */
+export async function signOutViaMenu(page: Page) {
+  await page.locator('.user-trigger').click()
+  await page.getByRole('menuitem', { name: 'Sign out' }).click()
 }

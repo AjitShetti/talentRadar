@@ -2,19 +2,23 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowRight, ArrowUpRight, CheckCircle2, Mic, Search, Sparkles, SquareCheck, X } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, CheckCircle2, ChevronRight, Lightbulb, Sparkles, Target, TrendingDown, TrendingUp, X } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import BriefingFeed from '@/components/BriefingFeed'
 import CopilotWorkspace from '@/components/CopilotWorkspace'
 import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
-import { ActivityItem, AgendaItem, api, Briefing, BriefingCard, JobMatch, SkillsFocus } from '@/lib/api'
+import { Ring, ScoreBars, Segment, Sparkline, StackBar } from '@/components/overview/Charts'
+import { AgendaItem, api, Briefing, BriefingCard, JobMatch, OutreachHome, SkillsFocus } from '@/lib/api'
 import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 
 type Dimension = { key: string; label: string; score: number; weakest: boolean }
 type TrackStat = { track: string; label: string; score: number; sessions: number }
 type TrendPoint = { label: string; score: number; date: string | null; completed: boolean }
 type InterviewInsights = { sessions_analyzed: number; questions_analyzed: number; average_score: number; delta: number; abandoned: number; trend: TrendPoint[]; dimensions: Dimension[]; weakest_dimension: { key: string; label: string; score: number; hint: string } | null; tracks: TrackStat[]; weakest_track: TrackStat | null; focus: string[] }
+
+/** One stage of GET /dashboard/overview's `funnel`: how many applications sit at it now. */
+type FunnelStage = { stage: string; count: number; conversion_rate: number }
 
 /** What the last overnight sweep did — services/sweep.py::get_last_sweep(). */
 type Sweep = { finished_at: string | null; sources: string[]; boards: number; postings_read: number; postings_added: number }
@@ -260,10 +264,33 @@ function buildActions(
   return out.slice(0, 3)
 }
 
+/** Morning, afternoon or evening, by the user's own clock. */
+const greeting = () => {
+  const hour = new Date().getHours()
+  return hour < 5 ? 'Good evening' : hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
+}
+
+/** Application statuses as parts of the whole, in pipeline order. Anything else (screening, withdrawn) is "Other". */
+function pipeline(funnel: FunnelStage[], analytics: Record<string, number> | undefined): Segment[] {
+  const saved = funnel.find(stage => stage.stage === 'saved')?.count ?? 0
+  const parts: Segment[] = [
+    { key: 'saved', label: 'Saved', value: saved, color: '#636366' },
+    { key: 'applied', label: 'Applied', value: analytics?.applied ?? 0, color: 'var(--accent)' },
+    { key: 'oa', label: 'Assessment', value: analytics?.online_assessment ?? 0, color: 'var(--teal)' },
+    { key: 'interview', label: 'Interview', value: analytics?.interview ?? 0, color: 'var(--indigo)' },
+    { key: 'offer', label: 'Offer', value: analytics?.offers ?? 0, color: 'var(--success)' },
+    { key: 'rejected', label: 'Closed', value: analytics?.rejected ?? 0, color: 'var(--danger)' },
+  ]
+  const other = (analytics?.total_applications ?? 0) - parts.reduce((sum, part) => sum + part.value, 0)
+  if (other > 0) parts.push({ key: 'other', label: 'Other', value: other, color: '#48484A' })
+  return parts
+}
+
 export default function Dashboard() {
   const [data, setData] = useState<Record<string, unknown> | null>(null)
   const [briefing, setBriefing] = useState<Briefing | null>(null)
   const [briefingFailed, setBriefingFailed] = useState(false)
+  const [outreach, setOutreach] = useState<OutreachHome | null>(null)
   const [error, setError] = useState('')
   const [copilotOpen, setCopilotOpen] = useState(false)
 
@@ -279,6 +306,8 @@ export default function Dashboard() {
   useEffect(() => {
     api.dashboard().then(setData).catch(err => setError(err instanceof Error ? err.message : 'Dashboard data is unavailable.'))
     loadBriefing()
+    // Who the user is talking to comes from Outreach; without it that tile says so rather than showing zeros.
+    api.outreach.home().then(setOutreach).catch(() => setOutreach(null))
   }, [loadBriefing])
 
   async function dismiss(cardId: string, snoozeDays?: number) {
@@ -294,213 +323,206 @@ export default function Dashboard() {
 
   const profile = data?.profile as { full_name?: string; onboarding_completed?: boolean; target_roles?: string[] | null } | undefined
   const analytics = data?.analytics as Record<string, number> | undefined
+  const funnel = (data?.funnel as FunnelStage[] | undefined) || []
   const skillsFocus = data?.skills_focus as SkillsFocus | null | undefined
   const interviews = data?.interviews as InterviewInsights | null | undefined
   const jobMatches = data?.job_matches as JobMatch[] | null | undefined
   const sweep = data?.sweep as Sweep | null | undefined
   const agenda = (data?.agenda as AgendaItem[] | undefined) || []
-  const activity = (data?.recent_activity as ActivityItem[] | undefined) || []
   const stats = briefing?.stats
 
   const onboarded = Boolean(profile?.onboarding_completed)
   const applied = stats?.applied ?? 0
   const interviewsToday = agenda.filter(item => item.days_away === 0).length
-  const sessions = interviews?.sessions_analyzed ?? 0
   const actions = data ? buildActions(agenda, briefing, jobMatches, interviews, skillsFocus, applied, onboarded) : []
 
-  // Cards already promoted into Today's focus must not appear again below it.
+  // Cards already promoted into Up next must not appear again below it.
   const usedCardIds = new Set(actions.map(a => a.key.replace(/^briefing-/, '')).filter(k => k !== ''))
   const restBriefing = briefing ? { ...briefing, cards: briefing.cards.filter(c => !usedCardIds.has(c.id)) } : null
 
-  return <RequireAuth><AppShell bleed>
-    <div className="ov-page">
+  const first = profile?.full_name?.split(' ')[0]
+  const headline = interviewsToday > 0
+    ? `${interviewsToday} interview${interviewsToday === 1 ? '' : 's'} today. That is the whole plan.`
+    : briefing?.headline || 'Here is where things stand, and what to do next.'
 
-      {/* ── masthead: who, when, and the day's shape as data ───────────── */}
-      <header className="ov-band ov-masthead">
-        <div className="ov-inner">
-          <div className="ov-rise">
-            <h1>Good to see you{profile?.full_name ? `, ${profile.full_name.split(' ')[0]}` : ''}<span>.</span></h1>
-            <p className="ov-sub">
-              {interviewsToday > 0
-                ? `${interviewsToday} interview${interviewsToday === 1 ? '' : 's'} today — that is the whole plan.`
-                : briefing?.headline || 'You are on top of things — nothing is going stale.'}
-            </p>
-            {data && <div className="ov-readout">
-              <div data-live={interviewsToday > 0 ? 'true' : undefined}>
-                <b><FlapText value={interviewsToday} /></b><span>Interviews today</span>
-              </div>
-              <div><b><FlapText value={agenda.length} /></b><span>On the calendar</span></div>
-              <div><b><FlapText value={applied} /></b><span>In flight</span></div>
-              <div data-live={(jobMatches?.length ?? 0) > 0 ? 'true' : undefined}>
-                <b><FlapText value={jobMatches?.length ?? 0} /></b><span>Swept overnight</span>
-              </div>
-            </div>}
-          </div>
-          <div className="ov-stamp ov-rise" style={{ animationDelay: '90ms' }}>
-            <b>{new Date().toLocaleDateString(undefined, { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase()}</b>
-            {clock(new Date().toISOString())}
-            {sweep && <><br />Last sweep {sweepTime(sweep.finished_at)}</>}
-            {profile?.target_roles?.[0] && <><br />{profile.target_roles[0]}</>}
-          </div>
-        </div>
+  return <RequireAuth><AppShell>
+    <div className="ov2">
+      <header className="ov2-hero">
+        <p className="ov2-date">{new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+        <h1>{greeting()}{first ? `, ${first}` : ''}.</h1>
+        <p className="ov2-lead">{headline}</p>
       </header>
 
-      {error && <div className="ov-band"><div className="ov-inner"><p className="form-error">{error}</p></div></div>}
+      {error && <p className="form-error">{error}</p>}
 
-      {/* ── today's focus: the page's reason to exist ──────────────────── */}
-      <section className="ov-band ov-focus">
-        <div className="ov-inner">
-          <div className="ov-head">
-            <h2 className="ov-rise" style={{ animationDelay: '110ms' }}>Today&apos;s focus</h2>
-            <span className="ov-rule" style={{ animationDelay: '160ms' }} />
-            {actions.length > 0 && <span className="ov-note ov-rise" style={{ animationDelay: '220ms' }}>
-              {actions.length} item{actions.length === 1 ? '' : 's'} · in order
-            </span>}
-          </div>
-          {!data && !error
-            ? <div className="loading-state">Loading your day…</div>
-            : actions.length > 0
-              ? <FocusList actions={actions} />
-              : <div className="dayboard-clear"><CheckCircle2 size={15} /> Board clear — nothing scheduled and nothing going stale.</div>}
+      {/* ── what to do next: the reason the page exists ─────────────────── */}
+      {(data || !error) && <section className="ov2-section" aria-labelledby="ov2-next">
+        <div className="ov2-head"><h2 id="ov2-next">Up next</h2>{actions.length > 0 && <span>{actions.length} thing{actions.length === 1 ? '' : 's'}, in order</span>}</div>
+        {!data && !error
+          ? <div className="ov2-card ov2-skeleton" aria-busy="true"><i /><i /><i /></div>
+          : actions.length > 0
+            ? <ol className="ov2-card ov2-next">
+              {actions.map((action, i) => <li key={action.key} data-lead={i === 0 ? 'true' : undefined} style={{ animationDelay: `${80 + i * 70}ms` }}>
+                <span className="ov2-num">{i + 1}</span>
+                <div className="ov2-next-body">
+                  <h3>{action.title}</h3>
+                  <p>{action.why}</p>
+                  {action.tags.length > 0 && <div className="ov2-tags">{action.tags.map(tag => <span key={tag.label} data-hot={tag.hot ? 'true' : undefined}>{tag.label}</span>)}</div>}
+                </div>
+                <ActionButton action={action} lead={i === 0} />
+              </li>)}
+            </ol>
+            : <div className="ov2-card ov2-clear"><CheckCircle2 size={18} /> All clear. Nothing scheduled and nothing going stale.</div>}
+      </section>}
+
+      {/* ── your journey, as pictures ────────────────────────────────────── */}
+      {data && <section className="ov2-section" aria-labelledby="ov2-journey">
+        <div className="ov2-head"><h2 id="ov2-journey">Your journey so far</h2></div>
+        <div className="ov2-bento">
+          <Link href="/applications" className="ov2-card ov2-tile ov2-wide">
+            <div className="ov2-tile-top"><span>Applications</span><ChevronRight size={16} /></div>
+            <div className="ov2-big"><FlapText value={analytics?.total_applications ?? 0} /><small>tracked</small></div>
+            <StackBar label="Applications by status" segments={pipeline(funnel, analytics)} />
+          </Link>
+
+          <Link href="/outreach" className="ov2-card ov2-tile">
+            <div className="ov2-tile-top"><span>People</span><ChevronRight size={16} /></div>
+            {outreach
+              ? <OutreachTile home={outreach} />
+              : <p className="ov2-quiet">Start a conversation with someone at a company you like.</p>}
+          </Link>
+
+          <Link href="/applications" className="ov2-card ov2-tile">
+            <div className="ov2-tile-top"><span>Interviews</span><ChevronRight size={16} /></div>
+            <div className="ov2-ring-row">
+              <Ring value={(analytics?.interview ?? 0) + (analytics?.offers ?? 0)} max={Math.max(1, analytics?.total_applications ?? 0)} color="var(--indigo)">
+                <b><FlapText value={(analytics?.interview ?? 0) + (analytics?.offers ?? 0)} /></b><small>reached</small>
+              </Ring>
+              <dl className="ov2-dl">
+                <div><dt>In progress</dt><dd>{analytics?.interview ?? 0}</dd></div>
+                <div><dt>Cracked</dt><dd className="ov2-good">{analytics?.offers ?? 0}</dd></div>
+                <div><dt>Coming up</dt><dd>{agenda.length}</dd></div>
+              </dl>
+            </div>
+          </Link>
+
+          <Link href="/interview" className="ov2-card ov2-tile">
+            <div className="ov2-tile-top"><span>Mock interviews</span><ChevronRight size={16} /></div>
+            {interviews && interviews.sessions_analyzed > 0
+              ? <>
+                <div className="ov2-big"><FlapText value={Math.round(interviews.average_score)} /><small>avg score</small>
+                  {interviews.delta !== 0 && <em data-up={interviews.delta > 0 ? 'true' : undefined}>{interviews.delta > 0 ? '+' : ''}{Math.round(interviews.delta)}</em>}
+                </div>
+                <Sparkline points={interviews.trend.map(point => point.score)} />
+                <p className="ov2-quiet">{interviews.sessions_analyzed} session{interviews.sessions_analyzed === 1 ? '' : 's'} · {interviews.questions_analyzed} answers</p>
+              </>
+              : <p className="ov2-quiet">No sessions yet. One mock sets your baseline.</p>}
+          </Link>
         </div>
-      </section>
+      </section>}
+
+      {/* ── strengths, gaps and what the mocks said ─────────────────────── */}
+      {data && <StrengthsAndGaps interviews={interviews} focus={skillsFocus} />}
 
       {/* ── what the sweep brought back ────────────────────────────────── */}
-      {data && jobMatches && jobMatches.length > 0 && <section className="ov-band" id="sweep">
-        <div className="ov-inner">
-          <div className="ov-head">
-            <h2>Fetched while you were away</h2>
-            <span className="ov-rule" />
-            <span className="ov-note">Read against your resume{sweep?.finished_at ? ` · ${sweepTime(sweep.finished_at)}` : ''}</span>
-          </div>
-          <div className="ov-sweep-list">
-            {jobMatches.map(job => <Link className="ov-role" key={job.id} href="/search">
-              <span className="ov-rtime">{job.posted_at ? new Date(job.posted_at).toLocaleDateString(undefined, { day: '2-digit', month: 'short' }).toUpperCase() : '—'}</span>
-              <div>
-                <div className="ov-rtitle">{job.title} · {job.company || 'Company not listed'}</div>
-                <p className="ov-rmeta">
-                  {job.location || (job.is_remote ? 'Remote' : 'Location not listed')}
-                  {job.is_remote && ' · Remote-friendly'}
-                  {job.salary_raw ? ` · ${job.salary_raw}` : ''}
-                  {job.skills.length > 0 && ` · ${job.skills.slice(0, 4).join(', ')}`}
-                </p>
-              </div>
-              <div className="ov-fit">
-                <span className="ov-fk">Kept for</span>
-                <span className="ov-fv">{job.matched_role}</span>
-              </div>
-              <span className="ov-link">Open <ArrowRight size={12} /></span>
-            </Link>)}
-          </div>
-          <div className="ov-sweep-foot">
-            <span>
-              {sweep
-                ? `Swept ${sweep.boards} board${sweep.boards === 1 ? '' : 's'} · ${sweep.postings_read} postings read · ${jobMatches.length} kept`
-                : `${jobMatches.length} kept for your target roles`}
-            </span>
-            <Link className="ov-link" href="/search">Run a search of your own <ArrowRight size={12} /></Link>
+      {data && jobMatches && jobMatches.length > 0 && <section className="ov2-section" id="sweep" aria-labelledby="ov2-sweep">
+        <div className="ov2-head"><h2 id="ov2-sweep">Found while you were away</h2><span>Read against your resume{sweep?.finished_at ? ` · ${sweepTime(sweep.finished_at)}` : ''}</span></div>
+        <div className="ov2-card ov2-list">
+          {jobMatches.map(job => <Link className="ov2-role" key={job.id} href={`/roles/${encodeURIComponent(job.id)}`}>
+            <span className="ov2-logo" aria-hidden="true">{(job.company || '?').slice(0, 1).toUpperCase()}</span>
+            <div>
+              <strong>{job.title}</strong>
+              <p>{job.company || 'Company not listed'} · {job.location || (job.is_remote ? 'Remote' : 'Location not listed')}{job.salary_raw ? ` · ${job.salary_raw}` : ''}</p>
+            </div>
+            <span className="ov2-pill">{job.matched_role}</span>
+            <ChevronRight size={16} className="ov2-chev" />
+          </Link>)}
+          <div className="ov2-list-foot">
+            <span>{sweep ? `${sweep.boards} board${sweep.boards === 1 ? '' : 's'} · ${sweep.postings_read} postings read · ${jobMatches.length} kept` : `${jobMatches.length} kept for your target roles`}</span>
+            <Link className="ov-link" href="/search">Search for more <ArrowRight size={13} /></Link>
           </div>
         </div>
       </section>}
 
-      {/* Anything the briefing flagged that did not make the top three. */}
-      {(restBriefing?.cards.length || briefingFailed) ? <section className="ov-band">
-        <div className="ov-inner">
-          <div className="ov-head"><h2>Also on your radar</h2><span className="ov-rule" /></div>
-          <BriefingFeed briefing={restBriefing} failed={briefingFailed} onDismiss={dismiss} />
-        </div>
+      {/* Anything the briefing flagged that did not make Up next. */}
+      {(restBriefing?.cards.length || briefingFailed) ? <section className="ov2-section">
+        <div className="ov2-head"><h2>Also on your radar</h2></div>
+        <BriefingFeed briefing={restBriefing} failed={briefingFailed} onDismiss={dismiss} />
       </section> : null}
-
-      {/* ── quick actions ──────────────────────────────────────────────── */}
-      <section className="ov-band ov-ref ov-quick" aria-label="Quick actions">
-        <div className="ov-inner">
-          <div className="ov-head"><h2>Jump to</h2><span className="ov-rule" /></div>
-          <div className="ov-qrow">
-            <Link className="ov-qcol" href="/interview">
-              <div className="ov-qtop"><Mic size={15} /><h3>Practice</h3></div>
-              <p>Timed answers, scored on structure and signal.</p>
-              <span className="ov-link">Start session <ArrowRight size={12} /></span>
-            </Link>
-            <Link className="ov-qcol" href="/search">
-              <div className="ov-qtop"><Search size={15} /><h3>Apply</h3></div>
-              <p>Describe a role and we read the boards live.</p>
-              <span className="ov-link">Search more <ArrowRight size={12} /></span>
-            </Link>
-            <Link className="ov-qcol" href="/interview">
-              <div className="ov-qtop"><SquareCheck size={15} /><h3>Interview Lab</h3></div>
-              <p>Question bank and transcripts, per company.</p>
-              <span className="ov-link">Open lab <ArrowRight size={12} /></span>
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* ── where you stand ───────────────────────────────────────────── */}
-      {data && <section className="ov-band ov-ref" aria-label="Where you stand">
-        <div className="ov-inner">
-          <div className="ov-head"><h2>Where you stand</h2><span className="ov-rule" /></div>
-          <div className="ov-gauges">
-            <div className="ov-gauge">
-              <span className="ov-gk">Profile</span>
-              <span className="ov-gv"><FlapText value={onboarded ? 100 : 50} />% <small>{onboarded ? 'ready' : 'incomplete'}</small></span>
-              <Measure fill={onboarded ? 100 : 50} />
-            </div>
-            <div className="ov-gauge">
-              <span className="ov-gk">Applications</span>
-              <span className="ov-gv">
-                <FlapText value={analytics?.total_applications ?? 0} />
-                <small>{applied > 0 ? `${applied} in flight` : 'none in flight'}</small>
-              </span>
-              <Measure fill={Math.min(100, (analytics?.total_applications ?? 0) * 10)} />
-            </div>
-            <div className="ov-gauge">
-              <span className="ov-gk">Interview Lab</span>
-              <span className="ov-gv">
-                {sessions > 0 ? <><FlapText value={Math.round(interviews?.average_score ?? 0)} /><small>avg over {interviews?.questions_analyzed ?? 0} answers</small></> : <>— <small>no sessions yet</small></>}
-              </span>
-              <Measure fill={sessions > 0 ? Math.round(interviews?.average_score ?? 0) : 0} />
-            </div>
-          </div>
-          <div className="ov-stand-foot">
-            <Link className="ov-link" href="/applications">Open tracker <ArrowRight size={12} /></Link>
-            <Link className="ov-link" href="/settings">Edit profile <ArrowRight size={12} /></Link>
-            {activity.length > 0 && <Link className="ov-link" href="/applications">{activity.length} recent change{activity.length === 1 ? '' : 's'} <ArrowRight size={12} /></Link>}
-          </div>
-        </div>
-      </section>}
-
     </div>
 
-    {/* ── the copilot: an edge rail, not a panel on the day sheet ─────── */}
-    <nav className="ov-railbar" aria-label="Copilot">
-      <button
-        className="ov-railbtn"
-        type="button"
-        aria-expanded={copilotOpen}
-        aria-controls="ov-copilot"
-        aria-label={copilotOpen ? 'Close your copilot' : 'Open your copilot'}
-        onClick={() => setCopilotOpen(open => !open)}
-      ><Sparkles size={17} /></button>
-      <span className="ov-raillabel">Copilot</span>
-      <span className="ov-raildot" title="Briefed on today" />
-    </nav>
+    {/* ── the copilot: a floating button and a drawer ───────────────────── */}
+    <button
+      className="ov2-copilot"
+      type="button"
+      aria-expanded={copilotOpen}
+      aria-controls="ov-copilot"
+      onClick={() => setCopilotOpen(open => !open)}
+    ><Sparkles size={16} /> Ask copilot</button>
 
     <CopilotDrawer open={copilotOpen} onClose={() => setCopilotOpen(false)} />
   </AppShell></RequireAuth>
 }
 
-/** The measure under a gauge: etched ticks, filled only as far as is true. */
-function Measure({ fill }: { fill: number }) {
-  return <span className="ov-measure">
-    {fill > 0 && <i style={{ width: `${Math.min(100, Math.max(2, fill))}%` }} />}
-    {[0, 25, 50, 75].map(at => <b key={at} style={{ left: `${at}%` }} />)}
-    <b style={{ right: 0 }} />
-  </span>
+/** The people tile: who replied, who has not yet, and referrals won. */
+function OutreachTile({ home }: { home: OutreachHome }) {
+  const by = (stage: string) => home.threads.filter(thread => thread.stage === stage).length
+  const talking = by('replied')
+  const referrals = home.threads.filter(thread => thread.outcome === 'referred').length
+  const segments: Segment[] = [
+    { key: 'replied', label: 'Talking', value: talking, color: 'var(--success)' },
+    { key: 'waiting', label: 'Waiting', value: by('waiting'), color: 'var(--warning)' },
+    { key: 'planned', label: 'Planned', value: by('planned'), color: '#636366' },
+  ]
+  return <>
+    <div className="ov2-big"><FlapText value={talking} /><small>talking to you</small></div>
+    <StackBar label="Companies by stage" segments={segments} />
+    <p className="ov2-quiet"><b className="ov2-good">{referrals}</b> referral{referrals === 1 ? '' : 's'} · {home.conversations_started} conversation{home.conversations_started === 1 ? '' : 's'} started</p>
+  </>
+}
+
+/** Where the mocks say the user is strong, where they are weak, and what to do about it. */
+function StrengthsAndGaps({ interviews, focus }: { interviews: InterviewInsights | null | undefined; focus: SkillsFocus | null | undefined }) {
+  const dims = [...(interviews?.dimensions ?? [])].sort((a, b) => b.score - a.score)
+  const strong = dims.slice(0, 2).filter(d => d.score >= 60)
+  const weak = dims.length > 2 ? dims.slice(-2).reverse() : dims.filter(d => d.weakest)
+  const tips = [
+    ...(interviews?.weakest_dimension?.hint ? [interviews.weakest_dimension.hint] : []),
+    ...(interviews?.focus ?? []),
+  ].slice(0, 3)
+  const gaps = focus?.items?.slice(0, 3) ?? []
+  if (dims.length === 0 && gaps.length === 0) return null
+
+  return <section className="ov2-section" aria-labelledby="ov2-strengths">
+    <div className="ov2-head"><h2 id="ov2-strengths">Strengths and gaps</h2>{interviews && interviews.sessions_analyzed > 0 && <span>From {interviews.questions_analyzed} mock answers</span>}</div>
+    <div className="ov2-split">
+      {dims.length > 0 && <div className="ov2-card ov2-pad">
+        <h3 className="ov2-sub">How your answers score</h3>
+        <ScoreBars rows={dims.map(d => ({ key: d.key, label: d.label, score: d.score, tone: strong.some(s => s.key === d.key) ? 'good' : weak.some(w => w.key === d.key) ? 'weak' : 'plain' }))} />
+        <div className="ov2-chips">
+          {strong.map(d => <span key={d.key} data-tone="good"><TrendingUp size={13} /> Strong: {d.label.toLowerCase()}</span>)}
+          {weak.map(d => <span key={d.key} data-tone="weak"><TrendingDown size={13} /> Work on: {d.label.toLowerCase()}</span>)}
+        </div>
+      </div>}
+      <div className="ov2-card ov2-pad">
+        <h3 className="ov2-sub">How to improve</h3>
+        <ul className="ov2-tips">
+          {tips.map(tip => <li key={tip}><Lightbulb size={15} /><span>{tip}</span></li>)}
+          {gaps.map(gap => <li key={gap.title}><Target size={15} /><span><b>{focus?.kind === 'resume_improvements' ? gap.title : `Learn ${gap.title}`}.</b> {gap.detail}</span></li>)}
+          {tips.length === 0 && gaps.length === 0 && <li><Lightbulb size={15} /><span>Run a mock interview and we&apos;ll tell you exactly what to work on.</span></li>}
+        </ul>
+        <div className="ov2-tip-actions">
+          <Link className="outline-button" href="/interview">Practise an answer</Link>
+          {gaps.length > 0 && <Link className="text-button" href={focus?.kind === 'resume_improvements' ? '/resume-studio' : '/agent'}>{focus?.kind === 'resume_improvements' ? 'Fix it in Resume studio' : 'Build a study plan'} <ArrowRight size={13} /></Link>}
+        </div>
+      </div>
+    </div>
+  </section>
 }
 
 /** An absolute http(s) URL opens in a new tab with the safe link props; an in-app path stays a Link. */
 function ActionButton({ action, lead }: { action: Action; lead: boolean }) {
-  const className = `ov-btn ${lead ? 'ov-btn-accent' : 'ov-btn-line'}`
+  const className = lead ? 'primary-button' : 'outline-button'
   const external = externalHref(action.href)
   if (external) {
     return <a className={className} href={external} {...EXTERNAL_LINK_PROPS}>
@@ -512,78 +534,7 @@ function ActionButton({ action, lead }: { action: Action; lead: boolean }) {
   </Link>
 }
 
-/**
- * The focus list and its one travelling marker.
- *
- * A single amber bar rides the spine between actions rather than three
- * highlights blinking independently. It rests on the first action — the thing
- * to do first — and returns there when the pointer leaves.
- */
-function FocusList({ actions }: { actions: Action[] }) {
-  const listRef = useRef<HTMLOListElement>(null)
-  const gliderRef = useRef<HTMLSpanElement>(null)
-  const settle = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [hot, setHot] = useState(0)
-  const [awake, setAwake] = useState(false)
-
-  // Position the marker from layout rather than from a guessed row height, and
-  // re-measure on resize: the rows reflow at 920px and the spine moves with them.
-  useEffect(() => {
-    const place = () => {
-      const list = listRef.current, glider = gliderRef.current
-      if (!list || !glider) return
-      const row = list.children[hot] as HTMLElement | undefined
-      if (!row) return
-      // One transform does both jobs: translateY places the marker, scaleY
-      // sizes it against its 1px base. Animating height instead would relayout
-      // the spine on every frame of the travel.
-      const top = Math.round(row.offsetTop + row.offsetHeight * 0.19)
-      const span = Math.round(row.offsetHeight * 0.62)
-      glider.style.transform = `translateY(${top}px) scaleY(${span})`
-      glider.style.opacity = '1'
-    }
-    place()
-    window.addEventListener('resize', place)
-    return () => window.removeEventListener('resize', place)
-  }, [hot, actions.length])
-
-  useEffect(() => () => { if (settle.current) clearTimeout(settle.current) }, [])
-
-  const enter = (i: number) => {
-    if (settle.current) clearTimeout(settle.current)
-    setHot(i); setAwake(true)
-  }
-  const leave = () => {
-    settle.current = setTimeout(() => { setHot(0); setAwake(false) }, 90)
-  }
-
-  return <div className="ov-focus-wrap">
-    <span className="ov-glider" ref={gliderRef} aria-hidden="true" />
-    <ol className="ov-focus-list" ref={listRef} data-awake={awake ? 'true' : undefined} onMouseLeave={leave}>
-      {actions.map((action, i) => <li
-        className="ov-act ov-rise"
-        key={action.key}
-        data-lead={i === 0 ? 'true' : undefined}
-        data-hot={hot === i ? 'true' : undefined}
-        style={{ animationDelay: `${200 + i * 70}ms` }}
-        onMouseEnter={() => enter(i)}
-        onFocus={() => enter(i)}
-      >
-        <span className="ov-plate">{String(i + 1).padStart(2, '0')}</span>
-        <div className="ov-act-body">
-          <h3>{action.title}</h3>
-          <p className="ov-why">{action.why}</p>
-          {action.tags.length > 0 && <div className="ov-tags">
-            {action.tags.map(tag => <span key={tag.label} data-hot={tag.hot ? 'true' : undefined}>{tag.label}</span>)}
-          </div>}
-        </div>
-        <ActionButton action={action} lead={i === 0} />
-      </li>)}
-    </ol>
-  </div>
-}
-
-/** The copilot drawer: the workspace, moved off the sheet and behind a scrim. */
+/** The copilot drawer: the workspace, moved off the page and behind a scrim. */
 function CopilotDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const panel = useRef<HTMLDivElement>(null)
 

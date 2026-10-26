@@ -450,7 +450,7 @@ function ChallengeView({ slug }: { slug: string }) {
         <div className="results-head">
           <div className="results-total">
             <strong><FlapText value={result.total.toFixed(1)} /></strong>
-            <span>OF 100{standing && <> · <Link href="/practice/leaderboard">{standing.toUpperCase()}</Link></>}</span>
+            <span>of 100{standing && <> · <Link href="/practice/leaderboard">{standing}</Link></>}</span>
           </div>
           <div className="results-dims">
             {CRITERIA.map(item => <div key={item.key} className={weakest === item.key ? 'weakest' : undefined}>

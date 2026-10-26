@@ -129,7 +129,7 @@ export default function SettingsPage() {
     </form>
 
     <section className="card-form resume-goals-card">
-      <p className="eyebrow">YOUR RESUME</p>
+      <p className="eyebrow">Your resume</p>
       <h2>Upload the resume you actually send out.</h2>
       <p className="muted-copy">We compare it against the target roles above and surface the two or three skills those roles ask for that your resume doesn&apos;t show yet — or, if it already covers them, how to make it read stronger.</p>
       {resumeName && <p className="resume-status"><Check size={13} /> Using <strong>{resumeName}</strong>{resumeSavedAt ? ` · saved ${formatDate(resumeSavedAt)}` : ''}</p>}

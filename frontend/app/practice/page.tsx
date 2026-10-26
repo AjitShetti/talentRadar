@@ -4,6 +4,8 @@ import { FormEvent, ReactNode, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Loader2 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
+import PrepTabs from '@/components/PrepTabs'
+import BoardPeek from '@/components/practice/BoardPeek'
 import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
 import { api, Challenge, ChallengesOverview, PracticeFeel, PracticeHistory, PracticeSettings, PracticeToday } from '@/lib/api'
@@ -213,6 +215,7 @@ export default function PracticePage() {
     : 'One LeetCode question a day, one build a week — solved on leetcode.com.'
 
   return <RequireAuth><AppShell>
+    <PrepTabs />
     <section className="page-heading split-heading">
       <div>
         <span className="board-kicker">Practice</span>
@@ -315,11 +318,13 @@ export default function PracticePage() {
               {overview.past.map(item => <div key={item.slug}>
                 <span className="history-topic"><Link href={`/practice/challenges/${encodeURIComponent(item.slug)}`}>{item.title}</Link></span>
                 <strong>{item.total != null ? item.total.toFixed(1) : '—'}</strong>
-                <small>{shortDate(item.opens_at)} · {trackName(item.track).toUpperCase()} · {(item.status === 'queued' && item.held ? 'under review' : item.status ? STATUS_WORDS[item.status] ?? item.status : 'not started').toUpperCase()}</small>
+                <small>{shortDate(item.opens_at)} · {trackName(item.track)} · {(item.status === 'queued' && item.held ? 'under review' : item.status ? STATUS_WORDS[item.status] ?? item.status : 'not started')}</small>
               </div>)}
             </div>
           </>}
         </section>
+
+        <BoardPeek />
 
         <section className="pr-section">
           <details className="pr-settings">
