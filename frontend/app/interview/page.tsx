@@ -6,6 +6,7 @@ import {
   RefreshCw, Send, SkipForward, StopCircle, Users, Volume2,
 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
+import PrepTabs from '@/components/PrepTabs'
 import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
 import { api, InterviewScore, InterviewState } from '@/lib/api'
@@ -421,6 +422,7 @@ export default function InterviewPage() {
   const scores = ((active?.state?.scores as ScoreRecord[] | undefined) ?? [])
 
   return <RequireAuth><AppShell narrow>
+    <PrepTabs />
     <section className="page-heading">
       <div>
         <span className="board-kicker">LangGraph interview lab</span>
@@ -578,7 +580,7 @@ export default function InterviewPage() {
 
     <section className="history-section">
       <div className="panel-heading">
-        <div><p className="eyebrow">RECENT PRACTICE</p><h2>Interview history</h2></div>
+        <div><p className="eyebrow">Recent practice</p><h2>Interview history</h2></div>
         <Clock3 size={17} />
       </div>
       {history.length ? <div className="history-list">{history.map(session => <div key={session.id}>

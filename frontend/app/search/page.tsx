@@ -165,7 +165,7 @@ export default function SearchPage() {
     {closedHidden > 0 && <p className="sourcing-note"><span className="sourcing-dot indexed" /> {closedHidden} {closedHidden === 1 ? 'role was' : 'roles were'} left out because the employer no longer lists {closedHidden === 1 ? 'it' : 'them'}.</p>}
     <div className="results-layout">
       <aside className="search-tips">
-        <div className="tips-head"><p className="eyebrow">SEARCH BETTER</p><button type="button" className="icon-refresh" title="Show different ideas" onClick={shuffleTips}><RefreshCw size={13}/></button></div>
+        <div className="tips-head"><p className="eyebrow">Search better</p><button type="button" className="icon-refresh" title="Show different ideas" onClick={shuffleTips}><RefreshCw size={13}/></button></div>
         <strong>Try asking for:</strong>
         {tips.map(tip => <button type="button" key={tip} onClick={() => setQuery(tip)}>{tip}</button>)}
       </aside>

@@ -4,6 +4,7 @@ import { Fragment, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Loader2 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
+import PrepTabs from '@/components/PrepTabs'
 import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
 import { api, BoardRow, ChallengesOverview, ChallengeBoard, OverallBoard } from '@/lib/api'
@@ -57,7 +58,7 @@ function Rows({ lines, me }: { lines: Line[]; me: Line | null }) {
 }
 
 export default function LeaderboardPage() {
-  return <RequireAuth><AppShell><LeaderboardView /></AppShell></RequireAuth>
+  return <RequireAuth><AppShell><PrepTabs /><LeaderboardView /></AppShell></RequireAuth>
 }
 
 function LeaderboardView() {

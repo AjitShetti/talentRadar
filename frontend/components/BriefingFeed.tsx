@@ -7,20 +7,20 @@ import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 
 /** Human label for a card's origin, shown above its title. */
 const KIND_LABELS: Record<string, string> = {
-  priority: 'DO THIS FIRST',
-  scheduled_interview: 'ON THE CALENDAR',
-  stale_application: 'GOING COLD',
-  saved_backlog: 'UNFINISHED',
-  closed_role: 'NO LONGER LISTED',
-  interview_momentum: 'MOMENTUM',
-  outreach_followup: 'FOLLOW-UP DUE',
-  outreach_suggestion: 'WORTH A NOTE',
-  event_today: 'ON TODAY',
-  event_soon: 'THIS WEEK',
-  event_met_prompt: 'WHO YOU MET',
-  practice_deadline: 'TAKE-HOME DUE',
-  practice_contest: 'WEEKLY CONTEST',
-  practice_today: 'DAILY QUESTION',
+  priority: 'Do this first',
+  scheduled_interview: 'On the calendar',
+  stale_application: 'Going cold',
+  saved_backlog: 'Unfinished',
+  closed_role: 'No longer listed',
+  interview_momentum: 'Momentum',
+  outreach_followup: 'Follow-up due',
+  outreach_suggestion: 'Worth a note',
+  event_today: 'On today',
+  event_soon: 'This week',
+  event_met_prompt: 'Who you met',
+  practice_deadline: 'Take-home due',
+  practice_contest: 'Weekly contest',
+  practice_today: 'Daily question',
 }
 
 function Card({ card, onDismiss }: { card: BriefingCard; onDismiss: (id: string, days?: number) => void }) {
@@ -28,7 +28,7 @@ function Card({ card, onDismiss }: { card: BriefingCard; onDismiss: (id: string,
     <span className="cp-lamp" />
     <div className="cp-card-body">
       <div className="cp-card-headrow">
-        <h3>{card.title}<span className="cp-card-kind">{KIND_LABELS[card.kind] || card.kind.replace(/_/g, ' ').toUpperCase()}</span></h3>
+        <h3>{card.title}<span className="cp-card-kind">{KIND_LABELS[card.kind] || card.kind.replace(/_/g, ' ')}</span></h3>
         {card.dismissible && <div className="cp-card-tools">
           <button className="icon-refresh" title="Snooze for a week" onClick={() => onDismiss(card.id, 7)}>
             <AlarmClock size={14}/>

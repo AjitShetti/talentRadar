@@ -1,5 +1,5 @@
 import { Page } from '@playwright/test'
-import { expect, goTo, test } from './fixtures'
+import { expect, goTo, signOutViaMenu, test } from './fixtures'
 
 /**
  * Pages keep their state when the user moves between them.
@@ -86,7 +86,7 @@ test('an interview stays on its question, and an answer submitted before leaving
 
   // Leave and come back: same session, same question.
   await goTo(page, 'Resume studio')
-  await goTo(page, 'Interview lab')
+  await goTo(page, 'Mock interviews')
   await expect(page.getByRole('heading', { name: /Question 1/ })).toBeVisible()
   await expect(page.locator('.question-card')).toHaveText(firstQuestion)
 
@@ -94,14 +94,14 @@ test('an interview stays on its question, and an answer submitted before leaving
   const answerBox = page.getByPlaceholder(/Think out loud/)
   await answerBox.fill('Lists are mutable and tuples are not')
   await goTo(page, 'Find roles')
-  await goTo(page, 'Interview lab')
+  await goTo(page, 'Mock interviews')
   await expect(answerBox).toHaveValue('Lists are mutable and tuples are not')
 
   // Submit, then leave while it is being evaluated.
   await answerBox.fill('Lists are mutable, tuples are immutable and hashable, so tuples can be dict keys. Lists over-allocate to make append amortised O(1).')
   await page.getByRole('button', { name: /Submit answer/ }).click()
   await goTo(page, 'Resume studio')
-  await goTo(page, 'Interview lab')
+  await goTo(page, 'Mock interviews')
 
   await expect(page.locator('.question-card')).not.toHaveText(firstQuestion, { timeout: 90_000 })
   await expect(page.getByRole('heading', { name: /Question 2|Follow-up/ })).toBeVisible()
@@ -129,11 +129,11 @@ test('filters, selections and unsaved form edits survive navigation on the other
   await expect(page.getByText('You have unsaved changes.')).toBeVisible()
 
   // Company intel: the search term.
-  await goTo(page, 'Company intel')
+  await goTo(page, 'Companies')
   const companySearch = page.getByPlaceholder(/Search by name, industry/)
   await companySearch.fill('payments')
-  await goTo(page, 'Interview lab')
-  await goTo(page, 'Company intel')
+  await goTo(page, 'Mock interviews')
+  await goTo(page, 'Companies')
   await expect(companySearch).toHaveValue('payments')
 
   // Search filters.
@@ -151,7 +151,7 @@ test('state is cleared on sign-out so the next account starts clean', async ({ p
   void account; void errors
   await page.goto('/search')
   await page.getByPlaceholder(SEARCH_INPUT).fill('something private')
-  await page.locator('.logout-button').click()
+  await signOutViaMenu(page)
   await expect(page).toHaveURL(/\/login/)
   const leftovers = await page.evaluate(() => Object.keys(sessionStorage).filter(k => k.startsWith('talentradar:state:')))
   expect(leftovers).toEqual([])
@@ -167,7 +167,7 @@ test('every page in the app loads without errors', async ({ page, account, error
     ['/resume-studio', /Build your resume, section by section/],
     ['/settings', /Set the direction of your search/],
     ['/company-intel', /Every tech employer hiring in/],
-    ['/onboarding', /Tell us where you/],
+    ['/onboarding', /Let.s get to know you/],
     ['/agent', /./],
   ]
   for (const [path, heading] of pages) {
