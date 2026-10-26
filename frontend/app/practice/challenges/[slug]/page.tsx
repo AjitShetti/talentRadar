@@ -6,6 +6,7 @@ import { Loader2 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import CopyButton from '@/components/CopyButton'
 import FlapText from '@/components/FlapText'
+import PrepTabs from '@/components/PrepTabs'
 import RequireAuth from '@/components/RequireAuth'
 import { api, AppealState, AttemptResult, Challenge, ChallengeBoard, Criterion, Writeup } from '@/lib/api'
 import { clock, dayTime, duration, NBSP, weekdayTime } from '@/lib/practice-time'
@@ -124,7 +125,7 @@ const APPEAL_NOTES: Partial<Record<AppealState, string>> = {
 }
 
 export default function ChallengePage({ params }: { params: { slug: string } }) {
-  return <RequireAuth><AppShell><ChallengeView slug={params.slug} /></AppShell></RequireAuth>
+  return <RequireAuth><AppShell><PrepTabs /><ChallengeView slug={params.slug} /></AppShell></RequireAuth>
 }
 
 function ChallengeView({ slug }: { slug: string }) {

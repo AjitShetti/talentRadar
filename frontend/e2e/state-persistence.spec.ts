@@ -79,7 +79,7 @@ test('an interview stays on its question, and an answer submitted before leaving
   void account; void errors
   await page.goto('/interview')
   await page.getByPlaceholder(/Any skill, tool or role/).fill('Python')
-  await page.getByRole('button', { name: /Typed interview/ }).click()
+  await page.getByRole('radio', { name: /Typed interview/ }).click()
   await page.getByRole('button', { name: /Start interview/ }).click()
   await expect(page.getByRole('heading', { name: /Question 1/ })).toBeVisible({ timeout: 90_000 })
   const firstQuestion = await page.locator('.question-card').innerText()
@@ -106,17 +106,18 @@ test('an interview stays on its question, and an answer submitted before leaving
   await expect(page.locator('.question-card')).not.toHaveText(firstQuestion, { timeout: 90_000 })
   await expect(page.getByRole('heading', { name: /Question 2|Follow-up/ })).toBeVisible()
   await expect(page.getByText(/TRANSCRIPT · 3 turns/)).toBeVisible()
-  await expect(page.getByRole('button', { name: /Submit answer/ })).toBeEnabled()
+  // Not stuck on "Evaluating…"; it stays disabled only until the next answer is typed.
+  await expect(page.getByRole('button', { name: /Submit answer/ })).toBeVisible()
 })
 
 test('filters, selections and unsaved form edits survive navigation on the other pages', async ({ page, account, errors }) => {
   void account; void errors
   // Applications: the status tab.
   await page.goto('/applications')
-  await page.locator('.status-tabs').getByRole('button', { name: 'interview', exact: true }).click()
+  await page.locator('.status-tabs').getByRole('button', { name: /^Interview\b/ }).click()
   await goTo(page, 'Overview')
   await goTo(page, 'Applications')
-  await expect(page.locator('.status-tabs').getByRole('button', { name: 'interview', exact: true })).toHaveClass(/selected/)
+  await expect(page.locator('.status-tabs').getByRole('button', { name: /^Interview\b/ })).toHaveClass(/selected/)
 
   // Profile: an edit that has not been saved.
   await goTo(page, 'Profile & goals')
@@ -163,10 +164,10 @@ test('every page in the app loads without errors', async ({ page, account, error
     ['/dashboard', /./],
     ['/search', /Find roles that fit your direction/],
     ['/applications', /Keep every opportunity moving/],
-    ['/interview', /Practice the conversation before it counts/],
+    ['/interview', /Practise the conversation before it counts/],
     ['/resume-studio', /Build your resume, section by section/],
     ['/settings', /Set the direction of your search/],
-    ['/company-intel', /Every tech employer hiring in/],
+    ['/company-intel', /Every employer in .*, on one map/],
     ['/onboarding', /Let.s get to know you/],
     ['/agent', /./],
   ]

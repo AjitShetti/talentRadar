@@ -52,8 +52,11 @@ export default function ReferralAsk({ jobId, recipientName, recipientTitle }: { 
         {RELATIONSHIPS.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
       </select>
     </label>
-    <button type="button" className="outline-button" onClick={draft} disabled={busy}>{busy ? 'Writing…' : message ? 'Write another' : 'Write the draft'}</button>
-    {error && <p className="form-error">{error}</p>}
+    <div className="dossier-actions">
+      <button type="button" className="outline-button" onClick={draft} disabled={busy}>{busy ? 'Writing…' : message ? 'Write another' : 'Write the draft'}</button>
+      {!busy && <button type="button" className="text-button" onClick={() => setOpen(false)}>Cancel</button>}
+    </div>
+    {error && <p className="form-error" role="alert">{error}</p>}
     {message && <>
       <label className="referral-ask-draft">Your draft — edit before you send it
         <textarea value={message} onChange={event => setMessage(event.target.value)} rows={9} />

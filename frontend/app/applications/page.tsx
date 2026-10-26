@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { ExternalLink, Loader2, Trash2 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
@@ -13,7 +14,8 @@ import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 // endpoint rejects anything outside the enum, and a filter tab that names a
 // status the API never returns can only ever show an empty tracker.
 const statuses = ['saved', 'applied', 'online_assessment', 'screening', 'interview', 'offer', 'rejected', 'withdrawn']
-const label = (status: string) => status.replace(/_/g, ' ')
+const label = (status: string) => { const words = status.replace(/_/g, ' '); return words.charAt(0).toUpperCase() + words.slice(1) }
+const added = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
 
 // The lamp reads the same way as the briefing's: amber is live and needs you,
 // green is won, red is closed against you, faint is parked.
@@ -63,6 +65,7 @@ export default function ApplicationsPage() {
   }
 
   const shown = filter === 'all' ? apps : apps.filter(app => app.status === filter)
+  const count = (status: string) => status === 'all' ? apps.length : apps.filter(app => app.status === status).length
 
   return <RequireAuth><AppShell>
     <section className="page-heading split-heading">
@@ -71,39 +74,42 @@ export default function ApplicationsPage() {
         <h1>Keep every opportunity moving<span>.</span></h1>
         <p>Roles saved from Find roles appear here automatically.</p>
       </div>
-      <div className="tracker-total"><strong><FlapText value={apps.length} /></strong><span>active records</span></div>
+      <div className="tracker-total"><strong><FlapText value={apps.length} /></strong><span>in your tracker</span></div>
     </section>
 
-    <div className="status-tabs">
+    <div className="status-tabs" role="group" aria-label="Filter by status">
       {['all', ...statuses].map(status =>
-        <button key={status} className={filter === status ? 'selected' : ''} onClick={() => setFilter(status)}>{label(status)}</button>)}
+        <button type="button" key={status} className={filter === status ? 'selected' : ''} aria-pressed={filter === status} onClick={() => setFilter(status)}>
+          {label(status)}{!loading && count(status) > 0 && <span className="status-count">{count(status)}</span>}
+        </button>)}
     </div>
 
-    {error && <p className="form-error">{error}</p>}
+    {error && <p className="form-error" role="alert">{error}</p>}
 
     {loading
       ? <div className="loading-state"><Loader2 className="spin"/> Loading your tracker…</div>
       : !shown.length
         ? <div className="empty-state">
-            <h2>No {filter === 'all' ? '' : label(filter)} applications yet.</h2>
-            <p>Save roles from the Find roles page and move them through your search here.</p>
+            <h2>{filter === 'all' ? 'No applications yet.' : `Nothing at ${label(filter).toLowerCase()} right now.`}</h2>
+            <p>Save roles from Find roles and move them through your search here.</p>
+            <Link className="outline-button" href="/search">Find roles</Link>
           </div>
         : <div className="application-table">{shown.map(app =>
             <article className="application-row" key={app.id} data-tone={toneFor(app.status)}>
               <span className="app-lamp" aria-hidden />
               <div className="company-logo ink">{(app.job?.company_name || '?').slice(0, 1)}</div>
               <div className="application-role">
-                <strong>{app.job?.title || 'Job no longer available'}</strong>
+                <strong>{app.job_id && app.job ? <Link href={`/roles/${encodeURIComponent(app.job_id)}`}>{app.job.title}</Link> : app.job?.title || 'Job no longer available'}</strong>
                 <span>{app.job?.company_name || 'Company not listed'} · {app.job?.location_raw || (app.job?.is_remote ? 'Remote' : '—')}</span>
               </div>
-              <select value={app.status} onChange={e => changeStatus(app.id, e.target.value)}>
+              <select value={app.status} onChange={e => changeStatus(app.id, e.target.value)} aria-label={`Status of ${app.job?.title || 'this application'}`}>
                 {statuses.map(status => <option value={status} key={status}>{label(status)}</option>)}
               </select>
-              <span className="application-date">Saved {new Date(app.created_at).toLocaleDateString()}</span>
+              <span className="application-date">Added {added(app.created_at)}</span>
               {externalHref(app.job?.source_url)
-                ? <a href={externalHref(app.job?.source_url)!} {...EXTERNAL_LINK_PROPS} className="row-arrow"><ExternalLink size={16}/></a>
+                ? <a href={externalHref(app.job?.source_url)!} {...EXTERNAL_LINK_PROPS} className="row-arrow" aria-label="Open the original posting" title="Open the original posting"><ExternalLink size={16}/></a>
                 : <span />}
-              <button className="row-arrow danger" onClick={() => remove(app.id)}><Trash2 size={16}/></button>
+              <button type="button" className="row-arrow danger" onClick={() => remove(app.id)} aria-label={`Remove ${app.job?.title || 'this application'} from your tracker`} title="Remove from tracker"><Trash2 size={16}/></button>
             </article>)}</div>}
   </AppShell></RequireAuth>
 }

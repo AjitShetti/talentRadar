@@ -56,6 +56,17 @@ function fromCard(card: BriefingCard, tags: Action['tags'], fallback: { cta: str
   }
 }
 
+/** The tag a briefing lead carries. Card kinds are internal names ("saved_backlog"); this is what a person reads. */
+const LEAD_TAGS: Record<string, string> = {
+  priority: 'Next best step',
+  saved_backlog: 'Saved, not applied',
+  stale_application: 'Going quiet',
+  scheduled_interview: 'Interview',
+  interview_momentum: 'Practice',
+  closed_role: 'Role closed',
+}
+const leadTag = (kind: string) => LEAD_TAGS[kind] ?? kind.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase())
+
 /** What the "event_today" tag says: the card's own title says "Tonight" for an evening start, "Today" for an earlier one. */
 const todayTag = (card: BriefingCard) => card.tone === 'warning'
   ? { label: 'Cancelled', hot: true }
@@ -164,9 +175,11 @@ function buildActions(
 
   // The lead is the briefing's next-best action. Outreach, event and Practice cards have
   // their own slots: as the lead they would count the same card twice.
-  const lead = cards.find(card => (card.tone === 'primary' || card.tone === 'warning') && !card.kind.startsWith('outreach_') && !card.kind.startsWith('event_') && !card.kind.startsWith('practice_') && !taken(card) && !repeatsToday(card))
+  // "Finish your profile" above already says what the briefing's complete_onboarding card says.
+  const repeatsSetup = (card: BriefingCard) => !onboarded && card.meta.action === 'complete_onboarding'
+  const lead = cards.find(card => (card.tone === 'primary' || card.tone === 'warning') && !card.kind.startsWith('outreach_') && !card.kind.startsWith('event_') && !card.kind.startsWith('practice_') && !taken(card) && !repeatsToday(card) && !repeatsSetup(card))
   if (lead && out.length < 3) {
-    out.push(fromCard(lead, [{ label: lead.kind.replace(/_/g, ' '), hot: lead.tone === 'warning' }], { cta: 'Open', href: '/applications' }))
+    out.push(fromCard(lead, [{ label: leadTag(lead.kind), hot: lead.tone === 'warning' }], { cta: 'Open', href: '/applications' }))
   }
 
   // Then the week ahead and the people just met, if there is still room. Both are
@@ -179,19 +192,9 @@ function buildActions(
   // One company worth a note, only while the day's target is not met (the server
   // leaves the card out otherwise). It is a nudge, so it ranks below the lead.
   const suggestion = cards.find(card => card.kind === 'outreach_suggestion')
+  // The card's detail already reads "<reasons> · Today: n of m reached", so its tag only says where it leads.
   if (suggestion && out.length < 3 && !taken(suggestion)) {
-    const reached = metaNumber(suggestion, 'reached_today')
-    const target = metaNumber(suggestion, 'daily_target')
-    const reasons = Array.isArray(suggestion.meta?.reasons) ? suggestion.meta.reasons : []
-    const reason = typeof reasons[0] === 'string' ? reasons[0] : ''
-    out.push(fromCard(
-      suggestion,
-      [
-        ...(reached !== null && target !== null ? [{ label: `${reached} of ${target} today` }] : []),
-        ...(reason ? [{ label: reason }] : []),
-      ],
-      { cta: 'See who to contact', href: '/outreach' },
-    ))
+    out.push(fromCard(suggestion, [{ label: 'Outreach' }], { cta: 'See who to contact', href: '/outreach' }))
   }
 
   // When the briefing already sends the user to the Interview Lab, a second
@@ -293,6 +296,7 @@ export default function Dashboard() {
   const [outreach, setOutreach] = useState<OutreachHome | null>(null)
   const [error, setError] = useState('')
   const [copilotOpen, setCopilotOpen] = useState(false)
+  const fabRef = useRef<HTMLButtonElement>(null)
 
   const loadBriefing = useCallback(async () => {
     try {
@@ -338,8 +342,11 @@ export default function Dashboard() {
 
   // Cards already promoted into Up next must not appear again below it.
   const usedCardIds = new Set(actions.map(a => a.key.replace(/^briefing-/, '')).filter(k => k !== ''))
-  const restBriefing = briefing ? { ...briefing, cards: briefing.cards.filter(c => !usedCardIds.has(c.id)) } : null
+  // Before onboarding, "Finish your profile" in Up next is the same ask as the briefing's setup card.
+  const restBriefing = briefing ? { ...briefing, cards: briefing.cards.filter(c => !usedCardIds.has(c.id) && !(!onboarded && c.meta.action === 'complete_onboarding')) } : null
 
+  // With one target role every match was found for it, so a pill per row would repeat it.
+  const matchedRoles = new Set((jobMatches ?? []).map(job => job.matched_role).filter(Boolean))
   const first = profile?.full_name?.split(' ')[0]
   const headline = interviewsToday > 0
     ? `${interviewsToday} interview${interviewsToday === 1 ? '' : 's'} today. That is the whole plan.`
@@ -434,7 +441,7 @@ export default function Dashboard() {
               <strong>{job.title}</strong>
               <p>{job.company || 'Company not listed'} · {job.location || (job.is_remote ? 'Remote' : 'Location not listed')}{job.salary_raw ? ` · ${job.salary_raw}` : ''}</p>
             </div>
-            <span className="ov2-pill">{job.matched_role}</span>
+            {matchedRoles.size > 1 && <span className="ov2-pill" title="The target role this was found for">{job.matched_role}</span>}
             <ChevronRight size={16} className="ov2-chev" />
           </Link>)}
           <div className="ov2-list-foot">
@@ -453,6 +460,7 @@ export default function Dashboard() {
 
     {/* ── the copilot: a floating button and a drawer ───────────────────── */}
     <button
+      ref={fabRef}
       className="ov2-copilot"
       type="button"
       aria-expanded={copilotOpen}
@@ -460,7 +468,7 @@ export default function Dashboard() {
       onClick={() => setCopilotOpen(open => !open)}
     ><Sparkles size={16} /> Ask copilot</button>
 
-    <CopilotDrawer open={copilotOpen} onClose={() => setCopilotOpen(false)} />
+    <CopilotDrawer open={copilotOpen} onClose={() => { setCopilotOpen(false); fabRef.current?.focus() }} />
   </AppShell></RequireAuth>
 }
 
@@ -550,7 +558,7 @@ function CopilotDrawer({ open, onClose }: { open: boolean; onClose: () => void }
 
   return <>
     <div className="ov-scrim" data-open={open ? 'true' : undefined} onClick={onClose} />
-    <aside className="ov-drawer" id="ov-copilot" data-open={open ? 'true' : undefined} aria-label="Your copilot" aria-hidden={!open}>
+    <aside className="ov-drawer" id="ov-copilot" data-open={open ? 'true' : undefined} role="dialog" aria-modal={open || undefined} aria-label="Your copilot" aria-hidden={!open}>
       <div className="ov-drawer-top">
         <div>
           <h2>Ask your copilot</h2>

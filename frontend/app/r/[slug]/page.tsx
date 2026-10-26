@@ -7,6 +7,7 @@ import PublicShell from '@/components/public/PublicShell'
 import RoleViewBeacon from '@/components/public/RoleViewBeacon'
 import { REVALIDATE_SECONDS, SITE_URL, publicRole, publicRoleList } from '@/lib/public-api'
 import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
+import { seniorityLabel } from '@/lib/seniority'
 
 /*
   The public page for one role.
@@ -61,7 +62,7 @@ export default async function PublicRolePage({ params }: Props) {
           ? <Link href={`/hiring/${role.company_slug}`}>{role.company}</Link>
           : role.company || 'Company not listed'}
         {role.location ? ` · ${role.location}` : role.is_remote ? ' · Remote' : ''}
-        {role.seniority ? ` · ${role.seniority.replace(/_/g, ' ')}` : ''}
+        {role.seniority ? ` · ${seniorityLabel(role.seniority)}` : ''}
       </p>
 
       <section className="pub-verdict" aria-labelledby="verdict-heading">

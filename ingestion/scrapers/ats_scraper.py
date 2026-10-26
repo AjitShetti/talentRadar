@@ -267,7 +267,7 @@ class ATSScraper:
                 country=country or "India",
                 city=city or None,
                 is_remote=job_remote,
-                skills=[s for s in query.split() if len(s) > 2] if query else [],
+                skills=[],
                 tags=["ats", "greenhouse", company_slug],
                 # The employer's publish time, or nothing - never the clock.
                 posted_at=parse_source_timestamp(item.get("first_published")),
@@ -320,7 +320,7 @@ class ATSScraper:
                 country=country or "India",
                 city=city or None,
                 is_remote=job_remote or bool(item.get("isRemote")),
-                skills=[s for s in query.split() if len(s) > 2] if query else [],
+                skills=[],
                 tags=["ats", "ashby", company_slug],
                 # The employer's publish time, or nothing - never the clock.
                 posted_at=parse_source_timestamp(item.get("publishedAt")),
@@ -373,7 +373,7 @@ class ATSScraper:
                 country=country or "India",
                 city=city or None,
                 is_remote=job_remote or is_lever_remote,
-                skills=[s for s in query.split() if len(s) > 2] if query else [],
+                skills=[],
                 tags=["ats", "lever", company_slug],
                 # The employer's publish time, or nothing - never the clock.
                 posted_at=parse_source_timestamp(item.get("createdAt")),

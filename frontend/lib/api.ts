@@ -292,7 +292,10 @@ function errorMessage(detail: unknown): string {
     return detail
       .map(item => (item && typeof item === 'object' && 'msg' in item ? String((item as { msg: unknown }).msg) : ''))
       .map(message => message.replace(/^Value error, /, ''))
+      // The email validator's own wording ("value is not a valid email address: The part after the @-sign…") reads as a stack trace.
+      .map(message => (/^value is not a valid email address/i.test(message) ? 'Enter a valid email address.' : message))
       .filter(Boolean)
+      .map(message => message.charAt(0).toUpperCase() + message.slice(1))
       .join(' ')
   }
   return ''
@@ -314,6 +317,9 @@ async function saveEventIcs(id: string, filename = 'event.ics'): Promise<void> {
   link.remove()
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
+
+/** Fired on window with the new name after the profile's name is saved. */
+export const PROFILE_NAME_EVENT = 'tr:profile-name'
 
 export const api = {
   auth: {
@@ -337,7 +343,12 @@ export const api = {
   },
   profile: {
     get: () => request<{ onboarding_completed: boolean; profile: Record<string, unknown> | null }>('/api/v1/profile/', {}, true),
-    save: (payload: Record<string, unknown>) => request<{ profile: Record<string, unknown> }>('/api/v1/profile/', { method: 'POST', body: JSON.stringify(payload) }, true),
+    save: async (payload: Record<string, unknown>) => {
+      const result = await request<{ profile: Record<string, unknown> }>('/api/v1/profile/', { method: 'POST', body: JSON.stringify(payload) }, true)
+      // The account menu caches the name; tell it the name changed.
+      if (typeof payload.full_name === 'string' && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(PROFILE_NAME_EVENT, { detail: payload.full_name.trim() }))
+      return result
+    },
   },
   resumes: {
     me: () => request<SavedResume | null>('/api/v1/resumes/me', {}, true),
