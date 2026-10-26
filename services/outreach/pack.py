@@ -46,6 +46,7 @@ from domain.outreach_pack import (
     choose_pack,
 )
 from services.base import parse_uuid
+from services.cache_backend import CacheBackend
 from services.company_map.read import _title_matches, target_roles
 from services.outreach import drafts, people, suggest, threads, touches
 from services.outreach.errors import NotFound
@@ -97,12 +98,16 @@ def _bounded(value: str | None, limit: int) -> str | None:
 
 
 async def _held_back(session: AsyncSession, uid: uuid.UUID, moment: datetime) -> set[str]:
-    """Companies seen in a pack in the last ``PACK_REPEAT_DAYS`` and left untouched, and
-    companies applied to in the last ``PACK_APPLIED_DAYS``."""
+    """Companies seen in a pack in the last ``PACK_REPEAT_DAYS`` and left untouched
+    there, and companies applied to in the last ``PACK_APPLIED_DAYS``.
+
+    Each sighting (one pack, one company) is read on its own: a recipient skipped or
+    written to on one day does not excuse the same company ignored on a later day."""
     seen_since = moment - timedelta(days=PACK_REPEAT_DAYS)
     applied_since = moment - timedelta(days=PACK_APPLIED_DAYS)
     rows = await session.execute(
         select(
+            OutreachPackItem.pack_id,
             OutreachPackItem.company_id,
             OutreachPackItem.seen_at,
             OutreachPackItem.status,
@@ -116,17 +121,17 @@ async def _held_back(session: AsyncSession, uid: uuid.UUID, moment: datetime) ->
             OutreachPack.day >= ist_today(applied_since),
         )
     )
-    seen: set[str] = set()
-    touched: set[str] = set()
+    seen: set[tuple[uuid.UUID, str]] = set()
+    touched: set[tuple[uuid.UUID, str]] = set()
     applied: set[str] = set()
-    for company_id, seen_at, status, applied_at in rows:
-        cid = str(company_id)
+    for pack_id, company_id, seen_at, status, applied_at in rows:
+        sighting = (pack_id, str(company_id))
         if seen_at is not None and aware(seen_at) >= seen_since:
-            seen.add(cid)
+            seen.add(sighting)
         if status != "new" or applied_at is not None:
-            touched.add(cid)
+            touched.add(sighting)
         if applied_at is not None and aware(applied_at) >= applied_since:
-            applied.add(cid)
+            applied.add(str(company_id))
 
     applications = await session.execute(
         select(Job.company_id)
@@ -138,7 +143,7 @@ async def _held_back(session: AsyncSession, uid: uuid.UUID, moment: datetime) ->
         )
     )
     applied.update(str(company_id) for company_id in applications.scalars())
-    return (seen - touched) | applied
+    return {cid for _, cid in seen - touched} | applied
 
 
 # --- building the day's pack ----------------------------------------------------------
@@ -209,7 +214,7 @@ async def _build(uid: uuid.UUID, moment: datetime) -> None:
     wins: the insert is refused and nothing else is written."""
     async with AsyncSessionLocal() as session:
         held_back = await _held_back(session, uid, moment)
-    candidates = await suggest.ranked_for_pack(uid, moment)
+    candidates = await suggest.ranked_for_pack(uid, moment, held_back)
     chosen = choose_pack(
         candidates.ranked,
         {s.company_id: _options(candidates, s.company_id) for s in candidates.ranked},
@@ -566,7 +571,9 @@ async def mark_seen(user_id: str, item_ids: list[str], *, now: datetime | None =
 # --- writing the messages -------------------------------------------------------------
 
 #: One lock per (user, company or item) in this process, so two writes at once spend
-#: once. Across processes the ``FOR UPDATE`` on the items does the same on Postgres.
+#: once. Across processes a company's write is claimed in the cache (``write_claim_key``);
+#: no database lock is held while the model is called, which under rate limits can take
+#: a minute and would otherwise pin a pooled connection.
 _write_locks: weakref.WeakValueDictionary[tuple[uuid.UUID, uuid.UUID], asyncio.Lock] = (
     weakref.WeakValueDictionary()
 )
@@ -580,8 +587,35 @@ def _lock_for(key: tuple[uuid.UUID, uuid.UUID]) -> asyncio.Lock:
     return lock
 
 
+#: How long a company's write claim lives. Longer than a normal model call; if it lapses
+#: during a very slow one, a second write may run, and the store still fills only items
+#: that have no message, so the first text stored stands.
+WRITE_CLAIM_SECONDS = 180
+
+
+def write_claim_key(user_id: str, company_id: str) -> str:
+    return f"tr:lock:pack-write:{user_id}:{company_id}"
+
+
+async def _claim(key: str) -> bool:
+    """Whether this request now owns the write: the first ``incr`` sees 1. Without a
+    reachable cache the claim is granted, and the in-process lock still holds."""
+    try:
+        return await CacheBackend.incr(key, WRITE_CLAIM_SECONDS) == 1
+    except Exception as exc:
+        logger.warning("pack write claim unavailable: %s", type(exc).__name__)
+        return True
+
+
+async def _release(key: str) -> None:
+    try:
+        await CacheBackend.delete(key)
+    except Exception as exc:
+        logger.warning("pack write claim not released: %s", type(exc).__name__)
+
+
 async def _company_items(
-    session: AsyncSession, uid: uuid.UUID, cid: uuid.UUID, moment: datetime, *, lock: bool
+    session: AsyncSession, uid: uuid.UUID, cid: uuid.UUID, moment: datetime
 ) -> list[OutreachPackItem]:
     """Today's ``first`` items for this company in the caller's pack, in order."""
     stmt = (
@@ -595,8 +629,6 @@ async def _company_items(
         )
         .order_by(OutreachPackItem.position)
     )
-    if lock:
-        stmt = stmt.with_for_update(of=OutreachPackItem)
     return list((await session.execute(stmt)).scalars())
 
 
@@ -625,6 +657,11 @@ async def write_company(
     which claims the budgets and falls back to templates), stored on the items. Items
     that already have a message are returned as they are and spend nothing. A company
     not in the caller's pack today is a ``NotFound``.
+
+    The contexts are read in one short session, the model is called with no session
+    open, and the text is stored only on items that still have none. While another
+    worker holds the company's claim, nothing is called and the items come back as
+    they are (unwritten), for the page to offer a retry.
     """
     uid = _owner(user_id)
     cid = parse_uuid(company_id)
@@ -632,33 +669,55 @@ async def write_company(
         raise NotFound("Company not in today's pack")
     moment = datetime.now(UTC) if now is None else aware(now)
 
-    async with _lock_for((uid, cid)), AsyncSessionLocal() as session:
-        items = await _company_items(session, uid, cid, moment, lock=True)
-        if not items:
-            raise NotFound("Company not in today's pack")
-        pending = [item for item in items if item.message is None and item.status == "new"]
-        if pending:
-            company = await session.get(Company, cid)
-            profile = await drafts._profile_row(session, uid)
-            last_round = (await suggest._funding_rounds(session, [cid])).get(cid)
-            posting = await _posting(session, uid, cid)
-            contexts = [
-                drafts.context_for_pack(
-                    item, company, profile, last_round=last_round, posting=posting
+    async with _lock_for((uid, cid)):
+        contexts: list[drafts.DraftContext] = []
+        pending_ids: list[uuid.UUID] = []
+        async with AsyncSessionLocal() as session:
+            items = await _company_items(session, uid, cid, moment)
+            if not items:
+                raise NotFound("Company not in today's pack")
+            pending = [item for item in items if item.message is None and item.status == "new"]
+            if pending:
+                company = await session.get(Company, cid)
+                profile = await drafts._profile_row(session, uid)
+                last_round = (await suggest._funding_rounds(session, [cid])).get(cid)
+                posting = await _posting(session, uid, cid)
+                contexts = [
+                    drafts.context_for_pack(
+                        item, company, profile, last_round=last_round, posting=posting
+                    )
+                    for item in pending
+                ]
+                pending_ids = [item.id for item in pending]
+
+        claim = write_claim_key(str(uid), str(cid))
+        if pending_ids and await _claim(claim):
+            try:
+                written = await drafts.write_pack_messages(user_id, contexts, moment)
+                async with AsyncSessionLocal() as session:
+                    for item_id, message in zip(pending_ids, written, strict=True):
+                        await session.execute(
+                            update(OutreachPackItem)
+                            .where(
+                                OutreachPackItem.id == item_id,
+                                OutreachPackItem.message.is_(None),
+                            )
+                            .values(
+                                subject=message.subject,
+                                message=message.message,
+                                generated=message.generated,
+                                reason=message.reason,
+                            )
+                        )
+                    await session.commit()
+                logger.info(
+                    "outreach pack company %s: %d messages written", cid, len(pending_ids)
                 )
-                for item in pending
-            ]
-            written = await drafts.write_pack_messages(user_id, contexts, moment)
-            for item, message in zip(pending, written, strict=True):
-                item.subject = message.subject
-                item.message = message.message
-                item.generated = message.generated
-                item.reason = message.reason
-            await session.commit()
-            logger.info("outreach pack company %s: %d messages written", cid, len(pending))
+            finally:
+                await _release(claim)
 
     async with AsyncSessionLocal() as session:
-        items = await _company_items(session, uid, cid, moment, lock=False)
+        items = await _company_items(session, uid, cid, moment)
     companies, _ = await _render(uid, items)
     return {"items": companies[0]["items"] if companies else []}
 
@@ -876,7 +935,7 @@ async def mark_applied(
     moment = datetime.now(UTC) if now is None else aware(now)
 
     async with _lock_for((uid, cid)), AsyncSessionLocal() as session:
-        items = await _company_items(session, uid, cid, moment, lock=False)
+        items = await _company_items(session, uid, cid, moment)
         if not items:
             raise NotFound("Company not in today's pack")
         job = await session.get(Job, jid)

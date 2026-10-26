@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import type { PackCompany, PackItem } from '@/lib/api'
-import { FORMATS, KIND_LABEL, threadHref } from '@/lib/outreach'
+import { BODY_MAX, FORMATS, KIND_LABEL, SUBJECT_MAX, threadHref } from '@/lib/outreach'
 import { addressBadge, mailtoHref } from '@/lib/outreach-pack'
 import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 
@@ -80,11 +80,11 @@ export function PackItemRow({ item, writing, onSent, onSkip, onWrite }: ItemProp
         : <>
             {isEmail && <label className="pack-field">
               <span>Subject</span>
-              <input value={subject} onChange={e => setSubject(e.target.value)} maxLength={140} />
+              <input value={subject} onChange={e => setSubject(e.target.value)} maxLength={SUBJECT_MAX} />
             </label>}
             <label className="pack-field">
               <span>Message{max !== null && <em data-over={text.length > max ? '' : undefined}>{text.length}/{max}</em>}</span>
-              <textarea value={text} onChange={e => setText(e.target.value)} rows={isEmail ? 7 : 4} maxLength={2000} />
+              <textarea value={text} onChange={e => setText(e.target.value)} rows={isEmail ? 7 : 4} maxLength={BODY_MAX} />
             </label>
             {!item.generated && <p className="pack-hint">{templateNote(item)}</p>}
             <div className="pack-actions">

@@ -151,6 +151,45 @@ async def test_seen_company_returns_after_14_days(outreach_db: Factory) -> None:
     assert _ids(await pack.get_pack(str(user.id), now=NOW + timedelta(days=15))) == [str(a.id)]
 
 
+async def test_pack_still_fills_after_days_of_ignored_packs(outreach_db: Factory) -> None:
+    """Held-back companies are removed before the ranking is cut, so ignoring the
+    pack for five days does not leave day six empty while unshown companies remain."""
+    names = [f"Company {chr(65 + i)}{chr(65 + i)} Labs" for i in range(27)]
+    user, companies = await _seed(outreach_db, *names)
+    shown: set[str] = set()
+    for day in range(5):
+        payload = await pack.get_pack(str(user.id), now=NOW + timedelta(days=day))
+        assert len(payload["companies"]) == 5
+        shown.update(_ids(payload))
+        await pack.mark_seen(str(user.id), _item_ids(payload), now=NOW + timedelta(days=day))
+
+    sixth = await pack.get_pack(str(user.id), now=NOW + timedelta(days=5))
+
+    assert len(shown) == 25
+    assert set(_ids(sixth)) == {str(c.id) for c in companies} - shown
+
+
+async def test_a_partial_skip_does_not_disable_the_repeat_rule(outreach_db: Factory) -> None:
+    """The repeat rule reads each sighting on its own: a skip on day 1 does not keep a
+    company that was shown and ignored on day 2 coming back on day 3."""
+    user, (a, _) = await _seed(outreach_db, "Alder Labs", "Birch Works")
+    async with outreach_db() as session:
+        await make_contact(session, a, "engineer", "Ravi Engineer")
+
+    day1 = await pack.get_pack(str(user.id), now=NOW)
+    await pack.mark_seen(str(user.id), _item_ids(day1), now=NOW)
+    alder = next(c for c in day1["companies"] if c["company_id"] == str(a.id))
+    assert len(alder["items"]) == 2
+    await pack.mark_skipped(str(user.id), alder["items"][0]["id"], now=NOW)
+
+    day2 = await pack.get_pack(str(user.id), now=NOW + timedelta(days=1))
+    assert str(a.id) in _ids(day2)
+    await pack.mark_seen(str(user.id), _item_ids(day2), now=NOW + timedelta(days=1))
+
+    day3 = await pack.get_pack(str(user.id), now=NOW + timedelta(days=2))
+    assert str(a.id) not in _ids(day3)
+
+
 async def test_applied_company_excluded_30_days(outreach_db: Factory) -> None:
     user, (a, b) = await _seed(outreach_db, "Alder Labs", "Birch Works")
     async with outreach_db() as session:

@@ -153,6 +153,57 @@ async def test_concurrent_write_spends_once(outreach_db: Factory, chat: AsyncMoc
     assert await used(global_key(NOW)) == 1
 
 
+async def test_no_pack_session_is_open_during_the_model_call(
+    outreach_db: Factory, chat: AsyncMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The model call can take a minute under rate limits; no pack transaction (and so
+    no row lock or pooled connection) may be held across it."""
+    open_sessions = 0
+    seen_during_call: list[int] = []
+
+    class _Counted:
+        def __init__(self) -> None:
+            self._inner = outreach_db()
+
+        async def __aenter__(self) -> AsyncSession:
+            nonlocal open_sessions
+            open_sessions += 1
+            return await self._inner.__aenter__()
+
+        async def __aexit__(self, *exc: Any) -> None:
+            nonlocal open_sessions
+            open_sessions -= 1
+            await self._inner.__aexit__(*exc)
+
+    async def _chat(*args: Any, **kwargs: Any) -> str:
+        seen_during_call.append(open_sessions)
+        return str(await chat(*args, **kwargs))
+
+    user, company_id = await _seed(outreach_db)
+    monkeypatch.setattr(pack, "AsyncSessionLocal", _Counted)
+    monkeypatch.setattr(drafts, "_chat", _chat)
+
+    result = await pack.write_company(str(user.id), company_id, now=NOW)
+
+    assert seen_during_call == [0]
+    assert _by_name(result)["Asha Example"]["message"] == f"Hi Asha, {MARKER} one."
+
+
+async def test_a_write_claimed_by_another_worker_makes_no_call(
+    outreach_db: Factory, chat: AsyncMock
+) -> None:
+    """Across processes the claim is the cache key: a second worker neither calls the
+    model nor spends a unit, and the items come back unwritten for a later retry."""
+    user, company_id = await _seed(outreach_db)
+    await CacheBackend.incr(pack.write_claim_key(str(user.id), company_id), 120)
+
+    result = await pack.write_company(str(user.id), company_id, now=NOW)
+
+    assert chat.await_count == 0
+    assert await used(global_key(NOW)) == 0
+    assert all(item["message"] is None for item in result["items"])
+
+
 async def test_user_shared_share_caps_at_8_then_templates(
     outreach_db: Factory, chat: AsyncMock
 ) -> None:

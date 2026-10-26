@@ -1,5 +1,6 @@
 import { Page } from '@playwright/test'
 import type { OutreachPack, PackItem } from '../lib/api'
+import { BODY_MAX, SUBJECT_MAX } from '../lib/outreach'
 import { addressBadge, mailtoHref } from '../lib/outreach-pack'
 import { expect, test } from './fixtures'
 
@@ -123,6 +124,17 @@ test.describe('today\'s pack', () => {
     await expect(asha.locator('.pack-status')).toHaveText('Sent')
     const post = calls.find(c => c.method === 'POST' && c.path === '/items/i1/sent')
     expect(post?.body).toEqual({ message: 'Hi Asha, edited by me.', subject: 'Backend roles at Fictional Labs' })
+  })
+
+  test('the subject and message are capped at what the server stores', async ({ page, account }) => {
+    void account
+    await servePack(page, PACK)
+    await page.goto('/outreach')
+
+    // Past these, "I sent it" would be refused after the email was already sent.
+    const asha = page.locator('.pack-item', { hasText: 'Asha Example' })
+    await expect(asha.getByLabel('Subject')).toHaveAttribute('maxlength', String(SUBJECT_MAX))
+    await expect(asha.getByLabel('Message')).toHaveAttribute('maxlength', String(BODY_MAX))
   })
 
   test('Skip hides the item', async ({ page, account }) => {

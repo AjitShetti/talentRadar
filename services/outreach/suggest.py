@@ -102,6 +102,9 @@ MAX_CANDIDATES = 400
 SUGGESTION_SNOOZE_DAYS = 30
 #: How many ranked rows are cached per user.
 CACHED_TOP = 25
+#: How far down the ranking the daily pack looks. Held-back companies are removed
+#: before the cut, and companies with no one to write to are skipped after it.
+PACK_RANKED_MAX = 100
 
 #: A company that raised within this many days is a candidate: the widest funding band.
 FUNDING_SIGNAL_DAYS = FUNDING_BANDS[-1][0]
@@ -598,13 +601,16 @@ class PackCandidates:
     domains: dict[str, str | None]
 
 
-async def ranked_for_pack(uid: uuid.UUID, now: datetime) -> PackCandidates:
-    """The ranked companies (threads and dismissals already out), their people and
-    hiring inboxes, uncached: the pack is built once a day and kept."""
-    dismissed = await _dismissed(uid)
+async def ranked_for_pack(
+    uid: uuid.UUID, now: datetime, held_back: set[str] | None = None
+) -> PackCandidates:
+    """The ranked companies (threads, dismissals and ``held_back`` already out, before
+    the ranking is cut), their people and hiring inboxes, uncached: the pack is built
+    once a day and kept."""
+    excluded = await _dismissed(uid) | (held_back or set())
     async with AsyncSessionLocal() as session:
-        gathered = await _gather(session, uid, now, dismissed)
-        ranked = rank_companies(gathered.signals, gathered.user, now, CACHED_TOP)
+        gathered = await _gather(session, uid, now, excluded)
+        ranked = rank_companies(gathered.signals, gathered.user, now, PACK_RANKED_MAX)
         inboxes = (
             await _inboxes(session, [uuid.UUID(s.company_id) for s in ranked]) if ranked else {}
         )
