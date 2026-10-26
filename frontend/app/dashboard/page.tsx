@@ -24,6 +24,9 @@ type FunnelStage = { stage: string; count: number; conversion_rate: number }
 type Sweep = { finished_at: string | null; sources: string[]; boards: number; postings_read: number; postings_added: number }
 
 /** One ranked action. `why` is evidence, never encouragement. */
+/** What the Overview reads of today's outreach pack: companies still to review and messages ready. */
+type PackCounts = { companies: number; messages_ready: number }
+
 type Action = { key: string; title: string; why: string; tags: { label: string; hot?: boolean }[]; cta: string; href: string }
 
 const clock = (iso: string | null) => {
@@ -72,17 +75,20 @@ const todayTag = (card: BriefingCard) => card.tone === 'warning'
  *   4. an interview on the calendar within a day (the briefing's card);
  *   5. a take-home due within hours (Practice);
  *   6. an Outreach follow-up that is due;
- *   7. the briefing's own next-best action;
- *   8. the week's event, then who the user met;
- *   9. the one company worth a note (the Outreach suggestion);
- *  10. the cheapest durable win (a first mock), then study, then apply;
- *  11. the one Practice suggestion (the weekly contest, else today's question).
+ *   7. today's outreach pack, while a company in it is still to review;
+ *   8. the briefing's own next-best action;
+ *   9. the week's event, then who the user met;
+ *  10. the one company worth a note (the Outreach suggestion), only without a pack;
+ *  11. the cheapest durable win (a first mock), then study, then apply;
+ *  12. the one Practice suggestion (the weekly contest, else today's question).
  *
  * An event for today is the next dated commitment after an interview, and it
  * expires tonight, so it outranks setup. A follow-up is a date the user set
  * themselves, so it outranks the briefing's next-best action; an interview within a
  * day is a harder one, so the follow-up ranks below it. A take-home deadline is
- * dated too and a missed one cannot be recovered, so it ranks above the follow-up. The week's event and the
+ * dated too and a missed one cannot be recovered, so it ranks above the follow-up.
+ * Today's pack is the day's outreach already prepared and is replaced tomorrow, so
+ * it follows the follow-up and takes the suggestion's place. The week's event and the
  * people just met are time-bound, so they go ahead of the suggestion, which is a
  * nudge, not a commitment. Three at most - a fourth would make this a list to read
  * rather than a decision to act on.
@@ -95,6 +101,7 @@ function buildActions(
   focus: SkillsFocus | null | undefined,
   applied: number,
   onboarded: boolean,
+  pack: PackCounts | null = null,
 ): Action[] {
   const out: Action[] = []
 
@@ -162,6 +169,25 @@ function buildActions(
     out.push(fromCard(followUp, [{ label: `${due} due`, hot: true }, { label: 'Outreach' }], { cta: 'Open Outreach', href: '/outreach' }))
   }
 
+  // Today's pack. The briefing's card says it once the pack exists; on the day's first
+  // visit the Overview's own read builds the pack, and its counts stand in for the card.
+  const packCard = cards.find(card => card.kind === 'outreach_pack')
+  const packNow: PackCounts | null = packCard
+    ? { companies: metaNumber(packCard, 'companies') ?? 0, messages_ready: metaNumber(packCard, 'messages_ready') ?? 0 }
+    : pack
+  if (packNow && packNow.companies > 0 && out.length < 3 && !(packCard && taken(packCard))) {
+    const { companies, messages_ready: ready } = packNow
+    out.push({
+      key: packCard ? `briefing-${packCard.id}` : 'outreach-pack',
+      title: "Review today's pack",
+      why: `${companies === 1 ? 'One company' : `${companies} companies`} picked from your profile, each with who to write to${ready > 0 ? ' and a message ready to review' : ''}. You send it yourself.`,
+      tags: [{ label: `${companies} ${companies === 1 ? 'company' : 'companies'}`, hot: true }, { label: `${ready} ready` }],
+      cta: 'Review',
+      href: '/outreach#today',
+    })
+  }
+  const packShown = out.some(action => action.href === '/outreach#today')
+
   // The lead is the briefing's next-best action. Outreach, event and Practice cards have
   // their own slots: as the lead they would count the same card twice.
   const lead = cards.find(card => (card.tone === 'primary' || card.tone === 'warning') && !card.kind.startsWith('outreach_') && !card.kind.startsWith('event_') && !card.kind.startsWith('practice_') && !taken(card) && !repeatsToday(card))
@@ -179,7 +205,7 @@ function buildActions(
   // One company worth a note, only while the day's target is not met (the server
   // leaves the card out otherwise). It is a nudge, so it ranks below the lead.
   const suggestion = cards.find(card => card.kind === 'outreach_suggestion')
-  if (suggestion && out.length < 3 && !taken(suggestion)) {
+  if (suggestion && !packShown && out.length < 3 && !taken(suggestion)) {
     const reached = metaNumber(suggestion, 'reached_today')
     const target = metaNumber(suggestion, 'daily_target')
     const reasons = Array.isArray(suggestion.meta?.reasons) ? suggestion.meta.reasons : []
@@ -291,6 +317,7 @@ export default function Dashboard() {
   const [briefing, setBriefing] = useState<Briefing | null>(null)
   const [briefingFailed, setBriefingFailed] = useState(false)
   const [outreach, setOutreach] = useState<OutreachHome | null>(null)
+  const [pack, setPack] = useState<PackCounts | null>(null)
   const [error, setError] = useState('')
   const [copilotOpen, setCopilotOpen] = useState(false)
 
@@ -308,6 +335,10 @@ export default function Dashboard() {
     loadBriefing()
     // Who the user is talking to comes from Outreach; without it that tile says so rather than showing zeros.
     api.outreach.home().then(setOutreach).catch(() => setOutreach(null))
+    // The day's first read builds today's pack, so the action is there before the briefing knows of it.
+    api.outreach.pack.get()
+      .then(p => setPack({ companies: p.companies.filter(c => c.items.some(i => i.status === 'new')).length, messages_ready: p.counts.messages_ready }))
+      .catch(() => setPack(null))
   }, [loadBriefing])
 
   async function dismiss(cardId: string, snoozeDays?: number) {
@@ -334,7 +365,7 @@ export default function Dashboard() {
   const onboarded = Boolean(profile?.onboarding_completed)
   const applied = stats?.applied ?? 0
   const interviewsToday = agenda.filter(item => item.days_away === 0).length
-  const actions = data ? buildActions(agenda, briefing, jobMatches, interviews, skillsFocus, applied, onboarded) : []
+  const actions = data ? buildActions(agenda, briefing, jobMatches, interviews, skillsFocus, applied, onboarded, pack) : []
 
   // Cards already promoted into Up next must not appear again below it.
   const usedCardIds = new Set(actions.map(a => a.key.replace(/^briefing-/, '')).filter(k => k !== ''))
