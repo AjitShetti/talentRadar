@@ -1,0 +1,37 @@
+{
+  "brand": "TalentRadar",
+  "tagline": "Know the job is real. Walk in prepared.",
+  "brief": "A job-intelligence app for students and early-career engineers in India: it finds roles worth applying to, tells you whether a posting is still live, and gets you ready for the interview. The mark has to feel sharp, honest and calm, work at 16 px in a browser tab, and sit in a true-black, Apple-style interface.",
+  "adjectives": ["sharp", "honest", "calm", "alert"],
+  "criteria": "Success: reads as a radar without the clichés (concentric rings, crosshairs, RSS-like arcs), survives 16 px, works in one colour, and sits naturally on black.",
+  "industry": "consumer-app",
+  "mockups": ["app-icon", "website", "favicon-tab", "social", "business-card", "sticker"],
+  "nav": ["Roles", "Outreach", "Practice", "Events"],
+  "brand_color": "#0A84FF",
+  "greyscale": false,
+  "final": true,
+  "designer": "TalentRadar",
+  "round": 2,
+  "concepts": [
+    {
+      "name": "Sweep",
+      "symbol": "../master/talentradar-symbol.svg",
+      "lockup": "../master/talentradar-horizontal-light.svg",
+      "stacked": "../master/talentradar-stacked-light.svg",
+      "lockup_on_dark": "../master/talentradar-horizontal-dark.svg",
+      "stacked_on_dark": "../master/talentradar-stacked-dark.svg",
+      "idea": "A radar quadrant mid-sweep: the beam cut in as one line, and a blip it has found.",
+      "rationale": [
+        "One solid shape, so it holds up as a favicon and app icon",
+        "The beam and blip are negative space: the signal found in the noise",
+        "System blue #0A84FF, the app's own accent, on true black or white",
+        "A dedicated small cut keeps beam and blip apart at 16 px"
+      ]
+    }
+  ],
+  "recommendation": "Sweep: final artwork. Symbol, small cut, horizontal and stacked lockups, wordmark, one-colour versions and the web icon set are in brand/logo.",
+  "next_steps": [
+    "Run a trademark search before public use",
+    "Swap the app's 'R' brand mark and favicon for the new files"
+  ]
+}
