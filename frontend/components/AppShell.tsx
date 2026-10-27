@@ -128,25 +128,40 @@ function NavBar({ current, openMenu, setOpenMenu }: { current: string | null; op
   const [hot, setHot] = useState<number | null>(null)
   const restIndex = NAV.findIndex(entry => entryHas(entry, current))
   const target = hot ?? (restIndex >= 0 ? restIndex : null)
+  const placed = useRef(false)
 
-  const place = useCallback(() => {
+  /**
+   * `snap` lands the glider without the glide. Measuring the item below makes
+   * the browser style the freshly mounted glider at translateX(0), so its first
+   * placement would otherwise slide in from "Overview" — and where frames stall
+   * (a background tab, the map page booting) it sat there, half off its item.
+   * Re-measures after a resize or a font swap snap too; only a move between
+   * items glides.
+   */
+  const place = useCallback((snap = false) => {
     const glider = gliderRef.current, bar = barRef.current
     const el = target === null ? null : itemRefs.current[target]
     if (!glider || !bar) return
     if (!el) { glider.style.opacity = '0'; return }
     // Measured against the bar, not offsetLeft: a group's button sits inside its own positioned wrapper.
     const box = el.getBoundingClientRect()
+    const instant = snap || !placed.current
+    if (instant) glider.style.transition = 'opacity .2s'
     glider.style.width = `${box.width}px`
     glider.style.transform = `translateX(${box.left - bar.getBoundingClientRect().left}px)`
     glider.style.opacity = '1'
+    // Commit the new box before the glide comes back, or it would animate anyway.
+    if (instant) { void glider.offsetWidth; glider.style.transition = '' }
+    placed.current = true
   }, [target])
 
   useLayoutEffect(() => { place() }, [place])
   useEffect(() => {
-    window.addEventListener('resize', place)
+    const snap = () => place(true)
+    window.addEventListener('resize', snap)
     // Widths change once the web font arrives.
-    document.fonts?.ready.then(place).catch(() => {})
-    return () => window.removeEventListener('resize', place)
+    document.fonts?.ready.then(snap).catch(() => {})
+    return () => window.removeEventListener('resize', snap)
   }, [place])
 
   // Outside click and Escape close an open group menu.
