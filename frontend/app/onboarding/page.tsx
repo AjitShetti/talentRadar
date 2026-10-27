@@ -2,6 +2,7 @@
 
 import { ChangeEvent, FormEvent, useState } from 'react'
 import Link from 'next/link'
+import BrandLockup from '@/components/BrandLockup'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, ArrowRight, BriefcaseBusiness, Check, Compass, Dumbbell, UploadCloud } from 'lucide-react'
 import RequireAuth from '@/components/RequireAuth'
@@ -112,7 +113,7 @@ export default function OnboardingPage() {
   return <RequireAuth>
     <main className="onb-page">
       <header className="onb-top">
-        <span className="brand"><span className="brand-mark">R</span><span>Talent<span>Radar</span></span></span>
+        <span className="brand"><BrandLockup /></span>
         <ol className="onb-steps" aria-label="Progress">
           {STEPS.map((label, i) => <li key={label} data-state={i < step ? 'done' : i === step ? 'now' : undefined} aria-current={i === step ? 'step' : undefined}>
             <span>{i < step ? <Check size={11} strokeWidth={3} /> : i + 1}</span>{label}

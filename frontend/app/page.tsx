@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import BrandLockup from '@/components/BrandLockup'
 import {
   ArrowUpRight, Building2, Check, Compass, Database, FileText, MapPin,
   MessageSquareText, Mic, Plus, Search, ShieldCheck,
@@ -438,8 +439,7 @@ export default function LandingPage() {
       <footer className="lp-footer">
         <div className="lp-wrap lp-footer-inner">
           <Link className="lp-nav-brand" href="/">
-            <span className="brand-mark" aria-hidden="true">R</span>
-            <span>Talent<span>Radar</span></span>
+            <BrandLockup />
           </Link>
           <div className="lp-footer-links">
             <a href="#how">How it works</a>

@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import BrandLockup from '@/components/BrandLockup'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { BriefcaseBusiness, ChevronDown, Dumbbell, FileText, Handshake, LogOut, Map as MapIcon, MessageSquare, Search, Trophy, UserRound, type LucideIcon } from 'lucide-react'
@@ -100,7 +101,7 @@ export default function AppShell({ children, narrow = false, bleed = false }: { 
 
   return <div className="app-shell">
     <header className={`topnav ${navHidden ? 'topnav-hidden' : ''}`}>
-      <Link className="brand" href="/dashboard"><span className="brand-mark">R</span><span>Talent<span>Radar</span></span></Link>
+      <Link className="brand" href="/dashboard"><BrandLockup /></Link>
       <NavBar current={current} openMenu={openMenu} setOpenMenu={setOpenMenu} />
       <div className="top-actions">
         {email

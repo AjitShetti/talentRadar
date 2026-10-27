@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import BrandLockup from '@/components/BrandLockup'
 import { useEffect, useState } from 'react'
 import { ArrowUpRight } from 'lucide-react'
 import { signedIn } from '@/lib/api'
@@ -56,8 +57,7 @@ export default function LandingNav() {
       <header className={`lp-nav ${scrolled ? 'lp-nav-scrolled' : ''}`}>
         <nav className="lp-nav-pill" aria-label="Main">
           <Link className="lp-nav-brand" href="/">
-            <span className="brand-mark" aria-hidden="true">R</span>
-            <span>Talent<span>Radar</span></span>
+            <BrandLockup />
           </Link>
 
           <div className="lp-nav-links">
