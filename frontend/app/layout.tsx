@@ -1,11 +1,16 @@
 import type { Metadata } from 'next'
 import ApiWarmup from '@/components/ApiWarmup'
+import { THEME_SCRIPT } from '@/lib/theme'
 import './globals.css'
 
 export const metadata: Metadata = { title: 'TalentRadar — Your next move, clearer', description: 'AI-powered career intelligence for modern job seekers.' }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return <html lang="en"><body>
+  // The theme script sets <html data-theme> before first paint, so React must not
+  // complain that the attribute was not in the server's HTML.
+  return <html lang="en" suppressHydrationWarning><head>
+    <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+  </head><body>
     {/*
       THESIS: the overview is a live departures board, not a card dashboard —
       every status (applications, interviews, briefing) reads as a ranked,

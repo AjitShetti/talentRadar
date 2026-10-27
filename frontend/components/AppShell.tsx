@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import BrandLockup from '@/components/BrandLockup'
+import ThemeSwitch from '@/components/ThemeSwitch'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { BriefcaseBusiness, ChevronDown, Dumbbell, FileText, Handshake, LogOut, Map as MapIcon, MessageSquare, Search, Trophy, UserRound, type LucideIcon } from 'lucide-react'
@@ -306,6 +307,9 @@ function UserMenu({ email, open, setOpen }: { email: string; open: boolean; setO
         <span className="top-avatar" aria-hidden="true">{initials}</span>
         <div><strong>{display}</strong><small>{email}</small></div>
       </div>
+      <hr className="user-sep" />
+      <div className="user-label">Appearance</div>
+      <ThemeSwitch tabbable={open} />
       <hr className="user-sep" />
       <button type="button" role="menuitem" tabIndex={open ? 0 : -1} className="user-item" onClick={() => go('/settings')}><span><UserRound size={15} />Profile &amp; goals</span></button>
       <button type="button" role="menuitem" tabIndex={open ? 0 : -1} className="user-item" onClick={() => go('/resume-studio')}><span><FileText size={15} />Resume studio</span></button>
