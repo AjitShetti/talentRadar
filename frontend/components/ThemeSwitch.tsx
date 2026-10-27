@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Monitor, Moon, Sun, type LucideIcon } from 'lucide-react'
-import { readChoice, saveChoice, THEME_EVENT, THEME_KEY, type ThemeChoice } from '@/lib/theme'
+import { DEFAULT_THEME, readChoice, saveChoice, THEME_EVENT, THEME_KEY, type ThemeChoice } from '@/lib/theme'
 
 const OPTIONS: { value: ThemeChoice; label: string; icon: LucideIcon }[] = [
   { value: 'system', label: 'System', icon: Monitor },
@@ -16,7 +16,7 @@ const OPTIONS: { value: ThemeChoice; label: string; icon: LucideIcon }[] = [
  * Left and right arrows move the choice, as in any radio group.
  */
 export default function ThemeSwitch({ tabbable = true }: { tabbable?: boolean }) {
-  const [choice, setChoice] = useState<ThemeChoice>('dark')
+  const [choice, setChoice] = useState<ThemeChoice>(DEFAULT_THEME)
 
   useEffect(() => {
     setChoice(readChoice())

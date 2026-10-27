@@ -8,8 +8,8 @@ export type ThemeChoice = 'system' | 'light' | 'dark'
 
 export const THEME_KEY = 'tr:theme'
 export const THEME_EVENT = 'tr:theme-change'
-/** Dark is the look the app was built in; a viewer opts into light or system. */
-export const DEFAULT_THEME: ThemeChoice = 'dark'
+/** Until a viewer picks, the app follows their device. */
+export const DEFAULT_THEME: ThemeChoice = 'system'
 
 export function isChoice(value: unknown): value is ThemeChoice {
   return value === 'system' || value === 'light' || value === 'dark'
