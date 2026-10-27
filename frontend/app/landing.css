@@ -82,14 +82,14 @@
    own ground, and an inset top highlight. Machined hardware, not a div. */
 .lp-bezel{
   position:relative;padding:7px;border-radius:22px;
-  background:rgba(255,255,255,.028);
+  background:rgb(var(--hi) / .028);
   border:1px solid var(--line);
-  box-shadow:0 34px 80px -28px rgba(0,0,0,.75);
+  box-shadow:0 34px 80px -28px rgb(0 0 0 / calc(.75 * var(--shade)));
 }
 .lp-bezel-core{
   border-radius:18px;background:var(--surface);
   border:1px solid var(--line-soft);
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.055);
+  box-shadow:inset 0 1px 0 rgb(var(--hi) / .055);
   overflow:hidden;
 }
 .lp-bezel-sm{padding:5px;border-radius:18px}
@@ -118,15 +118,15 @@
 .lp-cta-ghost{
   display:inline-flex;align-items:center;gap:12px;
   padding:8px 8px 8px 24px;border-radius:999px;
-  background:rgba(255,255,255,.035);border:1px solid var(--line);
+  background:rgb(var(--hi) / .035);border:1px solid var(--line);
   color:var(--ink-2);
   font:700 13px var(--font-display);letter-spacing:-.005em;
   transition:background .5s var(--ease),border-color .5s var(--ease),color .5s var(--ease),transform .5s var(--ease);
 }
-.lp-cta-ghost:hover{background:rgba(255,255,255,.07);border-color:var(--line-strong);color:var(--ink)}
+.lp-cta-ghost:hover{background:rgb(var(--hi) / .07);border-color:var(--line-strong);color:var(--ink)}
 .lp-cta-ghost:active{transform:scale(.977)}
-.lp-cta-ghost .lp-cta-icon{width:32px;height:32px;background:rgba(255,255,255,.07)}
-.lp-cta-ghost:hover .lp-cta-icon{transform:translate(3px,-2px) scale(1.06);background:rgba(255,255,255,.12)}
+.lp-cta-ghost .lp-cta-icon{width:32px;height:32px;background:rgb(var(--hi) / .07)}
+.lp-cta-ghost:hover .lp-cta-icon{transform:translate(3px,-2px) scale(1.06);background:rgb(var(--hi) / .12)}
 
 .lp-cta-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:42px}
 
@@ -135,14 +135,14 @@
 .lp-nav-pill{
   pointer-events:auto;display:flex;align-items:center;gap:30px;
   padding:9px 9px 9px 20px;border-radius:999px;
-  background:rgba(19,18,17,.72);
+  background:var(--lp-pill);
   -webkit-backdrop-filter:blur(22px) saturate(150%);backdrop-filter:blur(22px) saturate(150%);
   border:1px solid var(--line);
-  box-shadow:0 20px 46px -18px rgba(0,0,0,.8),inset 0 1px 0 rgba(255,255,255,.07);
+  box-shadow:0 20px 46px -18px rgb(0 0 0 / calc(.8 * var(--shade))),inset 0 1px 0 rgb(var(--hi) / .07);
   transition:transform .6s var(--ease),box-shadow .6s var(--ease),background .6s var(--ease);
   max-width:100%;
 }
-.lp-nav-scrolled .lp-nav-pill{background:rgba(19,18,17,.9);box-shadow:0 24px 54px -18px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.09)}
+.lp-nav-scrolled .lp-nav-pill{background:var(--lp-pill-strong);box-shadow:0 24px 54px -18px rgb(0 0 0 / calc(.9 * var(--shade))),inset 0 1px 0 rgb(var(--hi) / .09)}
 .lp-nav-brand{display:flex;align-items:center;gap:9px;font:700 16px var(--font-display);letter-spacing:-.005em;flex-shrink:0}
 .lp-nav-links{display:flex;align-items:center;gap:4px}
 .lp-nav-link{
@@ -150,7 +150,7 @@
   font:600 11px var(--font-display);letter-spacing:-.005em;
   color:var(--muted);transition:color .45s var(--ease),background .45s var(--ease);
 }
-.lp-nav-link:hover{color:var(--ink);background:rgba(255,255,255,.055)}
+.lp-nav-link:hover{color:var(--ink);background:rgb(var(--hi) / .055)}
 .lp-nav-cta{
   display:inline-flex;align-items:center;gap:9px;
   padding:8px 8px 8px 16px;border-radius:999px;background:var(--accent);color:var(--paper);
@@ -164,7 +164,7 @@
 .lp-nav-cta:hover .lp-nav-cta-icon{transform:translate(2px,-1px)}
 
 /* Hamburger: two rules that rotate into a true X, never a swap-out icon. */
-.lp-burger{display:none;position:relative;width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.055);flex-shrink:0}
+.lp-burger{display:none;position:relative;width:38px;height:38px;border-radius:50%;background:rgb(var(--hi) / .055);flex-shrink:0}
 .lp-burger i{
   position:absolute;left:11px;width:16px;height:1.5px;border-radius:6px;background:var(--ink);
   transition:transform .55s var(--ease),opacity .3s var(--ease);
@@ -178,7 +178,7 @@
 .lp-menu{
   position:fixed;inset:0;z-index:890;display:flex;flex-direction:column;justify-content:center;
   padding:0 26px;
-  background:rgba(12,11,10,.86);
+  background:var(--lp-menu);
   -webkit-backdrop-filter:blur(30px);backdrop-filter:blur(30px);
   opacity:0;pointer-events:none;
   transition:opacity .55s var(--ease);
@@ -254,18 +254,18 @@
   background:var(--accent-soft);color:var(--accent-light);border:1px solid var(--accent-border);
 }
 .lp-mini-pill.tone-good{background:var(--success-soft);color:var(--success-dark);border-color:var(--success-border)}
-.lp-mini-pill.tone-flat{background:rgba(255,255,255,.05);color:var(--muted);border-color:var(--line)}
+.lp-mini-pill.tone-flat{background:rgb(var(--hi) / .05);color:var(--muted);border-color:var(--line)}
 
 .lp-mini-bars{display:flex;flex-direction:column;gap:11px;padding:4px 0}
 .lp-mini-bar-head{display:flex;justify-content:space-between;align-items:baseline;font:600 11.5px var(--font-display);letter-spacing:-.005em;color:var(--muted);margin-bottom:6px}
 .lp-mini-bar-head b{font:700 12px var(--font-label);color:var(--ink);font-variant-numeric:tabular-nums}
-.lp-mini-track{height:4px;border-radius:999px;background:rgba(255,255,255,.06);overflow:hidden}
+.lp-mini-track{height:4px;border-radius:999px;background:rgb(var(--hi) / .06);overflow:hidden}
 .lp-mini-fill{height:100%;border-radius:999px;background:var(--accent)}
 .lp-mini-fill.tone-weak{background:var(--danger)}
 .lp-mini-fill.tone-good{background:var(--success)}
 
 .lp-mini-stack{display:flex;flex-direction:column;gap:7px}
-.lp-mini-stage{display:flex;align-items:center;gap:10px;padding:8px 11px;border-radius:12px;background:rgba(255,255,255,.032);border:1px solid var(--line-soft)}
+.lp-mini-stage{display:flex;align-items:center;gap:10px;padding:8px 11px;border-radius:12px;background:rgb(var(--hi) / .032);border:1px solid var(--line-soft)}
 .lp-mini-stage i{width:6px;height:6px;border-radius:50%;background:var(--line-strong);flex-shrink:0}
 .lp-mini-stage.is-on{background:var(--accent-soft);border-color:var(--accent-border)}
 .lp-mini-stage.is-on i{background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
@@ -347,7 +347,7 @@
 .lp-faq summary:hover{color:var(--accent)}
 .lp-faq-mark{
   display:grid;place-items:center;width:28px;height:28px;border-radius:50%;flex-shrink:0;
-  background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--muted);
+  background:rgb(var(--hi) / .05);border:1px solid var(--line);color:var(--muted);
   transition:transform .55s var(--ease),background .45s var(--ease),color .45s var(--ease);
 }
 .lp-faq details[open] .lp-faq-mark{transform:rotate(45deg);background:var(--accent-soft);color:var(--accent)}

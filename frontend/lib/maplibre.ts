@@ -8,9 +8,21 @@
 export const BBOX = { south: 12.80, west: 77.40, north: 13.15, east: 77.80 } as const
 export const STYLE_URL = '/map/graphite.json'
 
-/** The colour tokens of globals.css, read live so the map can never drift from them. */
+/**
+ * The colour tokens of globals.css, read live so the map can never drift from them.
+ * Read from the hidden `.map-tokens` probe rather than the page: the basemap is graphite
+ * in both themes, so its pins keep the dark values when the page is light.
+ */
 export function token(name: string, fallback: string): string {
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  let probe = document.getElementById('map-tokens')
+  if (!probe) {
+    probe = document.createElement('div')
+    probe.id = 'map-tokens'
+    probe.className = 'map-tokens'
+    probe.hidden = true
+    document.body.appendChild(probe)
+  }
+  const value = getComputedStyle(probe).getPropertyValue(name).trim()
   return value || fallback
 }
 
