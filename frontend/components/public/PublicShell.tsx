@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import BrandLockup from '@/components/BrandLockup'
 import '@/app/public.css'
 
 /**
@@ -10,7 +11,7 @@ import '@/app/public.css'
 export default function PublicShell({ children }: { children: React.ReactNode }) {
   return <div className="pub">
     <header className="pub-nav">
-      <Link className="pub-brand" href="/"><span className="pub-mark" aria-hidden>R</span><span>Talent<em>Radar</em></span></Link>
+      <Link className="pub-brand" href="/"><BrandLockup /></Link>
       <nav aria-label="Site">
         <Link href="/check">Check a posting</Link>
         <Link href="/login">Sign in</Link>

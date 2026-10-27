@@ -144,7 +144,6 @@
 }
 .lp-nav-scrolled .lp-nav-pill{background:rgba(19,18,17,.9);box-shadow:0 24px 54px -18px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.09)}
 .lp-nav-brand{display:flex;align-items:center;gap:9px;font:700 16px var(--font-display);letter-spacing:-.005em;flex-shrink:0}
-.lp-nav-brand span span{color:var(--accent)}
 .lp-nav-links{display:flex;align-items:center;gap:4px}
 .lp-nav-link{
   position:relative;padding:8px 13px;border-radius:999px;

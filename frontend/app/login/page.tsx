@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import BrandLockup from '@/components/BrandLockup'
 import { FormEvent, Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { safeNextPath } from '@/lib/safe-url'
@@ -19,5 +20,5 @@ function LoginForm() {
 }
 
 export default function LoginPage() {
-  return <main className="auth-page"><section className="auth-aside"><Link className="brand" href="/"><span className="brand-mark">R</span><span>Talent<span>Radar</span></span></Link><div><p className="eyebrow">Career intelligence, made personal</p><h1>Make your next move with conviction<span>.</span></h1><p>One workspace for roles, applications, interview practice, and better resumes.</p></div><div className="auth-quote"><Sparkles size={18}/><span>Find the opportunities that fit—not merely the ones that appear first.</span></div></section><section className="auth-form-wrap"><Link className="brand auth-mobile-brand" href="/"><span className="brand-mark">R</span><span>Talent<span>Radar</span></span></Link><Suspense fallback={<div className="loading-state">Preparing sign in…</div>}><LoginForm /></Suspense></section></main>
+  return <main className="auth-page"><section className="auth-aside"><Link className="brand" href="/"><BrandLockup /></Link><div><p className="eyebrow">Career intelligence, made personal</p><h1>Make your next move with conviction<span>.</span></h1><p>One workspace for roles, applications, interview practice, and better resumes.</p></div><div className="auth-quote"><Sparkles size={18}/><span>Find the opportunities that fit—not merely the ones that appear first.</span></div></section><section className="auth-form-wrap"><Link className="brand auth-mobile-brand" href="/"><BrandLockup /></Link><Suspense fallback={<div className="loading-state">Preparing sign in…</div>}><LoginForm /></Suspense></section></main>
 }
