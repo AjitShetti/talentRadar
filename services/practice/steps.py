@@ -13,7 +13,8 @@ there is no worker) calls :func:`run_step`. A step:
   submissions unqueued. Its result is exactly ``{editions_created, queued, missed,
   pruned_days, pruned_attempts, pruned_answers}``; ``limit`` does not apply to it.
 * ``judge`` - ``run_judge_step(limit)``: judge up to ``limit`` queued attempts, spaced for the
-  model's rate limit, inside the day's budget. This is the only step that calls a model.
+  model's rate limit, inside the day's budget. This is the only step that calls a model; the
+  other caller is not a step (``design_feedback``, on a person's press).
 
 :func:`run_step` never raises. A part that fails is logged by its class name only (an exception's
 text can carry a URL or a token) and comes back as ``{"error": <class name>}``; for

@@ -8,8 +8,8 @@ topic tags per problem, and the user's own practice history). No LLM, no
 network, no clock: ``day`` and ``today`` are always passed in, and the same
 ``(user_id, day, swaps)`` always gives the same pick.
 
-We never author problems. A :class:`Question` is a pointer to the problem page on
-leetcode.com; the user solves it there.
+We never author DSA problems (system design ones are ours, in ``data/practice/system_design``).
+A :class:`Question` is a pointer to the problem page on leetcode.com; the user solves it there.
 """
 
 from __future__ import annotations
