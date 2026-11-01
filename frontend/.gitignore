@@ -5,3 +5,6 @@ playwright-report/
 
 # Copied from node_modules by `npm run map-worker` (predev, prebuild)
 public/map/vendor/
+
+# Copied from node_modules by `npm run whiteboard-assets` (predev, prebuild)
+public/excalidraw/

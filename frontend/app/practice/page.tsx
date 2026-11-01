@@ -140,7 +140,7 @@ export default function PracticePage() {
           {errors.history && <p className="form-error" role="alert">{errors.history}</p>}
           {history && <>
             <ActivityGraph history={history} />
-            <div className="pr-two">
+            <div className="pr-duo">
               <SolvedSummary history={history} />
               <TopicBars history={history} />
             </div>

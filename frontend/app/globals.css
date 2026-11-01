@@ -2639,7 +2639,7 @@ code,pre,kbd,.latex-editor,.editor-code,textarea.code{font-family:var(--font-mon
 
 /* ── Practice, opening on progress: the year graph, what is solved, where you stand ── */
 .pr-stack{display:grid;gap:14px}
-.pr-two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+.pr-duo{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
 .pr-card{border-radius:var(--r-xl);background:var(--surface);box-shadow:inset 0 0 0 .5px rgb(var(--hi) / .08),var(--card-shadow);padding:22px 24px;min-width:0}
 .pr-lbl{font:500 13px var(--font-text);color:var(--faint);margin:0}
 .pr-big{font:700 32px/1.1 var(--font-label);letter-spacing:-.5px;font-variant-numeric:tabular-nums}
@@ -2722,7 +2722,7 @@ code,pre,kbd,.latex-editor,.editor-code,textarea.code{font-family:var(--font-mon
 .pr-lc-line b{font-weight:400;color:var(--accent-light)}
 #today,#contest,#settings{scroll-margin-top:calc(var(--nav-h,56px) + 12px)}
 @media(max-width:860px){
-  .pr-two,.pr-stand,.pr-board-grid{grid-template-columns:minmax(0,1fr)}
+  .pr-duo,.pr-stand,.pr-board-grid{grid-template-columns:minmax(0,1fr)}
   .pr-stand>div:first-child:not(:last-child){padding-right:0;border-right:0;padding-bottom:18px;border-bottom:1px solid var(--line-soft)}
 }
 @media(max-width:480px){
@@ -2730,4 +2730,16 @@ code,pre,kbd,.latex-editor,.editor-code,textarea.code{font-family:var(--font-mon
   .pr-solved{grid-template-columns:minmax(0,1fr);justify-items:center}
   .pr-tiles{width:100%}
   .pr-topic{grid-template-columns:104px minmax(0,1fr) 26px}
+}
+
+/* ── Practice: drawing a system design problem ── */
+.pr-solve{display:grid;grid-template-columns:320px minmax(0,1fr);gap:32px;align-items:start}
+.pr-solve-work{display:grid;gap:14px;min-width:0}
+.pr-solve-work>.pr-help,.pr-solve-work>.form-error,.pr-solve-work>.muted-copy{margin:0}
+.pr-whiteboard{height:560px;border-radius:var(--r-lg);overflow:hidden;box-shadow:inset 0 0 0 .5px rgb(var(--hi) / .12)}
+/* Both open third-party sites: the library's catalogue and the help dialog's links. */
+.pr-whiteboard .excalidraw .default-sidebar-trigger,.pr-whiteboard .excalidraw .help-icon{display:none}
+@media(max-width:800px){
+  .pr-solve{grid-template-columns:minmax(0,1fr);gap:24px}
+  .pr-whiteboard{height:480px}
 }
