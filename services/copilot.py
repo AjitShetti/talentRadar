@@ -662,13 +662,13 @@ async def _practice_deadline_cards(
                 closes = _ist_clock(deadline + GRACE)
                 card_title = f'Finish the write-up for "{title}" by {closes}'
                 card_detail = (
-                    f"Your {hours}-hour build closed at {due} IST. "
+                    f"Your {hours}-hour contest entry closed at {due} IST. "
                     f"Pushes after that are not read; the write-up closes at {closes} IST."
                 )
             else:
                 card_title = f'Submit "{title}" by {due}'
                 card_detail = (
-                    f"Your {hours}-hour build closes at {due} IST. "
+                    f"Your {hours}-hour contest entry closes at {due} IST. "
                     "Pushes after that are not read."
                 )
             cards.append(_card(

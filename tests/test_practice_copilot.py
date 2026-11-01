@@ -251,7 +251,7 @@ class TestDeadlineCards:
 
         assert card["title"] == 'Submit "Idempotent webhook relay" by 18:40'
         assert card["detail"] == (
-            "Your 24-hour build closes at 18:40 IST. Pushes after that are not read."
+            "Your 24-hour contest entry closes at 18:40 IST. Pushes after that are not read."
         )
 
     async def test_the_action_opens_the_submission_page_of_that_build(
@@ -276,7 +276,7 @@ class TestDeadlineCards:
 
         (card,) = await _practice_deadline_cards(asha, now=DEADLINE - timedelta(hours=2))
 
-        assert "Your 48-hour build closes at 18:40 IST." in card["detail"]
+        assert "Your 48-hour contest entry closes at 18:40 IST." in card["detail"]
 
     async def test_twelve_hours_out_is_inside_the_window(
         self, db: Db, asha: str, edition: PracticeChallenge
@@ -324,7 +324,7 @@ class TestDeadlineCards:
 
         assert card["title"] == 'Finish the write-up for "Idempotent webhook relay" by 19:40'
         assert card["detail"] == (
-            "Your 24-hour build closed at 18:40 IST. Pushes after that are not read; "
+            "Your 24-hour contest entry closed at 18:40 IST. Pushes after that are not read; "
             "the write-up closes at 19:40 IST."
         )
         assert "Submit" not in card["title"]
