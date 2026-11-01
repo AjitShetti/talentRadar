@@ -42,7 +42,9 @@ def test_design_days_are_tuesday_thursday_saturday() -> None:
 
 
 def test_the_kind_changes_at_ist_midnight_not_utc() -> None:
-    assert kind_for_day(ist_day(datetime(2026, 11, 2, 18, 29, tzinfo=UTC))) == "dsa"  # Mon 23:59 IST
+    assert (
+        kind_for_day(ist_day(datetime(2026, 11, 2, 18, 29, tzinfo=UTC))) == "dsa"
+    )  # Mon 23:59 IST
     assert kind_for_day(ist_day(datetime(2026, 11, 2, 18, 30, tzinfo=UTC))) == "design"  # Tue 00:00
 
 
