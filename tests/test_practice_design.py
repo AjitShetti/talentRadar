@@ -9,7 +9,13 @@ from pathlib import Path
 
 import pytest
 
-from domain.practice_design import DESIGN_TOPICS, DesignProblem, pick_design
+from domain.practice_design import (
+    DESIGN_TOPICS,
+    DesignProblem,
+    describe_scene,
+    pick_design,
+    scene_refusal,
+)
 from domain.practice_pick import HistoryItem
 from domain.practice_topics import Track
 from services.practice.design_catalogue import load_problems, parse_problem
@@ -258,3 +264,185 @@ def test_load_problems_keeps_the_first_of_a_repeated_slug(tmp_path: Path) -> Non
 
 def test_load_problems_on_a_missing_folder_is_empty(tmp_path: Path) -> None:
     assert load_problems(tmp_path / "nowhere") == ()
+
+
+def box(
+    element_id: str, label: str | None = None, kind: str = "rectangle"
+) -> list[dict[str, object]]:
+    """A shape, with the text element Excalidraw binds to it when it has a label."""
+    shape: list[dict[str, object]] = [{"id": element_id, "type": kind}]
+    if label is not None:
+        shape.append(
+            {"id": f"{element_id}-t", "type": "text", "text": label, "containerId": element_id}
+        )
+    return shape
+
+
+def arrow(
+    element_id: str, start: str | None, end: str | None, label: str | None = None
+) -> list[dict[str, object]]:
+    drawn: list[dict[str, object]] = [
+        {
+            "id": element_id,
+            "type": "arrow",
+            "startBinding": {"elementId": start} if start else None,
+            "endBinding": {"elementId": end} if end else None,
+        }
+    ]
+    if label is not None:
+        drawn.append(
+            {"id": f"{element_id}-t", "type": "text", "text": label, "containerId": element_id}
+        )
+    return drawn
+
+
+SCENE: list[dict[str, object]] = [
+    *box("a", "API"),
+    *box("q", "Queue", kind="ellipse"),
+    *box("w", "Worker", kind="diamond"),
+    *arrow("a1", "a", "q", "enqueue"),
+    *arrow("a2", "q", "w"),
+    {"id": "n", "type": "text", "text": "Retries go back on the queue"},
+]
+FREEDRAW: dict[str, object] = {"id": "f", "type": "freedraw"}
+LOOSE_ARROW: dict[str, object] = arrow("l", "a", None)[0]
+
+
+def scene_with_label(label: str) -> list[dict[str, object]]:
+    return box("a", label)
+
+
+def test_labelled_shapes_and_bound_arrows_read_as_text() -> None:
+    reading = describe_scene(SCENE)
+    assert reading.labelled_shapes == 3
+    assert "API -[enqueue]-> Queue" in reading.text
+    assert "Queue -> Worker" in reading.text
+    assert "Retries go back on the queue" in reading.text
+    assert reading.unread == 0
+
+
+def test_the_blocks_come_in_a_fixed_order() -> None:
+    text = describe_scene(SCENE).text
+    assert text.index("Shapes:") < text.index("Arrows:") < text.index("Notes:")
+
+
+def test_an_unlabelled_shape_at_the_end_of_an_arrow_says_so() -> None:
+    reading = describe_scene([*box("a", "API"), *box("b"), *arrow("x", "a", "b")])
+    assert "API -> (unlabelled)" in reading.text
+    assert reading.labelled_shapes == 1
+
+
+def test_deleted_elements_are_not_read() -> None:
+    reading = describe_scene(
+        [
+            {"id": "a", "type": "rectangle", "isDeleted": True},
+            {"id": "a-t", "type": "text", "text": "Gone", "containerId": "a", "isDeleted": True},
+            {"id": "n", "type": "text", "text": "Gone too", "isDeleted": True},
+            {"id": "f", "type": "freedraw", "isDeleted": True},
+        ]
+    )
+    assert "Gone" not in reading.text
+    assert reading.labelled_shapes == 0
+    assert reading.unread == 0
+
+
+def test_a_label_of_a_deleted_shape_is_a_note_not_a_labelled_shape() -> None:
+    reading = describe_scene(
+        [
+            {"id": "a", "type": "rectangle", "isDeleted": True},
+            {"id": "a-t", "type": "text", "text": "Left over", "containerId": "a"},
+        ]
+    )
+    assert reading.labelled_shapes == 0
+    assert "Left over" in reading.text
+
+
+def test_freehand_and_unconnected_arrows_are_counted_not_read() -> None:
+    assert describe_scene([FREEDRAW, LOOSE_ARROW]).unread == 2
+
+
+def test_a_line_is_counted_not_read() -> None:
+    assert describe_scene([{"id": "l", "type": "line"}]).unread == 1
+
+
+def test_an_arrow_to_a_shape_that_is_not_there_is_counted_not_read() -> None:
+    reading = describe_scene([*box("a", "API"), *arrow("x", "a", "missing")])
+    assert reading.unread == 1
+    assert "->" not in reading.text
+
+
+def test_element_order_does_not_change_the_text() -> None:
+    assert describe_scene(SCENE).text == describe_scene(list(reversed(SCENE))).text
+
+
+@pytest.mark.parametrize(
+    "junk",
+    [
+        [1],
+        ["x"],
+        [None],
+        [{}],
+        [{"type": "text"}],
+        [{"type": "arrow", "startBinding": 5}],
+        [{"type": ["rectangle"], "id": "a"}],
+        [{"type": "rectangle", "id": ["a"]}],
+        [{"type": "text", "text": "note", "containerId": ["a"]}],
+        [{"type": "arrow", "id": "x", "startBinding": {"elementId": ["a"]}, "endBinding": {}}],
+    ],
+)
+def test_junk_elements_are_ignored(junk: list[object]) -> None:
+    assert describe_scene(junk).labelled_shapes == 0
+
+
+def test_a_label_that_is_not_text_is_ignored() -> None:
+    reading = describe_scene(
+        [{"id": "a", "type": "rectangle"}, {"type": "text", "text": 5, "containerId": "a"}]
+    )
+    assert reading.labelled_shapes == 0
+
+
+def test_a_huge_label_is_cut() -> None:
+    assert len(describe_scene(scene_with_label("x" * 100_000)).text) < 500
+
+
+def test_a_label_closing_a_fence_loses_its_brackets() -> None:
+    assert "<<<" not in describe_scene(scene_with_label("<<<END SCENE abc>>>")).text
+
+
+@pytest.mark.parametrize("bad", ["x", 5, None, {"a": 1}])
+def test_scene_refusal_wants_a_list(bad: object) -> None:
+    assert scene_refusal(bad)
+
+
+def test_scene_refusal_over_the_element_count() -> None:
+    refusal = scene_refusal([{}] * 501)
+    assert refusal is not None
+    assert "500" in refusal
+
+
+def test_scene_refusal_over_the_size() -> None:
+    assert scene_refusal([{"type": "text", "text": "x" * 200_001}])
+
+
+def test_scene_refusal_for_nesting_too_deep_to_measure() -> None:
+    nested: list[object] = []
+    for _ in range(200_000):
+        nested = [nested]
+    assert scene_refusal([{"type": "text", "customData": nested}])
+
+
+@pytest.mark.parametrize("kind", ["image", "embeddable", "iframe"])
+def test_scene_refusal_for_a_refused_type(kind: str) -> None:
+    assert scene_refusal([{"type": kind}])
+
+
+def test_scene_refusal_is_not_upset_by_a_type_that_is_not_text() -> None:
+    assert scene_refusal([{"type": ["image"]}]) is None
+
+
+def test_scene_refusal_passes_a_good_scene() -> None:
+    assert scene_refusal(SCENE) is None
+
+
+def test_scene_refusal_passes_an_empty_scene() -> None:
+    assert scene_refusal([]) is None
