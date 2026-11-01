@@ -17,8 +17,9 @@ rebuilt in between.
   done inserts the row or, when a double click got there first, finds it. Swapping is a
   conditional ``UPDATE ... WHERE swaps < 1``, so two clicks can never make two swaps; the
   second gets :class:`PracticeConflict`.
-* **No streak.** The history has a calendar and three neutral counts; there is no "current
-  streak" to lose.
+* **What a person solved never falls.** The history reads every done day: retention deletes
+  only the days that were never done. A current streak is shown, as on the LeetCode profile the
+  redesign follows, and a day still open does not break it.
 * **Nothing here requests leetcode.com.** A question's link is built from its catalogue slug
   by :attr:`Question.url`; nothing a person types ever reaches a URL.
 
@@ -67,7 +68,13 @@ from services.practice.catalogue import load_catalogue
 from services.practice.design_catalogue import load_problems
 from services.practice.errors import PracticeConflict, PracticeInvalid, PracticeNotFound
 from storage.database import AsyncSessionLocal
-from storage.models import PracticeDay, PracticeDesignAnswer, PracticeSettings, Profile
+from storage.models import (
+    PracticeAttempt,
+    PracticeDay,
+    PracticeDesignAnswer,
+    PracticeSettings,
+    Profile,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -76,9 +83,9 @@ DESIGN_DIFFICULTY: Difficulty = "medium"
 #: One swap a day. ``pick_question`` replays ``swaps + 1`` draws, so the stored count is
 #: capped at this before it is passed on: an out-of-range value costs nothing.
 MAX_SWAPS = 1
-#: The calendar's longest window, in weeks.
-MAX_WEEKS = 26
-#: Rows older than this are deleted by retention (spec 5.1), so no run is longer than this.
+#: The calendar's longest window, in weeks: a year's graph, whichever day it starts on.
+MAX_WEEKS = 53
+#: Days never done are deleted by retention after this. Done days are kept, so a total never falls.
 RETENTION_DAYS = 400
 #: "Practised in the last 14 days" is what makes the contest card worth showing.
 RECENT_PRACTICE_DAYS = 14
@@ -431,11 +438,13 @@ async def today(user_id: str, *, now: datetime | None = None) -> dict[str, Any]:
 
 
 async def history(user_id: str, *, weeks: int = 12, now: datetime | None = None) -> dict[str, Any]:
-    """The calendar and its three counts.
+    """The activity graph, the counts, and what the person has solved.
 
-    ``days`` has one entry per IST day for ``weeks`` weeks (1-26) ending today, oldest first;
-    ``difficulty`` and ``topic`` are set only on a practised day. ``counts`` and the longest
-    run read every retained day, not just the window; ``topics`` counts the window's days.
+    ``days`` has one entry per IST day for ``weeks`` weeks (1-53) ending today, oldest first;
+    ``difficulty``, ``topic`` and ``kind`` are set only on a practised day, and ``contest`` on the
+    day of a saved contest entry, which colours its square and counts as nothing else. Everything
+    else reads all done days, not just the window: ``solved`` counts distinct problems, as LeetCode
+    does, and ``topics`` counts DSA days by the topic drawn.
     """
     weeks = max(1, min(weeks, MAX_WEEKS))
     moment = _moment(now)
@@ -444,16 +453,34 @@ async def history(user_id: str, *, weeks: int = 12, now: datetime | None = None)
     async with AsyncSessionLocal() as session:
         rows = (
             await session.execute(
-                select(PracticeDay.day, PracticeDay.topic, PracticeDay.difficulty).where(
+                select(
+                    PracticeDay.day,
+                    PracticeDay.topic,
+                    PracticeDay.difficulty,
+                    PracticeDay.kind,
+                    PracticeDay.question_slug,
+                ).where(
                     PracticeDay.user_id == user,
                     PracticeDay.done_at.is_not(None),
-                    PracticeDay.day >= day - timedelta(days=RETENTION_DAYS),
                     PracticeDay.day <= day,
                 )
             )
         ).all()
+        submitted = (
+            (
+                await session.execute(
+                    select(PracticeAttempt.submitted_at).where(
+                        PracticeAttempt.user_id == user,
+                        PracticeAttempt.submitted_at.is_not(None),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
 
-    done = {row.day: (row.topic, row.difficulty) for row in rows}
+    done = {row.day: row for row in rows}
+    contest_days = {ist_day(_aware(saved)) for saved in submitted if saved is not None}
     first = day - timedelta(days=weeks * 7 - 1)
     window = [first + timedelta(days=offset) for offset in range(weeks * 7)]
     return {
@@ -461,8 +488,10 @@ async def history(user_id: str, *, weeks: int = 12, now: datetime | None = None)
             {
                 "day": cell.isoformat(),
                 "done": cell in done,
-                "difficulty": done[cell][1] if cell in done else None,
-                "topic": done[cell][0] if cell in done else None,
+                "difficulty": done[cell].difficulty if cell in done else None,
+                "topic": done[cell].topic if cell in done else None,
+                "kind": done[cell].kind if cell in done else None,
+                "contest": cell in contest_days,
             }
             for cell in window
         ],
@@ -470,15 +499,57 @@ async def history(user_id: str, *, weeks: int = 12, now: datetime | None = None)
             "this_month": sum(1 for d in done if (d.year, d.month) == (day.year, day.month)),
             "last_30": sum(1 for d in done if 0 <= (day - d).days < 30),
             "longest_run": _longest_run(done),
+            "current_streak": _current_streak(done, day),
         },
         "topics": [
             {"topic": topic, "count": count}
             for topic, count in sorted(
-                Counter(done[cell][0] for cell in window if cell in done).items(),
+                Counter(row.topic for row in rows if row.kind != "design").items(),
                 key=lambda item: (-item[1], item[0]),
             )
         ],
+        "solved": _solved(rows),
+        "available": _available(load_catalogue(), load_problems()),
     }
+
+
+def _solved(rows: Iterable[Any]) -> dict[str, int]:
+    """Distinct problems among done rows. A design row counts only under ``design``."""
+    newest_first = sorted(rows, key=lambda row: row.day, reverse=True)
+    problems: dict[tuple[bool, str], str] = {}
+    for row in newest_first:
+        problems.setdefault((row.kind == "design", row.question_slug), row.difficulty)
+    solved = {name: 0 for name in ("easy", "medium", "hard", "design")}
+    for (is_design, _slug), difficulty in problems.items():
+        solved["design" if is_design else _difficulty(difficulty)] += 1
+    return {**solved, "total": sum(solved.values())}
+
+
+def _available(
+    catalogue: Iterable[Question], problems: Iterable[DesignProblem]
+) -> dict[str, int | None]:
+    """How many problems each list holds; ``None`` for a list that is not loaded."""
+    by_difficulty = Counter(question.difficulty for question in catalogue)
+    loaded = sum(by_difficulty.values()) > 0
+    designs = sum(1 for _problem in problems)
+    return {
+        **{name: by_difficulty[name] if loaded else None for name in DIFFICULTIES},
+        "design": designs or None,
+    }
+
+
+def _current_streak(days: Iterable[date], today: date) -> int:
+    """Consecutive days ending today if today is done, else ending yesterday.
+
+    A day still open does not break a streak until it is over.
+    """
+    practised = set(days)
+    cursor = today if today in practised else today - timedelta(days=1)
+    streak = 0
+    while cursor in practised:
+        streak += 1
+        cursor -= timedelta(days=1)
+    return streak
 
 
 def _longest_run(days: Iterable[date]) -> int:

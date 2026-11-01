@@ -841,12 +841,13 @@ async def advance_statuses(*, now: datetime | None = None) -> dict[str, int]:
 
 
 async def _prune_days(moment: datetime) -> int:
-    """``practice_days`` older than 400 IST days (spec 5.1)."""
+    """``practice_days`` never done and older than 400 IST days. Done days stay, because what a
+    person has solved must never fall."""
     cutoff = ist_day(moment) - timedelta(days=DAY_RETENTION_DAYS)
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             delete(PracticeDay)
-            .where(PracticeDay.day < cutoff)
+            .where(PracticeDay.day < cutoff, PracticeDay.done_at.is_(None))
             .execution_options(synchronize_session=False)
         )
         await session.commit()

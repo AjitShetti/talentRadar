@@ -15,7 +15,6 @@ The daily question: ``services/practice/daily.py`` and ``/api/v1/practice``.
 from __future__ import annotations
 
 import asyncio
-import json
 import uuid
 from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import dataclass, replace
@@ -38,7 +37,15 @@ from services.practice import daily
 from services.practice.catalogue import load_catalogue
 from services.practice.errors import PracticeConflict, PracticeInvalid, PracticeNotFound
 from storage.database import Base
-from storage.models import PracticeDay, PracticeDesignAnswer, PracticeSettings, Profile, User
+from storage.models import (
+    PracticeAttempt,
+    PracticeChallenge,
+    PracticeDay,
+    PracticeDesignAnswer,
+    PracticeSettings,
+    Profile,
+    User,
+)
 
 # Thursday 11:30 IST. The coming Sunday's contest has not started and its card is not showing.
 NOW = datetime(2026, 10, 15, 6, 0, tzinfo=UTC)
@@ -69,9 +76,11 @@ TODAY_KEYS = {
 }
 QUESTION_KEYS = {"id", "slug", "title", "difficulty", "topics", "url"}
 CONTEST_KEYS = {"starts_at", "ends_at", "show", "live", "url"}
-HISTORY_KEYS = {"days", "counts", "topics"}
-HISTORY_DAY_KEYS = {"day", "done", "difficulty", "topic"}
-COUNT_KEYS = {"this_month", "last_30", "longest_run"}
+HISTORY_KEYS = {"days", "counts", "topics", "solved", "available"}
+HISTORY_DAY_KEYS = {"day", "done", "difficulty", "topic", "kind", "contest"}
+COUNT_KEYS = {"this_month", "last_30", "longest_run", "current_streak"}
+SOLVED_KEYS = {"easy", "medium", "hard", "design", "total"}
+AVAILABLE_KEYS = {"easy", "medium", "hard", "design"}
 
 
 def build_catalogue(size: int = 30) -> tuple[Question, ...]:
@@ -140,6 +149,8 @@ async def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[D
             "practice_days",
             "practice_settings",
             "practice_design_answers",
+            "practice_challenges",
+            "practice_attempts",
         )
     ]
     async with engine.begin() as conn:
@@ -193,6 +204,38 @@ async def add_day(
                 if done
                 else None,
                 feel=feel,
+            )
+        )
+        await session.commit()
+
+
+async def add_contest_entry(db: Db, user_id: uuid.UUID, submitted_at: datetime | None) -> None:
+    """A take-home started, and saved at ``submitted_at`` when that is given."""
+    opens = datetime(2026, 10, 9, 12, 30, tzinfo=UTC)
+    async with db.factory() as session:
+        challenge = (
+            await session.execute(select(PracticeChallenge))
+        ).scalar_one_or_none() or PracticeChallenge(
+            slug="relay-2026-10-09",
+            brief_slug="relay",
+            title="Relay",
+            track="backend",
+            hours=48,
+            brief={},
+            opens_at=opens,
+            closes_at=opens + timedelta(days=7),
+        )
+        session.add(challenge)
+        await session.flush()
+        session.add(
+            PracticeAttempt(
+                user_id=user_id,
+                challenge_id=challenge.id,
+                status="submitted" if submitted_at else "started",
+                started_at=opens,
+                deadline_at=opens + timedelta(hours=48),
+                proof_code=uuid.uuid4().hex[:10],
+                submitted_at=submitted_at,
             )
         )
         await session.commit()
@@ -265,7 +308,6 @@ class TestToday:
         assert payload["leetcode_daily_url"] == LEETCODE_PROBLEMSET_URL
         assert isinstance(payload["relaxed"], list)
         assert isinstance(payload["reason"], str) and payload["reason"]
-        assert "streak" not in json.dumps(payload).lower()
 
     async def test_question_url_is_built_from_the_catalogue_slug(self, asha: str) -> None:
         question = (await daily.today(asha, now=NOW))["question"]
@@ -947,18 +989,173 @@ class TestHistory:
 
         payload = await daily.history(asha, now=datetime(2026, 10, 16, 6, 0, tzinfo=UTC))
 
-        assert payload["counts"] == {"this_month": 3, "last_30": 3, "longest_run": 2}
+        assert payload["counts"] == {
+            "this_month": 3,
+            "last_30": 3,
+            "longest_run": 2,
+            "current_streak": 0,
+        }
         assert set(payload) == HISTORY_KEYS
         assert today.isoformat() == payload["days"][-1]["day"]
 
-    async def test_has_no_streak_anywhere(self, db: Db, asha: str) -> None:
-        await add_day(db, uuid.UUID(asha), TODAY, done=True)
+    async def test_the_streak_counts_up_to_yesterday_while_today_is_open(
+        self, db: Db, asha: str
+    ) -> None:
+        user = uuid.UUID(asha)
+        for back in (1, 2, 3):
+            await add_day(db, user, TODAY - timedelta(days=back), done=True)
+
+        counts = (await daily.history(asha, now=NOW))["counts"]
+
+        assert counts["current_streak"] == 3
+        assert set(counts) == COUNT_KEYS
+
+    async def test_doing_today_extends_the_streak(self, db: Db, asha: str) -> None:
+        user = uuid.UUID(asha)
+        for back in (0, 1, 2, 3):
+            await add_day(db, user, TODAY - timedelta(days=back), done=True)
+
+        assert (await daily.history(asha, now=NOW))["counts"]["current_streak"] == 4
+
+    async def test_a_missed_day_ends_the_streak(self, db: Db, asha: str) -> None:
+        user = uuid.UUID(asha)
+        for back in (2, 3, 4):
+            await add_day(db, user, TODAY - timedelta(days=back), done=True)
+
+        assert (await daily.history(asha, now=NOW))["counts"]["current_streak"] == 0
+
+    async def test_a_swap_never_done_does_not_extend_the_streak(self, db: Db, asha: str) -> None:
+        user = uuid.UUID(asha)
+        await add_day(db, user, TODAY - timedelta(days=1), swaps=1)
+        await add_day(db, user, TODAY - timedelta(days=2), done=True)
+
+        assert (await daily.history(asha, now=NOW))["counts"]["current_streak"] == 0
+
+    async def test_solved_counts_distinct_problems(self, db: Db, asha: str) -> None:
+        user = uuid.UUID(asha)
+        for back in (1, 8):
+            await add_day(
+                db,
+                user,
+                TODAY - timedelta(days=back),
+                slug="bus-tracker",
+                topic="realtime",
+                difficulty="medium",
+                done=True,
+                kind="design",
+            )
+        for back, slug, difficulty in (
+            (2, "two-sum", "easy"),
+            (3, "two-sum", "easy"),
+            (4, "lru-cache", "medium"),
+            (5, "n-queens", "hard"),
+        ):
+            await add_day(
+                db, user, TODAY - timedelta(days=back), slug=slug, difficulty=difficulty, done=True
+            )
+
+        solved = (await daily.history(asha, now=NOW))["solved"]
+
+        assert solved == {"easy": 1, "medium": 1, "hard": 1, "design": 1, "total": 4}
+
+    async def test_design_rows_are_not_counted_as_medium(self, db: Db, asha: str) -> None:
+        await add_day(
+            db,
+            uuid.UUID(asha),
+            TODAY - timedelta(days=1),
+            slug="bus-tracker",
+            difficulty="medium",
+            done=True,
+            kind="design",
+        )
+
+        solved = (await daily.history(asha, now=NOW))["solved"]
+
+        assert solved["medium"] == 0
+        assert solved["design"] == 1
+
+    async def test_the_same_slug_as_dsa_and_design_is_two_problems(self, db: Db, asha: str) -> None:
+        user = uuid.UUID(asha)
+        await add_day(db, user, TODAY - timedelta(days=1), slug="same", done=True, kind="design")
+        await add_day(db, user, TODAY - timedelta(days=2), slug="same", done=True)
+
+        assert (await daily.history(asha, now=NOW))["solved"]["total"] == 2
+
+    async def test_undone_rows_are_not_solved(self, db: Db, asha: str) -> None:
+        await add_day(db, uuid.UUID(asha), TODAY - timedelta(days=1), swaps=1)
+
+        assert (await daily.history(asha, now=NOW))["solved"]["total"] == 0
+
+    async def test_available_counts_the_loaded_lists(
+        self, monkeypatch: pytest.MonkeyPatch, asha: str
+    ) -> None:
+        monkeypatch.setattr(daily, "load_problems", lambda: DESIGN_LIST)
+
+        available = (await daily.history(asha, now=NOW))["available"]
+
+        assert set(available) == AVAILABLE_KEYS
+        assert available == {"easy": 10, "medium": 10, "hard": 10, "design": len(DESIGN_LIST)}
+
+    async def test_available_is_none_for_a_list_not_loaded(
+        self, monkeypatch: pytest.MonkeyPatch, asha: str
+    ) -> None:
+        monkeypatch.setattr(daily, "load_catalogue", lambda: ())
+
+        available = (await daily.history(asha, now=NOW))["available"]
+
+        assert available == {"easy": None, "medium": None, "hard": None, "design": None}
+
+    async def test_a_submitted_contest_marks_its_day_without_counting_as_solved(
+        self, db: Db, asha: str
+    ) -> None:
+        # Saved at 23:30 UTC on the 12th: that is already the 13th in IST.
+        await add_contest_entry(db, uuid.UUID(asha), datetime(2026, 10, 12, 23, 30, tzinfo=UTC))
 
         payload = await daily.history(asha, now=NOW)
 
-        text = json.dumps(payload).lower()
-        assert "streak" not in text
-        assert set(payload["counts"]) == COUNT_KEYS
+        cell = next(entry for entry in payload["days"] if entry["day"] == "2026-10-13")
+        assert cell["contest"] is True
+        assert cell["done"] is False
+        assert cell["kind"] is None
+        assert payload["solved"]["total"] == 0
+        assert payload["counts"]["current_streak"] == 0
+        assert payload["counts"]["longest_run"] == 0
+
+    async def test_a_started_contest_marks_nothing(self, db: Db, asha: str) -> None:
+        await add_contest_entry(db, uuid.UUID(asha), None)
+
+        payload = await daily.history(asha, now=NOW)
+
+        assert not any(entry["contest"] for entry in payload["days"])
+
+    async def test_another_persons_contest_marks_nothing(self, db: Db, asha: str) -> None:
+        other = await add_user(db, "other")
+        await add_contest_entry(db, other, datetime(2026, 10, 12, 6, 0, tzinfo=UTC))
+
+        payload = await daily.history(asha, now=NOW)
+
+        assert not any(entry["contest"] for entry in payload["days"])
+
+    async def test_rows_older_than_retention_still_count_in_solved(self, db: Db, asha: str) -> None:
+        user = uuid.UUID(asha)
+        old = TODAY - timedelta(days=900)
+        await add_day(db, user, old, slug="old", difficulty="hard", topic="tree", done=True)
+
+        payload = await daily.history(asha, now=NOW)
+
+        assert payload["solved"]["hard"] == 1
+        assert payload["topics"] == [{"topic": "tree", "count": 1}]
+
+    async def test_a_done_day_says_its_kind(self, db: Db, asha: str) -> None:
+        user = uuid.UUID(asha)
+        await add_day(db, user, TODAY, slug="bus-tracker", done=True, kind="design")
+        await add_day(db, user, TODAY - timedelta(days=1), done=True)
+
+        days = (await daily.history(asha, weeks=1, now=NOW))["days"]
+
+        assert days[-1]["kind"] == "design"
+        assert days[-2]["kind"] == "dsa"
+        assert days[-3]["kind"] is None
 
     async def test_this_month_last_30_and_longest_run_differ(self, db: Db, asha: str) -> None:
         user = uuid.UUID(asha)
@@ -975,7 +1172,7 @@ class TestHistory:
 
         counts = (await daily.history(asha, now=now))["counts"]
 
-        assert counts == {"this_month": 2, "last_30": 3, "longest_run": 5}
+        assert counts == {"this_month": 2, "last_30": 3, "longest_run": 5, "current_streak": 2}
 
     async def test_days_are_one_entry_per_day_oldest_first(self, db: Db, asha: str) -> None:
         user = uuid.UUID(asha)
@@ -992,6 +1189,8 @@ class TestHistory:
             "done": True,
             "difficulty": "hard",
             "topic": "graph",
+            "kind": "dsa",
+            "contest": False,
         }
         assert all(set(entry) == HISTORY_DAY_KEYS for entry in days)
         swapped_only = next(e for e in days if e["day"] == (TODAY - timedelta(days=2)).isoformat())
@@ -1000,33 +1199,45 @@ class TestHistory:
             "done": False,
             "difficulty": None,
             "topic": None,
+            "kind": None,
+            "contest": False,
         }
         assert [e["day"] for e in days] == sorted(e["day"] for e in days)
 
-    async def test_topics_count_done_days_in_the_window(self, db: Db, asha: str) -> None:
+    async def test_topics_count_every_done_dsa_day(self, db: Db, asha: str) -> None:
         user = uuid.UUID(asha)
         for offset, topic in ((0, "graph"), (1, "graph"), (2, "tree"), (3, "array"), (4, "array")):
             await add_day(db, user, TODAY - timedelta(days=offset), topic=topic, done=True)
         await add_day(db, user, TODAY - timedelta(days=200), topic="stack", done=True)
+        await add_day(
+            db, user, TODAY - timedelta(days=5), slug="x", topic="caching", done=True, kind="design"
+        )
 
         payload = await daily.history(asha, weeks=4, now=NOW)
 
         assert payload["topics"] == [
             {"topic": "array", "count": 2},
             {"topic": "graph", "count": 2},
+            {"topic": "stack", "count": 1},
             {"topic": "tree", "count": 1},
         ]
 
     async def test_weeks_are_bounded(self, asha: str) -> None:
         assert len((await daily.history(asha, weeks=0, now=NOW))["days"]) == 7
-        assert len((await daily.history(asha, weeks=99, now=NOW))["days"]) == 26 * 7
+        assert len((await daily.history(asha, weeks=99, now=NOW))["days"]) == 53 * 7
         assert len((await daily.history(asha, now=NOW))["days"]) == 12 * 7
 
     async def test_empty_history(self, asha: str) -> None:
         payload = await daily.history(asha, now=NOW)
 
-        assert payload["counts"] == {"this_month": 0, "last_30": 0, "longest_run": 0}
+        assert payload["counts"] == {
+            "this_month": 0,
+            "last_30": 0,
+            "longest_run": 0,
+            "current_streak": 0,
+        }
         assert payload["topics"] == []
+        assert payload["solved"] == dict.fromkeys(SOLVED_KEYS, 0)
         assert not any(entry["done"] for entry in payload["days"])
 
     async def test_another_users_days_are_not_counted(self, db: Db, asha: str) -> None:
@@ -1035,7 +1246,7 @@ class TestHistory:
 
         counts = (await daily.history(asha, now=NOW))["counts"]
 
-        assert counts == {"this_month": 0, "last_30": 0, "longest_run": 0}
+        assert counts == {"this_month": 0, "last_30": 0, "longest_run": 0, "current_streak": 0}
 
 
 # ---------------------------------------------------------------------------
@@ -1146,7 +1357,6 @@ class TestRoutes:
         assert set(body["contest"]) == CONTEST_KEYS
         assert body["catalogue"] == "ok"
         assert body["swaps_left"] == 1
-        assert "streak" not in response.text.lower()
 
     async def test_today_with_no_catalogue_still_answers(
         self, monkeypatch: pytest.MonkeyPatch, client: AsyncClient
@@ -1226,17 +1436,18 @@ class TestRoutes:
         assert len(body["days"]) == 28
         assert set(body["counts"]) == COUNT_KEYS
         assert body["counts"]["last_30"] == 1
-        assert "streak" not in response.text.lower()
+        assert set(body["solved"]) == SOLVED_KEYS
+        assert set(body["available"]) == AVAILABLE_KEYS
 
-    @pytest.mark.parametrize("weeks", ["0", "27", "-1", "x"])
-    async def test_history_weeks_outside_1_to_26_is_422(
+    @pytest.mark.parametrize("weeks", ["0", "54", "-1", "x"])
+    async def test_history_weeks_outside_1_to_53_is_422(
         self, client: AsyncClient, weeks: str
     ) -> None:
         response = await client.get(f"{API}/history?weeks={weeks}")
 
         assert response.status_code == 422
 
-    @pytest.mark.parametrize("weeks", ["1", "26"])
+    @pytest.mark.parametrize("weeks", ["1", "53"])
     async def test_history_weeks_at_the_bounds_is_200(
         self, client: AsyncClient, weeks: str
     ) -> None:

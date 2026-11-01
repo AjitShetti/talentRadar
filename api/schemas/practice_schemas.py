@@ -89,20 +89,24 @@ class PracticeTodaySchema(BaseModel):
 
 
 class HistoryDaySchema(BaseModel):
-    """One calendar cell. ``difficulty`` and ``topic`` are set only on a practised day."""
+    """One calendar cell. ``difficulty``, ``topic`` and ``kind`` are set only on a practised day;
+    ``contest`` is the day of a saved contest entry, whether or not the day was practised."""
 
     day: str
     done: bool
     difficulty: str | None
     topic: str | None
+    kind: Literal["dsa", "design"] | None
+    contest: bool
 
 
 class HistoryCountsSchema(BaseModel):
-    """Three neutral counts. There is deliberately no current streak."""
+    """Done days this month and in the last 30, and the longest and current runs."""
 
     this_month: int
     last_30: int
     longest_run: int
+    current_streak: int
 
 
 class TopicCountSchema(BaseModel):
@@ -110,10 +114,31 @@ class TopicCountSchema(BaseModel):
     count: int
 
 
+class HistorySolvedSchema(BaseModel):
+    """Distinct problems among done days. A design problem counts only under ``design``."""
+
+    easy: int
+    medium: int
+    hard: int
+    design: int
+    total: int
+
+
+class HistoryAvailableSchema(BaseModel):
+    """How many problems each list holds. ``None`` is a list that is not loaded."""
+
+    easy: int | None
+    medium: int | None
+    hard: int | None
+    design: int | None
+
+
 class PracticeHistorySchema(BaseModel):
     days: list[HistoryDaySchema]
     counts: HistoryCountsSchema
     topics: list[TopicCountSchema]
+    solved: HistorySolvedSchema
+    available: HistoryAvailableSchema
 
 
 # --------------------------------------------------------------------------- challenges

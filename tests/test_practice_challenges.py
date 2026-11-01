@@ -2101,6 +2101,31 @@ class TestPrune:
 
         assert len(await editions_of(db)) == 1
 
+    async def test_prune_keeps_done_days_and_drops_undone_old_ones(
+        self, db: Db, asha: str
+    ) -> None:
+        today = datetime(2026, 10, 15, 6, 0, tzinfo=UTC).date()
+        async with db.factory() as session:
+            for slug, done_at in (("kept", NOW), ("dropped", None)):
+                session.add(
+                    PracticeDay(
+                        user_id=uuid.UUID(asha),
+                        day=today - timedelta(days=900) + timedelta(days=len(slug)),
+                        question_slug=slug,
+                        topic="array",
+                        difficulty="easy",
+                        done_at=done_at,
+                    )
+                )
+            await session.commit()
+
+        counts = await challenges.prune(now=NOW)
+
+        assert counts["pruned_days"] == 1
+        async with db.factory() as session:
+            left = (await session.execute(select(PracticeDay.question_slug))).scalars().all()
+        assert left == ["kept"]
+
     async def test_a_practice_day_401_days_old_is_deleted_and_one_400_days_old_stays(
         self, db: Db, asha: str
     ) -> None:

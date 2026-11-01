@@ -8,7 +8,7 @@ POST   /practice/today/done     - mark it done, optionally with a rating
 PATCH  /practice/today/feel     - rate the question marked done
 DELETE /practice/today/done     - undo a misclicked done (today only)
 POST   /practice/today/swap     - a different question; one a day, then 409
-GET    /practice/history        - the calendar and its counts (weeks 1-26)
+GET    /practice/history        - the calendar and its counts (weeks 1-53)
 GET    /practice/challenges            - the open build, when the next opens, the last twelve
 GET    /practice/challenges/{slug}     - one build's brief and the caller's own attempt
 POST   /practice/challenges/{slug}/start        - press Start: the clock and the proof code
@@ -131,7 +131,7 @@ async def swap(user_id: CurrentUserId) -> dict[str, Any]:
 
 @router.get("/history", response_model=PracticeHistorySchema)
 async def get_history(
-    user_id: CurrentUserId, weeks: Annotated[int, Query(ge=1, le=26)] = 12
+    user_id: CurrentUserId, weeks: Annotated[int, Query(ge=1, le=53)] = 12
 ) -> dict[str, Any]:
     """The calendar of practised days and three neutral counts."""
     return await _answer(daily.history(user_id, weeks=weeks))
