@@ -275,7 +275,7 @@ function buildActions(
   }
 
   // The one Practice suggestion (services/copilot.py): the weekly contest, else today's
-  // question. A suggestion, not a commitment, so it only takes a slot nothing else wanted.
+  // problem, DSA or system design. A suggestion, not a commitment, so it only takes a slot nothing else wanted.
   // A take-home due within hours is a `practice_deadline` card and already led, above.
   const practice = briefing?.cards?.find(card => card.kind === 'practice_contest' || card.kind === 'practice_today')
   if (practice && out.length < 3) {
@@ -284,7 +284,7 @@ function buildActions(
       key: `briefing-${practice.id}`,
       title: practice.title,
       why: practice.detail,
-      tags: [{ label: practice.kind === 'practice_contest' ? 'Weekly contest' : 'Daily question' }],
+      tags: [{ label: practice.kind === 'practice_contest' ? 'Weekly contest' : practice.meta?.kind === 'design' ? 'System design' : 'Daily question' }],
       cta: action?.label || 'Open',
       href: action?.href || '/practice',
     })

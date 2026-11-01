@@ -27,6 +27,7 @@ import pytest_asyncio
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from domain.practice_design import DesignProblem
 from domain.practice_pick import Question
 from domain.practice_schedule import CONTEST_URL, IST
 from services import copilot
@@ -391,17 +392,31 @@ class TestDeadlineCards:
 
 
 class TestSuggestionCardNeedsRecentPractice:
-    async def test_someone_who_never_practised_gets_no_card_at_all(self, db: Db, asha: str) -> None:
-        # Not the contest on Saturday evening, and not the daily question either.
-        assert await _practice_suggestion_card(asha, now=SATURDAY_EVENING) is None
-        assert await _practice_suggestion_card(asha, now=THURSDAY) is None
+    async def test_someone_who_never_practised_gets_todays_problem(
+        self, db: Db, asha: str
+    ) -> None:
+        card = await _practice_suggestion_card(asha, now=THURSDAY)
 
-    async def test_someone_who_last_practised_fifteen_days_ago_gets_none(
+        assert card is not None
+        assert card["kind"] == "practice_today"
+
+    async def test_someone_who_never_practised_gets_no_contest_card(
+        self, db: Db, asha: str
+    ) -> None:
+        card = await _practice_suggestion_card(asha, now=SATURDAY_EVENING)
+
+        assert card is not None
+        assert card["kind"] == "practice_today"
+
+    async def test_someone_who_last_practised_fifteen_days_ago_gets_no_contest_card(
         self, db: Db, asha: str
     ) -> None:
         await add_day(db, asha, ist_day(SATURDAY_EVENING) - timedelta(days=15))
 
-        assert await _practice_suggestion_card(asha, now=SATURDAY_EVENING) is None
+        card = await _practice_suggestion_card(asha, now=SATURDAY_EVENING)
+
+        assert card is not None
+        assert card["kind"] == "practice_today"
 
     async def test_fourteen_days_ago_still_counts(self, db: Db, asha: str) -> None:
         await add_day(db, asha, ist_day(SATURDAY_EVENING) - timedelta(days=14))
@@ -410,10 +425,90 @@ class TestSuggestionCardNeedsRecentPractice:
 
         assert card is not None
 
-    async def test_a_day_that_was_not_marked_done_is_not_practice(self, db: Db, asha: str) -> None:
+    async def test_a_day_that_was_not_marked_done_does_not_earn_the_contest_card(
+        self, db: Db, asha: str
+    ) -> None:
         await add_day(db, asha, ist_day(SATURDAY_EVENING) - timedelta(days=3), done=False)
 
-        assert await _practice_suggestion_card(asha, now=SATURDAY_EVENING) is None
+        card = await _practice_suggestion_card(asha, now=SATURDAY_EVENING)
+
+        assert card is not None
+        assert card["kind"] == "practice_today"
+
+
+TUESDAY = datetime(2026, 11, 3, 11, 30, tzinfo=IST)
+
+
+def design_problems() -> tuple[DesignProblem, ...]:
+    return tuple(
+        DesignProblem(
+            slug=f"design-problem-{number:02d}",
+            title=f"Design problem {number}",
+            tracks=("general",),
+            minutes=30,
+            topics=("caching",),
+            summary="A summary.",
+            context=("Some context.",),
+            must_handle=("One thing.",),
+            show_in_answer=("A box.",),
+        )
+        for number in range(1, 4)
+    )
+
+
+class TestDesignCard:
+    async def test_a_design_day_links_to_its_page(
+        self, db: Db, asha: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(daily, "load_problems", design_problems)
+        slug = (await daily.today(asha, now=TUESDAY))["design"]["slug"]
+
+        card = await _practice_suggestion_card(asha, now=TUESDAY)
+
+        assert card is not None
+        assert card["actions"][0]["href"] == f"/practice/design/{slug}"
+        assert card["actions"][0]["label"] == "Draw and solve"
+        assert card["actions"][1] == {
+            "label": "Open Practice",
+            "href": "/practice",
+            "style": "ghost",
+        }
+        assert card["meta"] == {"kind": "design", "slug": slug}
+        assert card["title"].startswith("Today's system design: ")
+        assert card["detail"].startswith("About 30 min · ")
+
+    async def test_a_design_day_marked_done_has_no_card(
+        self, db: Db, asha: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(daily, "load_problems", design_problems)
+        slug = (await daily.today(asha, now=TUESDAY))["design"]["slug"]
+        async with db.factory() as session:
+            session.add(
+                PracticeDay(
+                    user_id=uuid.UUID(asha),
+                    day=ist_day(TUESDAY),
+                    question_slug=slug,
+                    topic="caching",
+                    difficulty="medium",
+                    kind="design",
+                    swaps=0,
+                    done_at=TUESDAY,
+                )
+            )
+            await session.commit()
+
+        assert await _practice_suggestion_card(asha, now=TUESDAY) is None
+
+    async def test_a_dsa_card_says_it_is_dsa(self, db: Db, asha: str) -> None:
+        card = await _practice_suggestion_card(asha, now=THURSDAY)
+
+        assert card is not None
+        assert card["meta"]["kind"] == "dsa"
+        assert card["title"].startswith("Solve today's question: ")
+
+
+def test_practice_today_stays_off_the_models_allowlist() -> None:
+    assert "practice_today" not in copilot.MODEL_VISIBLE_CARD_KINDS
 
 
 class TestContestCard:
