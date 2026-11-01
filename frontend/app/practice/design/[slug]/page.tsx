@@ -186,10 +186,12 @@ function DesignView({ slug, day }: { slug: string; day?: string }) {
   const lastAnswer = !day && page.last_answer_day
 
   return <>
-    <section className="page-heading">
-      <span className="board-kicker">Practice · system design</span>
-      <h1>{problem.title}<span>.</span></h1>
-      <p>{problem.summary} About {problem.minutes} minutes.</p>
+    <section className="page-heading split-heading">
+      <div>
+        <span className="board-kicker">Practice · system design</span>
+        <h1>{problem.title}<span>.</span></h1>
+        <p>{problem.summary} About {problem.minutes} minutes.</p>
+      </div>
     </section>
 
     <div className="pr-solve">
