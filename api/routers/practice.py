@@ -11,6 +11,7 @@ POST   /practice/today/swap     - a different question; one a day, then 409
 GET    /practice/history        - the calendar and its counts (weeks 1-53)
 GET    /practice/design/{slug}         - a design problem and an answer (?day=YYYY-MM-DD)
 PUT    /practice/design/{slug}/answer  - save the open answer
+POST   /practice/design/{slug}/feedback - read it now; a problem is said in the 200 body
 GET    /practice/challenges            - the open build, when the next opens, the last twelve
 GET    /practice/challenges/{slug}     - one build's brief and the caller's own attempt
 POST   /practice/challenges/{slug}/start        - press Start: the clock and the proof code
@@ -63,7 +64,7 @@ from api.schemas.practice_schemas import (
     SettingsRequestSchema,
     SubmissionRequestSchema,
 )
-from services.practice import board, challenges, daily, design, judge
+from services.practice import board, challenges, daily, design, design_feedback, judge
 from services.practice.errors import (
     PracticeConflict,
     PracticeInvalid,
@@ -161,6 +162,14 @@ async def save_design_answer(
 ) -> dict[str, Any]:
     """Save the open answer. 409 when none is open."""
     return await _answer(design.save_answer(user_id, slug, body.elements, body.reasoning))
+
+
+@router.post("/design/{slug}/feedback", response_model=DesignPageSchema)
+async def get_design_feedback(
+    user_id: CurrentUserId, slug: Annotated[str, PathParam(min_length=1, max_length=128)]
+) -> dict[str, Any]:
+    """Mark the day done and read the open answer. Over a limit, ``feedback_problem`` says so."""
+    return await _answer(design_feedback.request_feedback(user_id, slug))
 
 
 @router.get("/challenges", response_model=ChallengesOverviewSchema)

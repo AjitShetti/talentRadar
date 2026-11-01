@@ -52,7 +52,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -146,6 +146,10 @@ HOLD_CLEARED_FLAG = "hold_cleared"
 APPEAL_INPUT_CHANGED_FLAG = "appeal_input_changed"
 
 _BUDGET_KEY_PREFIX = "tr:budget:judge:"
+#: Held while the judge has attempts to call, so that Get feedback waits (it shares the model).
+#: The TTL is so a crash cannot leave it set; a run is at most about five minutes.
+JUDGING_KEY = "tr:practice:judging"
+_JUDGING_TTL_SECONDS = 600
 _BUDGET_TTL_SECONDS = 48 * 3600
 
 #: How much of each file is fetched, in bytes: enough for ``CAP_*`` characters in any encoding.
@@ -960,6 +964,55 @@ async def _due_attempts(moment: datetime, cap: int) -> list[uuid.UUID]:
         return list(rows.scalars().all())
 
 
+async def _hold_judging() -> None:
+    """Tell Get feedback to wait. A cache failure must not stop the judge."""
+    try:
+        await CacheBackend.set(JUDGING_KEY, "1", _JUDGING_TTL_SECONDS)
+    except Exception as exc:
+        logger.debug("practice: could not set the judging key (%s)", type(exc).__name__)
+
+
+async def _release_judging() -> None:
+    try:
+        await CacheBackend.delete(JUDGING_KEY)
+    except Exception as exc:
+        logger.debug("practice: could not clear the judging key (%s)", type(exc).__name__)
+
+
+async def _judge_due(
+    due: Sequence[uuid.UUID],
+    moment: datetime,
+    tally: dict[str, int],
+    sleep: Callable[[float], Awaitable[None]],
+) -> None:
+    """Judge each due attempt in turn, spaced for the model's limit, adding up ``tally``."""
+    owes_a_wait = False
+    for position, attempt_id in enumerate(due):
+        if position and await _budget_spent(moment):  # the last call took the last unit
+            tally["budget_exhausted"] = 1
+            break
+        if owes_a_wait:
+            await sleep(JUDGE_SPACING_SECONDS)
+            owes_a_wait = False
+        try:
+            outcome = await _judge(attempt_id, moment)
+        except Exception as exc:
+            logger.warning(
+                "practice: judging attempt %s raised %s", attempt_id, type(exc).__name__
+            )
+            tally["processed"] += 1
+            tally["errors"] += 1
+            await _fail_quietly(attempt_id, moment)
+            continue
+        if outcome.kind == "budget":
+            tally["budget_exhausted"] = 1
+            break
+        tally["processed"] += 1
+        if outcome.kind in tally:
+            tally[outcome.kind] += 1
+        owes_a_wait = owes_a_wait or outcome.llm
+
+
 async def run_judge_step(
     limit: int,
     *,
@@ -991,31 +1044,14 @@ async def run_judge_step(
         if await _budget_spent(moment):
             tally["budget_exhausted"] = 1
             return _counts(tally)
-        owes_a_wait = False
-        for position, attempt_id in enumerate(await _due_attempts(moment, cap)):
-            if position and await _budget_spent(moment):  # the last call took the last unit
-                tally["budget_exhausted"] = 1
-                break
-            if owes_a_wait:
-                await sleep(JUDGE_SPACING_SECONDS)
-                owes_a_wait = False
-            try:
-                outcome = await _judge(attempt_id, moment)
-            except Exception as exc:
-                logger.warning(
-                    "practice: judging attempt %s raised %s", attempt_id, type(exc).__name__
-                )
-                tally["processed"] += 1
-                tally["errors"] += 1
-                await _fail_quietly(attempt_id, moment)
-                continue
-            if outcome.kind == "budget":
-                tally["budget_exhausted"] = 1
-                break
-            tally["processed"] += 1
-            if outcome.kind in tally:
-                tally[outcome.kind] += 1
-            owes_a_wait = owes_a_wait or outcome.llm
+        due = await _due_attempts(moment, cap)
+        if not due:
+            return _counts(tally)
+        await _hold_judging()
+        try:
+            await _judge_due(due, moment, tally, sleep)
+        finally:
+            await _release_judging()
         return _counts(tally)
     except Exception as exc:
         logger.warning("practice: the judge step failed (%s)", type(exc).__name__)
