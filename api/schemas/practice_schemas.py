@@ -55,15 +55,27 @@ class ContestSchema(BaseModel):
     url: str
 
 
+class PracticeDesignBlockSchema(BaseModel):
+    """The system design problem on a design day, as the Today card needs it."""
+
+    slug: str
+    title: str
+    minutes: int
+    topics: list[str]
+    has_answer: bool
+
+
 class PracticeTodaySchema(BaseModel):
-    """The day's question, whether it is done, and the links beside it."""
+    """The day's problem, whether it is done, and the links beside it."""
 
     day: str = Field(description="The IST calendar date, YYYY-MM-DD")
     catalogue: Literal["ok", "empty"]
     catalogue_size: int
     track: str
     track_label: str
+    kind: Literal["dsa", "design"] | None
     question: PracticeQuestionSchema | None
+    design: PracticeDesignBlockSchema | None
     reason: str
     relaxed: list[str]
     done_at: str | None

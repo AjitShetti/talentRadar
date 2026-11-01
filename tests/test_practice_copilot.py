@@ -86,6 +86,7 @@ def catalogue(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Thirty questions in place of the file; the real loader's cache is cleared around it."""
     load_catalogue.cache_clear()
     monkeypatch.setattr(daily, "load_catalogue", lambda: QUESTIONS)
+    monkeypatch.setattr(daily, "load_problems", lambda: ())
     yield
     load_catalogue.cache_clear()
 
@@ -118,6 +119,7 @@ async def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[D
             "resumes",
             "profiles",
             "practice_days",
+            "practice_design_answers",
             "practice_challenges",
             "practice_attempts",
             "practice_settings",

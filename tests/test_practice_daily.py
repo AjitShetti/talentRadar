@@ -8,7 +8,8 @@ The daily question: ``services/practice/daily.py`` and ``/api/v1/practice``.
   ``:memory:``, because the double-click tests need two real connections. The shared
   Postgres test database is never touched.
 * The catalogue is thirty built questions patched into the module; the checked-in file
-  does not exist yet.
+  does not exist yet. The system design list is patched to empty, so that a day is a DSA day
+  whatever its weekday (the route tests read the real clock); ``design_list`` turns it on.
 """
 
 from __future__ import annotations
@@ -30,13 +31,14 @@ from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Session
 
+from domain.practice_design import DesignProblem
 from domain.practice_pick import Feel, Question, pick_question
 from domain.practice_schedule import CONTEST_URL, LEETCODE_PROBLEMSET_URL
 from services.practice import daily
 from services.practice.catalogue import load_catalogue
 from services.practice.errors import PracticeConflict, PracticeInvalid, PracticeNotFound
 from storage.database import Base
-from storage.models import PracticeDay, PracticeSettings, Profile, User
+from storage.models import PracticeDay, PracticeDesignAnswer, PracticeSettings, Profile, User
 
 # Thursday 11:30 IST. The coming Sunday's contest has not started and its card is not showing.
 NOW = datetime(2026, 10, 15, 6, 0, tzinfo=UTC)
@@ -54,7 +56,9 @@ TODAY_KEYS = {
     "catalogue_size",
     "track",
     "track_label",
+    "kind",
     "question",
+    "design",
     "reason",
     "relaxed",
     "done_at",
@@ -91,6 +95,7 @@ def catalogue(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Thirty questions in place of the file; the real loader's cache is cleared around it."""
     load_catalogue.cache_clear()
     monkeypatch.setattr(daily, "load_catalogue", lambda: QUESTIONS)
+    monkeypatch.setattr(daily, "load_problems", lambda: ())
     yield
     load_catalogue.cache_clear()
 
@@ -128,7 +133,14 @@ async def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[D
 
     tables = [
         Base.metadata.tables[name]
-        for name in ("users", "resumes", "profiles", "practice_days", "practice_settings")
+        for name in (
+            "users",
+            "resumes",
+            "profiles",
+            "practice_days",
+            "practice_settings",
+            "practice_design_answers",
+        )
     ]
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all, tables=tables)
@@ -165,10 +177,12 @@ async def add_day(
     swaps: int = 0,
     done: bool = False,
     feel: str | None = None,
+    kind: str = "dsa",
 ) -> None:
     async with db.factory() as session:
         session.add(
             PracticeDay(
+                kind=kind,
                 user_id=user_id,
                 day=day,
                 question_slug=slug,
@@ -847,7 +861,7 @@ def _both_read_before_either_writes(monkeypatch: pytest.MonkeyPatch) -> None:
     Both then believe there is no row for today, which is exactly a double click.
     """
     barrier = asyncio.Barrier(2)
-    real_load = daily._load
+    real_load = daily.load_day
     started = {"loads": 0}
 
     async def load(*args: Any, **kwargs: Any) -> Any:
@@ -858,7 +872,7 @@ def _both_read_before_either_writes(monkeypatch: pytest.MonkeyPatch) -> None:
             await barrier.wait()
         return state
 
-    monkeypatch.setattr(daily, "_load", load)
+    monkeypatch.setattr(daily, "load_day", load)
 
 
 @dataclass
@@ -876,7 +890,7 @@ def _stale_view(monkeypatch: pytest.MonkeyPatch) -> Blind:
     constraint.
     """
     blind = Blind()
-    real_load = daily._load
+    real_load = daily.load_day
     real_find = daily._find
     misses = {"load": 1, "find": 1}
 
@@ -894,7 +908,7 @@ def _stale_view(monkeypatch: pytest.MonkeyPatch) -> Blind:
             return None
         return await real_find(*args, **kwargs)
 
-    monkeypatch.setattr(daily, "_load", stale_load)
+    monkeypatch.setattr(daily, "load_day", stale_load)
     monkeypatch.setattr(daily, "_find", stale_find)
     return blind
 
@@ -1291,3 +1305,248 @@ class TestRoutes:
             assert (
                 await session.execute(select(func.count()).select_from(PracticeDay))
             ).scalar() == 0
+
+
+# ---------------------------------------------------------------------------
+# A day is DSA or system design
+# ---------------------------------------------------------------------------
+
+#: Tuesday 3 November 2026, 11:30 IST, and the Monday before it.
+TUESDAY = datetime(2026, 11, 3, 6, 0, tzinfo=UTC)
+MONDAY = datetime(2026, 11, 2, 6, 0, tzinfo=UTC)
+
+
+def design_problem(number: int) -> DesignProblem:
+    return DesignProblem(
+        slug=f"design-problem-{number:02d}",
+        title=f"Design problem {number}",
+        tracks=("general",),
+        minutes=30,
+        topics=("caching", "queues"),
+        summary="A summary.",
+        context=("Some context.",),
+        must_handle=("One case.",),
+        show_in_answer=("One thing.",),
+    )
+
+
+DESIGN_LIST = tuple(design_problem(number) for number in range(1, 7))
+
+
+@pytest.fixture
+def design_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(daily, "load_problems", lambda: DESIGN_LIST)
+
+
+@pytest.mark.usefixtures("design_list")
+class TestDayKinds:
+    async def test_a_tuesday_is_a_design_day(self, asha: str) -> None:
+        payload = await daily.today(asha, now=TUESDAY)
+        assert payload["kind"] == "design"
+        assert payload["question"] is None
+        assert payload["design"]["slug"].startswith("design-problem-")
+        assert set(payload["design"]) == {"slug", "title", "minutes", "topics", "has_answer"}
+        assert payload["catalogue"] == "ok"
+        assert " — " in payload["reason"]
+
+    async def test_a_monday_is_a_dsa_day(self, asha: str) -> None:
+        payload = await daily.today(asha, now=MONDAY)
+        assert payload["kind"] == "dsa"
+        assert payload["design"] is None
+        assert payload["question"]["slug"].startswith("fixture-question-")
+
+    async def test_a_dsa_day_with_no_catalogue_shows_a_design_problem(
+        self, asha: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(daily, "load_catalogue", lambda: ())
+        payload = await daily.today(asha, now=MONDAY)
+        assert payload["kind"] == "design"
+        assert payload["catalogue"] == "ok"
+        assert payload["catalogue_size"] == 0
+
+    async def test_a_design_day_with_no_problems_shows_a_dsa_question(
+        self, asha: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(daily, "load_problems", lambda: ())
+        payload = await daily.today(asha, now=TUESDAY)
+        assert payload["kind"] == "dsa"
+        assert payload["question"] is not None
+
+    async def test_with_neither_list_the_catalogue_is_empty(
+        self, asha: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(daily, "load_catalogue", lambda: ())
+        monkeypatch.setattr(daily, "load_problems", lambda: ())
+        payload = await daily.today(asha, now=TUESDAY)
+        assert payload["catalogue"] == "empty"
+        assert payload["kind"] is None
+        assert payload["question"] is None
+        assert payload["design"] is None
+
+    async def test_mark_done_on_a_design_day_is_refused(self, db: Db, asha: str) -> None:
+        with pytest.raises(PracticeConflict, match="Draw this one"):
+            await daily.mark_done(asha, None, now=TUESDAY)
+        assert await days_of(db) == []
+
+    async def test_swap_on_a_design_day_stays_design(self, db: Db, asha: str) -> None:
+        before = await daily.today(asha, now=TUESDAY)
+        after = await daily.swap(asha, now=TUESDAY)
+        assert after["kind"] == "design"
+        assert after["design"]["slug"] != before["design"]["slug"]
+        (row,) = await days_of(db)
+        assert row.kind == "design"
+        assert row.question_slug == after["design"]["slug"]
+        assert row.difficulty == "medium"
+
+    async def test_a_second_swap_on_a_design_day_is_refused(self, asha: str) -> None:
+        await daily.swap(asha, now=TUESDAY)
+        with pytest.raises(PracticeConflict):
+            await daily.swap(asha, now=TUESDAY)
+
+    async def test_a_swap_on_a_dsa_day_stays_dsa(self, db: Db, asha: str) -> None:
+        after = await daily.swap(asha, now=MONDAY)
+        assert after["kind"] == "dsa"
+        (row,) = await days_of(db)
+        assert row.kind == "dsa"
+
+    async def test_a_design_swap_survives_the_reload(self, asha: str) -> None:
+        after = await daily.swap(asha, now=TUESDAY)
+        again = await daily.today(asha, now=TUESDAY)
+        assert again["design"]["slug"] == after["design"]["slug"]
+        assert again["swaps_left"] == 0
+
+    async def test_design_rows_do_not_move_the_dsa_pick(self, db: Db, asha: str) -> None:
+        before = await daily.today(asha, now=MONDAY)
+        user = uuid.UUID(asha)
+        await add_day(
+            db,
+            user,
+            date(2026, 10, 31),
+            slug=before["question"]["slug"],
+            topic=before["question"]["topics"][0],
+            done=True,
+            kind="design",
+        )
+        after = await daily.today(asha, now=MONDAY)
+        assert after["question"]["slug"] == before["question"]["slug"]
+
+    async def test_dsa_rows_do_not_move_the_design_pick(self, db: Db, asha: str) -> None:
+        before = await daily.today(asha, now=TUESDAY)
+        await add_day(
+            db,
+            uuid.UUID(asha),
+            date(2026, 11, 2),
+            slug=before["design"]["slug"],
+            topic=before["design"]["topics"][0],
+            done=True,
+        )
+        after = await daily.today(asha, now=TUESDAY)
+        assert after["design"]["slug"] == before["design"]["slug"]
+
+    async def test_a_design_problem_done_long_ago_does_not_come_back(
+        self, db: Db, asha: str
+    ) -> None:
+        before = await daily.today(asha, now=TUESDAY)
+        await add_day(
+            db,
+            uuid.UUID(asha),
+            date(2025, 1, 7),
+            slug=before["design"]["slug"],
+            topic="caching",
+            done=True,
+            kind="design",
+        )
+        after = await daily.today(asha, now=TUESDAY)
+        assert after["design"]["slug"] != before["design"]["slug"]
+
+    async def test_a_stored_design_slug_no_longer_in_the_list_still_answers(
+        self, db: Db, asha: str
+    ) -> None:
+        await add_day(
+            db,
+            uuid.UUID(asha),
+            TUESDAY.date(),
+            slug="a-problem-since-removed",
+            topic="caching",
+            kind="design",
+        )
+        payload = await daily.today(asha, now=TUESDAY)
+        assert payload["kind"] == "design"
+        assert payload["design"]["slug"].startswith("design-problem-")
+
+    async def test_a_stored_kind_wins_over_the_weekday(self, db: Db, asha: str) -> None:
+        # A DSA row on a Tuesday, from a day when the design list was empty.
+        await add_day(db, uuid.UUID(asha), TUESDAY.date(), slug="fixture-question-05")
+        payload = await daily.today(asha, now=TUESDAY)
+        assert payload["kind"] == "dsa"
+        assert payload["question"]["slug"] == "fixture-question-05"
+
+    async def test_a_stored_design_problem_stays_after_the_list_is_reordered(
+        self, db: Db, asha: str
+    ) -> None:
+        await add_day(
+            db,
+            uuid.UUID(asha),
+            TUESDAY.date(),
+            slug="design-problem-04",
+            topic="queues",
+            kind="design",
+        )
+        payload = await daily.today(asha, now=TUESDAY)
+        assert payload["design"]["slug"] == "design-problem-04"
+
+    async def test_undo_works_on_a_design_day(self, db: Db, asha: str) -> None:
+        await add_day(
+            db,
+            uuid.UUID(asha),
+            TUESDAY.date(),
+            slug="design-problem-04",
+            topic="queues",
+            done=True,
+            kind="design",
+        )
+        payload = await daily.undo_done(asha, now=TUESDAY)
+        assert payload["done_at"] is None
+        assert payload["design"]["slug"] == "design-problem-04"
+
+    async def test_has_answer_follows_todays_answer(self, db: Db, asha: str) -> None:
+        shown = await daily.today(asha, now=TUESDAY)
+        assert shown["design"]["has_answer"] is False
+        async with db.factory() as session:
+            session.add(
+                PracticeDesignAnswer(
+                    user_id=uuid.UUID(asha),
+                    day=TUESDAY.date(),
+                    question_slug=shown["design"]["slug"],
+                )
+            )
+            await session.commit()
+        assert (await daily.today(asha, now=TUESDAY))["design"]["has_answer"] is True
+
+    async def test_an_answer_swapped_away_is_not_the_new_problems_answer(
+        self, db: Db, asha: str
+    ) -> None:
+        shown = await daily.today(asha, now=TUESDAY)
+        async with db.factory() as session:
+            session.add(
+                PracticeDesignAnswer(
+                    user_id=uuid.UUID(asha),
+                    day=TUESDAY.date(),
+                    question_slug=shown["design"]["slug"],
+                )
+            )
+            await session.commit()
+        after = await daily.swap(asha, now=TUESDAY)
+        assert after["design"]["has_answer"] is False
+
+    async def test_another_persons_answer_does_not_count(self, db: Db, asha: str) -> None:
+        other = await add_user(db, "other")
+        shown = await daily.today(asha, now=TUESDAY)
+        async with db.factory() as session:
+            session.add(
+                PracticeDesignAnswer(
+                    user_id=other, day=TUESDAY.date(), question_slug=shown["design"]["slug"]
+                )
+            )
+            await session.commit()
+        assert (await daily.today(asha, now=TUESDAY))["design"]["has_answer"] is False
