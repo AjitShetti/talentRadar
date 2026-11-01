@@ -1042,7 +1042,14 @@ class TestOverallBoard:
     async def test_with_no_editions_it_is_empty(self, db: Db, asha: str) -> None:
         payload = await board.overall_board(asha, now=AFTER)
 
-        assert payload == {"window_challenges": 0, "rows": [], "me": None}
+        assert payload == {
+            "window_challenges": 0,
+            "rows": [],
+            "me": None,
+            "total_ranked": 0,
+            "top_percent": None,
+            "distribution": None,
+        }
 
 
 # =========================================================================== settings
