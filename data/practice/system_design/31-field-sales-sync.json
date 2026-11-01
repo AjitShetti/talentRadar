@@ -1,0 +1,30 @@
+{
+  "slug": "field-sales-sync",
+  "title": "A field sales app for rural routes",
+  "tracks": [
+    "mobile"
+  ],
+  "minutes": 30,
+  "topics": [
+    "offline-sync",
+    "data-modelling"
+  ],
+  "summary": "Give sales reps their customers and prices offline, on phones with little storage.",
+  "context": [
+    "Nandi Foods has 3,000 sales reps visiting shops in rural Karnataka. A rep may go all day without signal, taking orders against a price list and credit limits. Reps carry low-end phones and each covers about 400 shops.",
+    "Prices change weekly, schemes change more often, and a shop's credit limit depends on payments collected by other people. Orders must reach the depot by evening for the next day's trucks."
+  ],
+  "must_handle": [
+    "A rep can work a whole day with no signal.",
+    "Only that rep's data goes on the phone, kept small.",
+    "A sync over a poor connection can stop and resume.",
+    "An order taken on an old price is handled by a clear rule.",
+    "A shop's credit limit may have changed in the meantime, and someone has to decide what happens."
+  ],
+  "show_in_answer": [
+    "What goes on the device, and its schema.",
+    "How a sync works: what is sent each way, and how it resumes.",
+    "Each kind of conflict and the rule for it.",
+    "What the rep sees about how fresh their data is."
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "slug": "job-alert-digest",
+  "title": "A daily job digest that arrives on time",
+  "tracks": [
+    "general"
+  ],
+  "minutes": 25,
+  "topics": [
+    "scheduling",
+    "feeds"
+  ],
+  "summary": "Send each person the few new jobs that fit them, every morning, without flooding anyone.",
+  "context": [
+    "Ragi Careers has 600,000 members in India, each with saved searches. New postings arrive all day from many sources. Members asked for one email at 8:00 in the morning, in place of a separate alert for every match.",
+    "Half the postings are repeats of something seen earlier in the week, reposted with a new date. Members who see the same role twice unsubscribe, and members who get an empty email complain too."
+  ],
+  "must_handle": [
+    "Each member gets at most one digest a day, at about 8:00 their time.",
+    "A posting already sent to a member is not sent again, even if reposted.",
+    "A digest with nothing good in it is not sent.",
+    "A failed run can restart at 8:20 without sending anyone a second copy.",
+    "Saved searches can change up to the moment the digest is built."
+  ],
+  "show_in_answer": [
+    "How a member's digest is put together, and when.",
+    "How repeats are recognised across sources.",
+    "How the 8:00 send is spread out and retried.",
+    "What you measure to know that a morning went well."
+  ]
+}

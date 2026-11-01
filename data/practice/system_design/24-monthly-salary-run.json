@@ -1,0 +1,30 @@
+{
+  "slug": "monthly-salary-run",
+  "title": "A salary run that cannot go wrong",
+  "tracks": [
+    "general"
+  ],
+  "minutes": 30,
+  "topics": [
+    "payments",
+    "scheduling"
+  ],
+  "summary": "Pay 40,000 employees on the last working day, correctly, even when the bank has a bad morning.",
+  "context": [
+    "Ragi Payroll pays salaries for 700 companies. On the last working day, each company approves a file, and transfers go out through a bank's API, with limits on how many per minute. A bank's API may time out, leaving no way to tell if the transfer happened.",
+    "Companies approve at the last moment. People notice instantly when their salary is late, and a double payment is very hard to recover."
+  ],
+  "must_handle": [
+    "No employee is paid twice, even after timeouts and restarts.",
+    "A company's run can be paused or corrected after approval until money moves.",
+    "One company's bad file does not hold up the others.",
+    "A bank's outage leads to a sensible retry, with the affected companies told.",
+    "Every rupee can be accounted for at the end of the day."
+  ],
+  "show_in_answer": [
+    "The states of a run, and of one payment within it.",
+    "How a timeout with an unknown result is resolved.",
+    "How the work is paced against the bank's limits.",
+    "What a company's payroll officer sees during the run."
+  ]
+}

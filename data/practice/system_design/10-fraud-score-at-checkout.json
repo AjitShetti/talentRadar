@@ -1,0 +1,30 @@
+{
+  "slug": "fraud-score-at-checkout",
+  "title": "A fraud score inside a checkout",
+  "tracks": [
+    "ml"
+  ],
+  "minutes": 35,
+  "topics": [
+    "ml-serving",
+    "payments"
+  ],
+  "summary": "Score each payment for fraud fast enough that an honest customer never notices.",
+  "context": [
+    "Jalebi Pay processes payments for 30,000 small merchants. A model flags likely fraud, and it needs recent behaviour: how many payments this card made in the last hour, and how old this device is. A checkout leaves about 100 ms for the score.",
+    "Fraud patterns move within weeks. Blocking a good customer costs a sale and a merchant's trust, and letting fraud through costs the money itself."
+  ],
+  "must_handle": [
+    "A score arrives inside 100 ms at the 99th percentile, or the payment proceeds under fallback rules.",
+    "Features computed for serving match the ones used in training.",
+    "A new model can be tried on a small share of traffic and rolled back in minutes.",
+    "Every decision can be explained to a merchant later.",
+    "The true outcome arrives weeks later, as a chargeback, and must reach training."
+  ],
+  "show_in_answer": [
+    "The path of one payment through scoring.",
+    "Where recent-behaviour features are computed and kept.",
+    "What happens when the model service is slow or down.",
+    "How a new model goes live, and how you judge it when outcomes are weeks away."
+  ]
+}

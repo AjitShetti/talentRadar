@@ -1,0 +1,30 @@
+{
+  "slug": "home-page-reranker",
+  "title": "Reranking a food app's home page",
+  "tracks": [
+    "ml"
+  ],
+  "minutes": 35,
+  "topics": [
+    "ml-serving",
+    "feeds"
+  ],
+  "summary": "Personalise a list of restaurants within a page load, and keep it working when the model cannot.",
+  "context": [
+    "Mavalli Meals wants the home page ordered for each person: their usual lunch, what is open and near, and what is new. It has about 500 candidate restaurants at any address, and the page must appear in under 300 ms.",
+    "Availability changes by the minute, and ordering only by past clicks would keep showing the same five places. Restaurants watch their position closely and complain when it moves without reason."
+  ],
+  "must_handle": [
+    "The page appears within 300 ms, whatever the model is doing.",
+    "A closed restaurant never appears at the top.",
+    "New restaurants get a fair chance to be seen.",
+    "A brand new user sees something sensible.",
+    "A model change can be compared with the current one on real orders."
+  ],
+  "show_in_answer": [
+    "How candidates are gathered and then ranked for one request.",
+    "Which features come from where, and how fresh each is.",
+    "What is served when the model is slow.",
+    "How you measure beyond clicks, and how new places get shown."
+  ]
+}

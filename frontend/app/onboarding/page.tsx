@@ -23,7 +23,7 @@ const STAGES: { value: Stage; label: string }[] = [
 /** Where each goal lands the user, and the sentence saved as their career goal. */
 const GOALS: { value: Goal; title: string; detail: string; icon: typeof Compass; href: string; sentence: string }[] = [
   { value: 'apply', title: 'Land a job', detail: 'Openings, who to contact at each company, and a tracker for every application.', icon: BriefcaseBusiness, href: '/search', sentence: 'Land a job: find openings, reach the right people and track applications.' },
-  { value: 'prepare', title: 'Get interview-ready', detail: 'Mock interviews, a daily coding question, weekly take-homes and a leaderboard.', icon: Dumbbell, href: '/practice', sentence: 'Get interview-ready: mock interviews, daily practice and take-homes.' },
+  { value: 'prepare', title: 'Get interview-ready', detail: 'Mock interviews, one problem a day and a weekly contest.', icon: Dumbbell, href: '/practice', sentence: 'Get interview-ready: mock interviews, daily practice and a weekly contest.' },
   { value: 'both', title: 'Both', detail: 'Start from a day plan that mixes applying and practice.', icon: Compass, href: '/dashboard', sentence: 'Land a job and get interview-ready at the same time.' },
 ]
 

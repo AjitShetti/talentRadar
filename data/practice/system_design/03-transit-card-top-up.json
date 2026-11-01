@@ -1,0 +1,31 @@
+{
+  "slug": "transit-card-top-up",
+  "title": "Topping up a transit card with UPI",
+  "tracks": [
+    "backend",
+    "general"
+  ],
+  "minutes": 30,
+  "topics": [
+    "payments",
+    "consistency"
+  ],
+  "summary": "Make sure money taken for a card top-up always becomes balance on the card, or comes back.",
+  "context": [
+    "Tunga Transit runs buses in three Karnataka cities. Riders top up a stored-value card from an app using UPI, and the balance is written to the card the next time it touches a gate or a conductor's machine.",
+    "The payment provider's confirmation can arrive seconds or hours late, and sometimes never arrives. Each week around 200 riders write in saying they paid and their balance did not change. Each case now takes a person about fifteen minutes."
+  ],
+  "must_handle": [
+    "A person pressing Pay twice is charged once.",
+    "A payment the provider has not confirmed is neither credited nor forgotten.",
+    "A gate machine may be offline for a day and still has to accept a valid card.",
+    "Finance must be able to match every rupee against the provider's daily report.",
+    "A failed top-up refunds without a support ticket."
+  ],
+  "show_in_answer": [
+    "The states a top-up moves through, and what moves it from one to the next.",
+    "What happens when the provider's message never arrives.",
+    "How the balance reaches an offline gate.",
+    "How the daily match with the provider's report works, and what it does with a difference."
+  ]
+}

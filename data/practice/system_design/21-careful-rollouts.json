@@ -1,0 +1,30 @@
+{
+  "slug": "careful-rollouts",
+  "title": "Rolling out a release without waking everyone",
+  "tracks": [
+    "devops"
+  ],
+  "minutes": 30,
+  "topics": [
+    "observability",
+    "scheduling"
+  ],
+  "summary": "Release many times a day, and catch a bad release while it has touched only a few people.",
+  "context": [
+    "Hoodi Hops ships 30 services from a monorepo, and a release goes to all instances at once. Twice this quarter a bad release took orders down during dinner, and rolling back took 25 minutes because the migration had already run.",
+    "Teams now avoid releasing on Fridays and in the evening, so releases pile up and get larger, which makes them riskier still."
+  ],
+  "must_handle": [
+    "A release reaches a small share of traffic before the rest.",
+    "A bad release is noticed by a measure, without waiting for a person.",
+    "Rollback takes minutes, including when the schema has changed.",
+    "A service's release can wait for one it depends on.",
+    "An engineer can see at a glance what is running where."
+  ],
+  "show_in_answer": [
+    "The stages of a release, and what moves it forward.",
+    "Which signals decide to stop, and how noise is told from harm.",
+    "How database changes are released so that rollback stays possible.",
+    "What on-call sees and does during a bad release."
+  ]
+}

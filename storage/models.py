@@ -2178,6 +2178,13 @@ class PracticeDay(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    kind: Mapped[str] = mapped_column(
+        String(8),
+        nullable=False,
+        default="dsa",
+        server_default=text("'dsa'"),
+        comment="dsa | design",
+    )
 
     __table_args__ = (
         UniqueConstraint("user_id", "day", name="uq_practice_days_user_day"),
@@ -2186,6 +2193,58 @@ class PracticeDay(Base):
 
     def __repr__(self) -> str:
         return f"<PracticeDay user={self.user_id} day={self.day}>"
+
+
+class PracticeDesignAnswer(Base):
+    """A person's drawing and reasoning for one system design problem on one IST day.
+
+    One row per problem, so an answer swapped away stays until retention clears it. The score
+    is private and feeds no board.
+    """
+
+    __tablename__ = "practice_design_answers"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    day: Mapped[date] = mapped_column(Date, nullable=False, comment="IST calendar date")
+    question_slug: Mapped[str] = mapped_column(String(128), nullable=False)
+    scene: Mapped[list[Any] | None] = mapped_column(
+        JSONB, nullable=True, comment="Excalidraw elements; cleared by retention"
+    )
+    reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    scores: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    notes: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    total: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    input_hash: Mapped[str | None] = mapped_column(CHAR(64), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    feedback_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "day", "question_slug", name="uq_practice_design_answers"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<PracticeDesignAnswer user={self.user_id} day={self.day}>"
 
 
 class PracticeChallenge(Base):

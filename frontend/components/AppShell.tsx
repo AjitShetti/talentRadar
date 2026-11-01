@@ -5,7 +5,7 @@ import BrandLockup from '@/components/BrandLockup'
 import ThemeSwitch from '@/components/ThemeSwitch'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { BriefcaseBusiness, ChevronDown, Dumbbell, FileText, Handshake, LogOut, Map as MapIcon, MessageSquare, Search, Trophy, UserRound, type LucideIcon } from 'lucide-react'
+import { BriefcaseBusiness, ChevronDown, Dumbbell, FileText, Handshake, LogOut, Map as MapIcon, MessageSquare, Search, UserRound, type LucideIcon } from 'lucide-react'
 import { api, currentEmail, PROFILE_NAME_EVENT, signOut } from '@/lib/api'
 
 type NavLink = { label: string; href: string; icon: LucideIcon; blurb: string }
@@ -29,9 +29,8 @@ const NAV: NavEntry[] = [
   },
   {
     label: 'Prep', items: [
-      { label: 'Practice', href: '/practice', icon: Dumbbell, blurb: 'Daily question, weekly take-home, contest' },
+      { label: 'Practice', href: '/practice', icon: Dumbbell, blurb: 'One problem a day, a weekly contest' },
       { label: 'Mock interviews', href: '/interview', icon: MessageSquare, blurb: 'Voice or typed, scored answer by answer' },
-      { label: 'Leaderboard', href: '/practice/leaderboard', icon: Trophy, blurb: 'Who is building and solving the most' },
     ],
   },
   { label: 'Events', href: '/events' },
@@ -42,7 +41,7 @@ const ALIASES: [string, string][] = [['/roles', '/search']]
 
 const under = (path: string, href: string) => path === href || path.startsWith(href + '/')
 
-/** The menu link the path belongs to: the longest matching href wins, so /practice/leaderboard is not Practice. */
+/** The menu link the path belongs to: the longest matching href wins. */
 function activeHref(path: string): string | null {
   const alias = ALIASES.find(([prefix]) => under(path, prefix))
   if (alias) return alias[1]

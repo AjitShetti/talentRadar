@@ -8,8 +8,8 @@ topic tags per problem, and the user's own practice history). No LLM, no
 network, no clock: ``day`` and ``today`` are always passed in, and the same
 ``(user_id, day, swaps)`` always gives the same pick.
 
-We never author problems. A :class:`Question` is a pointer to the problem page on
-leetcode.com; the user solves it there.
+We never author DSA problems (system design ones are ours, in ``data/practice/system_design``).
+A :class:`Question` is a pointer to the problem page on leetcode.com; the user solves it there.
 """
 
 from __future__ import annotations
@@ -169,7 +169,7 @@ def topic_weights(track: Track, history: Sequence[HistoryItem], today: date) -> 
 # --------------------------------------------------------------------------- the pick
 
 
-def _rng(user_id: str, day: date, swaps: int) -> random.Random:
+def day_rng(user_id: str, day: date, swaps: int) -> random.Random:
     digest = sha256(f"{user_id}:{day.isoformat()}:{swaps}".encode()).digest()
     return random.Random(int.from_bytes(digest[:8], "big"))
 
@@ -311,7 +311,7 @@ def pick_question(
     chosen: Pick | None = None
     for swap in range(swaps + 1):
         chosen = _draw(
-            _rng(user_id, day, swap),
+            day_rng(user_id, day, swap),
             ordered=ordered,
             weights=weights,
             band=band,

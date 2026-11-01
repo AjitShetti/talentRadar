@@ -1,0 +1,30 @@
+{
+  "slug": "grocery-search-in-two-languages",
+  "title": "Grocery search that understands how people type",
+  "tracks": [
+    "backend"
+  ],
+  "minutes": 35,
+  "topics": [
+    "search",
+    "caching"
+  ],
+  "summary": "Find the right product when a person types in Kanglish, misspells it or names a local brand.",
+  "context": [
+    "Malleshwaram Mart delivers groceries from 80 dark stores. A shopper may type 'tuppa', 'ghee', 'gee' or 'nandini tuppa' and expects the same shelf. Stock and price differ from store to store and change through the day.",
+    "Search is the first thing most shoppers touch. A third of searches now return nothing or something unrelated, and those shoppers tend to leave. There are 120,000 products and about 300 searches a second at the evening peak."
+  ],
+  "must_handle": [
+    "Spelling mistakes and Kannada words written in English find the right item.",
+    "A result out of stock at this person's store is not shown as available.",
+    "Results come back in about 150 ms at the evening peak.",
+    "A merchandiser can change ranking without a deploy.",
+    "A new product is searchable within a few minutes."
+  ],
+  "show_in_answer": [
+    "How the index is built, and what goes in it.",
+    "How one search runs from text to ranked results.",
+    "Where stock and price join in, and what is cached and for how long.",
+    "How you would know that a ranking change made things better."
+  ]
+}

@@ -4,15 +4,17 @@
   "private": true,
   "scripts": {
     "map-worker": "node -e \"const fs=require('fs');fs.mkdirSync('public/map/vendor',{recursive:true});for(const f of ['maplibre-gl-worker.mjs','maplibre-gl-shared.mjs'])fs.copyFileSync('node_modules/maplibre-gl/dist/'+f,'public/map/vendor/'+f)\"",
-    "predev": "npm run map-worker",
+    "whiteboard-assets": "node -e \"require('fs').cpSync('node_modules/@excalidraw/excalidraw/dist/prod/fonts','public/excalidraw/fonts',{recursive:true})\"",
+    "predev": "npm run map-worker && npm run whiteboard-assets",
     "dev": "next dev",
-    "prebuild": "npm run map-worker",
+    "prebuild": "npm run map-worker && npm run whiteboard-assets",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@excalidraw/excalidraw": "0.18.1",
     "@types/node": "^20.14.12",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",

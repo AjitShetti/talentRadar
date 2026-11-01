@@ -1,0 +1,30 @@
+{
+  "slug": "restore-one-customer",
+  "title": "Restoring one customer from backup",
+  "tracks": [
+    "devops"
+  ],
+  "minutes": 25,
+  "topics": [
+    "storage",
+    "consistency"
+  ],
+  "summary": "Bring back one customer's deleted data without rewinding everyone else.",
+  "context": [
+    "Sampige Clinics' software holds records for 60 centres in one shared PostgreSQL database of 900 GB. Last week a centre's admin deleted a year of appointments by mistake. The only way back was restoring the whole database elsewhere and copying rows by hand, which took two days.",
+    "Regulators require records be recoverable, and the team has never actually timed a full restore. Attachments such as scans live in object storage, separately from the database."
+  ],
+  "must_handle": [
+    "One centre can be restored to a chosen time, leaving the others untouched.",
+    "The restored rows do not clash with what the centre has created since.",
+    "Database rows and their attachments come back consistent with each other.",
+    "A restore is rehearsed regularly and its time is known.",
+    "A backup cannot be deleted by the same mistake or attacker that deleted the data."
+  ],
+  "show_in_answer": [
+    "How backups are taken and where they are kept.",
+    "The steps of a one-centre restore.",
+    "How rows created after the deletion are treated.",
+    "How you prove that restores work, and how long they take."
+  ]
+}

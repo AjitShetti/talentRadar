@@ -1,0 +1,30 @@
+{
+  "slug": "mock-test-rankings",
+  "title": "Live rankings during a mock test",
+  "tracks": [
+    "general"
+  ],
+  "minutes": 25,
+  "topics": [
+    "caching",
+    "realtime"
+  ],
+  "summary": "Show 200,000 students their rank as a test ends, without the rush taking the system down.",
+  "context": [
+    "Lalbagh Learning runs Sunday mock exams for 200,000 students. All of them finish within the same few minutes, and every one of them immediately refreshes to see a rank and percentile, overall and within their city.",
+    "Last Sunday, the results page took eleven minutes to appear. Some answers are also corrected after the test, when a question turns out to be wrong, and every rank must change."
+  ],
+  "must_handle": [
+    "A student sees a rank within about a minute of the test closing.",
+    "Ranks are correct overall and within a city and a batch.",
+    "A student's own rank does not need the whole list to be read.",
+    "A corrected question recalculates everything without a long outage.",
+    "Refreshes in the first minutes do not reach the database each time."
+  ],
+  "show_in_answer": [
+    "How scores are collected at the close.",
+    "How ranks are computed, stored and read.",
+    "What is cached and how the rush is absorbed.",
+    "What happens when a question is corrected."
+  ]
+}

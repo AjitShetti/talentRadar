@@ -1,0 +1,30 @@
+{
+  "slug": "notification-preferences",
+  "title": "Notifications people do not turn off",
+  "tracks": [
+    "general"
+  ],
+  "minutes": 25,
+  "topics": [
+    "queues",
+    "rate-limiting"
+  ],
+  "summary": "Send many teams' notifications through one service that respects each person's limits and choices.",
+  "context": [
+    "Hoodi Hops has ten teams that each send push, SMS and email directly. A person can get eleven messages in a day, and uninstalls have risen. SMS costs real money, and one mistaken campaign last month cost several lakh rupees.",
+    "An order update must always arrive. A promotion can wait until morning or never go at all."
+  ],
+  "must_handle": [
+    "A person's choices are honoured across every team and channel.",
+    "A person gets no more than a set number of promotional messages a day.",
+    "An order update goes out at once, whatever the promotions are doing.",
+    "A message is not sent at 3 am unless it is urgent.",
+    "A mistaken campaign can be stopped midway, and its cost is capped."
+  ],
+  "show_in_answer": [
+    "The path of a message from a team to a phone.",
+    "How urgent and promotional traffic are kept apart.",
+    "Where preferences and daily counts live, and how they are checked.",
+    "What stops a runaway campaign."
+  ]
+}

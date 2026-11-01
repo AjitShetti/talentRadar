@@ -1,0 +1,30 @@
+{
+  "slug": "two-people-one-form",
+  "title": "Two people editing one long application form",
+  "tracks": [
+    "frontend"
+  ],
+  "minutes": 35,
+  "topics": [
+    "consistency",
+    "realtime"
+  ],
+  "summary": "Let a founder and an accountant fill in one long form together, without losing each other's work.",
+  "context": [
+    "Jalebi Pay onboards merchants through a loan application with about 200 fields across eight sections. A founder fills in part of it and the accountant does the rest, often at the same time, sometimes on a train with a poor connection.",
+    "Today, the last save wins. Merchants have lost an hour's work to this, and some field values depend on others, such as turnover deciding which documents are needed."
+  ],
+  "must_handle": [
+    "Each person sees the other's changes without a reload.",
+    "Nobody loses typed text to someone else's save.",
+    "Work typed during a dropped connection survives.",
+    "A field that depends on another updates correctly when that one changes.",
+    "Everyone can see who changed what, for the lender's records."
+  ],
+  "show_in_answer": [
+    "What is saved, how often, and at what granularity.",
+    "How a conflict on one field is settled, and what the person sees.",
+    "How a change reaches the other person's browser.",
+    "How the form behaves through a dropped connection."
+  ]
+}

@@ -662,13 +662,13 @@ async def _practice_deadline_cards(
                 closes = _ist_clock(deadline + GRACE)
                 card_title = f'Finish the write-up for "{title}" by {closes}'
                 card_detail = (
-                    f"Your {hours}-hour build closed at {due} IST. "
+                    f"Your {hours}-hour contest entry closed at {due} IST. "
                     f"Pushes after that are not read; the write-up closes at {closes} IST."
                 )
             else:
                 card_title = f'Submit "{title}" by {due}'
                 card_detail = (
-                    f"Your {hours}-hour build closes at {due} IST. "
+                    f"Your {hours}-hour contest entry closes at {due} IST. "
                     "Pushes after that are not read."
                 )
             cards.append(_card(
@@ -717,10 +717,36 @@ def _contest_card(window: ContestWindow) -> dict[str, Any]:
     )
 
 
+def _design_card(today: dict[str, Any], design: dict[str, Any]) -> dict[str, Any]:
+    """Today's system design problem, which is solved on its own page."""
+    topic, _separator, why = str(today.get("reason") or "").partition(" — ")
+    detail = " · ".join(part for part in (f"About {design['minutes']} min", topic, why) if part)
+    return _card(
+        card_id=f"practice_today:{today['day']}",
+        kind="practice_today",
+        title=f"Today's system design: {design['title']}",
+        detail=detail,
+        actions=[
+            {
+                "label": "Draw and solve",
+                "href": f"/practice/design/{design['slug']}",
+                "style": "primary",
+            },
+            {"label": "Open Practice", "href": "/practice", "style": "ghost"},
+        ],
+        meta={"kind": "design", "slug": design["slug"]},
+    )
+
+
 def _today_card(today: dict[str, Any]) -> dict[str, Any] | None:
-    """Today's daily question, unless there is none or it is already done."""
+    """Today's problem, unless there is none or it is already done."""
+    if today.get("done_at") is not None:
+        return None
+    design = today.get("design")
+    if isinstance(design, dict):
+        return _design_card(today, design)
     question = today.get("question")
-    if not isinstance(question, dict) or today.get("done_at") is not None:
+    if not isinstance(question, dict):
         return None
     # The pick's reason starts with the topic it drew ("Graph — you last practised it ...").
     reason = str(today.get("reason") or "")
@@ -740,7 +766,7 @@ def _today_card(today: dict[str, Any]) -> dict[str, Any] | None:
             {"label": "Open on LeetCode", "href": str(question["url"]), "style": "primary"},
             {"label": "Open Practice", "href": "/practice", "style": "ghost"},
         ],
-        meta={"slug": question["slug"], "difficulty": question["difficulty"]},
+        meta={"kind": "dsa", "slug": question["slug"], "difficulty": question["difficulty"]},
     )
 
 
@@ -764,20 +790,21 @@ async def _practice_suggestion_card(
     user_id: str, *, now: datetime | None = None
 ) -> dict[str, Any] | None:
     """
-    At most one Practice suggestion: the weekly contest, else today's question.
+    At most one Practice suggestion: the weekly contest, else today's problem.
 
-    Only for someone who marked a question done in the last 14 days; a DSA nag to a
-    person who never opened Practice is noise on a day plan. The contest shows from
-    Saturday 20:00 to Sunday 09:30 IST unless they turned the reminder off, and then
-    today's question is offered instead, if it is not done. A failure here gives
-    ``None`` and is logged.
+    Today's problem is for everyone, because the Overview is where a person learns what to
+    practise today. The contest needs a question marked done in the last 14 days, and shows
+    from Saturday 20:00 to Sunday 09:30 IST unless they turned the reminder off. A failure
+    here gives ``None`` and is logged.
     """
     moment = _utc(now) if now is not None else datetime.now(UTC)
     try:
-        if not await daily.practised_recently(user_id, now=moment):
-            return None
         window = contest_window(moment)
-        if window.show and await _contest_reminder_on(user_id):
+        if (
+            window.show
+            and await _contest_reminder_on(user_id)
+            and await daily.practised_recently(user_id, now=moment)
+        ):
             return _contest_card(window)
         return _today_card(await daily.today(user_id, now=moment))
     except Exception as exc:  # a broken card must never break the briefing

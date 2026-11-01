@@ -1,0 +1,31 @@
+{
+  "slug": "features-for-many-models",
+  "title": "One place for the features many models share",
+  "tracks": [
+    "ml",
+    "data"
+  ],
+  "minutes": 35,
+  "topics": [
+    "ml-serving",
+    "pipelines"
+  ],
+  "summary": "Stop five teams from computing the same customer features five slightly different ways.",
+  "context": [
+    "Jalebi Pay has five models: fraud, credit, churn and two more. Each team wrote its own version of 'payments in the last 30 days', and the numbers disagree. Worse, what a model sees in training sometimes differs from what it sees live, and accuracy falls after launch for reasons nobody can find.",
+    "Some features must be read in milliseconds at checkout. Others are computed nightly over years of data."
+  ],
+  "must_handle": [
+    "A feature has one definition, used in both training and serving.",
+    "Training can ask what a value was at a past moment, without seeing the future.",
+    "Reads for serving take a few milliseconds.",
+    "A team can see who owns a feature and which models use it.",
+    "A broken feature job is caught before models read bad values."
+  ],
+  "show_in_answer": [
+    "How a feature is defined and how it reaches both worlds.",
+    "How past values are kept and looked up for training.",
+    "The online store, and how it is kept up to date.",
+    "What you check to catch a feature that has gone wrong."
+  ]
+}

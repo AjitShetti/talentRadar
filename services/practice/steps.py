@@ -11,9 +11,10 @@ there is no worker) calls :func:`run_step`. A step:
   the grace hour is over), then ``prune`` (the retention rules). The three are independent:
   one that fails does not stop the others, because a broken brief file must not leave
   submissions unqueued. Its result is exactly ``{editions_created, queued, missed,
-  pruned_days, pruned_attempts}``; ``limit`` does not apply to it.
+  pruned_days, pruned_attempts, pruned_answers}``; ``limit`` does not apply to it.
 * ``judge`` - ``run_judge_step(limit)``: judge up to ``limit`` queued attempts, spaced for the
-  model's rate limit, inside the day's budget. This is the only step that calls a model.
+  model's rate limit, inside the day's budget. This is the only step that calls a model; the
+  other caller is not a step (``design_feedback``, on a person's press).
 
 :func:`run_step` never raises. A part that fails is logged by its class name only (an exception's
 text can carry a URL or a token) and comes back as ``{"error": <class name>}``; for
@@ -56,7 +57,7 @@ async def _challenges_step() -> dict[str, Any]:
         "advance_statuses", challenges.advance_statuses, {"queued": 0, "missed": 0}, failures
     )
     pruned = await _attempt(
-        "prune", challenges.prune, {"pruned_days": 0, "pruned_attempts": 0}, failures
+        "prune", challenges.prune, {"pruned_days": 0, "pruned_attempts": 0, "pruned_answers": 0}, failures
     )
     result: dict[str, Any] = {
         "editions_created": created,
@@ -64,6 +65,7 @@ async def _challenges_step() -> dict[str, Any]:
         "missed": moved["missed"],
         "pruned_days": pruned["pruned_days"],
         "pruned_attempts": pruned["pruned_attempts"],
+        "pruned_answers": pruned["pruned_answers"],
     }
     if failures:
         result["error"] = ",".join(dict.fromkeys(failures))

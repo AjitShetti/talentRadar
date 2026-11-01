@@ -15,10 +15,14 @@ from domain.practice_schedule import (
     GRACE,
     IST,
     LEETCODE_PROBLEMSET_URL,
+    DayKind,
+    answer_open,
     contest_window,
     deadline_for,
     edition_window,
+    effective_kind,
     ist_day,
+    kind_for_day,
     last_start,
     submission_open,
     week_opening,
@@ -30,6 +34,46 @@ SAT_SHOW = datetime(2026, 10, 17, 14, 31, tzinfo=UTC)  # Sat 20:01 IST
 SUN_LIVE = datetime(2026, 10, 18, 2, 45, tzinfo=UTC)  # Sun 08:15 IST
 SUN_AFTER = datetime(2026, 10, 18, 4, 1, tzinfo=UTC)  # Sun 09:31 IST
 NAIVE = datetime(2026, 10, 16, 12, 0)  # no tzinfo
+
+
+def test_design_days_are_tuesday_thursday_saturday() -> None:
+    kinds = [kind_for_day(date(2026, 11, 2) + timedelta(days=n)) for n in range(7)]  # Mon..Sun
+    assert kinds == ["dsa", "design", "dsa", "design", "dsa", "design", "dsa"]
+
+
+def test_the_kind_changes_at_ist_midnight_not_utc() -> None:
+    assert (
+        kind_for_day(ist_day(datetime(2026, 11, 2, 18, 29, tzinfo=UTC))) == "dsa"
+    )  # Mon 23:59 IST
+    assert kind_for_day(ist_day(datetime(2026, 11, 2, 18, 30, tzinfo=UTC))) == "design"  # Tue 00:00
+
+
+@pytest.mark.parametrize(
+    ("scheduled", "has_dsa", "has_design", "expected"),
+    [
+        ("dsa", True, True, "dsa"),
+        ("dsa", False, True, "design"),
+        ("design", True, True, "design"),
+        ("design", True, False, "dsa"),
+        ("dsa", False, False, None),
+        ("design", False, False, None),
+    ],
+)
+def test_an_empty_list_falls_back_to_the_other_kind(
+    scheduled: DayKind, has_dsa: bool, has_design: bool, expected: DayKind | None
+) -> None:
+    assert effective_kind(scheduled, has_dsa=has_dsa, has_design=has_design) == expected
+
+
+def test_an_answer_stays_open_until_six_the_next_morning() -> None:
+    tuesday = date(2026, 11, 3)
+    assert answer_open(datetime(2026, 11, 4, 0, 29, tzinfo=UTC), tuesday) is True  # Wed 05:59 IST
+    assert answer_open(datetime(2026, 11, 4, 0, 30, tzinfo=UTC), tuesday) is False  # Wed 06:00 IST
+
+
+def test_answer_open_refuses_a_naive_time() -> None:
+    with pytest.raises(ValueError):
+        answer_open(datetime(2026, 11, 4), date(2026, 11, 3))
 
 
 def test_ist_is_a_fixed_offset_of_five_thirty() -> None:

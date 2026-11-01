@@ -1,0 +1,30 @@
+{
+  "slug": "deleting-a-person",
+  "title": "Deleting a person from everywhere",
+  "tracks": [
+    "data"
+  ],
+  "minutes": 30,
+  "topics": [
+    "pipelines",
+    "consistency"
+  ],
+  "summary": "Honour a request to delete someone's data across databases, warehouses, logs and backups.",
+  "context": [
+    "Ragi Careers is getting ready for India's data protection rules. A person who asks to be deleted has data in the main database, the search index, the warehouse, analytics events, support tickets and backups. Nobody has a full list of those places.",
+    "Some records must stay by law, such as invoices for tax. Deleting an old person from raw events could break reports that have already been signed off."
+  ],
+  "must_handle": [
+    "A request is finished in a stated time, with proof of what was done.",
+    "A new data store cannot quietly be left out.",
+    "What the law requires to be kept stays, and is limited.",
+    "A person restored from a backup does not come back to life.",
+    "Reports stay usable after people are removed."
+  ],
+  "show_in_answer": [
+    "The map of where personal data lives, and how it is kept current.",
+    "The steps of one request across stores, and how a partial failure is handled.",
+    "How backups and the warehouse are treated.",
+    "What record proves the deletion, without keeping the data."
+  ]
+}

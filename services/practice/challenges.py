@@ -152,16 +152,16 @@ _ADVANCE_BATCH = 500
 _PROOF_CODE_TRIES = 3
 
 _NO_ACCOUNT = "We could not find your account."
-_NO_BUILD = "We could not find that build."
-_STARTED_ALREADY = "You have already started this build."
+_NO_CONTEST = "We could not find that contest."
+_STARTED_ALREADY = "You have already started this contest."
 _TOO_LATE = (
-    "Not enough time left in this week's window to start this build. "
-    "The next build opens on Friday at 18:00 IST."
+    "Not enough time left in this week's window to start this contest. "
+    "The next contest opens on Friday at 18:00 IST."
 )
-_NOT_STARTED = "Press Start on this build before saving a submission."
-_CLOSED = "The submission window for this build has closed."
+_NOT_STARTED = "Press Start on this contest before saving a submission."
+_CLOSED = "The submission window for this contest has closed."
 _TOO_FAST = "You are saving too quickly. Wait a minute and try again."
-_TRY_AGAIN = "We could not start your build just now. Try again."
+_TRY_AGAIN = "We could not start your contest just now. Try again."
 _BAD_REPO_LINK = "Paste the repo link as https://github.com/<owner>/<repo>."
 _REPO_NOT_FOUND = "We could not find that repo. Check the link; the repo must be public."
 _REPO_PRIVATE = "The repo must be public so it can be judged."
@@ -374,7 +374,7 @@ async def _visible_challenge(
         await session.execute(select(PracticeChallenge).where(PracticeChallenge.slug == slug))
     ).scalar_one_or_none()
     if row is None or _aware(row.opens_at) > moment:
-        raise PracticeNotFound(_NO_BUILD)
+        raise PracticeNotFound(_NO_CONTEST)
     return row
 
 
@@ -628,7 +628,7 @@ async def _count_save(user_id: str, moment: datetime) -> None:
         raise PracticeRateLimited(_TOO_FAST)
 
 
-def _clean_text(value: str) -> str:
+def clean_text(value: str) -> str:
     """Plain text safe to store: CRLF becomes LF, control characters and surrogates are dropped.
 
     Newlines and tabs stay. A NUL in a JSON document is a database error, so it must go.
@@ -655,7 +655,7 @@ def _checked_writeup(writeup: Mapping[str, Any]) -> dict[str, str]:
         raw = writeup.get(field)
         if not isinstance(raw, str):
             raise PracticeInvalid(f"{field}: write {minimum} to {maximum} characters.")
-        text = _clean_text(raw)
+        text = clean_text(raw)
         if not minimum <= len(text) <= maximum:
             raise PracticeInvalid(
                 f"{field}: write {minimum} to {maximum} characters (yours has {len(text)})."
@@ -841,12 +841,13 @@ async def advance_statuses(*, now: datetime | None = None) -> dict[str, int]:
 
 
 async def _prune_days(moment: datetime) -> int:
-    """``practice_days`` older than 400 IST days (spec 5.1)."""
+    """``practice_days`` never done and older than 400 IST days. Done days stay, because what a
+    person has solved must never fall."""
     cutoff = ist_day(moment) - timedelta(days=DAY_RETENTION_DAYS)
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             delete(PracticeDay)
-            .where(PracticeDay.day < cutoff)
+            .where(PracticeDay.day < cutoff, PracticeDay.done_at.is_(None))
             .execution_options(synchronize_session=False)
         )
         await session.commit()
@@ -887,12 +888,15 @@ async def prune(*, now: datetime | None = None) -> dict[str, int]:
     Each rule is one DELETE in its own transaction. A rule that fails is logged and skipped (the
     next run meets the same rows again), and the others still run.
     """
+    from services.practice.design import prune_answers  # it imports this module
+
     moment = _moment(now)
-    counts = {"pruned_days": 0, "pruned_attempts": 0}
+    counts = {"pruned_days": 0, "pruned_attempts": 0, "pruned_answers": 0}
     rules = (
         ("pruned_days", _prune_days),
         ("pruned_attempts", _prune_unsubmitted),
         ("pruned_attempts", _prune_expired),
+        ("pruned_answers", prune_answers),
     )
     for key, rule in rules:
         try:

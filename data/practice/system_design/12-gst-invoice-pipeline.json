@@ -1,0 +1,30 @@
+{
+  "slug": "gst-invoice-pipeline",
+  "title": "Reading supplier invoices into the accounts",
+  "tracks": [
+    "data"
+  ],
+  "minutes": 35,
+  "topics": [
+    "pipelines",
+    "data-modelling"
+  ],
+  "summary": "Turn thousands of messy supplier invoices a day into figures an accountant will sign.",
+  "context": [
+    "Cubbon Traders buys from 4,000 suppliers, whose invoices arrive as PDFs, photos and spreadsheets. A vendor service reads them, with mixed accuracy. Accountants then match them to purchase orders before filing GST each month.",
+    "The numbers reported to management changed last quarter after a re-run, and no one could say why. The filing deadline is fixed, and a wrong tax credit can draw a notice."
+  ],
+  "must_handle": [
+    "Each figure can be traced back to the file it came from.",
+    "A re-run with a better reader does not silently change a filed month.",
+    "A low-confidence invoice goes to a person, and the rest flow through.",
+    "The same invoice uploaded twice counts once.",
+    "The tax rules change, and past months must still reflect the rules of their time."
+  ],
+  "show_in_answer": [
+    "The stages from an uploaded file to a reported figure.",
+    "The tables that hold invoices, their versions and their review state.",
+    "How a re-run works, and what it can and cannot change.",
+    "How a figure is traced back to its source."
+  ]
+}

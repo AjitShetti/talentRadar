@@ -1,0 +1,30 @@
+{
+  "slug": "apartment-gate-approvals",
+  "title": "Visitor approval at an apartment gate",
+  "tracks": [
+    "mobile"
+  ],
+  "minutes": 30,
+  "topics": [
+    "offline-sync",
+    "realtime"
+  ],
+  "summary": "Let a resident approve a visitor from their phone while a guard waits at a gate with poor signal.",
+  "context": [
+    "Hebbal Homes runs a gate app across 900 apartment complexes. A guard enters a visitor on a shared tablet, the resident gets a prompt, and the gate opens on approval. Deliveries make up most of the traffic, and some complexes see 2,000 entries a day.",
+    "Basements and gate cabins often have poor signal. Residents complain when they approve and the guard never sees it, and committees complain when a visitor gets in with no record."
+  ],
+  "must_handle": [
+    "A resident's answer reaches the guard within a few seconds on a working connection.",
+    "The guard has a way to act when the resident's phone is unreachable.",
+    "Two flatmates may answer the same prompt differently.",
+    "Every entry leaves a record a committee can read later, even if entered offline.",
+    "Residents can pre-approve a known visitor for a time window."
+  ],
+  "show_in_answer": [
+    "The journey of one visitor from entry at the gate to the record.",
+    "How the prompt reaches the resident, and what the fallback is.",
+    "What the guard's tablet can do alone with no network.",
+    "How conflicting answers are settled."
+  ]
+}

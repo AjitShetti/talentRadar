@@ -52,6 +52,12 @@ class Settings(BaseSettings):
         default="openai/gpt-oss-120b",
         description="Default Groq chat model for reasoning-heavy calls",
     )
+    design_feedback_per_minute: int = Field(
+        default=1,
+        ge=1,
+        description="Get feedback calls a minute across everyone; raise it once the model's "
+        "token limit on the Groq console is known",
+    )
     groq_fast_model: str = Field(
         default="openai/gpt-oss-20b",
         description="Smaller/cheaper Groq model for classification and short calls",

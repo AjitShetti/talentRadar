@@ -1,0 +1,31 @@
+{
+  "slug": "college-fest-tickets",
+  "title": "Passes for a college fest that sells out in minutes",
+  "tracks": [
+    "backend",
+    "general"
+  ],
+  "minutes": 30,
+  "topics": [
+    "consistency",
+    "rate-limiting"
+  ],
+  "summary": "Sell a fixed number of passes fairly when thousands of students press Buy at the same moment.",
+  "context": [
+    "Tunga Tickets sells passes for college fests. A headline night has 8,000 passes, and 60,000 students arrive when sales open at 18:00. Each student may buy four. Payment takes about a minute, and many never finish.",
+    "At the last fest, 300 extra passes were sold and refunds took a week. Scripts also bought hundreds of passes and resold them outside the gate."
+  ],
+  "must_handle": [
+    "Never more passes are sold than exist.",
+    "A pass held for an unfinished payment returns to sale after a while.",
+    "A student sees a clear answer quickly, even when they cannot get a pass.",
+    "One person cannot beat the limit with several tabs or a script.",
+    "The rest of the site stays up for other events during the rush."
+  ],
+  "show_in_answer": [
+    "How a pass is held, paid for and released.",
+    "How the opening rush is shaped before it reaches the database.",
+    "What a student sees at each stage.",
+    "How you would test this before the real evening."
+  ]
+}

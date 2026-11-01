@@ -1,0 +1,31 @@
+{
+  "slug": "refund-ledger",
+  "title": "A ledger that explains every refund",
+  "tracks": [
+    "backend",
+    "data"
+  ],
+  "minutes": 35,
+  "topics": [
+    "payments",
+    "data-modelling"
+  ],
+  "summary": "Keep money records that are correct, and can answer why a merchant's balance is what it is.",
+  "context": [
+    "Jalebi Pay holds money for merchants between payment and settlement. Refunds, chargebacks and fees all change what a merchant is owed. Balances are now a column updated in several places, and last month it disagreed with the bank by four lakh rupees.",
+    "Nobody could say when the difference began. Merchants ask why they were paid less than expected, and support has to read code to answer."
+  ],
+  "must_handle": [
+    "Every change in a balance can be traced to the event that caused it.",
+    "A balance cannot go wrong by a repeated or retried event.",
+    "A partial refund after settlement is handled.",
+    "A daily check compares the books with the bank's report.",
+    "A wrong entry is corrected by a new entry and never by editing history."
+  ],
+  "show_in_answer": [
+    "The tables and the entries for one payment, one refund and one settlement.",
+    "How a balance is read fast.",
+    "How a retried event is recognised.",
+    "How a merchant's question gets answered from this data."
+  ]
+}

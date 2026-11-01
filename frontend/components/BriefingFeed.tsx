@@ -23,12 +23,18 @@ const KIND_LABELS: Record<string, string> = {
   practice_today: 'Daily question',
 }
 
+/** A day's Practice card says which kind of problem it is; every other card goes by its kind. */
+function kindLabel(card: BriefingCard): string {
+  if (card.kind === 'practice_today' && card.meta?.kind === 'design') return 'System design'
+  return KIND_LABELS[card.kind] || card.kind.replace(/_/g, ' ')
+}
+
 function Card({ card, onDismiss }: { card: BriefingCard; onDismiss: (id: string, days?: number) => void }) {
   return <article className="cp-card" data-tone={card.tone}>
     <span className="cp-lamp" />
     <div className="cp-card-body">
       <div className="cp-card-headrow">
-        <h3>{card.title}<span className="cp-card-kind">{KIND_LABELS[card.kind] || card.kind.replace(/_/g, ' ')}</span></h3>
+        <h3>{card.title}<span className="cp-card-kind">{kindLabel(card)}</span></h3>
         {card.dismissible && <div className="cp-card-tools">
           <button className="icon-refresh" title="Snooze for a week" onClick={() => onDismiss(card.id, 7)}>
             <AlarmClock size={14}/>

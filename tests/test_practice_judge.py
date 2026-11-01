@@ -1112,6 +1112,54 @@ async def test_the_budget_counts_calls_not_attempts(
     assert judge.budget_key(JUDGE_NOW) == "tr:budget:judge:2026-10-19"
 
 
+async def test_the_judge_holds_its_key_only_while_it_has_attempts(
+    db: Db, github: PerRepoGitHub, chat: AsyncMock, queued: uuid.UUID
+) -> None:
+    held: list[str | None] = []
+
+    async def look(*_args: Any, **_kwargs: Any) -> str:
+        held.append(await CacheBackend.get(judge.JUDGING_KEY))
+        return reply()
+
+    chat.side_effect = look
+
+    await judge.run_judge_step(4, now=JUDGE_NOW)
+
+    assert held and held[0] is not None
+    assert await CacheBackend.get(judge.JUDGING_KEY) is None
+
+
+async def test_with_nothing_due_the_judge_never_takes_its_key(
+    db: Db, chat: AsyncMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[str] = []
+    real = CacheBackend.set
+
+    async def spy(key: str, value: str, ttl: int | None = None) -> Any:
+        seen.append(key)
+        return await real(key, value, ttl)
+
+    monkeypatch.setattr(CacheBackend, "set", spy)
+
+    await judge.run_judge_step(4, now=JUDGE_NOW)
+
+    assert judge.JUDGING_KEY not in seen
+
+
+async def test_a_failure_while_judging_still_gives_the_key_back(
+    db: Db, monkeypatch: pytest.MonkeyPatch, queued: uuid.UUID
+) -> None:
+    async def boom(*_args: Any, **_kwargs: Any) -> None:
+        raise RuntimeError("the loop itself broke")
+
+    monkeypatch.setattr(judge, "_judge_due", boom)
+
+    result = await judge.run_judge_step(4, now=JUDGE_NOW)
+
+    assert result == {"error": "RuntimeError"}
+    assert await CacheBackend.get(judge.JUDGING_KEY) is None
+
+
 async def test_a_spent_budget_judges_nothing_and_counts_no_attempt(
     db: Db, github: PerRepoGitHub, chat: AsyncMock, queued: uuid.UUID
 ) -> None:
@@ -2573,3 +2621,15 @@ class TestAdminRoutes:
 
     async def test_a_malformed_id_is_a_422(self, admin: AsyncClient) -> None:
         assert (await admin.post(f"{API}/admin/attempts/not-a-uuid/clear")).status_code == 422
+
+
+def test_what_a_person_reads_never_says_build() -> None:
+    """On the Practice pages a weekly take-home is a contest, never a build."""
+    for message in (
+        *judge.REJECT_MESSAGES.values(),
+        judge._NO_ATTEMPT,
+        judge._NOTHING_TO_APPEAL,
+        judge._APPEALED_ALREADY,
+        judge._NOT_READY_TO_OVERRIDE,
+    ):
+        assert "build" not in message.lower()
