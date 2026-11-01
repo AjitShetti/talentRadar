@@ -1,0 +1,31 @@
+{
+  "slug": "jobs-that-must-run-once",
+  "title": "Scheduled jobs that run exactly when they should",
+  "tracks": [
+    "devops",
+    "backend"
+  ],
+  "minutes": 30,
+  "topics": [
+    "scheduling",
+    "consistency"
+  ],
+  "summary": "Replace a single server's crontab with something that survives restarts and never pays anyone twice.",
+  "context": [
+    "Nandi Freight has 90 jobs in the crontab of one machine: invoices, settlement files, reminders. When it was replaced last month, some jobs never ran for two days, and no one noticed until a customer asked.",
+    "Moving to several machines is the obvious step, but some jobs must not run twice: one of them sends money to carriers. Some take seconds, and some take three hours."
+  ],
+  "must_handle": [
+    "A job runs even if the machine meant to run it dies.",
+    "A job that sends money does not run twice.",
+    "A missed run is noticed, and a person hears about it.",
+    "A long job and a short job do not get in each other's way.",
+    "Teams can add a job without asking anyone for a server."
+  ],
+  "show_in_answer": [
+    "What holds the schedule, and how a run gets claimed.",
+    "What happens when a worker dies halfway through.",
+    "How a job is made safe to repeat, using the money job as the example.",
+    "How missed and failing runs are noticed."
+  ]
+}

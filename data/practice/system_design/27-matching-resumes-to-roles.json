@@ -1,0 +1,30 @@
+{
+  "slug": "matching-resumes-to-roles",
+  "title": "Matching resumes to roles with embeddings",
+  "tracks": [
+    "ml"
+  ],
+  "minutes": 30,
+  "topics": [
+    "search",
+    "ml-serving"
+  ],
+  "summary": "Find the most relevant candidates for a role among millions of resumes, and show why.",
+  "context": [
+    "Ragi Careers holds 4 million resumes. Recruiters write a role in plain words and want a ranked list within two seconds, with the reasons. Keyword search misses a 'backend engineer' who wrote 'server-side developer', and it is easy to stuff with terms.",
+    "Resumes are updated daily, and a person who deleted their profile must vanish from results at once. Costs have to stay small: embeddings are computed by a model billed per use."
+  ],
+  "must_handle": [
+    "A search returns in about two seconds.",
+    "Hard rules hold, such as location and years of experience.",
+    "Each result gives a reason a recruiter can check.",
+    "A deleted profile stops appearing immediately.",
+    "A change of embedding model does not need downtime."
+  ],
+  "show_in_answer": [
+    "How resumes become searchable, and when they are re-embedded.",
+    "How one search runs, from text to a ranked list.",
+    "How filters and similarity work together.",
+    "How you would judge quality without many labelled examples."
+  ]
+}

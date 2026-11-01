@@ -1,0 +1,30 @@
+{
+  "slug": "water-tank-sensors",
+  "title": "Water tank sensors across apartment complexes",
+  "tracks": [
+    "data"
+  ],
+  "minutes": 30,
+  "topics": [
+    "pipelines",
+    "observability"
+  ],
+  "summary": "Turn readings from thousands of cheap sensors into alerts and usage reports people can trust.",
+  "context": [
+    "Hebbal Homes is fitting tank level sensors in 900 complexes. Each sends a reading every minute, over poor connections. The sensors are cheap: some drift, some go silent, and some send nonsense. Managers want an alert before a tank runs dry, and committees want monthly usage to help argue with tanker suppliers.",
+    "A false alarm at 2 am makes a manager stop trusting the system. A missed one means a whole building without water."
+  ],
+  "must_handle": [
+    "A reading may arrive hours late, or twice.",
+    "A silent sensor is reported as silent, and never as an empty tank.",
+    "A faulty reading does not raise an alarm or spoil the monthly figure.",
+    "Monthly usage can be recalculated when a sensor turns out to have drifted.",
+    "Old minute-level data gets cheaper, while reports stay available."
+  ],
+  "show_in_answer": [
+    "The path of a reading to an alert and to a report.",
+    "How bad readings are recognised.",
+    "How the alert rule avoids false alarms, and how a missing sensor is treated.",
+    "How data is rolled up and kept over time."
+  ]
+}

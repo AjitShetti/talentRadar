@@ -1,0 +1,30 @@
+{
+  "slug": "log-search-on-a-budget",
+  "title": "Searching logs without a large bill",
+  "tracks": [
+    "devops"
+  ],
+  "minutes": 30,
+  "topics": [
+    "observability",
+    "storage"
+  ],
+  "summary": "Give a small team fast answers from their logs for a fraction of what a hosted tool would cost.",
+  "context": [
+    "Bisibele Foods runs about 40 services and writes around 200 GB of logs a day. Their hosted tool's bill has passed their whole database bill, so they turned off most logging, and the last outage took three hours to understand.",
+    "Most searches look at the last hour, for a request id or an error. An audit asks about something from months ago perhaps twice a year."
+  ],
+  "must_handle": [
+    "A search for one request id over the last day returns within seconds.",
+    "Logs from a crashing service are not lost.",
+    "Secrets and customer details must not end up searchable.",
+    "Old logs get cheaper to keep and remain reachable for a year.",
+    "A noisy service cannot push out everyone else's logs."
+  ],
+  "show_in_answer": [
+    "How a log line travels from a service to where it can be searched.",
+    "How data moves between storage tiers, and what a search does across them.",
+    "How a noisy service is contained.",
+    "A rough cost estimate, with what drives it."
+  ]
+}

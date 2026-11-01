@@ -1,0 +1,30 @@
+{
+  "slug": "photos-from-the-field",
+  "title": "Delivery photos over a poor network",
+  "tracks": [
+    "mobile"
+  ],
+  "minutes": 25,
+  "topics": [
+    "storage",
+    "offline-sync"
+  ],
+  "summary": "Get proof-of-delivery photos from riders' phones to the server, whatever the network does.",
+  "context": [
+    "Cubbon Couriers' riders take a photo at each door, up to 80 a day. The photos settle disputes, so a lost one may cost a refund. Riders often work in basements and on cheap phones with little free space, and they will not wait for an upload to finish.",
+    "Stored photos have become the largest part of the bill. Almost nobody looks at a photo after a fortnight, but disputes may arrive for up to 90 days."
+  ],
+  "must_handle": [
+    "The rider moves on immediately, and the upload happens later by itself.",
+    "No photo is lost if the app is closed or the phone restarts.",
+    "Photos use little data and little space on the phone.",
+    "A photo cannot be swapped or faked easily.",
+    "Storage gets cheaper as photos age, and they are deleted on a schedule."
+  ],
+  "show_in_answer": [
+    "The life of a photo, from camera to deletion.",
+    "How uploads are queued, retried and resumed.",
+    "Where the image goes and who can read it.",
+    "A rough storage estimate, with what would bring it down."
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "slug": "address-autocomplete",
+  "title": "Address autocomplete at checkout",
+  "tracks": [
+    "frontend"
+  ],
+  "minutes": 25,
+  "topics": [
+    "search",
+    "caching"
+  ],
+  "summary": "Help people enter an Indian address quickly, and stop paying for a lookup on every keystroke.",
+  "context": [
+    "Malleshwaram Mart's delivery fails too often because of bad addresses. Indian addresses lean on landmarks, and spellings vary: '4th Cross, near Ganesha temple'. The team wants suggestions as people type, and it pays a map provider per request.",
+    "Most orders come from a few thousand buildings, and many shoppers have ordered before. Many shop on a slow connection on a low-end phone."
+  ],
+  "must_handle": [
+    "Suggestions feel immediate on a slow phone.",
+    "The paid lookup is called as rarely as possible.",
+    "A suggestion that arrives late never overwrites a newer one.",
+    "A person can always go on without choosing a suggestion.",
+    "Keyboard and screen reader users can use the list."
+  ],
+  "show_in_answer": [
+    "What happens in the browser on each keystroke.",
+    "What is cached, where, and for how long.",
+    "How out-of-order replies are handled.",
+    "How a typed address that matches nothing is treated."
+  ]
+}

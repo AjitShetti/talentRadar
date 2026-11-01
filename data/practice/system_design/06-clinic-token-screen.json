@@ -1,0 +1,30 @@
+{
+  "slug": "clinic-token-screen",
+  "title": "The token screen in a clinic waiting room",
+  "tracks": [
+    "frontend"
+  ],
+  "minutes": 25,
+  "topics": [
+    "realtime",
+    "scheduling"
+  ],
+  "summary": "Show patients an honest wait time on a wall screen and on their own phones.",
+  "context": [
+    "Sampige Clinics has 60 outpatient centres. Patients take a token, then watch a screen on the wall or a page on their phone. Doctors see people at uneven speeds, some leave for tests and come back, and emergencies jump the queue.",
+    "A receptionist updates the queue from a browser. When the wall screen falls behind, patients crowd the desk to ask, which slows everything further."
+  ],
+  "must_handle": [
+    "The wall screen runs for weeks unattended and recovers by itself after a network drop.",
+    "A patient's page keeps working on a slow phone and uses little data.",
+    "A wait estimate is a range, and it must not jump around every few seconds.",
+    "A screen in a public room must never show a patient's name in full.",
+    "A page out of date for more than a minute says so."
+  ],
+  "show_in_answer": [
+    "The parts of the page and where each one's data comes from.",
+    "How updates reach the browser, and how it recovers after a gap.",
+    "How the wait range is worked out and smoothed.",
+    "What the screen shows when it has lost contact."
+  ]
+}
