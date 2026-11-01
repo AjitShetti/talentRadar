@@ -4,13 +4,13 @@ import { Fragment, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Loader2 } from 'lucide-react'
 import FlapText from '@/components/FlapText'
-import { api, BoardRow, ChallengeBoard, OverallBoard } from '@/lib/api'
+import { api, ApiError, BoardRow, ChallengeBoard, OverallBoard } from '@/lib/api'
 import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 
 type Tab = 'week' | 'overall'
 /** What the last read returned, tagged with what it was a read of, so a slow answer for a tab
  *  the reader has left is never shown on the one they are on. */
-type Loaded = { key: string; board?: ChallengeBoard; overall?: OverallBoard; error?: string }
+type Loaded = { key: string; board?: ChallengeBoard; overall?: OverallBoard; error?: string; notOpen?: boolean }
 
 /** One row of either board, reduced to what the grid draws. */
 type Line = { rank: number; name: string; total: string; detail: string; side: string; repo: string | null; you: boolean }
@@ -84,7 +84,9 @@ export default function ContestBoard({ slug = null, tabs = false }: { slug?: str
   useEffect(() => {
     if (!wanted) return
     let live = true
-    const fail = (err: unknown): Loaded => ({ key: wanted, error: err instanceof Error ? err.message : 'Could not load the ranking.' })
+    const fail = (err: unknown): Loaded => err instanceof ApiError && err.status === 404
+      ? { key: wanted, notOpen: true }
+      : { key: wanted, error: err instanceof Error ? err.message : 'Could not load the ranking.' }
     const read: Promise<Loaded> = wanted === 'overall'
       ? api.practice.overall().then(overall => ({ key: wanted, overall }), fail)
       : api.practice.board(slug as string).then(board => ({ key: wanted, board }), fail)

@@ -2964,3 +2964,17 @@ class TestRoutes:
 
         assert response.status_code == 422
         assert response.json()["detail"] == "Said for the person."
+
+
+def test_what_a_person_reads_says_contest() -> None:
+    """On the Practice pages a weekly take-home is a contest, never a build."""
+    for message in (
+        challenges._NO_CONTEST,
+        challenges._STARTED_ALREADY,
+        challenges._TOO_LATE,
+        challenges._NOT_STARTED,
+        challenges._CLOSED,
+        challenges._TRY_AGAIN,
+    ):
+        assert "contest" in message
+        assert "build" not in message.lower()

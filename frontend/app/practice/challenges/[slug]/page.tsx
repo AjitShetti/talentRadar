@@ -4,6 +4,7 @@ import { FormEvent, ReactNode, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Loader2 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
+import ContestBoard from '@/components/practice/ContestBoard'
 import CopyButton from '@/components/CopyButton'
 import FlapText from '@/components/FlapText'
 import PrepTabs from '@/components/PrepTabs'
@@ -89,7 +90,7 @@ function stripClock(challenge: Challenge, now: number): { big: ReactNode; small:
   const attempt = challenge.attempt
   const hoursLabel = `${challenge.brief.hours} h`
   if (!attempt) {
-    if (now >= new Date(challenge.closes_at).getTime()) return { big: hoursLabel, small: 'this build has closed' }
+    if (now >= new Date(challenge.closes_at).getTime()) return { big: hoursLabel, small: 'this contest has closed' }
     const late = now > new Date(challenge.last_start_at).getTime()
     return { big: <FlapText value={hoursLabel.replace(/ /g, NBSP)} />, small: late ? 'too late to start' : 'once you start' }
   }
@@ -110,7 +111,7 @@ function stripClock(challenge: Challenge, now: number): { big: ReactNode; small:
     case 'judge_failed':
       return { big: 'Not judged', small: 'we could not judge this yet' }
     default:
-      return { big: 'Not submitted', small: 'this build closed' }
+      return { big: 'Not submitted', small: 'this contest closed' }
   }
 }
 
@@ -162,7 +163,7 @@ function ChallengeView({ slug }: { slug: string }) {
     let live = true
     api.practice.challenge(slug)
       .then(next => { if (live) { setChallenge(next); adopt(next) } })
-      .catch(err => { if (live) setError(err instanceof Error ? err.message : 'Could not load this build.') })
+      .catch(err => { if (live) setError(err instanceof Error ? err.message : 'Could not load this contest.') })
       .finally(() => { if (live) setLoading(false) })
     return () => { live = false }
   }, [slug])
@@ -205,7 +206,7 @@ function ChallengeView({ slug }: { slug: string }) {
       // The Start button is gone now: put keyboard focus where the work begins.
       window.setTimeout(() => document.getElementById('pr-repo')?.focus(), 0)
     } catch (err) {
-      setStartError(err instanceof Error ? err.message : 'Could not start this build.')
+      setStartError(err instanceof Error ? err.message : 'Could not start this contest.')
     } finally {
       setStarting(false)
     }
@@ -272,9 +273,9 @@ function ChallengeView({ slug }: { slug: string }) {
     }
   }
 
-  if (loading) return <div className="loading-state"><Loader2 className="spin" /> Loading the build…</div>
+  if (loading) return <div className="loading-state"><Loader2 className="spin" /> Loading the contest…</div>
   if (!challenge) return <>
-    <p className="form-error" role="alert">{error || 'We could not find that build.'}</p>
+    <p className="form-error" role="alert">{error || 'We could not find that contest.'}</p>
     <p className="pr-help"><Link href="/practice">← Back to Practice</Link></p>
   </>
 
@@ -307,7 +308,7 @@ function ChallengeView({ slug }: { slug: string }) {
   return <>
     <section className="page-heading split-heading">
       <div>
-        <span className="board-kicker">Build · {trackName(brief.track)} · {brief.hours} h</span>
+        <span className="board-kicker">Contest · {trackName(brief.track)} · {brief.hours} h</span>
         <h1>{brief.title}<span>.</span></h1>
         <p>{brief.summary}</p>
       </div>
@@ -344,9 +345,9 @@ function ChallengeView({ slug }: { slug: string }) {
           {startError && <p className="form-error" role="alert" style={{ marginTop: 12 }}>{startError}</p>}
           <p className="pr-help">
             {closed
-              ? 'This build has closed.'
+              ? 'This contest has closed.'
               : pastLastStart
-                ? `Not enough time left in this week's window — next build ${dayTime(challenge.closes_at)}`
+                ? `Not enough time left in this week's window — next contest ${dayTime(challenge.closes_at)}`
                 : `Starting begins your ${brief.hours} h clock. It does not pause.`}
           </p>
         </>}
@@ -440,18 +441,18 @@ function ChallengeView({ slug }: { slug: string }) {
       {hasResult && !result && !resultError && <p className="muted-copy">Loading your result…</p>}
 
       {attempt.status === 'queued' && (attempt.held
-        ? <p><span className="pr-pill">Under review</span> <span className="pr-meta">A person checks this build before it is ranked.</span></p>
+        ? <p><span className="pr-pill">Under review</span> <span className="pr-meta">A person checks this entry before it is ranked.</span></p>
         : <p className="muted-copy">Queued for the judge — results within a day.</p>)}
-      {attempt.status === 'missed' && <p className="muted-copy">This build closed without a submission.</p>}
+      {attempt.status === 'missed' && <p className="muted-copy">This contest closed without a submission.</p>}
       {attempt.status === 'judge_failed' && <p className="muted-copy">We could not judge this yet.{result?.reject_reason ? ` ${result.reject_reason}` : ''}</p>}
-      {attempt.status === 'rejected' && result && <p className="form-error" role="status">This build could not be judged. {result.reject_reason ?? 'The repo did not meet the rules.'}</p>}
-      {result?.held && <p><span className="pr-pill">Under review</span> <span className="pr-meta">Held off the leaderboard until a person has checked it.</span></p>}
+      {attempt.status === 'rejected' && result && <p className="form-error" role="status">This entry could not be judged. {result.reject_reason ?? 'The repo did not meet the rules.'}</p>}
+      {result?.held && <p><span className="pr-pill">Under review</span> <span className="pr-meta">Held off the ranking until a person has checked it.</span></p>}
 
       {result?.status === 'judged' && scores && result.total != null && <>
         <div className="results-head">
           <div className="results-total">
             <strong><FlapText value={result.total.toFixed(1)} /></strong>
-            <span>of 100{standing && <> · <Link href="/practice/leaderboard">{standing}</Link></>}</span>
+            <span>of 100{standing && <> · <Link href="/practice#contest">{standing}</Link></>}</span>
           </div>
           <div className="results-dims">
             {CRITERIA.map(item => <div key={item.key} className={weakest === item.key ? 'weakest' : undefined}>
@@ -499,9 +500,12 @@ function ChallengeView({ slug }: { slug: string }) {
             </form>
           </details>
           : APPEAL_NOTES[result.appeal.state] && <p id="pr-appeal-note" tabIndex={-1} className="pr-help">{APPEAL_NOTES[result.appeal.state]}</p>}
-
-        <p className="pr-help"><Link href="/practice/leaderboard">See the leaderboard →</Link></p>
       </>}
     </section>}
+
+    <section className="pr-section">
+      <div className="pr-section-head"><h2>Ranking</h2></div>
+      <ContestBoard slug={slug} />
+    </section>
   </>
 }

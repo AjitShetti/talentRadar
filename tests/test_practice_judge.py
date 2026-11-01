@@ -2621,3 +2621,15 @@ class TestAdminRoutes:
 
     async def test_a_malformed_id_is_a_422(self, admin: AsyncClient) -> None:
         assert (await admin.post(f"{API}/admin/attempts/not-a-uuid/clear")).status_code == 422
+
+
+def test_what_a_person_reads_never_says_build() -> None:
+    """On the Practice pages a weekly take-home is a contest, never a build."""
+    for message in (
+        *judge.REJECT_MESSAGES.values(),
+        judge._NO_ATTEMPT,
+        judge._NOTHING_TO_APPEAL,
+        judge._APPEALED_ALREADY,
+        judge._NOT_READY_TO_OVERRIDE,
+    ):
+        assert "build" not in message.lower()

@@ -152,16 +152,16 @@ _ADVANCE_BATCH = 500
 _PROOF_CODE_TRIES = 3
 
 _NO_ACCOUNT = "We could not find your account."
-_NO_BUILD = "We could not find that build."
-_STARTED_ALREADY = "You have already started this build."
+_NO_CONTEST = "We could not find that contest."
+_STARTED_ALREADY = "You have already started this contest."
 _TOO_LATE = (
-    "Not enough time left in this week's window to start this build. "
-    "The next build opens on Friday at 18:00 IST."
+    "Not enough time left in this week's window to start this contest. "
+    "The next contest opens on Friday at 18:00 IST."
 )
-_NOT_STARTED = "Press Start on this build before saving a submission."
-_CLOSED = "The submission window for this build has closed."
+_NOT_STARTED = "Press Start on this contest before saving a submission."
+_CLOSED = "The submission window for this contest has closed."
 _TOO_FAST = "You are saving too quickly. Wait a minute and try again."
-_TRY_AGAIN = "We could not start your build just now. Try again."
+_TRY_AGAIN = "We could not start your contest just now. Try again."
 _BAD_REPO_LINK = "Paste the repo link as https://github.com/<owner>/<repo>."
 _REPO_NOT_FOUND = "We could not find that repo. Check the link; the repo must be public."
 _REPO_PRIVATE = "The repo must be public so it can be judged."
@@ -374,7 +374,7 @@ async def _visible_challenge(
         await session.execute(select(PracticeChallenge).where(PracticeChallenge.slug == slug))
     ).scalar_one_or_none()
     if row is None or _aware(row.opens_at) > moment:
-        raise PracticeNotFound(_NO_BUILD)
+        raise PracticeNotFound(_NO_CONTEST)
     return row
 
 

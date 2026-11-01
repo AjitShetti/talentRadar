@@ -1745,3 +1745,7 @@ async def test_the_distribution_holds_no_names(db: Db, asha: str) -> None:
     payload = await board.overall_board(asha, now=AFTER)
 
     assert all(isinstance(band, int) for band in payload["distribution"])
+
+
+def test_a_missing_contest_says_contest() -> None:
+    assert board._NO_CONTEST == "We could not find that contest."

@@ -81,7 +81,7 @@ _QUEUED = "queued"
 _SUBMITTED = "submitted"
 
 _NO_ACCOUNT = "We could not find your account."
-_NO_BUILD = "We could not find that build."
+_NO_CONTEST = "We could not find that contest."
 _BAD_NAME = (
     "A leaderboard name is 2 to 32 letters, digits, spaces, dots, hyphens or underscores. "
     "It cannot hold an @ or a link, or start with builder-."
@@ -234,7 +234,7 @@ async def _build_challenge(slug: str, moment: datetime) -> _ChallengeBoard:
             await session.execute(select(PracticeChallenge).where(PracticeChallenge.slug == slug))
         ).scalar_one_or_none()
         if challenge is None or _aware(challenge.opens_at) > moment:
-            raise PracticeNotFound(_NO_BUILD)
+            raise PracticeNotFound(_NO_CONTEST)
         rows = (
             await session.execute(
                 select(

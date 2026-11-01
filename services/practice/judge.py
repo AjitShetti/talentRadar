@@ -166,7 +166,7 @@ _OVERRIDABLE = (_QUEUED, _JUDGED, "judge_failed", "rejected")
 
 #: What the owner reads for each ``reject_reason`` code.
 REJECT_MESSAGES: dict[str, str] = {
-    "no_submission": "No repo was saved with this build, so there is nothing to judge.",
+    "no_submission": "No repo was saved with this entry, so there is nothing to judge.",
     "repo_gone": "The repo is gone or private.",
     "repo_private": "The repo is gone or private.",
     "repo_fork": "The repo is a fork. Create a new repo after you press Start.",
@@ -178,7 +178,7 @@ REJECT_MESSAGES: dict[str, str] = {
     ),
     "repo_too_large": "The repo is too large to read.",
     "request_too_large": (
-        "The judge could not read this build in one go: it is more than the free model we use "
+        "The judge could not read this entry in one go: it is more than the free model we use "
         "takes at once. Nothing in your submission was wrong."
     ),
 }
@@ -186,14 +186,14 @@ REJECT_MESSAGES: dict[str, str] = {
 #: ``reject_reason`` of an attempt the model refused for its size, which a later try cannot fix.
 REQUEST_TOO_LARGE = "request_too_large"
 
-_NO_ATTEMPT = "We could not find your attempt at that build."
+_NO_ATTEMPT = "We could not find your attempt at that contest."
 _NO_SUCH_ATTEMPT = "We could not find that attempt."
 _NO_ACCOUNT = "We could not find your account."
-_NOTHING_TO_APPEAL = "You can appeal once your build has been judged."
-_APPEALED_ALREADY = "You have already used your appeal for this build."
+_NOTHING_TO_APPEAL = "You can appeal once your entry has been judged."
+_APPEALED_ALREADY = "You have already used your appeal for this contest."
 _APPEAL_CLOSED = "The appeal window for this result has closed."
 _REVIEWED_ALREADY = "A person has already reviewed this result."
-_NOT_READY_TO_OVERRIDE = "This build has not reached the judge yet, so it cannot be scored by hand."
+_NOT_READY_TO_OVERRIDE = "This entry has not reached the judge yet, so it cannot be scored by hand."
 _NEEDS_REASON = "Say, in a sentence or two, what you think the judge got wrong."
 _REASON_TOO_LONG = f"Keep your reason to {APPEAL_REASON_CHARS} characters or fewer."
 _NEEDS_NOTE = "An override needs a note saying why."
