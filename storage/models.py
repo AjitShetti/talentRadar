@@ -68,12 +68,9 @@ def _compile_function_sqlite(element: Any, compiler: Any, **kw: Any) -> str:
     return compiler.visit_function(element, **kw)
 
 
-
-
-
-
 class StringArray(TypeDecorator):
     """PostgreSQL ARRAY(String) with SQLite JSON fallback for testing."""
+
     impl = ARRAY(String)
     cache_ok = True
 
@@ -129,11 +126,10 @@ def _compile_vector_sqlite(type_: Any, compiler: Any, **kw: Any) -> str:
     return "TEXT"
 
 
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _now() -> datetime:
     """UTC timestamp — used as server-side default."""
@@ -144,54 +140,59 @@ def _now() -> datetime:
 # Enums
 # ---------------------------------------------------------------------------
 
+
 class IngestionStatus(str, PyEnum):
     """Lifecycle stages of a single ingestion run."""
+
     PENDING = "pending"
     RUNNING = "running"
     SUCCESS = "success"
-    PARTIAL = "partial"       # completed with some errors
-    FAILED  = "failed"
+    PARTIAL = "partial"  # completed with some errors
+    FAILED = "failed"
 
 
 class JobStatus(str, PyEnum):
     """Current state of a job posting."""
-    ACTIVE    = "active"
-    EXPIRED   = "expired"
-    FILLED    = "filled"
+
+    ACTIVE = "active"
+    EXPIRED = "expired"
+    FILLED = "filled"
     DUPLICATE = "duplicate"
-    ARCHIVED  = "archived"
+    ARCHIVED = "archived"
 
 
 class EmploymentType(str, PyEnum):
-    FULL_TIME  = "full_time"
-    PART_TIME  = "part_time"
-    CONTRACT   = "contract"
+    FULL_TIME = "full_time"
+    PART_TIME = "part_time"
+    CONTRACT = "contract"
     INTERNSHIP = "internship"
-    FREELANCE  = "freelance"
+    FREELANCE = "freelance"
 
 
 class SeniorityLevel(str, PyEnum):
-    INTERN     = "intern"
-    JUNIOR     = "junior"
-    MID        = "mid"
-    SENIOR     = "senior"
-    LEAD       = "lead"
-    PRINCIPAL  = "principal"
-    STAFF      = "staff"
-    DIRECTOR   = "director"
-    VP         = "vp"
-    C_LEVEL    = "c_level"
+    INTERN = "intern"
+    JUNIOR = "junior"
+    MID = "mid"
+    SENIOR = "senior"
+    LEAD = "lead"
+    PRINCIPAL = "principal"
+    STAFF = "staff"
+    DIRECTOR = "director"
+    VP = "vp"
+    C_LEVEL = "c_level"
 
 
 # ---------------------------------------------------------------------------
 # companies
 # ---------------------------------------------------------------------------
 
+
 class Company(Base):
     """
     Canonical company record.
     A company may appear across many ingestion runs and job postings.
     """
+
     __tablename__ = "companies"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -218,7 +219,8 @@ class Company(Base):
         Text, nullable=True, comment="Plain-language summary of what the company does"
     )
     tier: Mapped[str | None] = mapped_column(
-        String(32), nullable=True,
+        String(32),
+        nullable=True,
         comment="big_tech | gcc | unicorn | scaleup | startup | services",
     )
     github_org: Mapped[str | None] = mapped_column(
@@ -251,15 +253,14 @@ class Company(Base):
         String(8), nullable=True, comment="exact | street | area | city"
     )
     geo_source: Mapped[str | None] = mapped_column(
-        String(16), nullable=True,
+        String(16),
+        nullable=True,
         comment="curated | wikidata | osm | nominatim | pincode | area",
     )
     wikidata_id: Mapped[str | None] = mapped_column(String(16), nullable=True, unique=True)
     employee_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     x_url: Mapped[str | None] = mapped_column(String(256), nullable=True)
-    last_funding_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    last_funding_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     enriched_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, comment="Last website / Wikidata pass"
     )
@@ -273,9 +274,7 @@ class Company(Base):
     # Enrichment payload (arbitrary extra fields from data providers)
     # NOTE: 'metadata' is reserved by SQLAlchemy Declarative API; the Python
     # attribute is 'extra_metadata' but maps to the 'metadata' Postgres column.
-    extra_metadata: Mapped[dict | None] = mapped_column(
-        "metadata", JSONB, nullable=True
-    )
+    extra_metadata: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
@@ -322,11 +321,13 @@ class Company(Base):
 # ingestion_runs
 # ---------------------------------------------------------------------------
 
+
 class IngestionRun(Base):
     """
     Audit log for every executed pipeline / crawl run.
     Tracks source, timing, counters, and any error payload for observability.
     """
+
     __tablename__ = "ingestion_runs"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -346,12 +347,18 @@ class IngestionRun(Base):
 
     # Source identifies which crawler/scraper produced this run
     source: Mapped[str] = mapped_column(
-        String(128), nullable=False, index=True,
+        String(128),
+        nullable=False,
+        index=True,
         comment="e.g. linkedin, lever, greenhouse, tavily, manual",
     )
 
     status: Mapped[IngestionStatus] = mapped_column(
-        Enum(IngestionStatus, name="ingestion_status_enum", values_callable=lambda obj: [e.value for e in obj]),
+        Enum(
+            IngestionStatus,
+            name="ingestion_status_enum",
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
         nullable=False,
         default=IngestionStatus.PENDING,
         server_default=IngestionStatus.PENDING.value,
@@ -359,12 +366,8 @@ class IngestionRun(Base):
     )
 
     # Timing
-    started_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    finished_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Counters
     jobs_discovered: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -391,12 +394,8 @@ class IngestionRun(Base):
     )
 
     # Relationships
-    company: Mapped["Company | None"] = relationship(
-        "Company", back_populates="ingestion_runs"
-    )
-    jobs: Mapped[list["Job"]] = relationship(
-        "Job", back_populates="ingestion_run"
-    )
+    company: Mapped["Company | None"] = relationship("Company", back_populates="ingestion_runs")
+    jobs: Mapped[list["Job"]] = relationship("Job", back_populates="ingestion_run")
 
     __table_args__ = (
         Index("ix_ingestion_runs_source_status", "source", "status"),
@@ -404,15 +403,13 @@ class IngestionRun(Base):
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<IngestionRun id={self.id} source={self.source!r} "
-            f"status={self.status.value}>"
-        )
+        return f"<IngestionRun id={self.id} source={self.source!r} status={self.status.value}>"
 
 
 # ---------------------------------------------------------------------------
 # jobs
 # ---------------------------------------------------------------------------
+
 
 class Job(Base):
     """
@@ -427,6 +424,7 @@ class Job(Base):
     * Skills / tags use a Postgres ARRAY for cheap containment queries.
     * `embedding_id` holds the vector-store row id (job_embeddings.id).
     """
+
     __tablename__ = "jobs"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -452,11 +450,14 @@ class Job(Base):
 
     # ---- Source identity ----------------------------------------------- #
     external_id: Mapped[str | None] = mapped_column(
-        String(256), nullable=True,
+        String(256),
+        nullable=True,
         comment="ID assigned by the data source (LinkedIn job id, Greenhouse id, …)",
     )
     source: Mapped[str] = mapped_column(
-        String(128), nullable=False, index=True,
+        String(128),
+        nullable=False,
+        index=True,
         comment="Which crawler/board this posting came from",
     )
     source_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
@@ -479,10 +480,21 @@ class Job(Base):
         index=True,
     )
     employment_type: Mapped[EmploymentType | None] = mapped_column(
-        Enum(EmploymentType, name="employment_type_enum", values_callable=lambda obj: [e.value for e in obj]), nullable=True
+        Enum(
+            EmploymentType,
+            name="employment_type_enum",
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
+        nullable=True,
     )
     seniority: Mapped[SeniorityLevel | None] = mapped_column(
-        Enum(SeniorityLevel, name="seniority_level_enum", values_callable=lambda obj: [e.value for e in obj]), nullable=True, index=True
+        Enum(
+            SeniorityLevel,
+            name="seniority_level_enum",
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
+        nullable=True,
+        index=True,
     )
 
     # ---- Location ------------------------------------------------------ #
@@ -501,17 +513,20 @@ class Job(Base):
 
     # ---- Skills / tags ------------------------------------------------- #
     skills: Mapped[list[str] | None] = mapped_column(
-        StringArray, nullable=True,
+        StringArray,
+        nullable=True,
         comment="Parsed skill tokens (Python, SQL, …)",
     )
     tags: Mapped[list[str] | None] = mapped_column(
-        StringArray, nullable=True,
+        StringArray,
+        nullable=True,
         comment="Free-form taxonomy tags added during enrichment",
     )
 
     # ---- Vector store reference ---------------------------------------- #
     embedding_id: Mapped[str | None] = mapped_column(
-        String(256), nullable=True,
+        String(256),
+        nullable=True,
         comment="Vector-store row id (job_embeddings.id) for semantic search lookups",
     )
 
@@ -521,7 +536,10 @@ class Job(Base):
     # later - on demand, or by the budgeted scheduled pass. See
     # services/job_persistence.py and migration 011.
     enrichment_status: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="raw", server_default="enriched",
+        String(16),
+        nullable=False,
+        default="raw",
+        server_default="enriched",
         comment="raw = structural scrape only; enriched = LLM-parsed; failed = unparseable",
     )
 
@@ -535,47 +553,53 @@ class Job(Base):
 
     # ---- Dates --------------------------------------------------------- #
     posted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True, index=True,
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
         comment="When the posting first appeared on the source board",
     )
-    expires_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # ---- Liveness evidence --------------------------------------------- #
     # The facts domain/liveness.py turns into a verdict. All nullable: a fact
     # we do not hold stays absent rather than being guessed. Migration 013.
     source_posted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True,
+        DateTime(timezone=True),
+        nullable=True,
         comment="Publish time reported by the employer's ATS",
     )
     source_updated_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True,
+        DateTime(timezone=True),
+        nullable=True,
         comment="Last edit time reported by the employer's ATS",
     )
     first_seen_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True, server_default=func.now(),
+        DateTime(timezone=True),
+        nullable=True,
+        server_default=func.now(),
         comment="When this posting first reached our index",
     )
     last_seen_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True,
+        DateTime(timezone=True),
+        nullable=True,
         comment="Most recent scrape that returned this posting",
     )
     last_verified_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True, index=True,
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
         comment="Most recent re-check that found the posting still served",
     )
     closed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True,
+        DateTime(timezone=True),
+        nullable=True,
         comment="When a re-check found the source no longer serving it",
     )
 
     # Extra enrichment payload
     # NOTE: 'metadata' is reserved by SQLAlchemy Declarative API; the Python
     # attribute is 'extra_metadata' but maps to the 'metadata' Postgres column.
-    extra_metadata: Mapped[dict | None] = mapped_column(
-        "metadata", JSONB, nullable=True
-    )
+    extra_metadata: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
@@ -613,6 +637,7 @@ class Job(Base):
 # users
 # ---------------------------------------------------------------------------
 
+
 class RoleSighting(Base):
     """
     Running record of one role - a (company, normalised title) pair.
@@ -623,6 +648,7 @@ class RoleSighting(Base):
     the same role has been advertised before. One small row here can.
     ``services/job_retention.py`` never touches this table.
     """
+
     __tablename__ = "role_sightings"
 
     company_id: Mapped[uuid.UUID] = mapped_column(
@@ -633,9 +659,7 @@ class RoleSighting(Base):
     title_key: Mapped[str] = mapped_column(String(200), primary_key=True)
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    times_seen: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=1, server_default="1"
-    )
+    times_seen: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     times_reposted: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
@@ -646,6 +670,7 @@ class User(Base):
     """
     User account for the application.
     """
+
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -656,7 +681,9 @@ class User(Base):
     )
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
-    role: Mapped[str] = mapped_column(String(50), default="user", server_default="user", nullable=False)
+    role: Mapped[str] = mapped_column(
+        String(50), default="user", server_default="user", nullable=False
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -679,14 +706,15 @@ class User(Base):
 
 class ApplicationStatus(str, PyEnum):
     """Full job-seeker funnel: saved → applied → online_assessment → interview → offer/rejected."""
-    SAVED             = "saved"
-    APPLIED           = "applied"
+
+    SAVED = "saved"
+    APPLIED = "applied"
     ONLINE_ASSESSMENT = "online_assessment"
-    SCREENING         = "screening"
-    INTERVIEW         = "interview"
-    OFFER             = "offer"
-    REJECTED          = "rejected"
-    WITHDRAWN         = "withdrawn"
+    SCREENING = "screening"
+    INTERVIEW = "interview"
+    OFFER = "offer"
+    REJECTED = "rejected"
+    WITHDRAWN = "withdrawn"
 
     @staticmethod
     def funnel_order() -> dict[str, int]:
@@ -725,7 +753,11 @@ class JobApplication(Base):
         index=True,
     )
     status: Mapped[ApplicationStatus] = mapped_column(
-        Enum(ApplicationStatus, name="application_status_enum", values_callable=lambda obj: [e.value for e in obj]),
+        Enum(
+            ApplicationStatus,
+            name="application_status_enum",
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
         nullable=False,
         default=ApplicationStatus.SAVED,
         server_default="saved",
@@ -749,15 +781,11 @@ class JobApplication(Base):
     applied_at_explicit: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    oa_completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    oa_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     interview_scheduled_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    outcome_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    outcome_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -775,9 +803,7 @@ class JobApplication(Base):
     # tracker endpoint issued a separate SELECT per row, and with one, a lazy
     # access inside async code raises MissingGreenlet.
     job: Mapped["Job | None"] = relationship("Job", lazy="raise")
-    resume_version: Mapped["Resume | None"] = relationship(
-        "Resume", back_populates="applications"
-    )
+    resume_version: Mapped["Resume | None"] = relationship("Resume", back_populates="applications")
     cover_letter: Mapped["CoverLetter | None"] = relationship(
         "CoverLetter", back_populates="applications"
     )
@@ -788,9 +814,7 @@ class JobApplication(Base):
         order_by="ApplicationEvent.created_at",
     )
 
-    __table_args__ = (
-        UniqueConstraint("user_id", "job_id", name="uq_job_applications_user_job"),
-    )
+    __table_args__ = (UniqueConstraint("user_id", "job_id", name="uq_job_applications_user_job"),)
 
     def __repr__(self) -> str:
         return f"<JobApplication id={self.id} status={self.status.value}>"
@@ -800,23 +824,26 @@ class JobApplication(Base):
 # interview_sessions / interview_answer_scores
 # ---------------------------------------------------------------------------
 
+
 class InterviewTrack(str, PyEnum):
     """Available mock interview catalog tracks (round types)."""
-    CODING         = "coding"
-    TECHNICAL      = "technical"
-    BEHAVIORAL     = "behavioral"
-    SYSTEM_DESIGN  = "system_design"
+
+    CODING = "coding"
+    TECHNICAL = "technical"
+    BEHAVIORAL = "behavioral"
+    SYSTEM_DESIGN = "system_design"
     # Backward-compatible aliases for the old catalogue
-    PYTHON_DSA     = "python_dsa"
+    PYTHON_DSA = "python_dsa"
     PYTHON_BACKEND = "python_backend"
-    SQL            = "sql"
+    SQL = "sql"
 
 
 class InterviewDifficulty(str, PyEnum):
     """Difficulty level chosen by the user per session."""
+
     BEGINNER = "beginner"
-    MID      = "mid"
-    SENIOR   = "senior"
+    MID = "mid"
+    SENIOR = "senior"
 
 
 class InterviewSession(Base):
@@ -831,6 +858,7 @@ class InterviewSession(Base):
       was abandoned mid-way (tab closed, network drop, etc.).
     * Scores are stored as floats 0–100 for human-readable display.
     """
+
     __tablename__ = "interview_sessions"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -965,6 +993,7 @@ class InterviewAnswerScore(Base):
       frontend can display a breakdown radar chart in future.
     * ``was_followup`` distinguishes a follow-up probe from an original Q.
     """
+
     __tablename__ = "interview_answer_scores"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -999,15 +1028,21 @@ class InterviewAnswerScore(Base):
 
     # Sub-scores (0.0 – 10.0 each)
     score_correctness: Mapped[float] = mapped_column(
-        Float, nullable=False, default=0.0,
+        Float,
+        nullable=False,
+        default=0.0,
         comment="Factual accuracy of the answer",
     )
     score_clarity: Mapped[float] = mapped_column(
-        Float, nullable=False, default=0.0,
+        Float,
+        nullable=False,
+        default=0.0,
         comment="How clearly and concisely the answer was communicated",
     )
     score_depth: Mapped[float] = mapped_column(
-        Float, nullable=False, default=0.0,
+        Float,
+        nullable=False,
+        default=0.0,
         comment="Technical depth and nuance demonstrated",
     )
 
@@ -1048,11 +1083,13 @@ class InterviewAnswerScore(Base):
 # profiles — career onboarding profile (1:1 with users)
 # ---------------------------------------------------------------------------
 
+
 class Profile(Base):
     """
     Career profile created during onboarding. Drives job matching, salary
     filtering, resume tailoring, and the personal agent.
     """
+
     __tablename__ = "profiles"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1075,11 +1112,14 @@ class Profile(Base):
 
     # Target roles / career goals
     target_roles: Mapped[list[str] | None] = mapped_column(
-        StringArray, nullable=True,
+        StringArray,
+        nullable=True,
         comment="e.g. ['Senior Python Engineer', 'Backend Engineer']",
     )
     target_locations: Mapped[list[str] | None] = mapped_column(
-        StringArray, nullable=True, comment="e.g. ['Bangalore', 'Remote']",
+        StringArray,
+        nullable=True,
+        comment="e.g. ['Bangalore', 'Remote']",
     )
     is_remote_preferred: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
@@ -1124,6 +1164,7 @@ class Profile(Base):
 # resumes — resume versions with ATS analysis
 # ---------------------------------------------------------------------------
 
+
 class Resume(Base):
     """
     A resume version owned by a user's profile.
@@ -1131,6 +1172,7 @@ class Resume(Base):
     ``is_tailored`` + ``target_job_id`` distinguish original uploads from
     job-specific tailored versions produced by Resume Studio.
     """
+
     __tablename__ = "resumes"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1196,8 +1238,10 @@ class Resume(Base):
 # cover_letters
 # ---------------------------------------------------------------------------
 
+
 class CoverLetter(Base):
     """AI-generated cover letter for a user + target job."""
+
     __tablename__ = "cover_letters"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1245,8 +1289,10 @@ class CoverLetter(Base):
 # skills registry + user_skills
 # ---------------------------------------------------------------------------
 
+
 class Skill(Base):
     """Canonical skill registry (normalised names)."""
+
     __tablename__ = "skills"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1268,6 +1314,7 @@ class Skill(Base):
 
 class UserSkill(Base):
     """A user's proficiency in a skill (used by career coach + matching)."""
+
     __tablename__ = "user_skills"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1297,9 +1344,7 @@ class UserSkill(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    __table_args__ = (
-        UniqueConstraint("user_id", "skill_name", name="uq_user_skills_user_skill"),
-    )
+    __table_args__ = (UniqueConstraint("user_id", "skill_name", name="uq_user_skills_user_skill"),)
 
     def __repr__(self) -> str:
         return f"<UserSkill user={self.user_id} skill={self.skill_name!r} p={self.proficiency}>"
@@ -1309,8 +1354,10 @@ class UserSkill(Base):
 # application_events — status-change timeline for the tracker
 # ---------------------------------------------------------------------------
 
+
 class ApplicationEvent(Base):
     """A single status change / note on an application (audit + analytics)."""
+
     __tablename__ = "application_events"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1332,9 +1379,7 @@ class ApplicationEvent(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    application: Mapped["JobApplication"] = relationship(
-        "JobApplication", back_populates="events"
-    )
+    application: Mapped["JobApplication"] = relationship("JobApplication", back_populates="events")
 
     def __repr__(self) -> str:
         return f"<ApplicationEvent app={self.application_id} {self.from_status}→{self.to_status}>"
@@ -1344,8 +1389,10 @@ class ApplicationEvent(Base):
 # interview_prep_plans — personalised prep for a scheduled interview
 # ---------------------------------------------------------------------------
 
+
 class InterviewPrepPlan(Base):
     """Personalised interview preparation plan (job + company + resume)."""
+
     __tablename__ = "interview_prep_plans"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1404,8 +1451,10 @@ class InterviewPrepPlan(Base):
 # company_profiles — company intelligence
 # ---------------------------------------------------------------------------
 
+
 class CompanyProfile(Base):
     """Company intelligence: tech stack, salaries, interview patterns, trends."""
+
     __tablename__ = "company_profiles"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1449,6 +1498,7 @@ class CompanyProfile(Base):
 # company_contacts — talent/recruiting contacts surfaced in Company Intel
 # ---------------------------------------------------------------------------
 
+
 class CompanyContact(Base):
     """
     A way to reach a company's talent team.
@@ -1464,6 +1514,7 @@ class CompanyContact(Base):
     Named individuals are only ever stored when a user adds them or a curated
     entry cites a public source — nothing here is inferred or generated.
     """
+
     __tablename__ = "company_contacts"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1486,7 +1537,9 @@ class CompanyContact(Base):
         comment="NULL = curated public contact; set = private to that user",
     )
     kind: Mapped[str] = mapped_column(
-        String(24), nullable=False, default="careers_inbox",
+        String(24),
+        nullable=False,
+        default="careers_inbox",
         server_default="careers_inbox",
         comment=(
             "careers_inbox | careers_page | recruiter | referral | other"
@@ -1507,7 +1560,10 @@ class CompanyContact(Base):
         String(512), nullable=True, comment="Public page the email address was read from"
     )
     verified: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="false",
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
         comment="True only when a human confirmed the contact still works",
     )
     # People (migration 015): public profile links and the kind of source
@@ -1518,7 +1574,8 @@ class CompanyContact(Base):
         String(512), nullable=True, comment="Personal site"
     )
     source_kind: Mapped[str | None] = mapped_column(
-        String(16), nullable=True,
+        String(16),
+        nullable=True,
         comment="curated | wikidata | site | news | github | tavily | user",
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -1554,6 +1611,7 @@ class CompanyContact(Base):
 # company_news — startup news from public RSS feeds (migration 015)
 # ---------------------------------------------------------------------------
 
+
 class CompanyNews(Base):
     """
     One article from an Indian startup-news feed, classified.
@@ -1563,6 +1621,7 @@ class CompanyNews(Base):
     pruned company. Funding rows feed ``companies.last_funding_at`` and
     ``stage``. Retention: ``services/job_retention.py``.
     """
+
     __tablename__ = "company_news"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1577,11 +1636,12 @@ class CompanyNews(Base):
     )
     title: Mapped[str] = mapped_column(String(400), nullable=False)
     snippet: Mapped[str | None] = mapped_column(String(600), nullable=True)
-    published_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     category: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="other", server_default="other",
+        String(16),
+        nullable=False,
+        default="other",
+        server_default="other",
         comment="funding | acquisition | launch | other",
     )
     company_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -1593,7 +1653,8 @@ class CompanyNews(Base):
     round: Mapped[str | None] = mapped_column(String(24), nullable=True)
     amount_text: Mapped[str | None] = mapped_column(String(64), nullable=True)
     amount_usd: Mapped[float | None] = mapped_column(
-        Numeric(asdecimal=False), nullable=True,
+        Numeric(asdecimal=False),
+        nullable=True,
         comment="Approximate; INR converted at domain.news.INR_PER_USD",
     )
     investors: Mapped[list[str] | None] = mapped_column(StringArray, nullable=True)
@@ -1916,8 +1977,10 @@ class EventContact(Base):
 # market_snapshots — historical trends for the trends dashboard
 # ---------------------------------------------------------------------------
 
+
 class MarketSnapshot(Base):
     """Periodic aggregate of market trends (skills/salary/location demand)."""
+
     __tablename__ = "market_snapshots"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1949,8 +2012,10 @@ class MarketSnapshot(Base):
 # learning_tasks — career coach recommendations
 # ---------------------------------------------------------------------------
 
+
 class LearningTask(Base):
     """A concrete learning/practice task recommended by the career coach."""
+
     __tablename__ = "learning_tasks"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1986,9 +2051,7 @@ class LearningTask(Base):
         nullable=False,
     )
 
-    __table_args__ = (
-        Index("ix_learning_tasks_user_status", "user_id", "status"),
-    )
+    __table_args__ = (Index("ix_learning_tasks_user_status", "user_id", "status"),)
 
     def __repr__(self) -> str:
         return f"<LearningTask id={self.id} skill={self.skill_name!r} status={self.status!r}>"
@@ -1998,11 +2061,13 @@ class LearningTask(Base):
 # agent_memory — persistent memory for the personal AI agent
 # ---------------------------------------------------------------------------
 
+
 class AgentMemory(Base):
     """
     Persistent memory store for the personal agent: remembers the user's
     profile, weaknesses, goals, and emits the next-best-action recommendation.
     """
+
     __tablename__ = "agent_memory"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -2018,21 +2083,19 @@ class AgentMemory(Base):
         index=True,
     )
     memory_type: Mapped[str] = mapped_column(
-        String(64), nullable=False, index=True,
+        String(64),
+        nullable=False,
+        index=True,
         comment="e.g. 'weakness', 'goal', 'achievement', 'preference'",
     )
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    extra_metadata: Mapped[dict | None] = mapped_column(
-        "metadata", JSONB, nullable=True
-    )
+    extra_metadata: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    __table_args__ = (
-        Index("ix_agent_memory_user_type", "user_id", "memory_type"),
-    )
+    __table_args__ = (Index("ix_agent_memory_user_type", "user_id", "memory_type"),)
 
     def __repr__(self) -> str:
         return f"<AgentMemory user={self.user_id} type={self.memory_type!r}>"
@@ -2042,8 +2105,10 @@ class AgentMemory(Base):
 # analytics — per-user aggregated funnel metrics (periodic snapshots)
 # ---------------------------------------------------------------------------
 
+
 class AnalyticsSnapshot(Base):
     """Periodic per-user dashboard analytics (funnel, conversion, skills)."""
+
     __tablename__ = "analytics_snapshots"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -2075,8 +2140,10 @@ class AnalyticsSnapshot(Base):
 # against Profile.target_roles by the daily APScheduler job
 # ---------------------------------------------------------------------------
 
+
 class DailyJobMatch(Base):
     """One row of a user's daily top-3 job matches for their target roles."""
+
     __tablename__ = "daily_job_matches"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -2097,11 +2164,14 @@ class DailyJobMatch(Base):
         nullable=False,
     )
     matched_role: Mapped[str] = mapped_column(
-        String(256), nullable=False,
+        String(256),
+        nullable=False,
         comment="Which Profile.target_roles[] entry produced this match",
     )
     match_date: Mapped[datetime] = mapped_column(
-        Date, nullable=False, index=True,
+        Date,
+        nullable=False,
+        index=True,
         comment="Server date this batch was computed for",
     )
     rank: Mapped[int] = mapped_column(
@@ -2114,7 +2184,9 @@ class DailyJobMatch(Base):
     job: Mapped["Job"] = relationship("Job")
 
     __table_args__ = (
-        UniqueConstraint("user_id", "match_date", "rank", name="uq_daily_job_matches_user_date_rank"),
+        UniqueConstraint(
+            "user_id", "match_date", "rank", name="uq_daily_job_matches_user_date_rank"
+        ),
         Index("ix_daily_job_matches_user_date", "user_id", "match_date"),
     )
 
@@ -2178,6 +2250,13 @@ class PracticeDay(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    kind: Mapped[str] = mapped_column(
+        String(8),
+        nullable=False,
+        default="dsa",
+        server_default=text("'dsa'"),
+        comment="dsa | design",
+    )
 
     __table_args__ = (
         UniqueConstraint("user_id", "day", name="uq_practice_days_user_day"),
@@ -2186,6 +2265,58 @@ class PracticeDay(Base):
 
     def __repr__(self) -> str:
         return f"<PracticeDay user={self.user_id} day={self.day}>"
+
+
+class PracticeDesignAnswer(Base):
+    """A person's drawing and reasoning for one system design problem on one IST day.
+
+    One row per problem, so an answer swapped away stays until retention clears it. The score
+    is private and feeds no board.
+    """
+
+    __tablename__ = "practice_design_answers"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    day: Mapped[date] = mapped_column(Date, nullable=False, comment="IST calendar date")
+    question_slug: Mapped[str] = mapped_column(String(128), nullable=False)
+    scene: Mapped[list[Any] | None] = mapped_column(
+        JSONB, nullable=True, comment="Excalidraw elements; cleared by retention"
+    )
+    reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    scores: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    notes: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    total: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    input_hash: Mapped[str | None] = mapped_column(CHAR(64), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    feedback_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "day", "question_slug", name="uq_practice_design_answers"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<PracticeDesignAnswer user={self.user_id} day={self.day}>"
 
 
 class PracticeChallenge(Base):
@@ -2397,6 +2528,7 @@ class PracticeSettings(Base):
 # Vector store (pgvector)
 # ---------------------------------------------------------------------------
 
+
 class JobEmbedding(Base):
     """A job description's embedding, stored in Postgres via pgvector.
 
@@ -2419,23 +2551,32 @@ class JobEmbedding(Base):
     __tablename__ = "job_embeddings"
 
     id: Mapped[str] = mapped_column(
-        String(256), primary_key=True,
+        String(256),
+        primary_key=True,
         comment="Stable MD5 fingerprint of source_url; matches jobs.embedding_id",
     )
     document: Mapped[str] = mapped_column(
-        Text, nullable=False, comment="The text that was embedded",
+        Text,
+        nullable=False,
+        comment="The text that was embedded",
     )
     meta: Mapped[dict[str, Any]] = mapped_column(
-        "metadata", JSONB, nullable=False, server_default="{}",
+        "metadata",
+        JSONB,
+        nullable=False,
+        server_default="{}",
         comment="Flat, filterable fields (title, company, is_remote, skills_str …)",
     )
     embedding: Mapped[Any] = mapped_column(
-        Vector(get_settings().embedding_dim), nullable=False,
+        Vector(get_settings().embedding_dim),
+        nullable=False,
         comment="all-MiniLM-L6-v2 embedding of `document`",
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(),
-        onupdate=func.now(), nullable=False,
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
     )
 
     def __repr__(self) -> str:
@@ -2445,6 +2586,7 @@ class JobEmbedding(Base):
 # ---------------------------------------------------------------------------
 # outreach (migration 017)
 # ---------------------------------------------------------------------------
+
 
 class OutreachThread(Base):
     """
@@ -2461,6 +2603,7 @@ class OutreachThread(Base):
     CASCADE``), which is why they are ``passive_deletes`` and ``lazy="raise"``:
     callers that need them ``selectinload`` them explicitly.
     """
+
     __tablename__ = "outreach_threads"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -2499,7 +2642,8 @@ class OutreachThread(Base):
         comment="Link to the Applications tracker",
     )
     source: Mapped[str] = mapped_column(
-        String(12), nullable=False,
+        String(12),
+        nullable=False,
         comment="suggestion | drawer | list | typed | overview",
     )
     note: Mapped[str | None] = mapped_column(
@@ -2515,7 +2659,8 @@ class OutreachThread(Base):
         DateTime(timezone=True), nullable=True, comment="Set when the user closes the thread"
     )
     outcome: Mapped[str | None] = mapped_column(
-        String(16), nullable=True,
+        String(16),
+        nullable=True,
         comment="referred | interviewing | offer | not_now | not_a_fit | other",
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -2562,6 +2707,7 @@ class OutreachPerson(Base):
     ``linkedin_url`` hold what the user typed and are used for nothing else.
     ``cold`` is derived from the clock at read time and is never stored.
     """
+
     __tablename__ = "outreach_people"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -2583,16 +2729,15 @@ class OutreachPerson(Base):
     )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     title: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    kind: Mapped[str] = mapped_column(
-        String(24), nullable=False, comment="The contact's kind"
-    )
+    kind: Mapped[str] = mapped_column(String(24), nullable=False, comment="The contact's kind")
     state: Mapped[str] = mapped_column(
-        String(10), nullable=False, default="planned", server_default="planned",
+        String(10),
+        nullable=False,
+        default="planned",
+        server_default="planned",
         comment="planned | waiting | replied | dropped",
     )
-    first_sent_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    first_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_outbound_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -2600,12 +2745,11 @@ class OutreachPerson(Base):
         SmallInteger, nullable=False, default=0, server_default="0"
     )
     next_follow_up_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True,
+        DateTime(timezone=True),
+        nullable=True,
         comment="Recomputed on every touch; the user can snooze it",
     )
-    replied_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    replied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     email: Mapped[str | None] = mapped_column(
         String(256), nullable=True, comment="Only for a person with no contact row"
     )
@@ -2642,6 +2786,7 @@ class OutreachTouch(Base):
     did. ``kind`` is set by the service from the follow-up clock, never by the
     client. ``user_id`` is denormalised for the per-day count.
     """
+
     __tablename__ = "outreach_touches"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -2667,7 +2812,8 @@ class OutreachTouch(Base):
         nullable=False,
     )
     channel: Mapped[str] = mapped_column(
-        String(10), nullable=False,
+        String(10),
+        nullable=False,
         comment="linkedin | email | x | github | call | event | other",
     )
     direction: Mapped[str] = mapped_column(String(3), nullable=False, comment="out | in")
@@ -2676,11 +2822,13 @@ class OutreachTouch(Base):
     )
     note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     body: Mapped[str | None] = mapped_column(
-        String(2000), nullable=True,
+        String(2000),
+        nullable=True,
         comment="A copy of the sent message, only when the user asks to keep one",
     )
     happened_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False,
+        DateTime(timezone=True),
+        nullable=False,
         comment="Backdated up to 30 days by the user, never in the future",
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -2704,6 +2852,7 @@ class OssIssueSnapshot(Base):
     scheduled step writes it (a page load never calls GitHub); when a fetch
     fails the row records the status and keeps the previous ``issues``.
     """
+
     __tablename__ = "oss_issue_snapshots"
 
     company_id: Mapped[uuid.UUID] = mapped_column(
@@ -2718,11 +2867,17 @@ class OssIssueSnapshot(Base):
         String(12), nullable=False, comment="ok | not_found | rate_limited | error"
     )
     total_count: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default="0",
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
         comment="GitHub's total for the query",
     )
     issues: Mapped[list[dict[str, Any]]] = mapped_column(
-        JSONB, nullable=False, default=list, server_default="[]",
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default="[]",
         comment="At most 5 of {repo, number, title, url, labels, updated_at, comments}",
     )
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -2733,6 +2888,7 @@ class OssIssueSnapshot(Base):
 
 class OutreachSettings(Base):
     """A user's outreach preferences. No row means the defaults."""
+
     __tablename__ = "outreach_settings"
 
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -2741,7 +2897,10 @@ class OutreachSettings(Base):
         primary_key=True,
     )
     daily_target: Mapped[int] = mapped_column(
-        SmallInteger, nullable=False, default=3, server_default="3",
+        SmallInteger,
+        nullable=False,
+        default=3,
+        server_default="3",
         comment="0-10 people to reach a day; 0 turns the suggestion nudge off",
     )
     updated_at: Mapped[datetime] = mapped_column(
@@ -2759,6 +2918,7 @@ class OutreachSettings(Base):
 # outreach_packs / outreach_pack_items — the daily pack (migration 020)
 # ---------------------------------------------------------------------------
 
+
 class OutreachPack(Base):
     """One user's pack for one IST day, built on the day's first read.
 
@@ -2766,6 +2926,7 @@ class OutreachPack(Base):
     address is stored here or on an item: a found one lives on the contact, a guessed
     one is computed at read time and never stored.
     """
+
     __tablename__ = "outreach_packs"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -2804,6 +2965,7 @@ class OutreachPackItem(Base):
     written by a POST (one model call per company, or the template) and kept, so a
     reload never spends again.
     """
+
     __tablename__ = "outreach_pack_items"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -2818,7 +2980,10 @@ class OutreachPackItem(Base):
         nullable=False,
     )
     kind: Mapped[str] = mapped_column(
-        String(12), nullable=False, default="first", server_default="first",
+        String(12),
+        nullable=False,
+        default="first",
+        server_default="first",
         comment="first | follow_up",
     )
     company_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -2849,7 +3014,10 @@ class OutreachPackItem(Base):
     generated: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     reason: Mapped[str | None] = mapped_column(String(24), nullable=True)
     status: Mapped[str] = mapped_column(
-        String(12), nullable=False, default="new", server_default="new",
+        String(12),
+        nullable=False,
+        default="new",
+        server_default="new",
         comment="new | sent | skipped",
     )
     thread_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -2858,7 +3026,10 @@ class OutreachPackItem(Base):
         nullable=True,
     )
     reasons: Mapped[list[str] | None] = mapped_column(
-        TextArray, nullable=True, default=list, server_default="{}",
+        TextArray,
+        nullable=True,
+        default=list,
+        server_default="{}",
         comment="Why the company was picked, in display order",
     )
     seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
