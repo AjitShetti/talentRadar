@@ -276,7 +276,7 @@ def flat_line(value: object, limit: int) -> str:
     return _SPACES.sub(" ", text).strip()[:limit].strip()
 
 
-def _line(value: object, limit: int) -> str:
+def clean_line(value: object, limit: int) -> str:
     """``flat_line`` for text a stranger wrote: C1 controls and invisible characters dropped (as
     ``_neutralise`` does), and runs of brackets, look-alikes included, collapsed. ``flat_line``
     itself, which must stay identical to ``_flat``, knows neither."""
@@ -311,7 +311,7 @@ def fence(kind: str, label: str, text: str, nonce: str) -> str:
     here too, so no caller can hand over text that closes its own fence, whatever it forgot to
     clean.
     """
-    safe_label = _angle_any().sub("_", _line(label, 160))
+    safe_label = _angle_any().sub("_", clean_line(label, 160))
     middle = f" {safe_label}" if safe_label else ""
     return f"<<<{kind}{middle} {nonce}>>>\n{_neutralise(str(text or ''))}\n<<<END {kind} {nonce}>>>"
 
@@ -407,6 +407,18 @@ def _candidate_texts(inp: JudgeInput) -> list[str]:
     texts.extend(str(commit.message or "") for commit in inp.commits)
     texts.extend(str(path or "") for path in inp.tree)
     return texts
+
+
+def text_nonce(texts: Sequence[str]) -> str:
+    """A fence code over ``texts``: the first 16 hex characters of a SHA-256, each text hashed
+    with its length in front, so no text can move between pieces without changing the code.
+    ``fence_nonce`` is the same idea for a whole take-home submission."""
+    digest = hashlib.sha256()
+    for text in texts:
+        data = text.encode("utf-8", "surrogatepass")
+        digest.update(len(data).to_bytes(8, "big"))
+        digest.update(data)
+    return digest.hexdigest()[:16]
 
 
 def fence_nonce(inp: JudgeInput) -> str:
@@ -508,17 +520,17 @@ def _as_list(value: object) -> list[object]:
 def _brief_text(brief: Mapping[str, Any]) -> str:
     lines: list[str] = []
     for key, label in (("title", "Title"), ("track", "Track")):
-        value = _line(brief.get(key), 200)
+        value = clean_line(brief.get(key), 200)
         if value:
             lines.append(f"{label}: {value}")
-    hours = _line(brief.get("hours"), 8)
+    hours = clean_line(brief.get("hours"), 8)
     if hours.isascii() and hours.isdigit():  # isdigit() is also True for superscripts, Arabic-Indic
         lines.append(f"Window: {hours} hours")
-    summary = _line(brief.get("summary"), 400)
+    summary = clean_line(brief.get("summary"), 400)
     if summary:
         lines.append(f"Summary: {summary}")
     for key, label in _BRIEF_LISTS:
-        items = [_line(item, 400) for item in _as_list(brief.get(key))[:_MAX_BRIEF_ITEMS]]
+        items = [clean_line(item, 400) for item in _as_list(brief.get(key))[:_MAX_BRIEF_ITEMS]]
         items = [item for item in items if item]
         if items:
             lines.append(f"{label}:")
@@ -539,9 +551,9 @@ def _signals_text(signals: Mapping[str, Any]) -> str:
     lines: list[str] = []
     for key in sorted(signals, key=str)[:_MAX_SIGNALS]:
         value = signals[key]
-        name = _line(key, 40)
+        name = clean_line(key, 40)
         if name:
-            lines.append(f"{name}: {_line(_signal_value(value), 60)}")
+            lines.append(f"{name}: {clean_line(_signal_value(value), 60)}")
     return "\n".join(_fit_lines(lines, CAP_SIGNALS)) or "(none)"
 
 
@@ -556,8 +568,8 @@ def _claimed(moment: datetime) -> str:
 
 def _commit_line(commit: CommitLine) -> str:
     when = "(no date)" if commit.claimed_at is None else _claimed(commit.claimed_at)
-    message = _line(commit.message, COMMIT_MESSAGE_CHARS) or "(no message)"
-    return f"{_line(commit.sha, 40)[:7]} claimed {when}: {message}"
+    message = clean_line(commit.message, COMMIT_MESSAGE_CHARS) or "(no message)"
+    return f"{clean_line(commit.sha, 40)[:7]} claimed {when}: {message}"
 
 
 def _commits_text(commits: Sequence[CommitLine]) -> str:
@@ -567,7 +579,7 @@ def _commits_text(commits: Sequence[CommitLine]) -> str:
 
 def _tree_text(tree: Sequence[str]) -> str:
     looked_at = tree[:TREE_MAX_PATHS]
-    shown = [path for path in (_line(path, 200) for path in looked_at) if path]
+    shown = [path for path in (clean_line(path, 200) for path in looked_at) if path]
     return _limited_lines(shown, len(tree) - len(looked_at) + len(shown), CAP_TREE, "paths")
 
 
@@ -835,7 +847,7 @@ _SCORE_TEXT = re.compile(r"\s*([+-]?\d+(?:\.\d+)?)\s*(?:/\s*10(?:\.0+)?)?\s*")
 _MAX_SCORE_TEXT = 32
 
 
-def _find_reply_object(raw: str) -> dict[str, Any]:
+def find_reply_object(raw: str) -> dict[str, Any]:
     """The first JSON object in ``raw`` that has a ``scores`` key, wherever it sits in the text
     (bare, after prose, or inside a Markdown fence)."""
     if not isinstance(raw, str) or not raw.strip():
@@ -865,7 +877,7 @@ def _clamp(score: int) -> int:
     return max(0, min(10, score))
 
 
-def _coerce_score(name: str, source: Mapping[str, Any]) -> int:
+def coerce_score(name: str, source: Mapping[str, Any]) -> int:
     if name not in source:
         raise VerdictError(f"missing score: {name}")
     value = source[name]
@@ -889,7 +901,7 @@ def _coerce_score(name: str, source: Mapping[str, Any]) -> int:
 
 
 def _text(value: object, limit: int) -> str:
-    return _line(value, limit) if isinstance(value, str) else ""
+    return clean_line(value, limit) if isinstance(value, str) else ""
 
 
 def _items(value: object) -> tuple[str, ...]:
@@ -906,11 +918,11 @@ def parse_verdict(raw: str) -> Verdict:
     the wrong type becomes empty. Keys that are not part of the format are dropped. There is
     no default score: a reply that cannot be read gives nothing.
     """
-    payload = _find_reply_object(raw)
+    payload = find_reply_object(raw)
     source = payload["scores"]
     if not isinstance(source, dict):
         raise VerdictError("scores is not an object")
-    scores = {name: _coerce_score(name, source) for name in CRITERIA}
+    scores = {name: coerce_score(name, source) for name in CRITERIA}
     raw_notes = payload.get("notes")
     notes_source: Mapping[str, Any] = raw_notes if isinstance(raw_notes, dict) else {}
     return Verdict(
