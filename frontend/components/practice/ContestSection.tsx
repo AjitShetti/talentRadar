@@ -91,7 +91,7 @@ export default function ContestSection({ overview, error, contest }: { overview:
     <div className="pr-board-grid">
       <section className="pr-card" aria-label="Contest ranking">
         <p className="pr-lbl">Ranking</p>
-        <ContestBoard slug={current?.slug ?? null} tabs />
+        <ContestBoard slug={current?.slug ?? null} tabs noWeek={overview ? 'No contest is open right now.' : undefined} />
       </section>
       <section className="pr-card" aria-label="Your past contests">
         <p className="pr-lbl">Your past contests</p>

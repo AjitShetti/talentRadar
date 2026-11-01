@@ -29,6 +29,7 @@ const CRITERIA = [
 ]
 
 const NOT_SAVED = 'Not saved. It will try again on your next change.'
+const NOT_SAVED_CLOSED = 'Your last changes were not saved.'
 const SAVES_ITSELF = 'Saved automatically. Your drawing stays private.'
 const FEEDBACK_PROBLEMS = {
   limit: "You have used today's feedback. Your drawing is saved and the day is counted.",
@@ -48,7 +49,8 @@ const DesignBoard = dynamic<DesignBoardProps>(() => {
 }, { ssr: false, loading: () => <div className="loading-state"><Loader2 className="spin" /> Loading the whiteboard…</div> })
 
 export default function DesignProblemPage({ params, searchParams }: { params: { slug: string }; searchParams: { day?: string } }) {
-  return <RequireAuth><AppShell><PrepTabs /><DesignView slug={params.slug} day={searchParams.day} /></AppShell></RequireAuth>
+  // Its own instance per answer: leaving one flushes it and ends whatever was still on its way to it.
+  return <RequireAuth><AppShell><PrepTabs /><DesignView key={`${params.slug}:${searchParams.day ?? ''}`} slug={params.slug} day={searchParams.day} /></AppShell></RequireAuth>
 }
 
 function DesignView({ slug, day }: { slug: string; day?: string }) {
@@ -56,7 +58,7 @@ function DesignView({ slug, day }: { slug: string; day?: string }) {
   const [missing, setMissing] = useState(false)
   const [error, setError] = useState('')
   const [reasoning, setReasoning] = useState('')
-  const [closed, setClosed] = useState(false)
+  const [closed, setClosed] = useState('')
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const [notSaved, setNotSaved] = useState(false)
   const [saveError, setSaveError] = useState('')
@@ -71,7 +73,7 @@ function DesignView({ slug, day }: { slug: string; day?: string }) {
   const timer = useRef<number | undefined>(undefined)
   const live = useRef(true)
 
-  const readOnly = closed || !page?.editable
+  const readOnly = !!closed || !page?.editable
   locked.current = readOnly
 
   async function save(keepalive = false): Promise<boolean> {
@@ -92,7 +94,7 @@ function DesignView({ slug, day }: { slug: string; day?: string }) {
       setNotSaved(true)
       if (err instanceof ApiError && err.status === 409) {
         locked.current = true
-        setClosed(true)
+        setClosed(err.message)
       } else if (err instanceof ApiError && err.status === 422) {
         setSaveError(err.message)
       }
@@ -119,16 +121,12 @@ function DesignView({ slug, day }: { slug: string; day?: string }) {
   useEffect(() => {
     live.current = true
     let current = true
-    setPage(null)
-    setError('')
-    setMissing(false)
     api.practice.design(slug, day).then(next => {
       if (!current) return
       latest.current = { elements: next.answer?.elements ?? [], reasoning: next.answer?.reasoning ?? '' }
       dirty.current = false
       setReasoning(latest.current.reasoning)
       setSavedAt(next.answer?.saved_at ?? null)
-      setClosed(false)
       setPage(next)
     }).catch(err => {
       if (!current) return
@@ -158,13 +156,17 @@ function DesignView({ slug, day }: { slug: string; day?: string }) {
       setPage(await api.practice.feedback(slug))
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        // One is already on its way, from another tab or an earlier press: wait for it.
+        // Either the answer has closed, or one is on its way from another tab or an earlier press.
         const before = page?.feedback?.at
         for (let read = 0; read < RE_READS && live.current; read += 1) {
-          await new Promise(resolve => window.setTimeout(resolve, RE_READ_MS))
           const next = await api.practice.design(slug).catch(() => null)
-          if (next?.feedback && next.feedback.at !== before) { setPage(next); setSending(false); return }
+          if (next && !next.editable) { locked.current = true; setClosed(err.message); return }
+          if (next?.feedback && next.feedback.at !== before) { setPage(next); return }
+          await new Promise(resolve => window.setTimeout(resolve, RE_READ_MS))
         }
+        // That one ended without a result; the first press to end does not always get one.
+        setFeedbackError(FEEDBACK_PROBLEMS.busy)
+        return
       }
       setFeedbackError(err instanceof Error ? err.message : 'Could not get feedback.')
     } finally {
@@ -183,6 +185,7 @@ function DesignView({ slug, day }: { slug: string; day?: string }) {
   const cleared = !!answer && answer.elements === null
   const count = reasoning.length
   const low = feedback ? CRITERIA.reduce((lowest, item) => (feedback.scores[item.key] < feedback.scores[lowest.key] ? item : lowest), CRITERIA[0]).key : null
+  const level = !!feedback && CRITERIA.every(item => feedback.scores[item.key] === feedback.scores[CRITERIA[0].key])
   const lastAnswer = !day && page.last_answer_day
 
   return <>
@@ -205,7 +208,7 @@ function DesignView({ slug, day }: { slug: string; day?: string }) {
       </div>
 
       <section className="pr-solve-work" aria-label="Your answer">
-        {closed && <p className="form-error" role="alert">This one closed at 06:00 IST</p>}
+        {closed && <p className="form-error" role="alert">{closed}</p>}
         {!closed && !page.editable && <p className="pr-help">This answer is read-only.</p>}
         {cleared
           ? <p className="muted-copy">This drawing was cleared after 180 days.</p>
@@ -233,7 +236,7 @@ function DesignView({ slug, day }: { slug: string; day?: string }) {
         {page.feedback_problem && <p className="form-error" role="alert">{FEEDBACK_PROBLEMS[page.feedback_problem]}</p>}
         <div className="pr-saved">
           {!readOnly && <button type="button" className="primary-button" disabled={sending} onClick={getFeedback}>{sending ? 'Reading it…' : 'Get feedback'}</button>}
-          <span>{notSaved ? NOT_SAVED : savedAt ? `Saved ${clock(savedAt)}` : SAVES_ITSELF}</span>
+          <span>{notSaved ? (closed ? NOT_SAVED_CLOSED : NOT_SAVED) : savedAt ? `Saved ${clock(savedAt)}` : SAVES_ITSELF}</span>
         </div>
       </section>
     </div>
@@ -242,11 +245,11 @@ function DesignView({ slug, day }: { slug: string; day?: string }) {
       <div className="pr-section-head"><h2>Feedback</h2><span>{clock(feedback.at)}</span></div>
       <div className="results-head">
         <div className="results-total">
-          <strong><FlapText value={feedback.total.toFixed(0)} /></strong>
+          <strong><FlapText value={feedback.total.toFixed(1)} /></strong>
           <span>of 100</span>
         </div>
         <div className="results-dims">
-          {CRITERIA.map(item => <div key={item.key} className={low === item.key ? 'weakest' : undefined}>
+          {CRITERIA.map(item => <div key={item.key} className={!level && low === item.key ? 'weakest' : undefined}>
             <span>{item.label}</span>
             <i><b style={{ width: `${Math.max(0, Math.min(10, feedback.scores[item.key])) * 10}%` }} /></i>
             <em>{feedback.scores[item.key]}</em>

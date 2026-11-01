@@ -58,10 +58,11 @@ function Rows({ lines, me }: { lines: Line[]; me: Line | null }) {
 function Podium({ lines }: { lines: Line[] }) {
   const [first, second, third] = lines
   return <ol className="pr-podium" aria-label="Top three">
-    {[second, first, third].map(line => <li key={line.rank} className="pr-pod" data-p={line.rank} data-you={line.you ? '' : undefined}>
+    {[second, first, third].map(line => <li key={`${line.rank}-${line.name}`} className="pr-pod" data-p={line.rank} data-you={line.you ? '' : undefined}>
       <span className="pr-pod-rank">{line.rank}</span>
       <b>{line.name}{line.you ? ' · You' : ''}</b>
       <small><FlapText value={line.total} /></small>
+      {line.repo && <a className="row-arrow pr-repo" href={line.repo} aria-label={`${line.name}'s repo`} {...EXTERNAL_LINK_PROPS}>↗</a>}
     </li>)}
   </ol>
 }
@@ -74,9 +75,10 @@ function windowLine(contests: number) {
 
 /**
  * A contest's ranking. With `tabs`, a This week / Overall switch over `slug`'s board and the overall
- * one; without, just the board for `slug`. No slug on This week means no contest is open.
+ * one; without, just the board for `slug`, under `heading` when it has one, and nothing at all when
+ * there is no such board. No slug on This week says `noWeek`, which is left out when it is not known.
  */
-export default function ContestBoard({ slug = null, tabs = false }: { slug?: string | null; tabs?: boolean }) {
+export default function ContestBoard({ slug = null, tabs = false, heading, noWeek }: { slug?: string | null; tabs?: boolean; heading?: string; noWeek?: string }) {
   const [tab, setTab] = useState<Tab>('week')
   const [data, setData] = useState<Loaded | null>(null)
   const wanted = tab === 'overall' ? 'overall' : slug ? `contest:${slug}` : ''
@@ -106,7 +108,9 @@ export default function ContestBoard({ slug = null, tabs = false }: { slug?: str
   const rest = lines.slice(podium.length)
   const outside = me && !lines.some(line => line.you || same(line, me)) ? me : null
 
-  return <div className="pr-contest-board">
+  if (!tabs && ready?.notOpen) return null
+
+  return <>{heading && <div className="pr-section-head"><h2>{heading}</h2></div>}<div className="pr-contest-board">
     {tabs && <div className="status-tabs" role="group" aria-label="Ranking">
       <button type="button" className={tab === 'week' ? 'selected' : ''} aria-pressed={tab === 'week'} onClick={() => setTab('week')}>This week</button>
       <button type="button" className={tab === 'overall' ? 'selected' : ''} aria-pressed={tab === 'overall'} onClick={() => setTab('overall')}>Overall</button>
@@ -117,7 +121,7 @@ export default function ContestBoard({ slug = null, tabs = false }: { slug?: str
     {waiting
       ? <div className="loading-state"><Loader2 className="spin" /> Loading the ranking…</div>
       : <>
-        {!wanted && <div className="empty-state"><h2>No contest is open right now.</h2><p>The next one opens on Friday at 18:00 IST.</p></div>}
+        {!wanted && noWeek && <p className="muted-copy">{noWeek}</p>}
 
         {board?.provisional && <p className="pr-board-note">
           <span className="pr-pill">Provisional</span>{' '}
@@ -138,9 +142,9 @@ export default function ContestBoard({ slug = null, tabs = false }: { slug?: str
             <span>{board
               ? `${plural(board.total_entries, 'entry', 'entries')} judged · ${queued.toLocaleString('en-US')} queued${board.held ? ` · ${board.held.toLocaleString('en-US')} under review` : ''} · names hidden unless chosen`
               : `${windowLine(overall?.window_challenges ?? 12)} · names hidden unless chosen`}</span>
-            <span><Link href="/practice#settings">Change your leaderboard name in Practice settings</Link></span>
+            <span><Link href="/practice#settings" onClick={() => document.querySelector('.pr-settings')?.setAttribute('open', '')}>Change your leaderboard name in Practice settings</Link></span>
           </div>
         </>}
       </>}
-  </div>
+  </div></>
 }

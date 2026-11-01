@@ -203,6 +203,17 @@ def pick_design(
 # --------------------------------------------------------------------------- reading a drawing
 
 
+def without_nul(value: object) -> object:
+    """``value`` with NUL taken out of every string and key: a JSONB column cannot hold one."""
+    if isinstance(value, str):
+        return value.replace("\x00", "")
+    if isinstance(value, list):
+        return [without_nul(item) for item in value]
+    if isinstance(value, Mapping):
+        return {str(key).replace("\x00", ""): without_nul(item) for key, item in value.items()}
+    return value
+
+
 def scene_refusal(elements: object) -> str | None:
     """Why a drawing cannot be stored, as a sentence for the person, or ``None``."""
     if not isinstance(elements, list):
@@ -213,7 +224,8 @@ def scene_refusal(elements: object) -> str | None:
         if isinstance(element, Mapping) and _kind(element) in REFUSED_ELEMENT_TYPES:
             return "A drawing here is shapes, arrows and text. Remove the image or embed."
     try:
-        size = len(json.dumps(elements, ensure_ascii=False).encode())
+        # A NaN or an infinity is no JSON at all, and a JSONB column refuses it.
+        size = len(json.dumps(without_nul(elements), ensure_ascii=False, allow_nan=False).encode())
     except (TypeError, ValueError, RecursionError):
         return "That drawing could not be read. Reload the page and try again."
     if size > MAX_SCENE_BYTES:

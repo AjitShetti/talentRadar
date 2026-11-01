@@ -387,7 +387,7 @@ function ChallengeView({ slug }: { slug: string }) {
         ? <form className="pr-form" onSubmit={save} noValidate>
           <div className="pr-field">
             <label htmlFor="pr-repo">Public GitHub repo<small>github.com/owner/repo</small></label>
-            <input id="pr-repo" type="url" inputMode="url" autoComplete="off" spellCheck={false} placeholder="https://github.com/you/your-build" value={repo}
+            <input id="pr-repo" type="url" inputMode="url" autoComplete="off" spellCheck={false} placeholder="https://github.com/you/your-entry" value={repo}
               aria-invalid={bad(!validRepo(repo.trim()))} onChange={e => { setRepo(e.target.value); setJustSaved(false) }} />
             <p className="pr-help">Created after you pressed Start · public · not a fork.</p>
           </div>
@@ -504,8 +504,7 @@ function ChallengeView({ slug }: { slug: string }) {
     </section>}
 
     <section className="pr-section">
-      <div className="pr-section-head"><h2>Ranking</h2></div>
-      <ContestBoard slug={slug} />
+      <ContestBoard slug={slug} heading="Ranking" />
     </section>
   </>
 }

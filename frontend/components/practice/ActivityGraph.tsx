@@ -31,7 +31,7 @@ export default function ActivityGraph({ history }: { history: PracticeHistory })
         <span>Current streak: <b>{history.counts.current_streak}</b></span>
       </div>
     </div>
-    <div className="pr-heat-scroll" ref={scroller}>
+    <div className="pr-heat-scroll" ref={scroller} tabIndex={0} role="region" aria-label="The past year, scrolling sideways">
       <div className="pr-heat-inner">
         <div className="pr-heat" role="grid" aria-label="Practice over the past year" style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }}>
           {columns.map((column, c) => <span role="row" style={{ display: 'contents' }} key={c}>

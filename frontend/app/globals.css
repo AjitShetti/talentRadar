@@ -2229,8 +2229,7 @@ p.pack-hint{margin:8px 0 0}
 .pr-section-head{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin:0 0 12px}
 .pr-section-head h2{font:600 19px/1.2 var(--font-display);letter-spacing:-.4px;margin:0}
 .pr-section-head span{font:11px var(--font-label);letter-spacing:-.005em;color:var(--faint)}
-.pr-section-head .pr-section-link{margin-left:auto;font:11px var(--font-label);letter-spacing:-.005em;color:var(--ink-2);border-bottom:1px solid var(--line)}
-.pr-section-head .pr-section-link:hover,.pr-help a:hover,.results-total a:hover{color:var(--accent)}
+.pr-help a:hover,.results-total a:hover{color:var(--accent)}
 .pr-help a,.results-total a{color:var(--ink-2);border-bottom:1px solid var(--line)}
 .pr-label a{color:var(--ink-2);border-bottom:1px solid var(--line);}
 .pr-lamp{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);margin-top:9px}
@@ -2258,19 +2257,6 @@ p.pack-hint{margin:8px 0 0}
 .pr-links a:hover{color:var(--accent)}
 .pr-links b{font:11px var(--font-label);color:var(--accent-light);font-weight:400}
 
-.pr-cal-wrap{display:grid;grid-template-columns:auto minmax(0,1fr);gap:44px;align-items:center}
-.pr-cal{display:grid;grid-template-rows:repeat(7,14px);grid-auto-flow:column;grid-auto-columns:14px;gap:4px}
-.pr-cal i{display:block;border-radius:6px;background:var(--line-soft)}
-.pr-cal i[data-s=done]{background:var(--success);opacity:.82}
-.pr-cal i[data-s=today]{background:transparent;box-shadow:inset 0 0 0 1px var(--accent)}
-.pr-cal i[data-s=future]{background:transparent}
-.pr-cal-months{display:flex;justify-content:space-between;font:11px var(--font-label);letter-spacing:-.005em;color:var(--faint);margin-top:8px}
-.pr-counts{display:flex;flex-wrap:wrap}
-.pr-counts>div{padding:2px 26px;border-left:1px solid var(--line-soft)}
-.pr-counts>div:first-child{border-left:0;padding-left:0}
-.pr-counts b{display:block;font:700 28px/1 var(--font-label);letter-spacing:-.5px;font-variant-numeric:tabular-nums}
-.pr-counts>div>span{display:block;margin-top:8px;font:600 11.5px var(--font-display);letter-spacing:-.005em;color:var(--faint)}
-.pr-cal-note{margin:14px 0 0;font-size:12px;color:var(--muted)}
 
 .pr-build{display:grid;grid-template-columns:9px 92px minmax(0,1fr) 150px auto;gap:16px;align-items:center;padding:18px 4px;border-top:1px solid var(--line-soft)}
 .pr-build h3{font:700 19px/1.2 var(--font-display);letter-spacing:-.3px;margin:0 0 4px}
@@ -2333,10 +2319,6 @@ p.pack-hint{margin:8px 0 0}
 .pr-appeal summary,.pr-settings summary{cursor:pointer;font:600 11px var(--font-display);letter-spacing:-.005em;color:var(--ink-2)}
 .pr-settings .card-form{margin-top:14px}
 
-.status-tabs .pr-past{background:transparent;border:0;border-bottom:2px solid transparent;margin-bottom:-1px;border-radius:0;padding:10px 6px;color:var(--muted);font:600 11px var(--font-display);letter-spacing:-.005em;cursor:pointer;width:11em;max-width:100%;text-overflow:ellipsis}
-.status-tabs .pr-past[data-on]{color:var(--ink);border-bottom-color:var(--accent)}
-.status-tabs .pr-past:hover{color:var(--ink)}
-.status-tabs .pr-past:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .pr-pill{display:inline-block;font:600 11.5px var(--font-display);letter-spacing:-.005em;padding:4px 9px;border-radius:999px;background:var(--warning-soft);color:var(--warning-dark);border:1px solid var(--warning-border)}
 .pr-board{margin-top:6px}
 .pr-board-row{display:grid;grid-template-columns:56px minmax(0,1fr) 92px 92px 28px;gap:14px;align-items:center;padding:13px 6px;border-top:1px solid var(--line-soft)}
@@ -2357,7 +2339,6 @@ p.pack-hint{margin:8px 0 0}
 @media(max-width:800px){
   .pr-brief,.pr-two{grid-template-columns:1fr}
   .pr-brief>aside,.pr-two>div+div{border-left:0;padding-left:0;margin-left:0;border-top:1px solid var(--line-soft);margin-top:24px;padding-top:24px}
-  .pr-cal-wrap{grid-template-columns:1fr;gap:22px}
 }
 @media(max-width:560px){
   .pr-today{grid-template-columns:9px minmax(0,1fr);gap:8px 12px}
@@ -2367,9 +2348,6 @@ p.pack-hint{margin:8px 0 0}
   .pr-today>.pr-actions>:first-child{grid-column:1/-1;justify-content:center}
   .pr-today>.pr-actions .pr-ghost{justify-content:center}
   .pr-title{font-size:21px}
-  .pr-cal{grid-template-rows:repeat(7,13px);grid-auto-columns:13px;gap:3px}
-  .pr-counts>div{padding:2px 16px}
-  .pr-counts b{font-size:23px}
   .pr-build{grid-template-columns:9px minmax(0,1fr);gap:8px 12px}
   .pr-build>*:not(.pr-lamp){grid-column:2}
   .pr-build>.pr-ghost{justify-self:start}
@@ -2649,6 +2627,7 @@ code,pre,kbd,.latex-editor,.editor-code,textarea.code{font-family:var(--font-mon
 .pr-heat-stats{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--faint)}
 .pr-heat-stats b{color:var(--ink);font-variant-numeric:tabular-nums}
 .pr-heat-scroll{overflow-x:auto;padding-bottom:4px}
+.pr-heat-scroll:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .pr-heat-inner{min-width:800px}
 .pr-heat{display:grid;grid-template-rows:repeat(7,auto);grid-auto-flow:column;gap:3px}
 .pr-heat i,.pr-heat-legend i{display:block;border-radius:4px;background:rgb(var(--hi) / .08)}
@@ -2739,6 +2718,10 @@ code,pre,kbd,.latex-editor,.editor-code,textarea.code{font-family:var(--font-mon
 .pr-whiteboard{height:560px;border-radius:var(--r-lg);overflow:hidden;box-shadow:inset 0 0 0 .5px rgb(var(--hi) / .12)}
 /* Both open third-party sites: the library's catalogue and the help dialog's links. */
 .pr-whiteboard .excalidraw .default-sidebar-trigger,.pr-whiteboard .excalidraw .help-icon{display:none}
+/* `?` still opens that dialog, for its shortcuts, outside the board's own element. */
+.excalidraw .HelpDialog .HelpDialog__header{display:none}
+/* Web Embed cannot be saved here. The library gives Mermaid the same test id, and it goes with it. */
+.excalidraw .dropdown-menu [data-testid="toolbar-embeddable"].dropdown-menu-item-base{display:none}
 @media(max-width:800px){
   .pr-solve{grid-template-columns:minmax(0,1fr);gap:24px}
   .pr-whiteboard{height:480px}

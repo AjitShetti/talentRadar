@@ -153,6 +153,13 @@ async function openProblem(page: Page) {
 
 const board = (page: Page) => page.locator('.pr-whiteboard .excalidraw')
 
+const OLDER_DAY = '2026-08-01'
+
+/** The page's own read of an older answer, read-only, with its own words. */
+const serveOlderAnswer = (page: Page) => page.route(/\/api\/v1\/practice\/design\/[^/]+\?day=/, route => route.request().method() === 'OPTIONS'
+  ? route.fulfill({ status: 204, headers: CORS })
+  : json(route, 200, { ...OPEN_PAGE, day: OLDER_DAY, editable: false, answer: { elements: [], reasoning: 'From August.', saved_at: NOW.toISOString() } }))
+
 /** Draws one rectangle on the whiteboard, the way a person does: the tool, then a drag. */
 async function drawBox(page: Page) {
   await expect(board(page)).toBeVisible({ timeout: 30_000 })
@@ -245,6 +252,51 @@ test.describe('Practice', () => {
     await expect(page.locator('.pr-board-row')).toHaveCount(1)
   })
 
+  test('tied ranks stand on the podium, and a chosen repo link stays on it', async ({ page, account: _account, errors: _errors }) => {
+    const warnings: string[] = []
+    page.on('console', message => { if (message.text().includes('same key')) warnings.push(message.text()) })
+    const rows = [
+      { ...row(1, 'builder-aaaa'), repo_url: 'https://github.com/a/entry' },
+      row(1, 'builder-bbbb'),
+      row(3, 'builder-cccc'),
+    ]
+    await servePractice(page, { board: { ...BOARD, total_entries: 3, rows } })
+    await openPractice(page)
+    await expect(page.locator('.pr-podium .pr-pod')).toHaveCount(3)
+    await expect(page.locator('.pr-podium').getByRole('link', { name: "builder-aaaa's repo" })).toHaveAttribute('href', 'https://github.com/a/entry')
+    expect(warnings).toEqual([])
+  })
+
+  test('a contest list that failed does not also say no contest is open', async ({ page, account: _account, errors: _errors }) => {
+    await servePractice(page)
+    await page.route(/\/api\/v1\/practice\/challenges$/, route => route.request().method() === 'OPTIONS' ? route.fallback() : json(route, 500, { detail: 'Broken.' }))
+    await page.clock.setFixedTime(NOW)
+    await page.goto('/practice')
+    await expect(page.locator('#contest').getByRole('alert').first()).toBeVisible()
+    await expect(page.locator('#contest').getByText('No contest is open right now.')).toHaveCount(0)
+    await expect(page.locator('#contest').getByRole('button', { name: 'Overall' })).toBeVisible()
+  })
+
+  test('with no contest open the ranking says so once, without repeating when the next one is', async ({ page, account: _account, errors: _errors }) => {
+    await servePractice(page, { overview: { ...OVERVIEW, current: null } })
+    await openPractice(page)
+    const contest = page.locator('#contest')
+    await expect(contest.getByText('No contest is open right now.')).toBeVisible()
+    await expect(contest.getByText('The next one opens on Friday at 18:00 IST.')).toHaveCount(0)
+  })
+
+  test('the settings link opens the settings', async ({ page, account: _account, errors: _errors }) => {
+    await servePractice(page)
+    await page.clock.setFixedTime(NOW)
+    await page.goto('/practice')
+    await expect(page.locator('.pr-foot')).toBeVisible()
+    await expect(page.getByLabel('Leaderboard name')).toBeHidden()
+    await page.locator('.pr-foot').getByRole('link', { name: /Practice settings/ }).click()
+    await expect(page.getByLabel('Leaderboard name')).toBeVisible()
+    await page.goto('/practice#settings')
+    await expect(page.getByLabel('Leaderboard name')).toBeVisible()
+  })
+
   test('no leaderboard in the menu or the tabs, and the old URL lands on the contest', async ({ page, account: _account, errors: _errors }) => {
     await servePractice(page)
     await openPractice(page)
@@ -270,6 +322,17 @@ test.describe('Practice', () => {
     await expect(page.locator('.status-tabs')).toHaveCount(0)
   })
 
+  test('a contest with no board has no ranking heading', async ({ page, account: _account, errors: _errors }) => {
+    await servePractice(page)
+    await page.route(/\/api\/v1\/practice\/challenges\/relay(?:\/result)?$/, route => json(route, 200, OVERVIEW.current))
+    await page.route(/\/api\/v1\/practice\/challenges\/relay\/leaderboard$/, route => route.request().method() === 'OPTIONS' ? route.fallback() : json(route, 404, { detail: 'Not found.' }))
+    await page.clock.setFixedTime(NOW)
+    await page.goto('/practice/challenges/relay')
+    await expect(page.locator('.board-kicker')).toContainText('Contest')
+    await page.waitForLoadState('networkidle')
+    await expect(page.getByRole('heading', { name: 'Ranking' })).toHaveCount(0)
+  })
+
   for (const scheme of ['dark', 'light'] as const) {
     test(`no sideways page scroll at phone width, ${scheme}`, async ({ page, account: _account, errors: _errors }) => {
       await page.setViewportSize({ width: 375, height: 812 })
@@ -290,6 +353,8 @@ test.describe('Practice', () => {
     const left = await page.locator('.pr-heat-scroll').evaluate(el => ({ at: el.scrollLeft, most: el.scrollWidth - el.clientWidth }))
     expect(left.most).toBeGreaterThan(0)
     expect(left.at).toBeGreaterThanOrEqual(left.most - 1)
+    await expect(page.locator('.pr-heat-scroll')).toHaveAttribute('tabindex', '0')
+    await expect(page.locator('.pr-heat-scroll')).toHaveAccessibleName(/past year/)
   })
 })
 
@@ -352,7 +417,7 @@ test.describe('Drawing a design problem', () => {
     await page.locator('#pr-reasoning').fill('Location goes into a stream first.')
     await page.getByRole('button', { name: 'Get feedback' }).click()
     await expect(page.getByRole('heading', { name: 'Feedback' })).toBeVisible()
-    await expect(page.locator('.results-total')).toContainText('63')
+    await expect(page.locator('.results-total')).toContainText('63.0')
     await expect(page.locator('.results-dims > div')).toHaveCount(6)
     await expect(page.locator('.results-dims .weakest')).toContainText('Failure handling')
     await expect(page.getByText('Say what happens when a rider goes offline.')).toBeVisible()
@@ -381,7 +446,9 @@ test.describe('Drawing a design problem', () => {
     await servePractice(page, { onSave: route => json(route, 409, { detail: 'This answer can no longer be changed.' }) })
     await openProblem(page)
     await page.locator('#pr-reasoning').fill('Written after the close.')
-    await expect(page.getByRole('alert').filter({ hasText: 'This one closed at 06:00 IST' })).toBeVisible({ timeout: 9_000 })
+    await expect(page.getByRole('alert').filter({ hasText: 'This answer can no longer be changed.' })).toBeVisible({ timeout: 9_000 })
+    await expect(page.locator('.pr-saved')).toContainText('Your last changes were not saved.')
+    await expect(page.locator('.pr-saved')).not.toContainText('try again')
     await expect(page.locator('#pr-reasoning')).toHaveValue('Written after the close.')
     await expect(page.locator('#pr-reasoning')).not.toBeEditable()
     await expect(page.getByRole('button', { name: 'Get feedback' })).toHaveCount(0)
@@ -445,6 +512,106 @@ test.describe('Drawing a design problem', () => {
     await expect(page.locator('.pr-whiteboard .help-icon')).toBeHidden()
     await expect(page.locator('.pr-whiteboard a[href^="http"]')).toHaveCount(0)
     await expect(page.locator('[data-testid="toolbar-image"]')).toHaveCount(0)
+  })
+
+  test('going to an older answer saves what was not saved yet', async ({ page, account: _account, errors: _errors }) => {
+    const calls = await servePractice(page, { design: { ...OPEN_PAGE, last_answer_day: OLDER_DAY } })
+    await serveOlderAnswer(page)
+    await openProblem(page)
+    await expect(board(page)).toBeVisible({ timeout: 30_000 })
+    await page.locator('#pr-reasoning').fill('Written just before looking back.')
+    expect(calls.saves).toEqual([])
+    await page.getByRole('link', { name: 'See your last answer' }).click()
+    await expect(page.locator('#pr-reasoning')).toHaveValue('From August.')
+    await expect.poll(() => calls.saves.length).toBeGreaterThan(0)
+    expect(calls.saves[0].reasoning).toBe('Written just before looking back.')
+  })
+
+  test('a feedback reply that lands after going to an older answer leaves it alone', async ({ page, account: _account, errors: _errors }) => {
+    let reply = () => {}
+    const held = new Promise<void>(resolve => { reply = resolve })
+    const calls = await servePractice(page, {
+      design: { ...OPEN_PAGE, last_answer_day: OLDER_DAY },
+      onFeedback: async route => {
+        await held
+        await json(route, 200, { ...OPEN_PAGE, answer: { elements: [], reasoning: 'Today, late.', saved_at: NOW.toISOString() }, feedback: FEEDBACK })
+      },
+    })
+    await serveOlderAnswer(page)
+    await openProblem(page)
+    await page.getByRole('button', { name: 'Get feedback' }).click()
+    await expect.poll(() => calls.feedback).toBe(1)
+    await page.getByRole('link', { name: 'See your last answer' }).click()
+    await expect(page.locator('#pr-reasoning')).toHaveValue('From August.')
+    reply()
+    await page.waitForTimeout(500)
+    await expect(page.locator('#pr-reasoning')).toHaveValue('From August.')
+    await expect(page.getByRole('heading', { name: 'Feedback' })).toHaveCount(0)
+  })
+
+  test('a notice about today does not follow to an older answer', async ({ page, account: _account, errors: _errors }) => {
+    await servePractice(page, {
+      design: { ...OPEN_PAGE, last_answer_day: OLDER_DAY },
+      onSave: route => json(route, 500, { detail: 'Broken.' }),
+    })
+    await serveOlderAnswer(page)
+    await openProblem(page)
+    await page.locator('#pr-reasoning').fill('Will not save.')
+    await expect(page.locator('.pr-saved')).toContainText('Not saved.', { timeout: 9_000 })
+    await page.getByRole('link', { name: 'See your last answer' }).click()
+    await expect(page.locator('#pr-reasoning')).toHaveValue('From August.')
+    await expect(page.locator('.pr-saved')).not.toContainText('Not saved.')
+  })
+
+  test('feedback pressed after the answer closed stops waiting and says so', async ({ page, account: _account, errors: _errors }) => {
+    await servePractice(page, { onFeedback: route => json(route, 409, { detail: 'This answer has closed.' }) })
+    await openProblem(page)
+    await page.route(/\/api\/v1\/practice\/design\/[^/?]+$/, route => json(route, 200, { ...OPEN_PAGE, editable: false }))
+    await page.getByRole('button', { name: 'Get feedback' }).click()
+    await expect(page.getByRole('alert').filter({ hasText: 'This answer has closed.' })).toBeVisible({ timeout: 9_000 })
+    await expect(page.getByRole('button', { name: 'Get feedback' })).toHaveCount(0)
+    await expect(page.locator('#pr-reasoning')).not.toBeEditable()
+  })
+
+  test('feedback that never lands does not go on saying it is on its way', async ({ page, account: _account, errors: _errors }) => {
+    test.setTimeout(60_000)
+    await servePractice(page, { onFeedback: route => json(route, 409, { detail: 'Your feedback is on its way.' }) })
+    await openProblem(page)
+    await page.getByRole('button', { name: 'Get feedback' }).click()
+    await expect(page.getByRole('button', { name: 'Reading it…' })).toBeVisible()
+    await expect(page.getByRole('alert').filter({ hasText: 'Feedback is busy right now.' })).toBeVisible({ timeout: 40_000 })
+    await expect(page.getByText('Your feedback is on its way.')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Get feedback' })).toBeEnabled()
+  })
+
+  test('scores that are all the same mark no weakest', async ({ page, account: _account, errors: _errors }) => {
+    const level = { requirements: 6, components: 6, data_flow: 6, scale: 6, failure_handling: 6, tradeoffs: 6 }
+    await servePractice(page, { onFeedback: route => json(route, 200, { ...OPEN_PAGE, feedback: { ...FEEDBACK, scores: level } }) })
+    await openProblem(page)
+    await page.getByRole('button', { name: 'Get feedback' }).click()
+    await expect(page.locator('.results-dims > div')).toHaveCount(6)
+    await expect(page.locator('.results-dims .weakest')).toHaveCount(0)
+  })
+
+  test('the help dialog keeps its shortcuts and loses its links out', async ({ page, account: _account, errors: _errors }) => {
+    await servePractice(page)
+    await openProblem(page)
+    await drawBox(page)
+    await page.keyboard.press('?')
+    await expect(page.locator('.HelpDialog')).toBeVisible()
+    await expect(page.locator('.HelpDialog__header')).toBeHidden()
+    await expect(page.locator('.HelpDialog a[href^="http"]:visible')).toHaveCount(0)
+  })
+
+  test('nothing in More tools can put an embed or a call to an AI service on the board', async ({ page, account: _account, errors: _errors }) => {
+    await servePractice(page)
+    await openProblem(page)
+    await expect(board(page)).toBeVisible({ timeout: 30_000 })
+    await page.locator('.App-toolbar__extra-tools-trigger').click()
+    await expect(page.locator('[data-testid="toolbar-frame"]')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Web Embed' })).toBeHidden()
+    await expect(page.getByText('Text to diagram')).toHaveCount(0)
+    await expect(page.getByText('Wireframe to code')).toHaveCount(0)
   })
 })
 

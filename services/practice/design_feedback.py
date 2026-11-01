@@ -202,20 +202,22 @@ async def _judge_is_running() -> bool:
         return False
 
 
+def _user_key(user: UUID, moment: datetime) -> str:
+    return f"tr:budget:design-feedback:user:{user}:{ist_day(moment).isoformat()}"
+
+
 async def _claim_budgets(user: UUID, moment: datetime, per_minute: int) -> Problem | None:
-    """Step 6, the minute first so ``busy`` costs the person nothing."""
+    """Step 6. The person's three are only read here: ``_store`` is what uses one, so neither a
+    ``busy`` nor a failed call costs them anything, and someone over them takes no one's minute."""
     if await _judge_is_running():
         return "busy"
+    if await llm_budget.used(_user_key(user, moment)) >= PER_USER_DAILY_DESIGN_FEEDBACK:
+        return "limit"
     minute = int(moment.timestamp() // 60)
     if not await llm_budget.claim(
         f"tr:budget:design-feedback-minute:{minute}", per_minute, _MINUTE_KEY_TTL
     ):
         return "busy"
-    if not await llm_budget.claim(
-        f"tr:budget:design-feedback:user:{user}:{ist_day(moment).isoformat()}",
-        PER_USER_DAILY_DESIGN_FEEDBACK,
-    ):
-        return "limit"
     if not await llm_budget.claim(
         f"tr:budget:design-feedback:{moment.date().isoformat()}", DAILY_DESIGN_FEEDBACK_BUDGET
     ):
@@ -290,6 +292,9 @@ async def request_feedback(
                         problem = "busy"
                     else:
                         await _store(opened, feedback, model, moment)
+                        await llm_budget.claim(
+                            _user_key(opened.user, moment), PER_USER_DAILY_DESIGN_FEEDBACK
+                        )
         finally:
             await _release_lock(lock)
     page = await design.read_page(user_id, slug, opened.day, now=moment)

@@ -17,6 +17,7 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import event, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from domain.practice_design import DesignProblem
@@ -38,6 +39,8 @@ TUESDAY_DAY = date(2026, 11, 3)
 #: Wednesday 05:00 and 06:30 IST: yesterday's answer open, then closed.
 BEFORE_SIX = datetime(2026, 11, 3, 23, 30, tzinfo=UTC)
 AFTER_SIX = datetime(2026, 11, 4, 1, 0, tzinfo=UTC)
+#: Wednesday 00:05 IST.
+JUST_AFTER_MIDNIGHT = datetime(2026, 11, 3, 18, 35, tzinfo=UTC)
 
 DRAWING: list[dict[str, Any]] = [{"id": "a", "type": "text", "text": "API"}]
 QUESTION = Question(id=1, slug="a-question", title="Q", difficulty="easy", topics=("array",))
@@ -360,3 +363,61 @@ async def test_the_routes_need_a_token(asha: str) -> None:
         )
     assert read.status_code in (401, 403)
     assert save.status_code in (401, 403)
+
+
+async def test_a_nul_in_a_drawing_is_taken_out_before_it_is_stored(db: Db, asha: str) -> None:
+    # PostgreSQL's JSONB cannot hold one: stored as it came, this save and every later one is a 500.
+    slug = await todays_slug(asha)
+    drawing = [{"id": "a", "type": "text", "text": "A\x00PI", "customData": {"n\x00te": ["x\x00"]}}]
+    await design.save_answer(asha, slug, drawing, "Why.", now=TUESDAY)
+    (answer,) = await answers_of(db)
+    assert answer.scene == [
+        {"id": "a", "type": "text", "text": "API", "customData": {"nte": ["x"]}}
+    ]
+
+
+@pytest.mark.parametrize("number", [float("nan"), float("inf"), float("-inf")])
+async def test_a_number_json_cannot_hold_is_refused(db: Db, asha: str, number: float) -> None:
+    slug = await todays_slug(asha)
+    with pytest.raises(PracticeInvalid):
+        await design.save_answer(asha, slug, [{"id": "a", "x": number}], "Why.", now=TUESDAY)
+    assert await answers_of(db) == []
+
+
+async def test_the_first_save_after_midnight_goes_to_yesterday(db: Db, asha: str) -> None:
+    # Opened at 23:50 and drawn past midnight: nothing was saved on the day it was opened.
+    slug = await todays_slug(asha)
+    page = await design.read_page(asha, slug, now=JUST_AFTER_MIDNIGHT)
+    assert page["editable"] is True
+    assert page["day"] == TUESDAY_DAY.isoformat()
+    saved = await design.save_answer(asha, slug, DRAWING, "Why.", now=JUST_AFTER_MIDNIGHT)
+    assert saved["day"] == TUESDAY_DAY.isoformat()
+    async with db.factory() as session:
+        rows = (await session.execute(select(PracticeDay))).scalars().all()
+    assert [(row.day, row.kind, row.question_slug) for row in rows] == [
+        (TUESDAY_DAY, "design", slug)
+    ]
+
+
+async def test_after_midnight_only_yesterdays_problem_is_open(asha: str) -> None:
+    slug = await todays_slug(asha)
+    other = another_slug(slug)
+    with pytest.raises(PracticeNotFound):
+        await design.read_page(asha, other, now=JUST_AFTER_MIDNIGHT)
+    with pytest.raises(PracticeConflict):
+        await design.save_answer(asha, other, DRAWING, "Why.", now=JUST_AFTER_MIDNIGHT)
+
+
+async def test_a_save_that_keeps_losing_the_race_can_be_tried_again(
+    asha: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Not a plain 409: that is what "this answer has closed" answers, and the page locks on it.
+    slug = await todays_slug(asha)
+    await design.save_answer(asha, slug, DRAWING, "Why.", now=TUESDAY)
+
+    async def lost(*_args: Any, **_kwargs: Any) -> None:
+        raise IntegrityError("first save", {}, Exception("taken"))
+
+    monkeypatch.setattr(design, "_write", lost)
+    with pytest.raises(PracticeRateLimited):
+        await design.save_answer(asha, slug, DRAWING, "Again.", now=TUESDAY)

@@ -59,6 +59,7 @@ export default function DesignBoard({ elements, readOnly, onChange, onLoadFailed
       viewModeEnabled={readOnly}
       UIOptions={UI_OPTIONS}
       validateEmbeddable={false}
+      aiEnabled={false}
       onPaste={(data, event) => {
         const pasted = Array.from(event?.clipboardData?.files ?? [])
         return !Object.keys(data.files ?? {}).length && !pasted.some(file => file.type.startsWith('image/'))

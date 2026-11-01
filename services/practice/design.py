@@ -23,7 +23,7 @@ from sqlalchemy import delete, null, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from domain.practice_design import MAX_REASONING_CHARS, DesignProblem, scene_refusal
+from domain.practice_design import MAX_REASONING_CHARS, DesignProblem, scene_refusal, without_nul
 from domain.practice_schedule import answer_open, ist_day
 from services.cache_backend import CacheBackend
 from services.practice import daily
@@ -70,6 +70,13 @@ async def _find_day(session: AsyncSession, user: uuid.UUID, day: date) -> Practi
     ).scalar_one_or_none()
 
 
+async def _state_of(session: AsyncSession, state: daily.DayState, day: date) -> daily.DayState:
+    """The person's day ``day``, as it stood: what its pick was, ``state`` itself for today."""
+    if day == state.day:
+        return state
+    return await daily.load_day(session, str(state.user), state.moment - (state.day - day))
+
+
 async def _open_day(session: AsyncSession, state: daily.DayState, slug: str) -> date | None:
     shown = daily.shown_problem(state)
     if shown is not None and shown.kind == "design" and shown.slug == slug:
@@ -78,9 +85,15 @@ async def _open_day(session: AsyncSession, state: daily.DayState, slug: str) -> 
     if not answer_open(state.moment, yesterday):
         return None
     row = await _find_day(session, state.user, yesterday)
-    if row is not None and row.kind == "design" and row.question_slug == slug:
-        return yesterday
-    return None
+    if row is not None:
+        return yesterday if row.kind == "design" and row.question_slug == slug else None
+    # No save yet: a page opened before midnight can save for the first time after it.
+    earlier = daily.shown_problem(await _state_of(session, state, yesterday))
+    return (
+        yesterday
+        if earlier is not None and earlier.kind == "design" and earlier.slug == slug
+        else None
+    )
 
 
 async def open_day(
@@ -202,20 +215,21 @@ async def _write(
     text: str,
 ) -> None:
     """Stage the answer, and the day's row when this is the day's first save."""
-    shown = daily.shown_problem(state)
-    if await _find_day(session, state.user, target) is None and shown is not None:
-        session.add(
-            PracticeDay(
-                user_id=state.user,
-                day=target,
-                question_slug=shown.slug,
-                topic=shown.topic,
-                difficulty=shown.difficulty,
-                kind=shown.kind,
-                swaps=0,
-                done_at=None,
+    if await _find_day(session, state.user, target) is None:
+        shown = daily.shown_problem(await _state_of(session, state, target))
+        if shown is not None:
+            session.add(
+                PracticeDay(
+                    user_id=state.user,
+                    day=target,
+                    question_slug=shown.slug,
+                    topic=shown.topic,
+                    difficulty=shown.difficulty,
+                    kind=shown.kind,
+                    swaps=0,
+                    done_at=None,
+                )
             )
-        )
     answer = (
         await session.execute(
             select(PracticeDesignAnswer).where(
@@ -241,6 +255,7 @@ async def save_answer(
     if refusal is not None:
         raise PracticeInvalid(refusal)
     text = _checked_reasoning(reasoning)
+    scene = without_nul(elements)
     moment = _moment(now)
     async with AsyncSessionLocal() as session:
         state = await daily.load_day(session, user_id, moment)
@@ -250,7 +265,7 @@ async def save_answer(
         await _count_save(state.user, moment)
         for _attempt in range(_SAVE_TRIES):
             try:
-                await _write(session, state, target, slug, elements, text)
+                await _write(session, state, target, slug, scene, text)
                 await session.commit()
             except IntegrityError as error:
                 # A first save at the same moment took the day's row, or the account has gone.
@@ -259,7 +274,8 @@ async def save_answer(
                     raise PracticeNotFound(daily.NO_ACCOUNT) from error
                 continue
             return {"day": target.isoformat(), "saved_at": moment.isoformat()}
-    raise PracticeConflict(_TRY_AGAIN)
+    # Not a plain conflict: that says the answer has closed, and the page stops saving on it.
+    raise PracticeRateLimited(_TRY_AGAIN)
 
 
 async def prune_answers(moment: datetime) -> int:

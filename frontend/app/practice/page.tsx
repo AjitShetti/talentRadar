@@ -76,7 +76,10 @@ export default function PracticePage() {
 
   // The page loads section by section, so a link to one of them has to be followed afterwards.
   useEffect(() => {
-    if (!loading && window.location.hash) document.getElementById(window.location.hash.slice(1))?.scrollIntoView()
+    if (loading || !window.location.hash) return
+    const section = document.getElementById(window.location.hash.slice(1))
+    section?.querySelector('.pr-settings')?.setAttribute('open', '')
+    section?.scrollIntoView()
   }, [loading])
 
   // `focusId` is where keyboard focus goes afterwards: the button that was pressed is often replaced

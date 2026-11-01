@@ -387,3 +387,43 @@ async def test_a_newer_reading_replaces_the_older(db: Db, asha: str, chat: Async
 def test_the_budgets_are_the_spec_s() -> None:
     assert design_feedback.PER_USER_DAILY_DESIGN_FEEDBACK == 3
     assert design_feedback.DAILY_DESIGN_FEEDBACK_BUDGET == 150
+
+
+async def test_a_failed_call_costs_the_person_none_of_their_three(
+    asha: str, chat: AsyncMock
+) -> None:
+    slug = await drawn(asha)
+    chat.side_effect = RuntimeError("the model is down")
+    for number in range(4):
+        page = await design_feedback.request_feedback(
+            asha, slug, now=TUESDAY + timedelta(minutes=number)
+        )
+        assert page["feedback_problem"] == "busy"
+    assert await CacheBackend.get(f"tr:budget:design-feedback:user:{asha}:2026-11-03") is None
+    # What it spent still counts against everyone's budget.
+    assert await CacheBackend.get("tr:budget:design-feedback:2026-11-03") == "4"
+
+    chat.side_effect = None
+    page = await design_feedback.request_feedback(asha, slug, now=TUESDAY + timedelta(minutes=9))
+    assert page["feedback_problem"] is None
+    assert page["feedback"]["total"] == 70
+    assert await CacheBackend.get(f"tr:budget:design-feedback:user:{asha}:2026-11-03") == "1"
+
+
+async def test_an_unreadable_reply_costs_the_person_nothing(asha: str, chat: AsyncMock) -> None:
+    slug = await drawn(asha)
+    chat.return_value = "not json"
+    await design_feedback.request_feedback(asha, slug, now=TUESDAY)
+    assert await CacheBackend.get(f"tr:budget:design-feedback:user:{asha}:2026-11-03") is None
+
+
+async def test_someone_over_their_limit_does_not_take_the_minute(
+    asha: str, chat: AsyncMock
+) -> None:
+    slug = await drawn(asha)
+    await CacheBackend.set(f"tr:budget:design-feedback:user:{asha}:2026-11-03", "3", 3600)
+    page = await design_feedback.request_feedback(asha, slug, now=TUESDAY)
+    assert page["feedback_problem"] == "limit"
+    chat.assert_not_awaited()
+    minute = int(TUESDAY.timestamp() // 60)
+    assert await CacheBackend.get(f"tr:budget:design-feedback-minute:{minute}") is None
