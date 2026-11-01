@@ -97,7 +97,7 @@ _SWAPPED_ALREADY = "You have already swapped today's question."
 _DONE_ALREADY = "Today's question is marked done. Undo that first to swap it."
 _NOT_DONE = "Mark today's question done before rating it."
 _DRAW_THIS_ONE = "Draw this one and ask for feedback: that is what marks it done."
-_NO_ACCOUNT = "We could not find your account."
+NO_ACCOUNT = "We could not find your account."
 
 
 # ---------------------------------------------------------------------------
@@ -165,7 +165,7 @@ def _moment(now: datetime | None) -> datetime:
 def _user(user_id: str) -> uuid.UUID:
     user = parse_uuid(user_id)
     if user is None:
-        raise PracticeNotFound(_NO_ACCOUNT)
+        raise PracticeNotFound(NO_ACCOUNT)
     return user
 
 
@@ -421,7 +421,7 @@ def _matched(result: Result[Any]) -> bool:
 def _unknown_account(error: IntegrityError) -> PracticeNotFound:
     """An insert failed and no row for today exists: not a double click, a missing user."""
     logger.warning("practice_days insert failed without a competing row: %s", error.orig)
-    return PracticeNotFound(_NO_ACCOUNT)
+    return PracticeNotFound(NO_ACCOUNT)
 
 
 # ---------------------------------------------------------------------------

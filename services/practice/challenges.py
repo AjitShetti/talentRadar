@@ -628,7 +628,7 @@ async def _count_save(user_id: str, moment: datetime) -> None:
         raise PracticeRateLimited(_TOO_FAST)
 
 
-def _clean_text(value: str) -> str:
+def clean_text(value: str) -> str:
     """Plain text safe to store: CRLF becomes LF, control characters and surrogates are dropped.
 
     Newlines and tabs stay. A NUL in a JSON document is a database error, so it must go.
@@ -655,7 +655,7 @@ def _checked_writeup(writeup: Mapping[str, Any]) -> dict[str, str]:
         raw = writeup.get(field)
         if not isinstance(raw, str):
             raise PracticeInvalid(f"{field}: write {minimum} to {maximum} characters.")
-        text = _clean_text(raw)
+        text = clean_text(raw)
         if not minimum <= len(text) <= maximum:
             raise PracticeInvalid(
                 f"{field}: write {minimum} to {maximum} characters (yours has {len(text)})."
@@ -888,12 +888,15 @@ async def prune(*, now: datetime | None = None) -> dict[str, int]:
     Each rule is one DELETE in its own transaction. A rule that fails is logged and skipped (the
     next run meets the same rows again), and the others still run.
     """
+    from services.practice.design import prune_answers  # it imports this module
+
     moment = _moment(now)
-    counts = {"pruned_days": 0, "pruned_attempts": 0}
+    counts = {"pruned_days": 0, "pruned_attempts": 0, "pruned_answers": 0}
     rules = (
         ("pruned_days", _prune_days),
         ("pruned_attempts", _prune_unsubmitted),
         ("pruned_attempts", _prune_expired),
+        ("pruned_answers", prune_answers),
     )
     for key, rule in rules:
         try:

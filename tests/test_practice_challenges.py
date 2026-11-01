@@ -40,7 +40,7 @@ from domain.practice_repo import CommitLine, Push, RepoRef, TreeEntry
 from domain.practice_schedule import GRACE, last_start
 from services import cache_backend
 from services.cache_backend import CacheBackend
-from services.practice import challenges, github_reader
+from services.practice import challenges, design, github_reader
 from services.practice.errors import (
     PracticeConflict,
     PracticeInvalid,
@@ -168,12 +168,19 @@ async def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[D
 
     tables = [
         Base.metadata.tables[name]
-        for name in ("users", "practice_challenges", "practice_attempts", "practice_days")
+        for name in (
+            "users",
+            "practice_challenges",
+            "practice_attempts",
+            "practice_days",
+            "practice_design_answers",
+        )
     ]
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all, tables=tables)
     factory = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
     monkeypatch.setattr(challenges, "AsyncSessionLocal", factory)
+    monkeypatch.setattr(design, "AsyncSessionLocal", factory)
     yield Db(engine=engine, factory=factory, path=path)
     await engine.dispose()
 
@@ -2174,7 +2181,11 @@ class TestPrune:
         assert counts["pruned_days"] == 1
 
     async def test_nothing_to_prune_is_all_zero(self, db: Db) -> None:
-        assert await challenges.prune(now=NOW) == {"pruned_days": 0, "pruned_attempts": 0}
+        assert await challenges.prune(now=NOW) == {
+            "pruned_days": 0,
+            "pruned_attempts": 0,
+            "pruned_answers": 0,
+        }
 
     async def test_a_failing_rule_is_skipped_and_the_others_still_run(
         self, db: Db, asha: str, edition: PracticeChallenge, monkeypatch: pytest.MonkeyPatch
@@ -2188,7 +2199,7 @@ class TestPrune:
 
         counts = await challenges.prune(now=DEADLINE_48 + timedelta(days=31))
 
-        assert counts == {"pruned_days": 0, "pruned_attempts": 1}
+        assert counts == {"pruned_days": 0, "pruned_attempts": 1, "pruned_answers": 0}
 
 
 # =========================================================================== github_reader

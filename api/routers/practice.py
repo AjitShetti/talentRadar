@@ -9,6 +9,8 @@ PATCH  /practice/today/feel     - rate the question marked done
 DELETE /practice/today/done     - undo a misclicked done (today only)
 POST   /practice/today/swap     - a different question; one a day, then 409
 GET    /practice/history        - the calendar and its counts (weeks 1-53)
+GET    /practice/design/{slug}         - a design problem and an answer (?day=YYYY-MM-DD)
+PUT    /practice/design/{slug}/answer  - save the open answer
 GET    /practice/challenges            - the open build, when the next opens, the last twelve
 GET    /practice/challenges/{slug}     - one build's brief and the caller's own attempt
 POST   /practice/challenges/{slug}/start        - press Start: the clock and the proof code
@@ -26,7 +28,7 @@ POST   /practice/admin/attempts/{id}/override   - admin: set the scores by hand
 
 The services raise ``PracticeConflict``, ``PracticeInvalid`` and ``PracticeNotFound``; each
 becomes the status below, carrying a message written for the person using the page.
-``PracticeRateLimited`` (raised only by a submission save) is a ``PracticeConflict`` that
+``PracticeRateLimited`` (raised only by a save) is a ``PracticeConflict`` that
 becomes 429 with ``Retry-After``; every other ``PracticeConflict`` is 409.
 """
 
@@ -34,6 +36,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Awaitable
+from datetime import date
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -46,6 +49,9 @@ from api.schemas.practice_schemas import (
     ChallengeBoardSchema,
     ChallengeSchema,
     ChallengesOverviewSchema,
+    DesignAnswerRequestSchema,
+    DesignPageSchema,
+    DesignSavedSchema,
     DoneRequestSchema,
     FeelRequestSchema,
     HeldAttemptsSchema,
@@ -57,7 +63,7 @@ from api.schemas.practice_schemas import (
     SettingsRequestSchema,
     SubmissionRequestSchema,
 )
-from services.practice import board, challenges, daily, judge
+from services.practice import board, challenges, daily, design, judge
 from services.practice.errors import (
     PracticeConflict,
     PracticeInvalid,
@@ -135,6 +141,26 @@ async def get_history(
 ) -> dict[str, Any]:
     """The calendar of practised days and three neutral counts."""
     return await _answer(daily.history(user_id, weeks=weeks))
+
+
+@router.get("/design/{slug}", response_model=DesignPageSchema)
+async def get_design_page(
+    user_id: CurrentUserId,
+    slug: Annotated[str, PathParam(min_length=1, max_length=128)],
+    day: date | None = None,
+) -> dict[str, Any]:
+    """A design problem and the answer the URL means. 404 for one that is not the caller's."""
+    return await _answer(design.read_page(user_id, slug, day))
+
+
+@router.put("/design/{slug}/answer", response_model=DesignSavedSchema)
+async def save_design_answer(
+    user_id: CurrentUserId,
+    slug: Annotated[str, PathParam(min_length=1, max_length=128)],
+    body: DesignAnswerRequestSchema,
+) -> dict[str, Any]:
+    """Save the open answer. 409 when none is open."""
+    return await _answer(design.save_answer(user_id, slug, body.elements, body.reasoning))
 
 
 @router.get("/challenges", response_model=ChallengesOverviewSchema)

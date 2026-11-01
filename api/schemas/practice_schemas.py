@@ -10,7 +10,7 @@ is not named here (a streak, say) cannot reach a client by accident.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, StrictBool, StrictInt
 
@@ -394,3 +394,57 @@ class HeldAttemptSchema(BaseModel):
 
 class HeldAttemptsSchema(BaseModel):
     attempts: list[HeldAttemptSchema]
+
+
+class DesignProblemSchema(BaseModel):
+    """A system design problem, as the solve page shows it."""
+
+    slug: str
+    title: str
+    minutes: int
+    topics: list[str]
+    summary: str
+    context: list[str]
+    must_handle: list[str]
+    show_in_answer: list[str]
+
+
+class DesignAnswerSchema(BaseModel):
+    """A saved answer. ``elements`` is null once retention has cleared the drawing."""
+
+    elements: list[Any] | None
+    reasoning: str
+    saved_at: str
+
+
+class DesignFeedbackSchema(BaseModel):
+    scores: dict[str, int]
+    notes: dict[str, str]
+    work_on_next: str
+    total: int
+    at: str
+
+
+class DesignPageSchema(BaseModel):
+    """The solve page: the problem, and the one answer the URL means."""
+
+    problem: DesignProblemSchema
+    day: str | None
+    answer: DesignAnswerSchema | None
+    editable: bool
+    done: bool
+    last_answer_day: str | None
+    feedback: DesignFeedbackSchema | None
+    feedback_problem: str | None
+
+
+class DesignAnswerRequestSchema(BaseModel):
+    """Caps well above the service's limits, so the service's sentence is what a person reads."""
+
+    elements: list[Any] = Field(max_length=5_000)
+    reasoning: str = Field(max_length=40_000)
+
+
+class DesignSavedSchema(BaseModel):
+    day: str
+    saved_at: str

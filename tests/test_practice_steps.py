@@ -5,7 +5,7 @@ Practice's scheduled steps: ``services/practice/steps.py``, the cron endpoint
 ``POST /api/v1/ingest/practice`` and ``.github/workflows/practice.yml``.
 
 * The step result contract is pinned: ``challenges`` is exactly ``{editions_created, queued,
-  missed, pruned_days, pruned_attempts}``; a step that fails comes back as ``{"error": ...}``
+  missed, pruned_days, pruned_attempts, pruned_answers}``; a step that fails comes back as ``{"error": ...}``
   and never raises.
 * The services run for real on SQLite in a temporary file with ``PRAGMA foreign_keys=ON`` and
   the module's ``AsyncSessionLocal`` pointed at it. The shared Postgres test database is never
@@ -49,7 +49,7 @@ URL = "/api/v1/ingest/practice"
 RUN_STEP = "services.practice.steps.run_step"
 RUN_JUDGE = "services.practice.judge.run_judge_step"
 
-CONTRACT = {"editions_created", "queued", "missed", "pruned_days", "pruned_attempts"}
+CONTRACT = {"editions_created", "queued", "missed", "pruned_days", "pruned_attempts", "pruned_answers"}
 JUDGE_COUNTS = {
     "processed": 2,
     "judged": 1,
@@ -181,7 +181,7 @@ class TestChallengesStep:
             patch.object(
                 challenges,
                 "prune",
-                AsyncMock(return_value={"pruned_days": 5, "pruned_attempts": 4}),
+                AsyncMock(return_value={"pruned_days": 5, "pruned_attempts": 4, "pruned_answers": 2}),
             ),
         ):
             result = await steps.run_step("challenges", 1)
@@ -192,6 +192,7 @@ class TestChallengesStep:
             "missed": 1,
             "pruned_days": 5,
             "pruned_attempts": 4,
+            "pruned_answers": 2,
         }
 
     async def test_the_limit_does_not_apply_to_it(self) -> None:
@@ -204,7 +205,7 @@ class TestChallengesStep:
             patch.object(
                 challenges,
                 "prune",
-                AsyncMock(return_value={"pruned_days": 0, "pruned_attempts": 0}),
+                AsyncMock(return_value={"pruned_days": 0, "pruned_attempts": 0, "pruned_answers": 0}),
             ),
         ):
             await steps.run_step("challenges", 10)
@@ -222,6 +223,7 @@ class TestChallengesStep:
             "missed": 0,
             "pruned_days": 0,
             "pruned_attempts": 0,
+            "pruned_answers": 0,
         }
         assert len(await editions_of(db)) == 2
 
@@ -262,7 +264,7 @@ class TestChallengesStep:
         parts = {
             "ensure_editions": AsyncMock(return_value=2),
             "advance_statuses": AsyncMock(return_value={"queued": 3, "missed": 1}),
-            "prune": AsyncMock(return_value={"pruned_days": 5, "pruned_attempts": 4}),
+            "prune": AsyncMock(return_value={"pruned_days": 5, "pruned_attempts": 4, "pruned_answers": 2}),
         }
         parts[failing] = AsyncMock(side_effect=RuntimeError("secret-token-123"))
         with (
@@ -280,7 +282,7 @@ class TestChallengesStep:
         zeroed = {
             "ensure_editions": {"editions_created"},
             "advance_statuses": {"queued", "missed"},
-            "prune": {"pruned_days", "pruned_attempts"},
+            "prune": {"pruned_days", "pruned_attempts", "pruned_answers"},
         }[failing]
         assert all(result[key] == 0 for key in zeroed)
         assert all(result[key] != 0 for key in CONTRACT - zeroed)
@@ -300,6 +302,7 @@ class TestChallengesStep:
             "missed": 0,
             "pruned_days": 0,
             "pruned_attempts": 0,
+            "pruned_answers": 0,
             "error": "RuntimeError",
         }
 
@@ -405,6 +408,7 @@ async def test_right_token_runs_the_step(api_client: AsyncClient, cron_token: st
         "missed": 0,
         "pruned_days": 0,
         "pruned_attempts": 0,
+        "pruned_answers": 0,
     }
     with patch(RUN_STEP, AsyncMock(return_value=counts)) as run:
         response = await api_client.post(
