@@ -1,40 +1,75 @@
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap');
+
 /* ═══════════════════════════════════════════════════════════════════════════
-   LANDING — the public face of the board.
+   LANDING — a black ground from top to bottom, with the blend's prism at both
+   ends and on the solution tiles. Serif for headings, mono for labels, and
+   sample cards on their own paper.
 
-   THESIS: the marketing page is the same instrument the app is, seen from
-   outside — graphite face, hairline rules, one amber lamp. A visitor who
-   scrolls this page and then signs in should feel they walked into the same
-   room, not clicked through from a different product's brochure.
-
-   The craft layer (nested double-bezel enclosures, macro whitespace, spring
-   cubic-beziers, staggered scroll reveals, button-in-button CTAs) is layered
-   ON the existing design world rather than replacing it. Tokens come from
-   globals.css — this file adds no new colors, only new structure.
+   Graphite in both themes: this page sets its own tokens rather than following
+   the viewer's. Azure and the prism carry the colour; salmon stays in the blend
+   and the small dots, and is never a button.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .lp{
   --ease:cubic-bezier(.32,.72,0,1);      /* heavy spring settle — all motion */
-  --ease-soft:cubic-bezier(.16,1,.3,1);
   --gutter:40px;
+  --ink:#F5F5F7;
+  --ink-2:#D2D2D7;
+  --muted:#A1A1A6;
+  --faint:#86868B;
+  --paper:#000000;
+  --accent:#8DB3FF;
+  --line:rgb(255 255 255 / .12);
+  --line-soft:rgb(255 255 255 / .08);
+  --hi:255 255 255;
+  --shade:1;
+  --shine:linear-gradient(180deg,#FFFFFF 0%,#E8E8ED 100%);
+  --tab:#0C0E14;
+  --nav-bg:rgb(0 0 0 / .72);
+  --lp-menu:rgb(0 0 0 / .86);
+  /* the blend, as supplied */
+  --blend-0:#000000;
+  --blend-1:#2C75FF;
+  --blend-2:#FFA07A;
+  --azure-text:#8DB3FF;
+  --azure-ink:#1C55C7;
+  --azure-tint:rgb(44 117 255 / .12);
+  --font-serif:"Instrument Serif","Iowan Old Style",Georgia,"Times New Roman",serif;
+  --try:clamp(72px,12.4vh,112px);
+  /* the sample cards keep their own paper */
+  --fc-paper:#FFFFFF;
+  --fc-warm:#FFF5EF;
+  --fc-night:#0A1226;
+  --fc-ink:#14161C;
+  --fc-muted:#5A606C;
+  --fc-line:rgb(20 22 28 / .1);
+  --fc-chip:rgb(20 22 28 / .06);
+  --fc-night-ink:#F2F5FF;
+  --fc-night-muted:#A3AEC9;
+  --fc-night-line:rgb(255 255 255 / .13);
+  --fc-night-chip:rgb(255 255 255 / .1);
   position:relative;
   overflow-x:clip;
+  background:var(--paper);
+  color:var(--ink);
 }
+/* The page's ends and its scrollbar sit outside .lp, so they would follow a light theme. */
+html:has(.lp),body:has(.lp){background:#000000;color-scheme:dark}
+html:has(.lp)::-webkit-scrollbar-thumb{background:rgb(255 255 255 / .2);border-color:#000000}
+html:has(.lp)::-webkit-scrollbar-thumb:hover{background:rgb(255 255 255 / .34)}
 
-/* Amber lamp-glow behind the page ground. Fixed + pointer-events:none so it
-   never repaints with scroll (the grain overlay in globals.css does the same).
-   Amber only — the One Lamp Rule holds even in decoration. */
-.lp-orbs{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
-.lp-orb{position:absolute;border-radius:50%;filter:blur(120px);opacity:.5}
-.lp-orb-a{top:-14vh;right:-8vw;width:52vw;height:52vw;max-width:760px;max-height:760px;background:radial-gradient(circle,rgba(41,151,255,.16),transparent 68%)}
-.lp-orb-b{top:46vh;left:-18vw;width:44vw;height:44vw;max-width:620px;max-height:620px;background:radial-gradient(circle,rgba(108,182,255,.07),transparent 70%)}
+.lp-wrap{position:relative;max-width:1180px;margin:0 auto;padding:0 var(--gutter)}
+.lp-section{padding:clamp(88px,11vw,152px) 0;border-top:1px solid var(--line-soft)}
+.lp-hero-wrap + .lp-section{border-top:0;padding-top:clamp(48px,6vw,88px)}
 
-.lp-wrap{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding:0 var(--gutter)}
-.lp-section{position:relative;z-index:1;padding:160px 0}
-.lp-section-tight{padding:112px 0}
+/* The prism's ribs falling behind the text. Everything on the page stands above
+   them; the hero, the closer and the solution tiles are opaque, so they hide them. */
+.lp main,.lp-footer{position:relative;z-index:1}
+.lp-ribs{position:fixed;inset:0;z-index:0;display:block;width:100%;height:100%;pointer-events:none}
 
 /* ── Scroll choreography ──────────────────────────────────────────────────
-   Nothing appears statically: elements settle up through a blur as they
-   enter. transform/opacity/filter only — never a layout-triggering property. */
+   Elements settle up through a blur as they enter. transform/opacity/filter
+   only — never a layout-triggering property. */
 .lp-reveal{
   opacity:0;transform:translateY(56px);filter:blur(8px);
   transition:opacity .85s var(--ease),transform .85s var(--ease),filter .85s var(--ease);
@@ -43,125 +78,46 @@
 }
 .lp-reveal.is-in{opacity:1;transform:translateY(0);filter:blur(0);will-change:auto}
 
-/* ── Eyebrow: microscopic pill badge above every major heading ───────────── */
-.lp-eyebrow{
-  display:inline-flex;align-items:center;gap:8px;
-  padding:6px 13px;border-radius:999px;
-  background:var(--accent-soft);border:1px solid var(--accent-border);
-  font:400 11.5px var(--font-label);letter-spacing:-.005em;
-  color:var(--accent-light);
-}
-.lp-eyebrow-dot{width:5px;height:5px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
-.lp-eyebrow-plain{background:transparent;border-color:var(--line);color:var(--faint)}
-
-/* ── Typography: massive condensed display, heavy leading control ────────── */
-.lp-h1{
-  font-family:var(--font-display);font-weight:700;
-  font-size:clamp(52px,7.4vw,104px);line-height:.92;letter-spacing:-.028em;
-  margin:26px 0 0;color:var(--ink);text-wrap:balance;
-}
-.lp-h1 em{font-style:normal;color:var(--accent)}
+/* ── Type ─────────────────────────────────────────────────────────────────── */
+.lp-kicker{display:flex;align-items:center;gap:8px;margin:0;font:400 12px var(--font-mono);color:var(--ink-2)}
+.lp-kicker i{width:5px;height:5px;border-radius:50%;background:var(--blend-2)}
 .lp-h2{
-  font-family:var(--font-display);font-weight:700;
-  font-size:clamp(38px,4.6vw,64px);line-height:1;letter-spacing:-.024em;
-  margin:22px 0 0;color:var(--ink);text-wrap:balance;
+  margin:18px 0 0;color:var(--ink);text-wrap:balance;
+  font:400 clamp(40px,5.4vw,72px)/1.02 var(--font-serif);letter-spacing:-.012em;
 }
-.lp-h3{
-  font-family:var(--font-display);font-weight:600;
-  font-size:26px;line-height:1.08;letter-spacing:-.02em;margin:0;color:var(--ink);
-}
-.lp-lead{
-  font-family:var(--font-text);font-size:17px;line-height:1.68;
-  color:var(--ink-2);margin:26px 0 0;max-width:56ch;
-}
-.lp-body{font-size:14px;line-height:1.72;color:var(--muted);margin:14px 0 0;max-width:60ch}
-.lp-mono-meta{font:400 11.5px var(--font-label);letter-spacing:-.005em;color:var(--faint)}
+.lp-h2 em{font-style:italic}
+.lp-lead{margin:20px 0 0;max-width:46ch;font:400 14.5px/1.6 var(--font-mono);color:var(--ink-2)}
 
-/* ── The Double-Bezel: nothing sits flat on the ground ────────────────────
-   Outer shell (tray) holds an inner core (plate) with concentric radii, its
-   own ground, and an inset top highlight. Machined hardware, not a div. */
-.lp-bezel{
-  position:relative;padding:7px;border-radius:22px;
-  background:rgb(var(--hi) / .028);
-  border:1px solid var(--line);
-  box-shadow:0 34px 80px -28px rgb(0 0 0 / calc(.75 * var(--shade)));
+/* ── Nav: edge to edge over the hero, a bar once scrolled ─────────────────── */
+.lp-nav{
+  position:fixed;top:0;left:0;right:0;z-index:900;
+  display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:20px;
+  padding:16px max(28px,env(safe-area-inset-right,0px)) 16px max(28px,env(safe-area-inset-left,0px));
+  border-bottom:1px solid transparent;color:var(--ink);
+  transition:background .45s var(--ease),border-color .45s var(--ease);
 }
-.lp-bezel-core{
-  border-radius:18px;background:var(--surface);
-  border:1px solid var(--line-soft);
-  box-shadow:inset 0 1px 0 rgb(var(--hi) / .055);
-  overflow:hidden;
-}
-.lp-bezel-sm{padding:5px;border-radius:18px}
-.lp-bezel-sm>.lp-bezel-core{border-radius:13px}
-
-/* ── CTA: island pill with a nested icon well ─────────────────────────────
-   The arrow never floats naked beside the label — it lives in its own circle,
-   flush with the pill's inner padding, and carries the kinetic tension. */
-.lp-cta{
-  display:inline-flex;align-items:center;gap:14px;
-  padding:8px 8px 8px 26px;border-radius:999px;
-  background:var(--accent);color:var(--paper);
-  font:700 13px var(--font-display);letter-spacing:-.005em;
-  box-shadow:0 10px 30px -8px rgba(41,151,255,.5),inset 0 1px 0 rgba(255,255,255,.32);
-  transition:background .5s var(--ease),transform .5s var(--ease),box-shadow .5s var(--ease);
-}
-.lp-cta:hover{background:var(--accent-light);box-shadow:0 16px 40px -10px rgba(41,151,255,.62),inset 0 1px 0 rgba(255,255,255,.4)}
-.lp-cta:active{transform:scale(.977)}
-.lp-cta-icon{
-  display:grid;place-items:center;width:34px;height:34px;border-radius:50%;
-  background:rgba(19,18,17,.14);
-  transition:transform .5s var(--ease),background .5s var(--ease);
-}
-.lp-cta:hover .lp-cta-icon{transform:translate(3px,-2px) scale(1.06);background:rgba(19,18,17,.22)}
-
-.lp-cta-ghost{
-  display:inline-flex;align-items:center;gap:12px;
-  padding:8px 8px 8px 24px;border-radius:999px;
-  background:rgb(var(--hi) / .035);border:1px solid var(--line);
-  color:var(--ink-2);
-  font:700 13px var(--font-display);letter-spacing:-.005em;
-  transition:background .5s var(--ease),border-color .5s var(--ease),color .5s var(--ease),transform .5s var(--ease);
-}
-.lp-cta-ghost:hover{background:rgb(var(--hi) / .07);border-color:var(--line-strong);color:var(--ink)}
-.lp-cta-ghost:active{transform:scale(.977)}
-.lp-cta-ghost .lp-cta-icon{width:32px;height:32px;background:rgb(var(--hi) / .07)}
-.lp-cta-ghost:hover .lp-cta-icon{transform:translate(3px,-2px) scale(1.06);background:rgb(var(--hi) / .12)}
-
-.lp-cta-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:42px}
-
-/* ── Fluid island nav: detached pill, never glued edge-to-edge ───────────── */
-.lp-nav{position:fixed;top:22px;left:0;right:0;z-index:900;display:flex;justify-content:center;padding:0 16px;pointer-events:none}
-.lp-nav-pill{
-  pointer-events:auto;display:flex;align-items:center;gap:30px;
-  padding:9px 9px 9px 20px;border-radius:999px;
-  background:var(--lp-pill);
-  -webkit-backdrop-filter:blur(22px) saturate(150%);backdrop-filter:blur(22px) saturate(150%);
-  border:1px solid var(--line);
-  box-shadow:0 20px 46px -18px rgb(0 0 0 / calc(.8 * var(--shade))),inset 0 1px 0 rgb(var(--hi) / .07);
-  transition:transform .6s var(--ease),box-shadow .6s var(--ease),background .6s var(--ease);
-  max-width:100%;
-}
-.lp-nav-scrolled .lp-nav-pill{background:var(--lp-pill-strong);box-shadow:0 24px 54px -18px rgb(0 0 0 / calc(.9 * var(--shade))),inset 0 1px 0 rgb(var(--hi) / .09)}
-.lp-nav-brand{display:flex;align-items:center;gap:9px;font:700 16px var(--font-display);letter-spacing:-.005em;flex-shrink:0}
-.lp-nav-links{display:flex;align-items:center;gap:4px}
+.lp-nav-scrolled{background:var(--nav-bg);border-bottom-color:var(--line-soft);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px)}
+.lp-nav-brand{justify-self:start;display:flex;align-items:center;gap:9px;font:700 16px var(--font-display);letter-spacing:-.005em;flex-shrink:0}
+.lp-nav-links{display:flex;align-items:center;gap:6px}
 .lp-nav-link{
-  position:relative;padding:8px 13px;border-radius:999px;
-  font:600 11px var(--font-display);letter-spacing:-.005em;
-  color:var(--muted);transition:color .45s var(--ease),background .45s var(--ease);
+  padding:8px 12px;border-radius:999px;white-space:nowrap;
+  font:400 11.5px var(--font-mono);color:rgb(var(--hi) / .92);
+  transition:background .45s var(--ease);
 }
-.lp-nav-link:hover{color:var(--ink);background:rgb(var(--hi) / .055)}
+.lp-nav-link:hover{background:rgb(var(--hi) / .1)}
+.lp-nav-end{justify-self:end;display:flex;align-items:center;gap:10px}
+.lp-nav-capsule{
+  display:inline-flex;align-items:center;gap:6px;padding:4px;border-radius:999px;
+  border:1px solid rgb(var(--hi) / .34);background:rgb(var(--hi) / .04);
+}
+.lp-nav-signin{padding:4px 8px 4px 12px;font:400 11.5px var(--font-mono);white-space:nowrap}
 .lp-nav-cta{
-  display:inline-flex;align-items:center;gap:9px;
-  padding:8px 8px 8px 16px;border-radius:999px;background:var(--accent);color:var(--paper);
-  font:700 11px var(--font-display);letter-spacing:-.005em;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.3);
-  transition:background .45s var(--ease),transform .45s var(--ease);
+  padding:8px 14px;border-radius:999px;background:var(--shine);color:var(--paper);white-space:nowrap;
+  font:500 11.5px var(--font-mono);
+  box-shadow:inset 0 1px 0 rgb(255 255 255 / .6);
+  transition:transform .45s var(--ease);
 }
-.lp-nav-cta:hover{background:var(--accent-light)}
 .lp-nav-cta:active{transform:scale(.97)}
-.lp-nav-cta-icon{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:rgba(19,18,17,.16);transition:transform .45s var(--ease)}
-.lp-nav-cta:hover .lp-nav-cta-icon{transform:translate(2px,-1px)}
 
 /* Hamburger: two rules that rotate into a true X, never a swap-out icon. */
 .lp-burger{display:none;position:relative;width:38px;height:38px;border-radius:50%;background:rgb(var(--hi) / .055);flex-shrink:0}
@@ -187,12 +143,12 @@
 .lp-menu a{
   display:flex;align-items:baseline;gap:16px;padding:16px 0;
   border-bottom:1px solid var(--line-soft);
-  font-family:var(--font-display);font-weight:700;font-size:40px;letter-spacing:-.02em;
+  font:400 40px var(--font-serif);letter-spacing:-.012em;
   color:var(--ink);
   opacity:0;transform:translateY(44px);
   transition:opacity .6s var(--ease),transform .6s var(--ease),color .3s var(--ease);
 }
-.lp-menu a small{font:400 11px var(--font-label);color:var(--faint);letter-spacing:.14em}
+.lp-menu a small{font:400 11px var(--font-mono);color:var(--faint);letter-spacing:.14em}
 .lp-menu a:hover{color:var(--accent)}
 .lp-menu-open a{opacity:1;transform:translateY(0)}
 .lp-menu-open a:nth-child(1){transition-delay:.09s}
@@ -200,147 +156,277 @@
 .lp-menu-open a:nth-child(3){transition-delay:.21s}
 .lp-menu-open a:nth-child(4){transition-delay:.27s}
 .lp-menu-open a:nth-child(5){transition-delay:.33s}
-.lp-menu-open a:nth-child(6){transition-delay:.39s}
-.lp-menu-foot{display:flex;gap:12px;margin-top:38px}
 
-/* ── Hero: editorial split — massive type left, live board right ─────────── */
-.lp-hero{position:relative;z-index:1;padding:190px 0 130px;min-height:100dvh;display:flex;align-items:center}
-.lp-hero-grid{display:grid;grid-template-columns:minmax(0,1.02fr) minmax(0,.98fr);gap:64px;align-items:center;width:100%}
-.lp-hero-note{display:flex;align-items:center;gap:10px;margin-top:36px;font-size:12px;color:var(--faint)}
-.lp-hero-note svg{color:var(--accent);flex-shrink:0}
-
-/* ── Board mock: the product, rendered honestly, labeled as an example ───── */
-.lp-mock{font-size:13px}
-.lp-mock-chrome{
-  display:flex;align-items:center;justify-content:space-between;gap:12px;
-  padding:11px 15px;border-bottom:1px solid var(--line);background:var(--paper);
+/* ── The prism: a canvas behind the hero and the closing CTA ──────────────── */
+.lp-prismed{
+  /* clip, not hidden: a hidden box still scrolls to reveal a focused card */
+  position:relative;isolation:isolate;overflow:clip;
+  background:linear-gradient(180deg,var(--blend-0) 18%,var(--blend-1) 52%,var(--blend-2) 82%);
 }
-.lp-mock-dots{display:flex;gap:6px}
-.lp-mock-dots i{width:8px;height:8px;border-radius:50%;background:var(--line-strong)}
-.lp-mock-tag{font:400 11.5px var(--font-label);letter-spacing:-.005em;color:var(--faint)}
-.lp-mock-body{padding:20px}
+.lp-prism{position:absolute;inset:0;z-index:-1;display:block;width:100%;height:100%}
+.lp-prism[hidden]{display:none}
+/* The app's azure ring disappears on azure, and white alone on salmon, so it sits on
+   a dark band. The Try button keeps its own rings, and a hero card rings its frame. */
+.lp-prismed :focus-visible{outline-color:#FFFFFF}
+.lp-prismed :focus-visible:not(.lp-try,.lp-fcard){box-shadow:0 0 0 6px rgb(0 0 0 / .7)}
 
-.lp-mock-counters{display:flex;border-bottom:1px solid var(--line-soft);padding-bottom:18px;margin-bottom:6px}
-.lp-mock-counter{flex:1;min-width:0;padding:0 15px;border-left:1px solid var(--line-soft)}
-.lp-mock-counter:first-child{padding-left:0;border-left:0}
-.lp-mock-counter span{display:block;font:600 11.5px var(--font-display);letter-spacing:-.005em;color:var(--faint);margin-bottom:7px}
-.lp-mock-counter strong{display:block;font:700 30px var(--font-label);letter-spacing:-.03em;color:var(--ink);font-variant-numeric:tabular-nums;line-height:1}
-.lp-mock-counter.is-lit strong{color:var(--accent)}
-
-.lp-mock-row{display:flex;gap:13px;align-items:flex-start;padding:16px 0;border-top:1px solid var(--line-soft)}
-.lp-mock-row:first-of-type{border-top:0}
-.lp-mock-lamp{width:7px;height:7px;border-radius:50%;margin-top:6px;flex-shrink:0;background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
-.lp-mock-lamp.tone-warn{background:var(--danger);box-shadow:0 0 0 3px var(--danger-soft)}
-.lp-mock-lamp.tone-good{background:var(--success);box-shadow:0 0 0 3px var(--success-soft)}
-.lp-mock-row-main{min-width:0;flex:1}
-.lp-mock-kind{font:600 11.5px var(--font-display);letter-spacing:-.005em;color:var(--accent);margin-right:9px}
-.lp-mock-kind.tone-warn{color:var(--danger-dark)}
-.lp-mock-kind.tone-good{color:var(--success-dark)}
-.lp-mock-head{font:600 13px var(--font-text);color:var(--ink)}
-.lp-mock-sub{margin:5px 0 0;font-size:12px;line-height:1.6;color:var(--muted)}
-.lp-mock-time{font:400 11px var(--font-label);color:var(--faint);flex-shrink:0;margin-top:5px}
-
-/* Small mocks used inside the feature bento cells */
-.lp-mini{padding:16px;display:flex;flex-direction:column;gap:10px}
-.lp-mini-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line-soft)}
-.lp-mini-row:first-child{border-top:0}
-.lp-mini-mark{width:26px;height:26px;border-radius:10px;display:grid;place-items:center;flex-shrink:0;background:var(--surface-3);color:var(--ink-2);font:700 11px var(--font-label)}
-.lp-mini-main{min-width:0;flex:1}
-.lp-mini-main strong{display:block;font:600 12px var(--font-text);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.lp-mini-main span{display:block;font-size:11px;color:var(--faint);margin-top:2px}
-.lp-mini-pill{
-  flex-shrink:0;padding:4px 9px;border-radius:999px;
-  font:400 11px var(--font-label);font-variant-numeric:tabular-nums;
-  background:var(--accent-soft);color:var(--accent-light);border:1px solid var(--accent-border);
+/* Below the hero's screen the ribs run back through azure into black, so the page
+   has no edge there and the cards stand whole on the way down. The two layers are
+   what shows without WebGL. */
+.lp-hero-wrap{
+  /* never shorter than the cards reach: they grow with the width on a short window */
+  --tail:min(560px,max(300px,24vw,min(34vw,52vh)));
+  background:
+    linear-gradient(180deg,var(--blend-0) 18%,var(--blend-1) 52%,var(--blend-2) 82%) top/100% calc(100% - var(--tail) + 1px) no-repeat,
+    linear-gradient(180deg,var(--blend-2),var(--blend-1) 40%,var(--blend-0)) bottom/100% var(--tail) no-repeat;
 }
-.lp-mini-pill.tone-good{background:var(--success-soft);color:var(--success-dark);border-color:var(--success-border)}
-.lp-mini-pill.tone-flat{background:rgb(var(--hi) / .05);color:var(--muted);border-color:var(--line)}
+.lp-hero-tail{height:var(--tail)}
 
-.lp-mini-bars{display:flex;flex-direction:column;gap:11px;padding:4px 0}
-.lp-mini-bar-head{display:flex;justify-content:space-between;align-items:baseline;font:600 11.5px var(--font-display);letter-spacing:-.005em;color:var(--muted);margin-bottom:6px}
-.lp-mini-bar-head b{font:700 12px var(--font-label);color:var(--ink);font-variant-numeric:tabular-nums}
-.lp-mini-track{height:4px;border-radius:999px;background:rgb(var(--hi) / .06);overflow:hidden}
-.lp-mini-fill{height:100%;border-radius:999px;background:var(--accent)}
-.lp-mini-fill.tone-weak{background:var(--danger)}
-.lp-mini-fill.tone-good{background:var(--success)}
+/* ── Hero: exactly one screen on the prism. The type follows the window's height
+   as well as its width, and the cards take whatever room is left. ─────────── */
+.lp-hero{
+  --hero-gutter:28px;
+  display:flex;flex-direction:column;
+  height:100vh;height:100svh;min-height:540px;
+  padding-top:clamp(70px,10vh,104px);
+}
+.lp-hero-stage{
+  flex:1;min-height:0;display:flex;flex-direction:column;
+  padding-left:max(var(--hero-gutter),env(safe-area-inset-left,0px));
+  padding-right:max(var(--hero-gutter),env(safe-area-inset-right,0px));
+}
+.lp-h1{
+  font-family:var(--font-serif);font-weight:400;
+  font-size:clamp(40px,min(7.2vw,12.4vh),108px);line-height:1;letter-spacing:-.012em;
+  margin:0 auto;max-width:10em;text-align:center;color:var(--ink);text-wrap:balance;
+}
+.lp-h1 em{font-style:italic}
 
-.lp-mini-stack{display:flex;flex-direction:column;gap:7px}
-.lp-mini-stage{display:flex;align-items:center;gap:10px;padding:8px 11px;border-radius:12px;background:rgb(var(--hi) / .032);border:1px solid var(--line-soft)}
-.lp-mini-stage i{width:6px;height:6px;border-radius:50%;background:var(--line-strong);flex-shrink:0}
-.lp-mini-stage.is-on{background:var(--accent-soft);border-color:var(--accent-border)}
-.lp-mini-stage.is-on i{background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
-.lp-mini-stage strong{flex:1;font:600 11px var(--font-display);letter-spacing:-.005em;color:var(--ink-2)}
-.lp-mini-stage.is-on strong{color:var(--ink)}
-.lp-mini-stage em{font-style:normal;font:400 11px var(--font-label);color:var(--faint);font-variant-numeric:tabular-nums}
+.lp-hero-mid{
+  display:grid;margin-top:clamp(8px,2vh,20px);column-gap:26px;align-items:center;
+  grid-template-columns:auto minmax(0,1fr) auto;
+  grid-template-areas:
+    "sl sub sr"
+    "sl try sr";
+}
+.lp-hero-sub{grid-area:sub;margin:0 auto;max-width:60ch;text-align:center;text-wrap:balance;font:400 14.5px/1.6 var(--font-mono);color:rgb(var(--hi) / .92);transition:opacity .5s var(--ease)}
+/* A popped card can reach this line, and its label would read across it. */
+.lp-hero-stage:has(.lp-fcard:hover,.lp-fcard:focus) .lp-hero-sub{opacity:.2}
+.lp-try-slot{grid-area:try;justify-self:center;padding:clamp(14px,3vh,30px) 11px 11px}
+.lp-try{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;
+  width:var(--try);height:var(--try);border-radius:50%;
+  background:rgb(0 0 0 / .18);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
+  border:1px solid rgb(var(--hi) / .6);
+  box-shadow:0 0 0 10px rgb(var(--hi) / .08),0 0 0 11px rgb(var(--hi) / .3),0 18px 50px -12px rgb(0 0 0 / .45),inset 0 1px 0 rgb(var(--hi) / .5);
+  font:500 12px var(--font-mono);color:var(--ink);
+  transition:transform .5s var(--ease),background .5s var(--ease);
+}
+.lp-try:hover{transform:scale(1.05);background:rgb(0 0 0 / .3)}
+.lp-try:active{transform:scale(.98)}
+.lp-try .brand-symbol{fill:var(--ink)}
+.lp-try .brand-wordmark{display:none}
 
-.lp-mini-chat{display:flex;flex-direction:column;gap:9px}
-.lp-mini-ask{align-self:flex-end;max-width:88%;padding:9px 13px;border-radius:13px 13px 6px 13px;background:var(--surface-3);color:var(--ink-2);font-size:12px;line-height:1.55}
-.lp-mini-say{max-width:94%;padding:11px 13px;border-radius:13px 13px 13px 6px;background:var(--accent-soft);border:1px solid var(--accent-border);color:var(--ink);font-size:12px;line-height:1.6}
-.lp-mini-cite{display:flex;align-items:center;gap:6px;margin-top:8px;font:400 11.5px var(--font-label);letter-spacing:-.005em;color:var(--accent-light)}
+.lp-stats{display:flex;flex-direction:column;gap:clamp(10px,2.4vh,22px);margin:0;min-width:136px}
+.lp-stats-l{grid-area:sl}
+.lp-stats-r{grid-area:sr}
+.lp-stat{display:flex;flex-direction:column-reverse}
+.lp-stat dt{margin-top:3px;font:400 11px/1.35 var(--font-mono);color:rgb(var(--hi) / .92)}
+.lp-stat dd{margin:0;font:400 32px/1 var(--font-serif);color:var(--ink)}
 
-/* ── Problem strip: the before-state, as a ruled ledger ──────────────────── */
-.lp-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:70px;align-items:center}
-.lp-ledger{display:flex;flex-direction:column}
-.lp-ledger-row{display:flex;align-items:center;gap:16px;padding:19px 0;border-top:1px solid var(--line-soft)}
-.lp-ledger-row:first-child{border-top:0}
-.lp-ledger-row span{font:400 11px var(--font-label);color:var(--faint);flex-shrink:0;width:26px}
-.lp-ledger-row p{margin:0;font-size:14px;line-height:1.6;color:var(--ink-2)}
-.lp-ledger-row svg{color:var(--faint);flex-shrink:0}
+.lp-motion{
+  position:fixed;z-index:800;
+  right:max(16px,env(safe-area-inset-right,0px));bottom:max(16px,env(safe-area-inset-bottom,0px));
+  display:grid;place-items:center;width:30px;height:30px;border-radius:50%;
+  background:rgb(0 0 0 / .45);border:1px solid rgb(var(--hi) / .34);color:var(--ink);
+}
+.lp-motion:hover{background:rgb(0 0 0 / .65)}
+.lp-motion:focus-visible{border-radius:50%;outline-color:#FFFFFF;box-shadow:0 0 0 6px rgb(0 0 0 / .7)}
 
-/* ── How it works: three ruled steps ─────────────────────────────────────── */
-.lp-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;margin-top:66px}
-.lp-step{padding:0 34px;border-left:1px solid var(--line-soft)}
-.lp-step:first-child{padding-left:0;border-left:0}
-.lp-step-num{font:700 12px var(--font-label);color:var(--accent);letter-spacing:.1em;display:block;margin-bottom:20px}
-.lp-step h3{font:600 21px var(--font-display);letter-spacing:-.015em;margin:0 0 11px;color:var(--ink)}
-.lp-step p{margin:0;font-size:13px;line-height:1.72;color:var(--muted)}
-
-/* ── Feature bento: asymmetric grid, each cell shaped to its own content ── */
-.lp-bento{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:20px;margin-top:66px}
-.lp-cell{grid-column:span 2}
-.lp-cell-wide{grid-column:span 4}
-.lp-cell-half{grid-column:span 3}
-.lp-cell-full{grid-column:span 6}
-
-.lp-feature{
-  height:100%;display:flex;flex-direction:column;
-  padding:26px;
+/* ── Hero cards. --u is one design pixel: a card is drawn 380 wide and every
+   length inside it scales with the room the container has, so all three fit
+   on one screen at any window size, without a script. ─────────────────────── */
+.lp-fcards{
+  position:relative;flex:1;min-height:0;margin-top:clamp(6px,1.8vh,24px);
+  container-type:size;
+}
+.lp-fcard{
+  --card-w:min(calc((100cqw - 80px) / 3),max(440px,calc((100cqh - 40px) * 1.118)));
+  --card-off:calc(var(--card-w) + 28px);
+  --u:calc(var(--card-w) / 380);
+  --side:0;--tilt:0deg;--drop:0px;
+  /* how far a card rises to stand whole above the hero's bottom edge */
+  --lift:max(14px,calc(30px + max(404 * var(--u),100cqh + 24 * var(--u)) + 24px - 100cqh));
+  /* The focusable box stops at the hero's edge, so focus never scrolls the page. */
+  position:absolute;left:50%;top:6px;width:var(--card-w);height:calc(100cqh - 6px);
+  transform:translateX(calc(-50% + var(--side) * var(--card-off)));
+  outline:none;
+}
+.lp-fcard.is-center{z-index:2}
+.lp-fcard.is-left{--side:-1;--tilt:-3.5deg;--drop:16px}
+.lp-fcard.is-right{--side:1;--tilt:3.5deg;--drop:16px}
+.lp-fcard:hover,.lp-fcard:focus{z-index:5}
+.lp-fcard-lift{
+  transform:translateY(var(--drop)) rotate(var(--tilt));transform-origin:50% 0;
   transition:transform .7s var(--ease);
 }
-.lp-bezel:hover .lp-feature{transform:translateY(-3px)}
-.lp-feature-icon{
-  width:38px;height:38px;border-radius:11px;display:grid;place-items:center;flex-shrink:0;
-  background:var(--accent-soft);border:1px solid var(--accent-border);color:var(--accent-light);
-  margin-bottom:20px;
-}
-.lp-feature h3{font:600 22px var(--font-display);letter-spacing:-.015em;margin:0 0 10px;color:var(--ink)}
-.lp-feature p{margin:0;font-size:13px;line-height:1.72;color:var(--muted)}
-.lp-feature-facts{list-style:none;margin:20px 0 0;padding:0;display:flex;flex-direction:column}
-.lp-feature-facts li{
-  display:flex;gap:11px;align-items:flex-start;
-  padding:11px 0;border-top:1px solid var(--line-soft);
-  font-size:12.5px;line-height:1.6;color:var(--ink-2);
-}
-.lp-feature-facts li:first-child{border-top:0}
-.lp-feature-facts svg{color:var(--accent);flex-shrink:0;margin-top:3px}
-.lp-feature-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:30px;align-items:center;padding:32px}
-.lp-feature-split .lp-feature{padding:0}
-.lp-feature-mock{margin-top:20px}
+.lp-fcard:hover .lp-fcard-lift,.lp-fcard:focus .lp-fcard-lift{transform:translateY(calc(-1 * var(--lift))) rotate(0deg) scale(1.02)}
+.lp-fcards .lp-fcard:focus-visible .lp-fcard-frame{outline:2px solid #FFFFFF;outline-offset:3px;box-shadow:0 0 0 7px rgb(0 0 0 / .7)}
 
-/* ── Trust: how it stays honest ──────────────────────────────────────────── */
-.lp-trust-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0;margin-top:60px;border-top:1px solid var(--line-soft)}
-.lp-trust-item{padding:34px 40px 34px 0;border-bottom:1px solid var(--line-soft)}
-.lp-trust-item:nth-child(even){padding-left:40px;padding-right:0;border-left:1px solid var(--line-soft)}
-.lp-trust-item h3{font:600 19px var(--font-display);letter-spacing:-.01em;margin:0 0 10px;color:var(--ink);display:flex;align-items:center;gap:11px}
-.lp-trust-item h3 svg{color:var(--accent);flex-shrink:0}
-.lp-trust-item p{margin:0;font-size:13px;line-height:1.72;color:var(--muted)}
+.lp-fcard-tag{
+  display:inline-flex;align-items:center;gap:7px;margin:0 0 8px 6px;padding:4px 10px;border-radius:999px;
+  background:rgb(0 0 0 / .55);font:400 11px var(--font-mono);color:var(--ink);
+}
+.lp-fcard-tag-all{display:none}
+.lp-fcard-tag i{width:5px;height:5px;border-radius:50%;background:var(--blend-2)}
+.lp-fcard-frame{
+  padding:calc(8 * var(--u));border-radius:calc(22 * var(--u));
+  background:rgb(var(--hi) / .26);border:1px solid rgb(var(--hi) / .55);
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+  box-shadow:0 30px 60px -22px rgb(0 0 0 / calc(.45 * var(--shade)));
+  transition:box-shadow .7s var(--ease);
+}
+.lp-fcard:hover .lp-fcard-frame,.lp-fcard:focus .lp-fcard-frame{box-shadow:0 40px 80px -20px rgb(0 0 0 / calc(.7 * var(--shade)))}
+.lp-fcard-core{
+  --c-ink:var(--fc-ink);--c-muted:var(--fc-muted);--c-line:var(--fc-line);--c-chip:var(--fc-chip);
+  height:max(calc(380 * var(--u)),100cqh);overflow:hidden;
+  border-radius:calc(15 * var(--u));padding:calc(16 * var(--u));
+  background:var(--fc-paper);color:var(--c-ink);
+}
+.lp-fcard-core.is-warm{background:var(--fc-warm)}
+.lp-fcard-core.is-night{--c-ink:var(--fc-night-ink);--c-muted:var(--fc-night-muted);--c-line:var(--fc-night-line);--c-chip:var(--fc-night-chip);background:var(--fc-night)}
+.lp-fcard-note{margin:calc(10 * var(--u)) 0 0;padding-top:calc(10 * var(--u));border-top:1px solid var(--c-line);font:400 calc(12 * var(--u))/1.45 var(--font-text);color:var(--c-muted)}
+
+.lp-fc-head{display:flex;align-items:center;justify-content:space-between;gap:calc(10 * var(--u));margin-bottom:calc(8 * var(--u))}
+.lp-fc-title{font:600 calc(14 * var(--u)) var(--font-text)}
+.lp-fc-chip{flex:none;padding:calc(3 * var(--u)) calc(9 * var(--u));border-radius:999px;background:var(--c-chip);font:400 calc(10.5 * var(--u)) var(--font-mono);color:var(--c-muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.lp-fc-chip.is-azure{background:var(--azure-tint);color:var(--azure-ink)}
+.is-night .lp-fc-chip.is-azure{color:var(--azure-text)}
+.lp-fc-row{display:flex;align-items:center;gap:calc(10 * var(--u));padding:calc(10 * var(--u)) 0;border-top:1px solid var(--c-line)}
+.lp-fc-mark{display:grid;place-items:center;flex:none;width:calc(30 * var(--u));height:calc(30 * var(--u));border-radius:calc(9 * var(--u));background:var(--c-chip);font:500 calc(10.5 * var(--u)) var(--font-mono)}
+.lp-fc-main{min-width:0;flex:1}
+.lp-fc-main strong{display:block;font:600 calc(12.5 * var(--u)) var(--font-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lp-fc-main span{display:block;margin-top:calc(1 * var(--u));font-size:calc(11 * var(--u));color:var(--c-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lp-fc-actions{display:flex;gap:calc(6 * var(--u));padding:0 0 calc(10 * var(--u)) calc(40 * var(--u))}
+.lp-fc-act{padding:calc(5 * var(--u)) calc(10 * var(--u));border-radius:999px;background:var(--fc-ink);color:var(--fc-paper);font:500 calc(10.5 * var(--u)) var(--font-mono)}
+.lp-fc-act.is-line{background:transparent;color:var(--fc-ink);box-shadow:inset 0 0 0 1px var(--fc-line)}
+.lp-fc-score{display:flex;align-items:baseline;gap:calc(8 * var(--u));margin-bottom:calc(4 * var(--u))}
+.lp-fc-score b{font:400 calc(40 * var(--u))/1 var(--font-serif)}
+.lp-fc-chart{display:block;width:100%;height:auto;margin-bottom:calc(6 * var(--u))}
+.lp-fc-chart text{font:400 9px var(--font-mono);fill:var(--c-muted)}
+.lp-fc-chart stop{stop-color:var(--blend-1)}
+.lp-fc-grid{stroke:var(--c-line)}
+.lp-fc-line{fill:none;stroke:var(--azure-text);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.lp-fc-dot{fill:var(--blend-2)}
+.lp-fc-msg{margin:0;padding:calc(10 * var(--u)) 0;border-top:1px solid var(--c-line);font:400 calc(12.5 * var(--u))/1.5 var(--font-text);color:var(--c-ink)}
+.lp-fc-score-label{margin:calc(10 * var(--u)) 0 calc(2 * var(--u));padding-top:calc(10 * var(--u));border-top:1px solid var(--c-line);font:600 calc(12.5 * var(--u)) var(--font-text)}
+
+/* ── Social proof ─────────────────────────────────────────────────────────── */
+.lp-proof-names{
+  display:flex;flex-wrap:wrap;gap:8px 36px;margin:44px 0 0;padding:0;list-style:none;
+  font:400 clamp(24px,2.9vw,38px)/1.2 var(--font-serif);color:var(--ink-2);
+}
+/* The sources are ticked off one after another, round and round. */
+.lp-proof-names li{position:relative}
+.lp-proof-names li::after{
+  content:'';position:absolute;left:0;right:0;bottom:-2px;height:2px;border-radius:2px;
+  background:linear-gradient(90deg,var(--blend-1),var(--blend-2));
+  transform:scaleX(0);transform-origin:left;
+  animation:lp-tick 9.6s var(--ease) infinite;animation-delay:calc(var(--i,0) * 1.2s);
+}
+@keyframes lp-tick{
+  0%{transform:scaleX(0);opacity:1}
+  8%{transform:scaleX(1);opacity:1}
+  16%,100%{transform:scaleX(1);opacity:0}
+}
+.lp[data-motion="paused"] .lp-proof-names li::after{animation-play-state:paused}
+.lp-proof-note{margin:20px 0 0;font:400 13px/1.5 var(--font-mono);color:var(--ink-2)}
+.lp-proof-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:32px;margin-top:64px}
+.lp-proof-fact{position:relative;padding-top:20px;border-top:1px solid var(--line)}
+/* The blend draws along each rule as the row scrolls up, one after the other. */
+.lp-proof-fact::before{
+  content:'';position:absolute;left:0;right:0;top:-1px;height:2px;border-radius:2px;
+  background:linear-gradient(90deg,var(--blend-1),var(--blend-2));
+  transform:scaleX(clamp(0,calc(var(--p,1) * 1.6 - var(--at,0)),1));transform-origin:left;
+}
+.lp-proof-fact:nth-child(2){--at:.3}
+.lp-proof-fact:nth-child(3){--at:.6}
+.lp-proof-fact h3{margin:0;font:400 26px/1.15 var(--font-serif);color:var(--ink)}
+.lp-proof-fact p{margin:10px 0 0;font:400 14.5px/1.6 var(--font-text);color:var(--muted)}
+
+/* ── Problem ──────────────────────────────────────────────────────────────── */
+.lp-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:72px;align-items:center}
+/* Four open tabs, heaped up, that straighten into a list as the section scrolls up. */
+.lp-pains{--spread:1;display:grid;gap:12px;margin:0}
+.lp-pain{
+  --off:calc(1 - var(--p,1));
+  display:grid;grid-template-columns:150px minmax(0,1fr);gap:20px;align-items:baseline;
+  padding:20px 24px;border-radius:16px;border:1px solid var(--line);
+  background:
+    repeating-linear-gradient(90deg,rgb(0 0 0 / .32) 0 1px,transparent 1px 5px),
+    linear-gradient(100deg,var(--tab) 52%,var(--glow) 100%);
+  transform:
+    translate(calc(var(--off) * var(--x) * var(--spread)),calc(var(--off) * var(--y)))
+    rotate(calc(var(--off) * var(--r)));
+}
+.lp-pain:nth-child(1){--x:-28px;--y:44px;--r:-2.6deg;--glow:color-mix(in srgb,var(--blend-1) 30%,transparent)}
+.lp-pain:nth-child(2){--x:34px;--y:14px;--r:1.9deg;--glow:color-mix(in srgb,var(--blend-1) 44%,transparent)}
+.lp-pain:nth-child(3){--x:-18px;--y:-14px;--r:2.8deg;--glow:color-mix(in srgb,var(--blend-2) 26%,transparent)}
+.lp-pain:nth-child(4){--x:26px;--y:-44px;--r:-1.7deg;--glow:color-mix(in srgb,var(--blend-2) 40%,transparent)}
+.lp-pain dt{font:400 12px/1.5 var(--font-mono);color:var(--accent)}
+.lp-pain dd{margin:0;font:400 16px/1.5 var(--font-text);color:var(--ink-2)}
+
+/* ── Solution: one tile for each verb, on a still cut of the prism ──────────── */
+.lp-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;margin-top:64px}
+.lp-value-cell{display:flex}
+.lp-value{
+  --u:1px;
+  flex:1;display:flex;flex-direction:column;
+  padding:32px;border-radius:24px;border:1px solid var(--line);
+  background:
+    repeating-linear-gradient(90deg,rgb(0 0 0 / .14) 0 1px,transparent 1px 5px),
+    linear-gradient(180deg,var(--blend-0) 30%,var(--blend-1) 66%,var(--blend-2) 100%);
+  background-origin:border-box;
+}
+.lp-value h3{margin:0;font:400 44px/1 var(--font-serif);letter-spacing:-.012em;color:var(--ink)}
+.lp-value-line{margin:10px 0 28px;max-width:38ch;min-height:3em;font:400 14px/1.5 var(--font-mono);color:var(--ink-2)}
+.lp-value .lp-fcard-tag{align-self:flex-start}
+.lp-value .lp-fcard-frame{flex:1;display:flex}
+.lp-value .lp-fcard-core{flex:1;height:auto}
+.lp-value .lp-fc-actions{padding:calc(4 * var(--u)) 0 0}
+.lp-also{margin:32px 0 0;font:400 13px/1.6 var(--font-mono);color:var(--muted)}
+
+/* ── How it works ─────────────────────────────────────────────────────────── */
+/* One line runs through the steps as they scroll up, and lights each as it arrives. */
+.lp-steps{position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:32px;margin-top:64px}
+.lp-steps::before,.lp-steps::after{content:'';position:absolute;left:0;right:0;top:0}
+.lp-steps::before{height:1px;background:var(--line)}
+.lp-steps::after{
+  height:2px;top:-1px;border-radius:2px;
+  background:linear-gradient(90deg,var(--blend-1),var(--blend-2));
+  transform:scaleX(var(--p,1));transform-origin:left;
+}
+.lp-step{--on:clamp(0,calc((var(--p,1) - var(--at,0)) * 8),1);position:relative;padding-top:28px}
+.lp-step:nth-child(2){--at:.34}
+.lp-step:nth-child(3){--at:.68}
+.lp-step::before{
+  content:'';position:absolute;left:0;top:-5px;width:9px;height:9px;border-radius:50%;
+  background:var(--blend-2);transform:scale(var(--on));
+}
+.lp-step-num{
+  display:block;font:400 64px/1 var(--font-serif);color:var(--accent);opacity:calc(.25 + .75 * var(--on));
+}
+.lp-step h3{margin:20px 0 0;font:400 28px/1.15 var(--font-serif);color:var(--ink)}
+.lp-step p{margin:10px 0 0;font:400 14.5px/1.6 var(--font-text);color:var(--muted)}
 
 /* ── FAQ: hairline rows, native disclosure ───────────────────────────────── */
-.lp-faq{margin-top:56px;border-top:1px solid var(--line-soft)}
-.lp-faq details{border-bottom:1px solid var(--line-soft)}
+.lp-faq-grid{display:grid;grid-template-columns:minmax(0,4fr) minmax(0,7fr);gap:56px;align-items:start}
+.lp-faq{border-top:1px solid var(--line)}
+.lp-faq details{border-bottom:1px solid var(--line)}
+.lp-faq details[open]{border-bottom-color:transparent;background:linear-gradient(90deg,var(--blend-1),var(--blend-2)) bottom/100% 1px no-repeat}
 .lp-faq summary{
   list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:20px;
-  padding:24px 0;font:600 17px var(--font-display);letter-spacing:-.01em;color:var(--ink);
+  padding:20px 0;font:500 16px/1.4 var(--font-text);color:var(--ink);
   transition:color .45s var(--ease);
 }
 .lp-faq summary::-webkit-details-marker{display:none}
@@ -350,56 +436,106 @@
   background:rgb(var(--hi) / .05);border:1px solid var(--line);color:var(--muted);
   transition:transform .55s var(--ease),background .45s var(--ease),color .45s var(--ease);
 }
-.lp-faq details[open] .lp-faq-mark{transform:rotate(45deg);background:var(--accent-soft);color:var(--accent)}
-.lp-faq p{margin:0 0 26px;font-size:13.5px;line-height:1.75;color:var(--muted);max-width:70ch}
+.lp-faq details[open] .lp-faq-mark{transform:rotate(45deg);background:var(--azure-tint);color:var(--accent)}
+.lp-faq p{margin:0 0 22px;max-width:62ch;font:400 14.5px/1.65 var(--font-text);color:var(--muted)}
 
-/* ── Closer ──────────────────────────────────────────────────────────────── */
-.lp-closer{text-align:center;padding:76px 40px}
-.lp-closer .lp-lead{margin-left:auto;margin-right:auto}
-.lp-closer .lp-cta-row{justify-content:center}
+/* ── CTA: the hero's ground and button again ─────────────────────────────── */
+.lp-closer{
+  display:flex;flex-direction:column;align-items:center;text-align:center;
+  min-height:clamp(600px,92vh,900px);
+  /* the bottom stays clear so the blend can run on past azure into salmon */
+  padding:clamp(72px,12vh,120px) 24px clamp(120px,24vh,240px);
+}
+.lp-closer .lp-h2{margin-top:0;font-size:clamp(44px,min(6.6vw,11vh),96px)}
+.lp-closer-sub{margin:16px 0 0;font:400 14.5px/1.6 var(--font-mono);color:rgb(var(--hi) / .92)}
+.lp-closer .lp-try-slot{padding:clamp(24px,5vh,48px) 11px 11px}
+.lp-closer-signin{
+  margin-top:clamp(20px,4vh,36px);padding:6px 14px;border-radius:999px;
+  background:rgb(0 0 0 / .55);font:400 12px var(--font-mono);color:var(--ink);
+  transition:background .45s var(--ease);
+}
+.lp-closer-signin:hover{background:rgb(0 0 0 / .75)}
 
-.lp-footer{position:relative;z-index:1;border-top:1px solid var(--line-soft);padding:44px 0 60px}
+.lp-footer{border-top:1px solid var(--line-soft);padding:44px 0 60px}
 .lp-footer-inner{display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap}
 .lp-footer-links{display:flex;gap:26px;flex-wrap:wrap}
-.lp-footer-links a{font-size:12px;color:var(--muted);transition:color .45s var(--ease)}
-@media(max-width:700px){.lp-footer-links{gap:4px 20px}.lp-footer-links a{display:inline-block;padding:10px 0}}
+.lp-footer-links a{font:400 12px var(--font-mono);color:var(--muted);transition:color .45s var(--ease)}
 .lp-footer-links a:hover{color:var(--accent)}
+.lp-footer-meta{font:400 11.5px var(--font-mono);color:var(--faint)}
 
-/* ── Responsive: aggressive single-column collapse below 768px ───────────── */
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+@media(max-width:1100px){
+  .lp-hero-mid{
+    column-gap:16px;
+    grid-template-areas:
+      "sub sub sub"
+      "sl try sr";
+  }
+}
 @media(max-width:1040px){
-  .lp-hero-grid{grid-template-columns:1fr;gap:56px}
-  .lp-split{grid-template-columns:1fr;gap:44px}
-  .lp-cell,.lp-cell-wide,.lp-cell-half{grid-column:span 3}
-  .lp-feature-split{grid-template-columns:1fr;gap:26px}
+  .lp-split,.lp-faq-grid{grid-template-columns:minmax(0,1fr);gap:44px}
+}
+@media(max-width:980px){
+  .lp-nav{display:flex;justify-content:space-between}
+  .lp-nav-links{display:none}
+  .lp-burger{display:block}
+}
+/* Too narrow for three abreast: the side cards stand behind the centre one, and
+   each shows its label again when it pops up. */
+@media(max-width:899px){
+  .lp-fcard{
+    --card-w:min(70cqw,max(380px,calc((100cqh - 40px) * 1.118)));
+    --card-off:calc(50cqw + var(--hero-gutter) - 8px - var(--card-w) / 2);
+  }
+  .lp-fcard.is-left .lp-fcard-tag,.lp-fcard.is-right .lp-fcard-tag{visibility:hidden}
+  .lp-fcard-tag-all{display:inline}
+  .lp-fcard-tag-one{display:none}
+  .lp-fcard.is-left:hover .lp-fcard-tag,.lp-fcard.is-left:focus .lp-fcard-tag,
+  .lp-fcard.is-right:hover .lp-fcard-tag,.lp-fcard.is-right:focus .lp-fcard-tag{visibility:visible}
+  .lp-values{grid-template-columns:minmax(0,1fr)}
+  .lp-value-line{min-height:0}
 }
 @media(max-width:768px){
   .lp{--gutter:16px}
-  .lp-section{padding:88px 0}
-  .lp-section-tight{padding:72px 0}
-  .lp-hero{padding:132px 0 78px;min-height:auto}
-  .lp-nav-links{display:none}
-  .lp-nav-cta{display:none}
-  .lp-burger{display:block}
-  .lp-nav-pill{width:100%;justify-content:space-between;padding:8px 8px 8px 18px}
-  .lp-h1{font-size:clamp(42px,11vw,60px)}
-  .lp-lead{font-size:15px;margin-top:20px}
-  .lp-cta-row{margin-top:32px}
-  .lp-cta,.lp-cta-ghost{width:100%;justify-content:space-between}
-  .lp-steps{grid-template-columns:1fr;gap:0}
-  .lp-step{padding:26px 0;border-left:0;border-top:1px solid var(--line-soft)}
-  .lp-step:first-child{padding-top:0;border-top:0}
-  .lp-bento{grid-template-columns:1fr;gap:14px}
-  .lp-cell,.lp-cell-wide,.lp-cell-half,.lp-cell-full{grid-column:span 1}
-  .lp-feature{padding:22px}
-  .lp-feature-split{padding:22px}
-  .lp-trust-grid{grid-template-columns:1fr}
-  .lp-trust-item,.lp-trust-item:nth-child(even){padding:26px 0;border-left:0}
-  .lp-mock-counters{flex-wrap:wrap;gap:16px 0}
-  .lp-mock-counter{flex:0 0 50%;padding:0 14px}
-  .lp-mock-counter:nth-child(odd){padding-left:0;border-left:0}
-  .lp-closer{padding:48px 20px}
-  .lp-menu a{font-size:30px}
-  .lp-orb{filter:blur(80px);opacity:.35}
+  .lp-nav{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+  .lp-nav-signin{display:none}
+  .lp-proof-facts,.lp-steps{grid-template-columns:minmax(0,1fr);gap:28px}
+  .lp-proof-facts,.lp-steps,.lp-values{margin-top:44px}
+  /* Stacked, so the steps' line runs down instead of across. */
+  .lp-steps::before{right:auto;bottom:0;width:1px;height:auto}
+  .lp-steps::after{
+    top:0;left:-1px;right:auto;bottom:0;width:2px;height:auto;
+    background:linear-gradient(180deg,var(--blend-1),var(--blend-2));
+    transform:scaleY(var(--p,1));transform-origin:top;
+  }
+  .lp-step{padding:0 0 0 24px}
+  .lp-step::before{left:-4px;top:26px}
+  .lp-menu a{font-size:32px}
+  .lp-footer-links{gap:4px 20px}
+  .lp-footer-links a{display:inline-block;padding:10px 0}
+}
+@media(max-width:720px){
+  .lp-hero-mid{
+    column-gap:10px;row-gap:clamp(4px,1vh,10px);
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    grid-template-areas:
+      "sub sub sub sub"
+      "try try try try";
+  }
+  .lp-stats{display:contents}
+  /* Here the stats stand over the salmon, where white text cannot be read alone. */
+  .lp-stat{align-self:start;justify-content:flex-end;padding:5px 7px;border-radius:10px;background:rgb(0 0 0 / .55)}
+  .lp-stat dd{font-size:26px}
+  .lp-stat dt{font-size:10px}
+  .lp-hero .lp-try-slot{padding:11px}
+}
+@media(max-width:600px){
+  .lp-hero{--hero-gutter:16px}
+  .lp-h1{font-size:clamp(36px,min(12.8vw,6vh),56px)}
+  .lp-hero-sub{font-size:13px}
+  .lp-value{padding:20px}
+  .lp-pains{--spread:.35}
+  .lp-pain{grid-template-columns:minmax(0,1fr);gap:6px;padding:16px 18px}
 }
 
 /* Motion sensitivity: reveals resolve instantly, nothing translates or blurs.
@@ -408,5 +544,6 @@
 @media (prefers-reduced-motion: reduce){
   .lp-reveal{opacity:1;transform:none;filter:none}
   .lp-menu a{opacity:1;transform:none}
-  .lp-cta:hover .lp-cta-icon,.lp-cta-ghost:hover .lp-cta-icon,.lp-bezel:hover .lp-feature{transform:none}
+  .lp-proof-names li::after{animation:none}
+  .lp-fcard-lift,.lp-fcard-frame,.lp-try,.lp-hero-sub{transition:none}
 }

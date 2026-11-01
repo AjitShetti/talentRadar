@@ -6,6 +6,8 @@ import { FormEvent, Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { safeNextPath } from '@/lib/safe-url'
 import { ArrowRight, Sparkles } from 'lucide-react'
+import MotionButton from '@/components/landing/MotionButton'
+import PrismGround from '@/components/landing/PrismGround'
 import { api } from '@/lib/api'
 
 /** Someone who never finished onboarding is new to us: they get it once more, everyone else their Overview. */
@@ -20,5 +22,5 @@ function LoginForm() {
 }
 
 export default function LoginPage() {
-  return <main className="auth-page"><section className="auth-aside"><Link className="brand" href="/"><BrandLockup /></Link><div><p className="eyebrow">Career intelligence, made personal</p><h1>Make your next move with conviction<span>.</span></h1><p>One workspace for roles, applications, interview practice, and better resumes.</p></div><div className="auth-quote"><Sparkles size={18}/><span>Find the opportunities that fit—not merely the ones that appear first.</span></div></section><section className="auth-form-wrap"><Link className="brand auth-mobile-brand" href="/"><BrandLockup /></Link><Suspense fallback={<div className="loading-state">Preparing sign in…</div>}><LoginForm /></Suspense></section></main>
+  return <main className="auth-page"><PrismGround across className="auth-prism" /><MotionButton className="auth-motion" /><section className="auth-aside"><Link className="brand" href="/"><BrandLockup /></Link><div><p className="eyebrow">Career intelligence, made personal</p><h1>Make your next move with conviction<span>.</span></h1><p>One workspace for roles, applications, interview practice, and better resumes.</p></div><div className="auth-quote"><Sparkles size={18}/><span>Find the opportunities that fit—not merely the ones that appear first.</span></div></section><section className="auth-form-wrap"><Link className="brand auth-mobile-brand" href="/"><BrandLockup /></Link><Suspense fallback={<div className="loading-state">Preparing sign in…</div>}><LoginForm /></Suspense></section></main>
 }

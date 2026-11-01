@@ -265,7 +265,9 @@ async function send(path: string, options: RequestInit = {}, authenticated = fal
   if (response.status < 500) markApiAlive()
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as { detail?: unknown; message?: string }
-    if (response.status === 401) {
+    // Only a request that sent a token can have an expired session. A wrong
+    // password is a 401 too, and the server's own message is the right one for it.
+    if (response.status === 401 && authenticated) {
       // Clearing the token was not enough: the page had already rendered, so
       // the user sat looking at a broken screen. Send them to sign in and
       // remember where they were.

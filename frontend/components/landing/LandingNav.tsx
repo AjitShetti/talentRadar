@@ -3,20 +3,16 @@
 import Link from 'next/link'
 import BrandLockup from '@/components/BrandLockup'
 import { useEffect, useState } from 'react'
-import { ArrowUpRight } from 'lucide-react'
 import { signedIn } from '@/lib/api'
 
 const SECTIONS = [
-  { href: '#how', label: 'How it works', index: '01' },
-  { href: '#features', label: 'Features', index: '02' },
-  { href: '#trust', label: 'How it stays honest', index: '03' },
-  { href: '#faq', label: 'Questions', index: '04' },
+  { href: '#value', label: 'What you get', index: '01' },
+  { href: '#how', label: 'How it works', index: '02' },
+  { href: '#faq', label: 'Questions', index: '03' },
 ]
 
 /**
- * A detached island rather than an edge-to-edge bar: the landing page's chrome
- * is deliberately not the app's `.topnav` (a solid instrument strip), because
- * this surface is the outside of the product, not the inside of it.
+ * Edge to edge over the hero, and it takes a bar once the page has scrolled.
  *
  * The signed-in CTA swap resolves after mount for the same reason RequireAuth
  * does it there — the token lives in localStorage, which does not exist during
@@ -31,8 +27,7 @@ export default function LandingNav() {
   useEffect(() => { setHasSession(signedIn()) }, [])
 
   useEffect(() => {
-    // The only scroll listener on the page, and it writes a boolean rather
-    // than a style — passive, and it cannot force layout.
+    // Passive, and it writes a boolean rather than a style, so it cannot force layout.
     const onScroll = () => setScrolled(window.scrollY > 24)
     onScroll()
     window.addEventListener('scroll', onScroll, { passive: true })
@@ -55,21 +50,21 @@ export default function LandingNav() {
   return (
     <>
       <header className={`lp-nav ${scrolled ? 'lp-nav-scrolled' : ''}`}>
-        <nav className="lp-nav-pill" aria-label="Main">
-          <Link className="lp-nav-brand" href="/">
-            <BrandLockup />
-          </Link>
+        <Link className="lp-nav-brand" href="/">
+          <BrandLockup />
+        </Link>
 
-          <div className="lp-nav-links">
-            {SECTIONS.map(section => (
-              <a key={section.href} className="lp-nav-link" href={section.href}>{section.label}</a>
-            ))}
+        <nav className="lp-nav-links" aria-label="Main">
+          {SECTIONS.map(section => (
+            <a key={section.href} className="lp-nav-link" href={section.href}>{section.label}</a>
+          ))}
+        </nav>
+
+        <div className="lp-nav-end">
+          <div className="lp-nav-capsule">
+            {!hasSession && <Link className="lp-nav-signin" href="/login">Sign in</Link>}
+            <Link className="lp-nav-cta" href={ctaHref}>{ctaLabel}</Link>
           </div>
-
-          <Link className="lp-nav-cta" href={ctaHref}>
-            {ctaLabel}
-            <span className="lp-nav-cta-icon" aria-hidden="true"><ArrowUpRight size={13} strokeWidth={1.5} /></span>
-          </Link>
 
           <button
             className={`lp-burger ${open ? 'lp-burger-open' : ''}`}
@@ -79,7 +74,7 @@ export default function LandingNav() {
           >
             <i /><i />
           </button>
-        </nav>
+        </div>
       </header>
 
       {/* Kept mounted so the overlay can transition, but taken out of the
@@ -91,11 +86,11 @@ export default function LandingNav() {
           </a>
         ))}
         <a href={ctaHref} tabIndex={open ? 0 : -1} onClick={() => setOpen(false)}>
-          <small>05</small>{ctaLabel}
+          <small>04</small>{ctaLabel}
         </a>
         {!hasSession && (
           <a href="/login" tabIndex={open ? 0 : -1} onClick={() => setOpen(false)}>
-            <small>06</small>Sign in
+            <small>05</small>Sign in
           </a>
         )}
       </div>
