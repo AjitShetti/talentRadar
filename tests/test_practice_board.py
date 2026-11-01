@@ -41,6 +41,8 @@ from domain.practice_board import (
     overall_scores,
     rank_entries,
     rank_overall,
+    score_bands,
+    top_percent,
     valid_display_name,
 )
 from domain.practice_judge import CRITERIA
@@ -63,7 +65,7 @@ STARTED = OPENS + timedelta(hours=20)  # Saturday 14:30 IST
 
 BOARD_KEYS = {"provisional", "total_entries", "queued", "held", "rows", "me"}
 ROW_KEYS = {"rank", "name", "total", "hours_used", "repo_url", "you"}
-OVERALL_KEYS = {"window_challenges", "rows", "me"}
+OVERALL_KEYS = {"window_challenges", "rows", "me", "total_ranked", "top_percent", "distribution"}
 OVERALL_ROW_KEYS = {"rank", "name", "score", "entries", "you"}
 OVERALL_ME_KEYS = {"rank", "name", "score", "entries"}
 SETTINGS_KEYS = {"display_name", "show_repo", "contest_reminder", "handle"}
@@ -1560,7 +1562,14 @@ class TestRoutes:
     ) -> None:
         data = (await client.get(f"{API}/leaderboard")).json()
 
-        assert data == {"window_challenges": 0, "rows": [], "me": None}
+        assert data == {
+            "window_challenges": 0,
+            "rows": [],
+            "me": None,
+            "total_ranked": 0,
+            "top_percent": None,
+            "distribution": None,
+        }
 
     async def test_settings_are_read_and_saved(self, client: AsyncClient, asha: str) -> None:
         first = await client.get(f"{API}/settings")
@@ -1640,3 +1649,92 @@ class TestRoutes:
 
         assert response.status_code == 200
         assert response.json() == {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Where you stand
+# ---------------------------------------------------------------------------
+
+
+def test_top_percent_rounds_up() -> None:
+    assert top_percent(3, 25) == 12
+    assert top_percent(1, 12) == 9
+    assert top_percent(25, 25) == 100
+
+
+def test_top_percent_is_hidden_below_ten_ranked() -> None:
+    assert top_percent(1, 9) is None
+    assert top_percent(1, 10) == 10
+
+
+def test_top_percent_is_none_without_a_rank() -> None:
+    assert top_percent(None, 50) is None
+
+
+def test_bands_are_twenty_and_hold_every_score() -> None:
+    bands = score_bands([0.0, 19.9, 20.0, 400.0] * 3)
+    assert bands is not None
+    assert len(bands) == 20
+    assert sum(bands) == 12
+    assert bands[0] == 6
+    assert bands[1] == 3
+    assert bands[-1] == 3
+
+
+def test_bands_are_hidden_below_ten() -> None:
+    assert score_bands([1.0] * 9) is None
+    assert score_bands([1.0] * 10) is not None
+
+
+async def test_the_overall_board_reports_where_you_stand(db: Db, asha: str) -> None:
+    (only,) = await weekly_editions(db, 1)
+    await add_attempt(db, asha, only, total=70.0)
+    for number in range(11):
+        other = await add_user(db, f"other{number}")
+        await add_attempt(db, other, only, total=80.0 + number)
+
+    payload = await board.overall_board(asha, now=AFTER)
+
+    assert payload["total_ranked"] == 12
+    assert payload["me"]["rank"] == 12
+    assert payload["top_percent"] == 100
+    assert payload["distribution"] is not None
+    assert sum(payload["distribution"]) == 12
+    assert payload["distribution"][3] == 1  # 70 is in the band from 60 to 79
+
+
+async def test_standing_is_hidden_on_a_small_board(db: Db, asha: str) -> None:
+    (only,) = await weekly_editions(db, 1)
+    await add_attempt(db, asha, only, total=70.0)
+
+    payload = await board.overall_board(asha, now=AFTER)
+
+    assert payload["total_ranked"] == 1
+    assert payload["top_percent"] is None
+    assert payload["distribution"] is None
+
+
+async def test_someone_not_on_the_board_has_no_percent_but_sees_the_spread(
+    db: Db, asha: str
+) -> None:
+    (only,) = await weekly_editions(db, 1)
+    for number in range(10):
+        other = await add_user(db, f"other{number}")
+        await add_attempt(db, other, only, total=50.0)
+
+    payload = await board.overall_board(asha, now=AFTER)
+
+    assert payload["me"] is None
+    assert payload["top_percent"] is None
+    assert payload["distribution"] is not None
+
+
+async def test_the_distribution_holds_no_names(db: Db, asha: str) -> None:
+    (only,) = await weekly_editions(db, 1)
+    for number in range(10):
+        other = await add_user(db, f"other{number}")
+        await add_attempt(db, other, only, total=50.0)
+
+    payload = await board.overall_board(asha, now=AFTER)
+
+    assert all(isinstance(band, int) for band in payload["distribution"])

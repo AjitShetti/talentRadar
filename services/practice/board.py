@@ -46,6 +46,8 @@ from domain.practice_board import (
     overall_scores,
     rank_entries,
     rank_overall,
+    score_bands,
+    top_percent,
     valid_display_name,
 )
 from domain.practice_repo import RepoRef, parse_repo_url
@@ -405,6 +407,7 @@ async def overall_board(user_id: str, *, now: datetime | None = None) -> dict[st
 
     ``window_challenges`` is how many editions are in the window (twelve once there have been
     that many). The top 50 are returned, and the viewer's own row wherever it falls.
+    ``total_ranked``, ``top_percent`` and ``distribution`` come from the same cached entries.
     """
     moment = _moment(now)
     viewer = str(_user(user_id))
@@ -430,6 +433,9 @@ async def overall_board(user_id: str, *, now: datetime | None = None) -> dict[st
             {**_overall_row(rank, entry), "you": entry.user_id == viewer} for rank, entry in rows
         ],
         "me": _overall_row(*mine) if mine is not None else None,
+        "total_ranked": len(entries),
+        "top_percent": top_percent(mine[0] if mine is not None else None, len(entries)),
+        "distribution": score_bands([entry.score for entry in entries]),
     }
 
 

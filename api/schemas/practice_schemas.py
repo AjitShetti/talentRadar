@@ -348,11 +348,17 @@ class OverallMeSchema(BaseModel):
 
 
 class OverallBoardSchema(BaseModel):
-    """Each person's best four totals over the last twelve editions."""
+    """Each person's best four totals over the last twelve editions, and where the viewer stands.
+
+    ``top_percent`` and ``distribution`` (counts in bands of 20 across 0-400, and no names) are
+    null until ten people are ranked."""
 
     window_challenges: int
     rows: list[OverallRowSchema]
     me: OverallMeSchema | None
+    total_ranked: int
+    top_percent: int | None
+    distribution: list[int] | None
 
 
 class SettingsRequestSchema(BaseModel):
