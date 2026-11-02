@@ -1,0 +1,30 @@
+{
+  "slug": "big-catalogue-table",
+  "title": "A supplier catalogue of 200,000 rows in the browser",
+  "tracks": [
+    "frontend"
+  ],
+  "minutes": 30,
+  "topics": [
+    "api-design",
+    "caching"
+  ],
+  "summary": "Let a buyer scroll, sort, filter and bulk-edit a huge table without the browser giving up.",
+  "context": [
+    "Cubbon Traders' buyers work in a catalogue of 200,000 items: prices, suppliers, pack sizes. They scroll, filter by several columns and change prices in bulk. The page now loads 5,000 rows and has a search box for the rest.",
+    "They would rather export to a spreadsheet than use it, and then the data comes back with errors. Some use old office laptops, and others are editing the same rows at the same time."
+  ],
+  "must_handle": [
+    "Scrolling stays smooth on a modest laptop.",
+    "A filter on several columns answers within a second or so.",
+    "A bulk change to 3,000 rows shows progress, and can partly fail.",
+    "A person's place, filter and sort survive a reload and can be shared as a link.",
+    "A row someone else changed is not silently overwritten."
+  ],
+  "show_in_answer": [
+    "The API the table needs: its paging, filters and bulk edit.",
+    "How rows are held in the browser and what is drawn.",
+    "What is cached, and how it is invalidated after an edit.",
+    "How a bulk edit reports partial failure."
+  ]
+}

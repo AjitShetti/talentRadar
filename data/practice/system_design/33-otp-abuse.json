@@ -1,0 +1,30 @@
+{
+  "slug": "otp-abuse",
+  "title": "Stopping OTP abuse before the SMS bill arrives",
+  "tracks": [
+    "general"
+  ],
+  "minutes": 25,
+  "topics": [
+    "rate-limiting",
+    "observability"
+  ],
+  "summary": "Protect a login that sends paid SMS from scripts that send thousands of them.",
+  "context": [
+    "Malleshwaram Mart logs people in with a one-time code by SMS. One weekend, a bot sent 400,000 codes to a block of premium-rate numbers, and the bill came to more than a month of infrastructure. The team found out from the invoice.",
+    "A real customer must still be able to log in quickly, including one who mistyped their number or whose code was slow to arrive."
+  ],
+  "must_handle": [
+    "A single number, device or network cannot trigger unlimited messages.",
+    "A real person retrying a late code is not locked out.",
+    "A spike in sending is noticed within minutes, not at the end of the month.",
+    "Sending can be stopped by country or prefix in an emergency.",
+    "A code cannot be guessed by trying many times."
+  ],
+  "show_in_answer": [
+    "Each limit, what it counts and where it sits.",
+    "What a real customer experiences when they hit one.",
+    "The signals you watch, and who gets told.",
+    "The fallback if the SMS provider goes down."
+  ]
+}

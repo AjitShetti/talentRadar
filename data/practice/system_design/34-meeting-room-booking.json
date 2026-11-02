@@ -1,0 +1,30 @@
+{
+  "slug": "meeting-room-booking",
+  "title": "Room booking for a co-working chain",
+  "tracks": [
+    "general"
+  ],
+  "minutes": 25,
+  "topics": [
+    "data-modelling",
+    "consistency"
+  ],
+  "summary": "Let members book rooms across many sites, with no double bookings and sensible credits.",
+  "context": [
+    "Indiranagar Desks runs 25 co-working sites. Members buy credits and spend them on rooms by the half hour. Rooms have different rates at different hours, and companies share a pool of credits across staff.",
+    "Double bookings happen weekly, usually around recurring meetings. Rooms sit empty when someone books and does not come, and members ask for refunds when they cancel late."
+  ],
+  "must_handle": [
+    "Two people cannot hold one room for an overlapping time.",
+    "A weekly meeting is a series, with single changes allowed.",
+    "Credits never go negative, even when two staff book at once.",
+    "A no-show frees the room after a while and follows a clear credit rule.",
+    "Times are right for sites and for members travelling elsewhere."
+  ],
+  "show_in_answer": [
+    "The tables for rooms, bookings, series and credits.",
+    "How an overlap is prevented at the database.",
+    "How a booking and its credit change happen together.",
+    "How a change to one meeting in a series works."
+  ]
+}

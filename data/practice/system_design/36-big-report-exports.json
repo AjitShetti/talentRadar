@@ -1,0 +1,30 @@
+{
+  "slug": "big-report-exports",
+  "title": "Exports that do not take the database down",
+  "tracks": [
+    "general"
+  ],
+  "minutes": 20,
+  "topics": [
+    "queues",
+    "storage"
+  ],
+  "summary": "Let people download very large reports without hurting everyone else using the product.",
+  "context": [
+    "Cubbon Traders' users export reports of up to 2 million rows. The export runs inside the web request, against the main database. At month end, a few exports slow everything for everybody, and many time out after several minutes with nothing to show.",
+    "A report may contain sensitive prices and should not be readable by anyone with the link. Most people want the same few reports at month end."
+  ],
+  "must_handle": [
+    "A person can start an export and leave the page.",
+    "Exports do not noticeably slow the main product.",
+    "A long export survives a worker restart.",
+    "Only the right people can download the file, and it expires.",
+    "One company's many exports do not block everyone else's."
+  ],
+  "show_in_answer": [
+    "What happens from pressing Export to holding the file.",
+    "Where the report reads from, and how that protects the main database.",
+    "How the file is stored and shared.",
+    "How the work is shared fairly between companies."
+  ]
+}

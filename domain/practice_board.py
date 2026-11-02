@@ -15,6 +15,8 @@ The rules of the Practice leaderboards, as pure functions over plain values.
   are in the window.
 * **The view** is the top rows plus the viewer's own row wherever it falls. Nobody else below
   the cut is returned.
+* **Where you stand** is a top percent and a spread of scores, and only once enough people are
+  ranked for either to mean something (``RANKED_FOR_STANDING``). The spread holds counts only.
 
 Nothing here reads a clock, a database or the network.
 """
@@ -31,6 +33,11 @@ from typing import Protocol, TypeVar
 
 #: How many totals make up a person's overall score.
 OVERALL_BEST = 4
+#: Below this many people ranked, "top 50%" and a chart of scores say nothing.
+RANKED_FOR_STANDING = 10
+#: A person's four best totals out of 100 give an overall score of at most 400.
+_SCORE_BANDS = 20
+_BAND_WIDTH = 20
 
 HANDLE_PREFIX = "builder-"
 HANDLE_HEX_CHARS = 4
@@ -193,3 +200,23 @@ def board_view(
     rows = list(ranked[: max(top, 0)])
     mine = next((row for row in ranked if row[1].user_id == me), None)
     return rows, mine
+
+
+def top_percent(rank: int | None, total_ranked: int) -> int | None:
+    """How near the top a rank is, rounded up, or ``None`` when it would say nothing."""
+    if rank is None or total_ranked < RANKED_FOR_STANDING:
+        return None
+    return -(-rank * 100 // total_ranked)
+
+
+def score_bands(scores: Sequence[float]) -> list[int] | None:
+    """How many overall scores fall in each band of 20 across 0 to 400; a 400 is in the last.
+
+    ``None`` when too few people are ranked for the shape to mean anything.
+    """
+    if len(scores) < RANKED_FOR_STANDING:
+        return None
+    bands = [0] * _SCORE_BANDS
+    for score in scores:
+        bands[max(0, min(_SCORE_BANDS - 1, int(score // _BAND_WIDTH)))] += 1
+    return bands

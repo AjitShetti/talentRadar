@@ -186,8 +186,10 @@ export type EventListParams = { when?: 'today' | 'week' | 'weekend' | 'month'; f
 export type PracticeFeel = 'easy' | 'right' | 'hard'
 export type PracticeQuestion = { id: number; slug: string; title: string; difficulty: 'easy' | 'medium' | 'hard'; topics: string[]; url: string }
 export type Contest = { starts_at: string; ends_at: string; show: boolean; live: boolean; url: string }
-export type PracticeToday = { day: string; catalogue: 'ok' | 'empty'; catalogue_size: number; track: string; track_label: string; question: PracticeQuestion | null; reason: string; relaxed: string[]; done_at: string | null; feel: PracticeFeel | null; swaps_left: number; leetcode_daily_url: string; contest: Contest }
-export type PracticeHistory = { days: Array<{ day: string; done: boolean; difficulty: string | null; topic: string | null }>; counts: { this_month: number; last_30: number; longest_run: number }; topics: Array<{ topic: string; count: number }> }
+export type PracticeKind = 'dsa' | 'design'
+export type PracticeToday = { day: string; catalogue: 'ok' | 'empty'; catalogue_size: number; track: string; track_label: string; kind: PracticeKind | null; question: PracticeQuestion | null; design: { slug: string; title: string; minutes: number; topics: string[]; has_answer: boolean } | null; reason: string; relaxed: string[]; done_at: string | null; feel: PracticeFeel | null; swaps_left: number; leetcode_daily_url: string; contest: Contest }
+export type PracticeDayCell = { day: string; done: boolean; difficulty: string | null; topic: string | null; kind: PracticeKind | null; contest: boolean }
+export type PracticeHistory = { days: PracticeDayCell[]; counts: { this_month: number; last_30: number; longest_run: number; current_streak: number }; topics: Array<{ topic: string; count: number }>; solved: { easy: number; medium: number; hard: number; design: number; total: number }; available: { easy: number | null; medium: number | null; hard: number | null; design: number | null } }
 export type ChallengeBrief = { slug: string; title: string; track: string; hours: 24 | 48; summary: string; context: string[]; must_have: string[]; nice_to_have: string[]; constraints: string[]; deliverables: string[]; judge_focus: string[]; bengaluru_context: string }
 export type AttemptStatus = 'started' | 'submitted' | 'queued' | 'judged' | 'rejected' | 'judge_failed' | 'missed'
 export type Writeup = { decisions: string; tradeoffs: string; ai_usage: string; next_steps: string }
@@ -200,7 +202,10 @@ export type AppealState = 'none' | 'open' | 'closed' | 'reviewed' | 'pending' | 
 export type AttemptResult = { status: AttemptStatus; held: boolean; reject_reason: string | null; total: number | null; scores: Record<Criterion, number> | null; weights: Record<Criterion, number>; notes: (Record<Criterion, string> & { strengths: string[]; improvements: string[]; summary: string }) | null; signals: Record<string, number | boolean> | null; snapshot_sha: string | null; snapshot_url: string | null; appeal: { available: boolean; used: boolean; until: string | null; state: AppealState }; rejudged: boolean }
 export type BoardRow = { rank: number; name: string; total: number; hours_used: number | null; repo_url?: string | null; you?: boolean }
 export type ChallengeBoard = { provisional: boolean; total_entries: number; queued: number; held: number; rows: BoardRow[]; me: BoardRow | null }
-export type OverallBoard = { window_challenges: number; rows: Array<{ rank: number; name: string; score: number; entries: number; you?: boolean }>; me: { rank: number; name: string; score: number; entries: number } | null }
+export type OverallBoard = { window_challenges: number; rows: Array<{ rank: number; name: string; score: number; entries: number; you?: boolean }>; me: { rank: number; name: string; score: number; entries: number } | null; total_ranked: number; top_percent: number | null; distribution: number[] | null }
+export type DesignFeedback = { scores: Record<string, number>; notes: Record<string, string>; work_on_next: string; total: number; at: string }
+// A system design problem and the one answer its URL means. feedback_problem says why no result was made: busy (try again soon) or limit (today's are used up).
+export type DesignPage = { problem: { slug: string; title: string; minutes: number; topics: string[]; summary: string; context: string[]; must_handle: string[]; show_in_answer: string[] }; day: string | null; answer: { elements: unknown[] | null; reasoning: string; saved_at: string } | null; editable: boolean; done: boolean; last_answer_day: string | null; feedback: DesignFeedback | null; feedback_problem: 'busy' | 'limit' | null }
 export type PracticeSettings = { display_name: string | null; show_repo: boolean; contest_reminder: boolean; handle: string }
 
 /** A refusal from the API. `status` lets a caller tell "not found" or "conflict" from a failure; `message` is the server's own words. */
@@ -522,6 +527,9 @@ export const api = {
     undo: () => request<PracticeToday>('/api/v1/practice/today/done', { method: 'DELETE' }, true),
     swap: () => request<PracticeToday>('/api/v1/practice/today/swap', { method: 'POST' }, true),
     history: (weeks = 12) => request<PracticeHistory>(`/api/v1/practice/history?weeks=${weeks}`, {}, true),
+    design: (slug: string, day?: string) => request<DesignPage>(`/api/v1/practice/design/${encodeURIComponent(slug)}${day ? `?day=${encodeURIComponent(day)}` : ''}`, {}, true),
+    saveAnswer: (slug: string, body: { elements: unknown[]; reasoning: string }, options?: { keepalive?: boolean }) => request<{ day: string; saved_at: string }>(`/api/v1/practice/design/${encodeURIComponent(slug)}/answer`, { method: 'PUT', body: JSON.stringify(body), keepalive: options?.keepalive }, true),
+    feedback: (slug: string) => request<DesignPage>(`/api/v1/practice/design/${encodeURIComponent(slug)}/feedback`, { method: 'POST' }, true),
     challenges: () => request<ChallengesOverview>('/api/v1/practice/challenges', {}, true),
     challenge: (slug: string) => request<Challenge>(`/api/v1/practice/challenges/${encodeURIComponent(slug)}`, {}, true),
     start: (slug: string) => request<Challenge>(`/api/v1/practice/challenges/${encodeURIComponent(slug)}/start`, { method: 'POST' }, true),

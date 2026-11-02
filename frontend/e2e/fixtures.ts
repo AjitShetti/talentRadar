@@ -37,7 +37,7 @@ export { expect }
 /** Pages that sit in a top-nav group menu, by the group's label. */
 const IN_GROUP: Record<string, string> = {
   'Find roles': 'Job hunt', Applications: 'Job hunt', Outreach: 'Job hunt', Companies: 'Job hunt',
-  Practice: 'Prep', 'Mock interviews': 'Prep', Leaderboard: 'Prep',
+  Practice: 'Prep', 'Mock interviews': 'Prep',
 }
 /** Pages reached from the account menu. */
 const IN_ACCOUNT = ['Profile & goals', 'Resume studio']

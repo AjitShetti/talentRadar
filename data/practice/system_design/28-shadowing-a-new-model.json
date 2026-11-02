@@ -1,0 +1,30 @@
+{
+  "slug": "shadowing-a-new-model",
+  "title": "Trying a new model without risking customers",
+  "tracks": [
+    "ml"
+  ],
+  "minutes": 25,
+  "topics": [
+    "ml-serving",
+    "observability"
+  ],
+  "summary": "Run a new model beside the current one on real traffic, and decide with evidence whether it replaces it.",
+  "context": [
+    "Mavalli Meals predicts delivery times. A new model looks better on last month's data, but the previous launch went badly: fine in testing, and then promises were wrong for the first rainy week. Customers are compensated when a promise is badly missed.",
+    "The team wants to run the new model silently, then on a small share of orders, and to see trouble early. The true delivery time is known only some time after a prediction is made."
+  ],
+  "must_handle": [
+    "The silent model must not slow down or risk the live request.",
+    "Predictions from both can be compared with what actually happened.",
+    "Results can be split by city, weather and time of day.",
+    "A drifting input is noticed before accuracy visibly falls.",
+    "Going back to the old model takes minutes."
+  ],
+  "show_in_answer": [
+    "How requests reach the two models.",
+    "How predictions are logged and joined with outcomes.",
+    "What the dashboard shows, and what raises an alarm.",
+    "The rule for moving from silent, to a small share, to everyone."
+  ]
+}

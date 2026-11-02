@@ -1,0 +1,30 @@
+{
+  "slug": "clickstream-to-warehouse",
+  "title": "App events into the warehouse by morning",
+  "tracks": [
+    "data"
+  ],
+  "minutes": 30,
+  "topics": [
+    "pipelines",
+    "storage"
+  ],
+  "summary": "Collect app events reliably and have correct numbers ready before the 9:00 meeting.",
+  "context": [
+    "Hoodi Hops, a food and drinks app, sends about 3 billion events a day from phones and web. Analysts run daily reports from a warehouse, and leadership reads them at 9:00. Phones may send events hours late, and some send them twice.",
+    "Each app team adds events freely. Last month someone renamed a field and revenue on the dashboard fell by half for two days before anyone noticed."
+  ],
+  "must_handle": [
+    "Late events still land in the right day, and the report says what it has counted.",
+    "Repeats do not inflate counts.",
+    "A changed or broken event is caught before the report goes out.",
+    "A failed job can rerun for one day without touching others.",
+    "Raw events are kept cheaply for 90 days for replays."
+  ],
+  "show_in_answer": [
+    "The journey of one event from a phone to a report.",
+    "How storage is laid out, and what it costs.",
+    "How late and duplicate events are treated.",
+    "Where a broken schema is caught, and who hears about it."
+  ]
+}

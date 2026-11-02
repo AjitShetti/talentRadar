@@ -1,0 +1,30 @@
+{
+  "slug": "school-bus-tracker",
+  "title": "A school bus tracker parents can trust",
+  "tracks": [
+    "mobile"
+  ],
+  "minutes": 30,
+  "topics": [
+    "realtime",
+    "offline-sync"
+  ],
+  "summary": "Show parents where the bus is, and tell them when it is near, on phones and roads that drop out.",
+  "context": [
+    "Lalbagh Learning runs 700 school buses in Bengaluru. An attendant carries a phone that reports location and marks each child on and off. Parents open the app every morning between 7:00 and 8:30, nearly all at once.",
+    "Traffic on Outer Ring Road makes timetables useless, and parents want a nudge when the bus is ten minutes away. A child's location is sensitive: only that child's family may follow that bus."
+  ],
+  "must_handle": [
+    "A location shown to a parent is at most about 30 seconds old, or it says it is older.",
+    "The attendant's phone keeps recording through a dead zone and catches up afterwards.",
+    "A parent gets one nudge per trip, at about ten minutes away.",
+    "Only a family with a child on that bus today can see it.",
+    "History is kept only as long as the school needs it."
+  ],
+  "show_in_answer": [
+    "How a location reaches a parent's screen.",
+    "How the arrival estimate is made, and how it behaves when the phone goes quiet.",
+    "How access is checked for each parent.",
+    "What is kept, for how long, and why."
+  ]
+}

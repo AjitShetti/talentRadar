@@ -1,0 +1,30 @@
+{
+  "slug": "lectures-on-slow-networks",
+  "title": "Video lectures for students on slow networks",
+  "tracks": [
+    "general"
+  ],
+  "minutes": 30,
+  "topics": [
+    "storage",
+    "caching"
+  ],
+  "summary": "Deliver recorded lectures to students on thin data plans without an enormous storage and bandwidth bill.",
+  "context": [
+    "Lalbagh Learning records 500 hours of lectures a week for students across Karnataka. Most watch on phones, often on 3G or a shared data pack, and many watch the night before an exam, all of them the same few videos.",
+    "Their storage and bandwidth bill has grown faster than their revenue. Students complain of buffering, and teachers complain when a corrected lecture does not replace the old one."
+  ],
+  "must_handle": [
+    "A lecture plays on a poor connection, at a lower quality if need be.",
+    "A student can download a lecture and watch it with no connection.",
+    "A teacher's correction replaces the old version within an hour.",
+    "Old lectures that nobody watches get cheaper to keep.",
+    "The night before an exam does not bring the service down."
+  ],
+  "show_in_answer": [
+    "The path of a recording from upload to a student's phone.",
+    "How videos are stored, and how the cost changes as they age.",
+    "What is cached where, and how a correction gets through.",
+    "A rough estimate of the monthly storage and bandwidth."
+  ]
+}

@@ -29,9 +29,8 @@ const NAV: NavEntry[] = [
   },
   {
     label: 'Prep', items: [
-      { label: 'Practice', href: '/practice', blurb: 'Daily question, weekly take-home, contest' },
+      { label: 'Practice', href: '/practice', blurb: 'One problem a day, a weekly contest' },
       { label: 'Mock interviews', href: '/interview', blurb: 'Voice or typed, scored answer by answer' },
-      { label: 'Leaderboard', href: '/practice/leaderboard', blurb: 'Who is building and solving the most' },
     ],
   },
   { label: 'Events', href: '/events' },
@@ -42,7 +41,7 @@ const ALIASES: [string, string][] = [['/roles', '/search']]
 
 const under = (path: string, href: string) => path === href || path.startsWith(href + '/')
 
-/** The menu link the path belongs to: the longest matching href wins, so /practice/leaderboard is not Practice. */
+/** The menu link the path belongs to: the longest matching href wins. */
 function activeHref(path: string): string | null {
   const alias = ALIASES.find(([prefix]) => under(path, prefix))
   if (alias) return alias[1]

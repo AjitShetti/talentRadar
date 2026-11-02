@@ -1,0 +1,30 @@
+{
+  "slug": "kirana-billing-without-internet",
+  "title": "Billing at a kirana shop when the internet drops",
+  "tracks": [
+    "mobile"
+  ],
+  "minutes": 35,
+  "topics": [
+    "offline-sync",
+    "consistency"
+  ],
+  "summary": "Let a shopkeeper keep billing through outages and still end the day with correct stock and accounts.",
+  "context": [
+    "Kadlekai Kart sells a billing app to 25,000 neighbourhood shops. Most run on one Android phone, some on a phone and a tablet. Power cuts and patchy data are ordinary, and a shop cannot turn customers away while the network recovers.",
+    "Shop owners read their sales and stock on a second phone at home in the evening. Prices are often changed from there too, so the counter may be billing on a price that has already changed."
+  ],
+  "must_handle": [
+    "Billing works with no connection for at least three days.",
+    "Two devices in one shop can both sell the last packet while offline.",
+    "A bill number must never repeat within a shop, because it goes on a tax record.",
+    "A phone that is lost must not lose the unsynced bills without anyone knowing.",
+    "An update of the app must not strand data held on an older format."
+  ],
+  "show_in_answer": [
+    "What is stored on the device, and what the server treats as the record.",
+    "How a day of offline bills reaches the server.",
+    "What you do when two devices disagree, case by case.",
+    "How a shopkeeper finds out that something did not sync."
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "slug": "partner-api-limits",
+  "title": "Fair limits on a logistics partner API",
+  "tracks": [
+    "backend",
+    "devops"
+  ],
+  "minutes": 30,
+  "topics": [
+    "rate-limiting",
+    "api-design"
+  ],
+  "summary": "Stop one partner's bad script from taking down shipment tracking for everyone else.",
+  "context": [
+    "Nandi Freight exposes an API to 400 sellers and shipping platforms for booking and tracking. Most call it politely. A few poll every shipment every few seconds, and last week one partner's retry loop took the database down for forty minutes.",
+    "Some partners pay for a higher tier, and a large partner may legitimately send a burst when a sale begins. The API runs on six instances behind a load balancer."
+  ],
+  "must_handle": [
+    "A limit holds across all instances, near enough.",
+    "A partner over the limit is told clearly when to come back.",
+    "A burst from a paying partner at the start of a sale is allowed.",
+    "Booking a shipment matters more than polling one when the system is strained.",
+    "The limiter being down must not take the API down."
+  ],
+  "show_in_answer": [
+    "Where the limit is checked, and where the counters live.",
+    "The response a partner gets, with its headers.",
+    "What the limiter does when its own store is unavailable.",
+    "What you would offer partners so that they need to poll less."
+  ]
+}

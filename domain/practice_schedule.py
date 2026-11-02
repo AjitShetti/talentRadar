@@ -17,8 +17,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, timezone, tzinfo
+from typing import Literal
 
 IST: tzinfo = timezone(timedelta(hours=5, minutes=30))
+
+DayKind = Literal["dsa", "design"]
+
+#: The days that are system design, the rest being DSA: Tuesday, Thursday and Saturday.
+DESIGN_WEEKDAYS = frozenset({1, 3, 5})
+#: A design answer stays open until this time on the morning after its day, so someone working
+#: past midnight neither loses their work nor their day.
+ANSWER_CLOSES_IST = time(6, 0)
 
 #: The write-up grace hour after a take-home's deadline. It is for writing up, not building.
 GRACE = timedelta(minutes=60)
@@ -59,6 +68,28 @@ def ist_day(now: datetime) -> date:
     """The IST calendar day that ``now`` falls on. The day rolls at IST midnight."""
     _require_aware(now)
     return now.astimezone(IST).date()
+
+
+def kind_for_day(day: date) -> DayKind:
+    """Which kind of problem an IST day has. It is the same for everyone on a given date."""
+    return "design" if day.weekday() in DESIGN_WEEKDAYS else "dsa"
+
+
+def effective_kind(scheduled: DayKind, *, has_dsa: bool, has_design: bool) -> DayKind | None:
+    """The kind to show: the scheduled one, else the other if its list is empty, else ``None``.
+
+    An empty list never leaves a day blank while the other list has something on it.
+    """
+    if scheduled == "dsa":
+        return "dsa" if has_dsa else "design" if has_design else None
+    return "design" if has_design else "dsa" if has_dsa else None
+
+
+def answer_open(now: datetime, day: date) -> bool:
+    """Whether the design answer of IST day ``day`` can still be changed at ``now``."""
+    _require_aware(now)
+    closes = datetime.combine(day + timedelta(days=1), ANSWER_CLOSES_IST, tzinfo=IST)
+    return now < closes
 
 
 def _latest_contest_start(instant: datetime) -> datetime:

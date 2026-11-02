@@ -1,0 +1,30 @@
+{
+  "slug": "api-that-can-change",
+  "title": "An API that can change without breaking partners",
+  "tracks": [
+    "general"
+  ],
+  "minutes": 25,
+  "topics": [
+    "api-design",
+    "data-modelling"
+  ],
+  "summary": "Evolve a public API used by hundreds of partners who upgrade slowly or never.",
+  "context": [
+    "Nandi Freight's API has grown for six years. Fields changed meaning, a status called 'done' covers three real states, and addresses are one long string. They want to fix this, but 400 partners depend on it, and some have no developer left who knows the integration.",
+    "A previous clean-up broke a large partner for a day, and the sales team now blocks any change. Meanwhile the internal model is ahead of the API and new features cannot be exposed."
+  ],
+  "must_handle": [
+    "An existing integration keeps working through the change.",
+    "New work can use the better model right away.",
+    "You can see exactly who still uses an old field or version.",
+    "A partner gets clear notice, with a date and a way to test.",
+    "Internal changes do not leak out into the API by accident."
+  ],
+  "show_in_answer": [
+    "How versions are expressed, and where translation between them lives.",
+    "One example: the 'done' status, in old and new form.",
+    "How usage is measured, and how an old version actually gets retired.",
+    "How a partner tests against a new version."
+  ]
+}

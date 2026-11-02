@@ -10,7 +10,7 @@ is not named here (a streak, say) cannot reach a client by accident.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, StrictBool, StrictInt
 
@@ -55,15 +55,27 @@ class ContestSchema(BaseModel):
     url: str
 
 
+class PracticeDesignBlockSchema(BaseModel):
+    """The system design problem on a design day, as the Today card needs it."""
+
+    slug: str
+    title: str
+    minutes: int
+    topics: list[str]
+    has_answer: bool
+
+
 class PracticeTodaySchema(BaseModel):
-    """The day's question, whether it is done, and the links beside it."""
+    """The day's problem, whether it is done, and the links beside it."""
 
     day: str = Field(description="The IST calendar date, YYYY-MM-DD")
     catalogue: Literal["ok", "empty"]
     catalogue_size: int
     track: str
     track_label: str
+    kind: Literal["dsa", "design"] | None
     question: PracticeQuestionSchema | None
+    design: PracticeDesignBlockSchema | None
     reason: str
     relaxed: list[str]
     done_at: str | None
@@ -77,20 +89,24 @@ class PracticeTodaySchema(BaseModel):
 
 
 class HistoryDaySchema(BaseModel):
-    """One calendar cell. ``difficulty`` and ``topic`` are set only on a practised day."""
+    """One calendar cell. ``difficulty``, ``topic`` and ``kind`` are set only on a practised day;
+    ``contest`` is the day of a saved contest entry, whether or not the day was practised."""
 
     day: str
     done: bool
     difficulty: str | None
     topic: str | None
+    kind: Literal["dsa", "design"] | None
+    contest: bool
 
 
 class HistoryCountsSchema(BaseModel):
-    """Three neutral counts. There is deliberately no current streak."""
+    """Done days this month and in the last 30, and the longest and current runs."""
 
     this_month: int
     last_30: int
     longest_run: int
+    current_streak: int
 
 
 class TopicCountSchema(BaseModel):
@@ -98,10 +114,31 @@ class TopicCountSchema(BaseModel):
     count: int
 
 
+class HistorySolvedSchema(BaseModel):
+    """Distinct problems among done days. A design problem counts only under ``design``."""
+
+    easy: int
+    medium: int
+    hard: int
+    design: int
+    total: int
+
+
+class HistoryAvailableSchema(BaseModel):
+    """How many problems each list holds. ``None`` is a list that is not loaded."""
+
+    easy: int | None
+    medium: int | None
+    hard: int | None
+    design: int | None
+
+
 class PracticeHistorySchema(BaseModel):
     days: list[HistoryDaySchema]
     counts: HistoryCountsSchema
     topics: list[TopicCountSchema]
+    solved: HistorySolvedSchema
+    available: HistoryAvailableSchema
 
 
 # --------------------------------------------------------------------------- challenges
@@ -311,11 +348,17 @@ class OverallMeSchema(BaseModel):
 
 
 class OverallBoardSchema(BaseModel):
-    """Each person's best four totals over the last twelve editions."""
+    """Each person's best four totals over the last twelve editions, and where the viewer stands.
+
+    ``top_percent`` and ``distribution`` (counts in bands of 20 across 0-400, and no names) are
+    null until ten people are ranked."""
 
     window_challenges: int
     rows: list[OverallRowSchema]
     me: OverallMeSchema | None
+    total_ranked: int
+    top_percent: int | None
+    distribution: list[int] | None
 
 
 class SettingsRequestSchema(BaseModel):
@@ -351,3 +394,57 @@ class HeldAttemptSchema(BaseModel):
 
 class HeldAttemptsSchema(BaseModel):
     attempts: list[HeldAttemptSchema]
+
+
+class DesignProblemSchema(BaseModel):
+    """A system design problem, as the solve page shows it."""
+
+    slug: str
+    title: str
+    minutes: int
+    topics: list[str]
+    summary: str
+    context: list[str]
+    must_handle: list[str]
+    show_in_answer: list[str]
+
+
+class DesignAnswerSchema(BaseModel):
+    """A saved answer. ``elements`` is null once retention has cleared the drawing."""
+
+    elements: list[Any] | None
+    reasoning: str
+    saved_at: str
+
+
+class DesignFeedbackSchema(BaseModel):
+    scores: dict[str, int]
+    notes: dict[str, str]
+    work_on_next: str
+    total: int
+    at: str
+
+
+class DesignPageSchema(BaseModel):
+    """The solve page: the problem, and the one answer the URL means."""
+
+    problem: DesignProblemSchema
+    day: str | None
+    answer: DesignAnswerSchema | None
+    editable: bool
+    done: bool
+    last_answer_day: str | None
+    feedback: DesignFeedbackSchema | None
+    feedback_problem: str | None
+
+
+class DesignAnswerRequestSchema(BaseModel):
+    """Caps well above the service's limits, so the service's sentence is what a person reads."""
+
+    elements: list[Any] = Field(max_length=5_000)
+    reasoning: str = Field(max_length=40_000)
+
+
+class DesignSavedSchema(BaseModel):
+    day: str
+    saved_at: str

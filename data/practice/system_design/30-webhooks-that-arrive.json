@@ -1,0 +1,30 @@
+{
+  "slug": "webhooks-that-arrive",
+  "title": "Webhooks that merchants can rely on",
+  "tracks": [
+    "backend"
+  ],
+  "minutes": 30,
+  "topics": [
+    "queues",
+    "api-design"
+  ],
+  "summary": "Tell merchants' servers about payments reliably, even when those servers are slow or down.",
+  "context": [
+    "Jalebi Pay notifies 30,000 merchants by webhook when a payment succeeds. Many merchants' servers are slow or go down for hours. A slow merchant now holds up delivery to others, and merchants who miss a webhook do not ship the order.",
+    "A merchant must be able to confirm that a webhook really came from Jalebi Pay. Merchants' developers also need a way to see what was sent and why it failed."
+  ],
+  "must_handle": [
+    "A slow or dead merchant does not delay anyone else.",
+    "A failed delivery is retried over a sensible period, then stops.",
+    "A merchant can verify the sender and reject a replay.",
+    "A repeated or out-of-order delivery can be handled by the merchant.",
+    "A merchant can see and resend past deliveries."
+  ],
+  "show_in_answer": [
+    "How one event becomes delivery attempts.",
+    "How merchants are isolated from each other.",
+    "The payload and its headers, including how the signature works.",
+    "What the merchant's delivery log looks like."
+  ]
+}

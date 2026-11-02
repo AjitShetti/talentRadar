@@ -1,7 +1,8 @@
 """
 tests/test_practice_schema.py
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Practice's four tables (spec §5.1–5.4) and migration ``019_practice``.
+Practice's tables (spec §5.1–5.4, and section 7 of the redesign) and migrations
+``019_practice`` and ``021_practice_design``.
 
 * The ORM metadata is checked against the spec: columns, nullability, types,
   uniques and indexes. Every child foreign-key column must be led by an index,
@@ -28,7 +29,7 @@ from typing import Any
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import PrimaryKeyConstraint, UniqueConstraint, delete, event, func, select
+from sqlalchemy import PrimaryKeyConstraint, UniqueConstraint, delete, event, func, insert, select
 from sqlalchemy.dialects.postgresql.base import PGDialect
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -40,15 +41,17 @@ from storage.models import (
     PracticeAttempt,
     PracticeChallenge,
     PracticeDay,
+    PracticeDesignAnswer,
     PracticeSettings,
     StringArray,
     User,
 )
 
-PRACTICE_TABLES = ("practice_days", "practice_challenges", "practice_attempts", "practice_settings")
-MIGRATION_PATH = (
-    Path(__file__).resolve().parents[1] / "storage" / "migrations" / "versions" / "019_practice.py"
-)
+TABLES_OF_019 = ("practice_days", "practice_challenges", "practice_attempts", "practice_settings")
+PRACTICE_TABLES = (*TABLES_OF_019, "practice_design_answers")
+VERSIONS = Path(__file__).resolve().parents[1] / "storage" / "migrations" / "versions"
+MIGRATION_PATH = VERSIONS / "019_practice.py"
+MIGRATION_021_PATH = VERSIONS / "021_practice_design.py"
 TSTZ = "TIMESTAMP WITH TIME ZONE"
 
 # ---------------------------------------------------------------------------
@@ -67,6 +70,7 @@ EXPECTED_COLUMNS: dict[str, tuple[str, ...]] = {
         "done_at",
         "feel",
         "created_at",
+        "kind",
     ),
     "practice_challenges": (
         "id",
@@ -119,6 +123,24 @@ EXPECTED_COLUMNS: dict[str, tuple[str, ...]] = {
         "contest_reminder",
         "updated_at",
     ),
+    "practice_design_answers": (
+        "id",
+        "user_id",
+        "day",
+        "question_slug",
+        "scene",
+        "reasoning",
+        "submitted_at",
+        "scores",
+        "notes",
+        "total",
+        "input_hash",
+        "model",
+        "prompt_version",
+        "feedback_at",
+        "created_at",
+        "updated_at",
+    ),
 }
 
 # Nullable columns. A "started" attempt exists before any repo or write-up is
@@ -152,6 +174,20 @@ NULLABLE: dict[str, frozenset[str]] = {
         }
     ),
     "practice_settings": frozenset({"display_name"}),
+    "practice_design_answers": frozenset(
+        {
+            "scene",
+            "reasoning",
+            "submitted_at",
+            "scores",
+            "notes",
+            "total",
+            "input_hash",
+            "model",
+            "prompt_version",
+            "feedback_at",
+        }
+    ),
 }
 
 EXPECTED_TYPES: dict[str, dict[str, str]] = {
@@ -166,6 +202,7 @@ EXPECTED_TYPES: dict[str, dict[str, str]] = {
         "done_at": TSTZ,
         "feel": "VARCHAR(8)",
         "created_at": TSTZ,
+        "kind": "VARCHAR(8)",
     },
     "practice_challenges": {
         "id": "UUID",
@@ -218,6 +255,24 @@ EXPECTED_TYPES: dict[str, dict[str, str]] = {
         "contest_reminder": "BOOLEAN",
         "updated_at": TSTZ,
     },
+    "practice_design_answers": {
+        "id": "UUID",
+        "user_id": "UUID",
+        "day": "DATE",
+        "question_slug": "VARCHAR(128)",
+        "scene": "JSONB",
+        "reasoning": "TEXT",
+        "submitted_at": TSTZ,
+        "scores": "JSONB",
+        "notes": "JSONB",
+        "total": "SMALLINT",
+        "input_hash": "CHAR(64)",
+        "model": "VARCHAR(64)",
+        "prompt_version": "VARCHAR(32)",
+        "feedback_at": TSTZ,
+        "created_at": TSTZ,
+        "updated_at": TSTZ,
+    },
 }
 
 EXPECTED_UNIQUES: dict[str, dict[str, tuple[str, ...]]] = {
@@ -228,6 +283,9 @@ EXPECTED_UNIQUES: dict[str, dict[str, tuple[str, ...]]] = {
         "uq_practice_attempts_proof_code": ("proof_code",),
     },
     "practice_settings": {},
+    "practice_design_answers": {
+        "uq_practice_design_answers": ("user_id", "day", "question_slug"),
+    },
 }
 
 EXPECTED_INDEXES: dict[str, dict[str, tuple[str, ...]]] = {
@@ -238,6 +296,7 @@ EXPECTED_INDEXES: dict[str, dict[str, tuple[str, ...]]] = {
         "ix_practice_attempts_due": ("status", "next_judge_at"),
     },
     "practice_settings": {},
+    "practice_design_answers": {},
 }
 
 MODELS = {
@@ -245,6 +304,7 @@ MODELS = {
     "practice_challenges": PracticeChallenge,
     "practice_attempts": PracticeAttempt,
     "practice_settings": PracticeSettings,
+    "practice_design_answers": PracticeDesignAnswer,
 }
 
 
@@ -327,7 +387,12 @@ def test_an_opening_is_unique_so_two_runs_cannot_make_two_editions() -> None:
 
 def test_primary_keys_are_the_spec_keys() -> None:
     assert tuple(column.name for column in _table("practice_settings").primary_key) == ("user_id",)
-    for table in ("practice_days", "practice_challenges", "practice_attempts"):
+    for table in (
+        "practice_days",
+        "practice_challenges",
+        "practice_attempts",
+        "practice_design_answers",
+    ):
         assert tuple(column.name for column in _table(table).primary_key) == ("id",)
 
 
@@ -405,7 +470,7 @@ def test_migration_touches_only_practice_tables() -> None:
     named = set(_TABLE_STATEMENT.findall(source)) | set(_INDEX_ON_TABLE.findall(source))
     assert named, "the migration should name the practice tables"
     assert all(name.startswith("practice_") for name in named)
-    assert named == set(PRACTICE_TABLES)
+    assert named == set(TABLES_OF_019)
 
 
 def test_every_create_and_drop_in_the_migration_is_idempotent() -> None:
@@ -423,7 +488,7 @@ def test_upgrade_creates_the_parent_challenges_table_first(migration: ModuleType
         r"CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)", inspect.getsource(migration.upgrade)
     )
     assert created.index("practice_challenges") < created.index("practice_attempts")
-    assert set(created) == set(PRACTICE_TABLES)
+    assert set(created) == set(TABLES_OF_019)
 
 
 def test_upgrade_makes_the_opening_unique(
@@ -450,7 +515,53 @@ def test_downgrade_drops_the_child_attempts_table_first(migration: ModuleType) -
         r"DROP\s+TABLE\s+IF\s+EXISTS\s+(\w+)", inspect.getsource(migration.downgrade)
     )
     assert dropped.index("practice_attempts") < dropped.index("practice_challenges")
-    assert set(dropped) == set(PRACTICE_TABLES)
+    assert set(dropped) == set(TABLES_OF_019)
+
+
+# ---------------------------------------------------------------------------
+# Migration 021_practice_design
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def migration_021() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("practice_migration_021", MIGRATION_021_PATH)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_021_points_at_020(migration_021: ModuleType) -> None:
+    assert migration_021.revision == "021_practice_design"
+    assert migration_021.down_revision == "020_outreach_pack"
+
+
+def test_021_touches_only_the_new_table_and_the_kind_column() -> None:
+    source = MIGRATION_021_PATH.read_text(encoding="utf-8")
+    assert set(_TABLE_STATEMENT.findall(source)) == {"practice_days", "practice_design_answers"}
+    assert "ADD COLUMN IF NOT EXISTS kind VARCHAR(8) NOT NULL DEFAULT 'dsa'" in source
+
+
+def test_021_is_idempotent() -> None:
+    source = MIGRATION_021_PATH.read_text(encoding="utf-8")
+    assert not re.findall(r"\bCREATE\s+TABLE\s+(?!IF\s+NOT\s+EXISTS)", source, re.IGNORECASE)
+    assert not re.findall(r"\bDROP\s+TABLE\s+(?!IF\s+EXISTS)", source, re.IGNORECASE)
+    assert not re.findall(r"\bADD\s+COLUMN\s+(?!IF\s+NOT\s+EXISTS)", source, re.IGNORECASE)
+    assert not re.findall(r"\bDROP\s+COLUMN\s+(?!IF\s+EXISTS)", source, re.IGNORECASE)
+
+
+def test_021_downgrade_drops_what_it_added(
+    migration_021: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    statements: list[str] = []
+    monkeypatch.setattr(migration_021.op, "execute", lambda sql: statements.append(str(sql)))
+
+    migration_021.downgrade()
+
+    joined = " ".join(statements)
+    assert "DROP TABLE IF EXISTS practice_design_answers" in joined
+    assert "DROP COLUMN IF EXISTS kind" in joined
 
 
 # ---------------------------------------------------------------------------
@@ -612,3 +723,50 @@ async def test_a_proof_code_belongs_to_one_attempt(session: AsyncSession) -> Non
     session.add(_attempt(asha, challenge.id, "SAMEPROOF1"))
     with pytest.raises(IntegrityError):
         await session.flush()
+
+
+def _answer(user_id: uuid.UUID, slug: str = "bus-tracker") -> PracticeDesignAnswer:
+    return PracticeDesignAnswer(user_id=user_id, day=date(2026, 11, 3), question_slug=slug)
+
+
+async def test_existing_rows_read_as_dsa(session: AsyncSession) -> None:
+    ravi = await _add_user(session, "ravi")
+    await session.execute(
+        insert(PracticeDay).values(
+            user_id=ravi,
+            day=date(2026, 10, 16),
+            question_slug="course-schedule",
+            topic="graph",
+            difficulty="medium",
+        )
+    )
+    await session.commit()
+    assert (await session.execute(select(PracticeDay.kind))).scalar_one() == "dsa"
+
+
+async def test_one_answer_per_user_day_and_slug(session: AsyncSession) -> None:
+    ravi = await _add_user(session, "ravi")
+    session.add(_answer(ravi))
+    await session.flush()
+    session.add(_answer(ravi))
+    with pytest.raises(IntegrityError):
+        await session.flush()
+
+
+async def test_an_answer_swapped_away_keeps_its_row_beside_the_new_one(
+    session: AsyncSession,
+) -> None:
+    ravi = await _add_user(session, "ravi")
+    session.add(_answer(ravi))
+    session.add(_answer(ravi, slug="other"))
+    await session.flush()
+    assert await _count(session, PracticeDesignAnswer) == 2
+
+
+async def test_deleting_a_user_removes_their_answers(session: AsyncSession) -> None:
+    ravi = await _add_user(session, "ravi")
+    session.add(_answer(ravi))
+    await session.commit()
+    await session.execute(delete(User).where(User.id == ravi))
+    await session.commit()
+    assert await _count(session, PracticeDesignAnswer) == 0

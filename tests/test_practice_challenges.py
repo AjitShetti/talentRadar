@@ -40,7 +40,7 @@ from domain.practice_repo import CommitLine, Push, RepoRef, TreeEntry
 from domain.practice_schedule import GRACE, last_start
 from services import cache_backend
 from services.cache_backend import CacheBackend
-from services.practice import challenges, github_reader
+from services.practice import challenges, design, github_reader
 from services.practice.errors import (
     PracticeConflict,
     PracticeInvalid,
@@ -168,12 +168,19 @@ async def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[D
 
     tables = [
         Base.metadata.tables[name]
-        for name in ("users", "practice_challenges", "practice_attempts", "practice_days")
+        for name in (
+            "users",
+            "practice_challenges",
+            "practice_attempts",
+            "practice_days",
+            "practice_design_answers",
+        )
     ]
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all, tables=tables)
     factory = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
     monkeypatch.setattr(challenges, "AsyncSessionLocal", factory)
+    monkeypatch.setattr(design, "AsyncSessionLocal", factory)
     yield Db(engine=engine, factory=factory, path=path)
     await engine.dispose()
 
@@ -2101,6 +2108,31 @@ class TestPrune:
 
         assert len(await editions_of(db)) == 1
 
+    async def test_prune_keeps_done_days_and_drops_undone_old_ones(
+        self, db: Db, asha: str
+    ) -> None:
+        today = datetime(2026, 10, 15, 6, 0, tzinfo=UTC).date()
+        async with db.factory() as session:
+            for slug, done_at in (("kept", NOW), ("dropped", None)):
+                session.add(
+                    PracticeDay(
+                        user_id=uuid.UUID(asha),
+                        day=today - timedelta(days=900) + timedelta(days=len(slug)),
+                        question_slug=slug,
+                        topic="array",
+                        difficulty="easy",
+                        done_at=done_at,
+                    )
+                )
+            await session.commit()
+
+        counts = await challenges.prune(now=NOW)
+
+        assert counts["pruned_days"] == 1
+        async with db.factory() as session:
+            left = (await session.execute(select(PracticeDay.question_slug))).scalars().all()
+        assert left == ["kept"]
+
     async def test_a_practice_day_401_days_old_is_deleted_and_one_400_days_old_stays(
         self, db: Db, asha: str
     ) -> None:
@@ -2149,7 +2181,11 @@ class TestPrune:
         assert counts["pruned_days"] == 1
 
     async def test_nothing_to_prune_is_all_zero(self, db: Db) -> None:
-        assert await challenges.prune(now=NOW) == {"pruned_days": 0, "pruned_attempts": 0}
+        assert await challenges.prune(now=NOW) == {
+            "pruned_days": 0,
+            "pruned_attempts": 0,
+            "pruned_answers": 0,
+        }
 
     async def test_a_failing_rule_is_skipped_and_the_others_still_run(
         self, db: Db, asha: str, edition: PracticeChallenge, monkeypatch: pytest.MonkeyPatch
@@ -2163,7 +2199,7 @@ class TestPrune:
 
         counts = await challenges.prune(now=DEADLINE_48 + timedelta(days=31))
 
-        assert counts == {"pruned_days": 0, "pruned_attempts": 1}
+        assert counts == {"pruned_days": 0, "pruned_attempts": 1, "pruned_answers": 0}
 
 
 # =========================================================================== github_reader
@@ -2928,3 +2964,17 @@ class TestRoutes:
 
         assert response.status_code == 422
         assert response.json()["detail"] == "Said for the person."
+
+
+def test_what_a_person_reads_says_contest() -> None:
+    """On the Practice pages a weekly take-home is a contest, never a build."""
+    for message in (
+        challenges._NO_CONTEST,
+        challenges._STARTED_ALREADY,
+        challenges._TOO_LATE,
+        challenges._NOT_STARTED,
+        challenges._CLOSED,
+        challenges._TRY_AGAIN,
+    ):
+        assert "contest" in message
+        assert "build" not in message.lower()

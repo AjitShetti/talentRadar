@@ -661,10 +661,14 @@ def other_sources_quiet(monkeypatch: pytest.MonkeyPatch) -> None:
     async def no_interview(user_id: str, applied: int) -> None:
         return None
 
+    async def no_suggestion(user_id: str, *, now: datetime | None = None) -> None:
+        return None
+
     monkeypatch.setattr(copilot, "recommend_next_action", next_action)
     monkeypatch.setattr(copilot, "_scheduled_interview_cards", none_yet)
     monkeypatch.setattr(copilot, "_application_cards", none_yet)
     monkeypatch.setattr(copilot, "_interview_card", no_interview)
+    monkeypatch.setattr(copilot, "_practice_suggestion_card", no_suggestion)
     monkeypatch.setattr(copilot, "_now", lambda: NOW)
 
 

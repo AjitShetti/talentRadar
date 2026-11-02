@@ -1,0 +1,30 @@
+{
+  "slug": "live-sales-tile",
+  "title": "A live sales tile on a shop owner's dashboard",
+  "tracks": [
+    "frontend"
+  ],
+  "minutes": 20,
+  "topics": [
+    "realtime",
+    "caching"
+  ],
+  "summary": "Show today's sales updating on a dashboard without the page hammering the server or lying.",
+  "context": [
+    "Kadlekai Kart's web dashboard shows shop owners today's sales, top items and low stock. Owners leave it open on a counter computer all day, and 15,000 of them may be connected in the evening.",
+    "It polls every five seconds for every tile, which accounts for a third of all server traffic, yet owners still say the figure disagrees with the sales list. Connections sometimes drop for hours and return."
+  ],
+  "must_handle": [
+    "A sale appears on the tile within about ten seconds.",
+    "A background tab stops costing the server anything.",
+    "The tile and the list below it do not contradict each other.",
+    "After a long drop the page recovers by itself.",
+    "A tile that is out of date looks out of date."
+  ],
+  "show_in_answer": [
+    "Which data each tile needs, and how fresh it must be.",
+    "How updates get to the browser, and why that way.",
+    "How the client state is kept together, so that the tile and the list agree.",
+    "What each failure looks like to the owner."
+  ]
+}

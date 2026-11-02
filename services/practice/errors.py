@@ -24,6 +24,6 @@ class PracticeNotFound(Exception):  # noqa: N818 - names the condition, as RateL
 class PracticeRateLimited(PracticeConflict):
     """Too many saves this minute. A conflict to any caller that only knows conflicts.
 
-    Only ``challenges.save_submission`` raises it. The router answers it with 429 and a
+    ``challenges.save_submission`` and ``design.save_answer`` raise it. The router answers it with 429 and a
     ``Retry-After`` header, where every other ``PracticeConflict`` is a 409.
     """
