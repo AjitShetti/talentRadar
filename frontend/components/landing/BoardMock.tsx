@@ -1,264 +1,180 @@
-import { FileCheck2, Github, Quote } from 'lucide-react'
-import FlapText from '@/components/FlapText'
+import Reveal from './Reveal'
 
 /**
- * Composed illustrations of the real surfaces, built from the same tokens and
- * row vocabulary as the app itself — not screenshots.
+ * Composed illustrations of the real surfaces, on their own paper — not
+ * screenshots.
  *
  * Deliberately composed rather than captured: a screenshot of the builder's
  * own workspace would leak real applications and contacts, and would rot the
- * moment a surface changed. Every board below is labelled as an example so a
+ * moment a surface changed. Every card below is labelled as an example so a
  * visitor never reads sample figures as a claim about real usage.
  */
 
-function Chrome({ label }: { label: string }) {
+function HeroCard({ position, tone = '', label, note, children }: {
+  position: 'left' | 'center' | 'right'
+  tone?: '' | 'is-warm' | 'is-night'
+  label: string
+  note: string
+  children: React.ReactNode
+}) {
+  // The card is focusable so a keyboard or a tap reaches what a hover reveals.
+  // The outer box stays put and only the inner one rises, so the pointer never
+  // falls off a card that has moved out from under it.
   return (
-    <div className="lp-mock-chrome">
-      <div className="lp-mock-dots" aria-hidden="true"><i /><i /><i /></div>
-      <span className="lp-mock-tag">{label}</span>
+    <article className={`lp-fcard is-${position}`} tabIndex={0} aria-label={`${label}, example`}>
+      <div className="lp-fcard-lift">
+        <p className="lp-fcard-tag">
+          <i aria-hidden="true" />
+          {/* Too narrow for the side cards' own tags: the one in front speaks for all three. */}
+          {position === 'center' && <span className="lp-fcard-tag-all">All three are examples</span>}
+          <span className={position === 'center' ? 'lp-fcard-tag-one' : undefined}>{label} · example</span>
+        </p>
+        <div className="lp-fcard-frame">
+          <div className={`lp-fcard-core ${tone}`.trim()}>
+            {children}
+            <p className="lp-fcard-note">{note}</p>
+          </div>
+        </div>
+      </div>
+    </article>
+  )
+}
+
+function HeroCardHead({ title, chip }: { title: string; chip: string }) {
+  return (
+    <div className="lp-fc-head">
+      <span className="lp-fc-title">{title}</span>
+      <span className="lp-fc-chip">{chip}</span>
     </div>
   )
 }
 
-/** The hero board: the Overview surface, reduced to its ledger and top rows. */
-export function HeroBoard() {
+function HeroCardRow({ mark, title, meta, chip, azure = false }: {
+  mark?: string
+  title: string
+  meta: string
+  chip?: string
+  azure?: boolean
+}) {
   return (
-    <div className="lp-bezel">
-      <div className="lp-bezel-core lp-mock">
-        <Chrome label="Example board · sample data" />
-        <div className="lp-mock-body">
-          <div className="lp-mock-counters">
-            <div className="lp-mock-counter">
-              <span>Matched</span>
-              <strong><FlapText value={42} /></strong>
-            </div>
-            <div className="lp-mock-counter">
-              <span>In flight</span>
-              <strong><FlapText value={11} /></strong>
-            </div>
-            <div className="lp-mock-counter is-lit">
-              <span>Needs you</span>
-              <strong><FlapText value={3} /></strong>
-            </div>
-            <div className="lp-mock-counter">
-              <span>Last score</span>
-              <strong><FlapText value={74} /></strong>
-            </div>
-          </div>
-
-          <div className="lp-mock-row">
-            <i className="lp-mock-lamp" aria-hidden="true" />
-            <div className="lp-mock-row-main">
-              <div>
-                <span className="lp-mock-kind">Do this first</span>
-                <span className="lp-mock-head">Follow up with Razorpay</span>
-              </div>
-              <p className="lp-mock-sub">Screening call was 9 days ago and the thread has gone quiet. A short nudge today is the highest-value thing on the board.</p>
-            </div>
-            <span className="lp-mock-time">09:12</span>
-          </div>
-
-          <div className="lp-mock-row">
-            <i className="lp-mock-lamp tone-warn" aria-hidden="true" />
-            <div className="lp-mock-row-main">
-              <div>
-                <span className="lp-mock-kind tone-warn">Going cold</span>
-                <span className="lp-mock-head">2 applications past 14 days</span>
-              </div>
-              <p className="lp-mock-sub">Zerodha and Postman have had no movement since you applied.</p>
-            </div>
-            <span className="lp-mock-time">09:12</span>
-          </div>
-
-          <div className="lp-mock-row">
-            <i className="lp-mock-lamp tone-good" aria-hidden="true" />
-            <div className="lp-mock-row-main">
-              <div>
-                <span className="lp-mock-kind tone-good">Momentum</span>
-                <span className="lp-mock-head">System design is up 8 points</span>
-              </div>
-              <p className="lp-mock-sub">Your weakest track is still behavioural — one session would even it out.</p>
-            </div>
-            <span className="lp-mock-time">08:40</span>
-          </div>
-        </div>
-      </div>
+    <div className="lp-fc-row">
+      {mark && <span className="lp-fc-mark" aria-hidden="true">{mark}</span>}
+      <span className="lp-fc-main">
+        <strong>{title}</strong>
+        <span>{meta}</span>
+      </span>
+      {chip && <span className={`lp-fc-chip ${azure ? 'is-azure' : ''}`.trim()}>{chip}</span>}
     </div>
   )
 }
 
-export function SearchMock() {
-  const rows = [
-    { mark: 'RP', title: 'Senior Backend Engineer', meta: 'Bengaluru · Hybrid · ₹38–52L', score: '94' },
-    { mark: 'ZR', title: 'Platform Engineer, Payments', meta: 'Remote (India) · ₹32–46L', score: '88' },
-    { mark: 'PM', title: 'Staff Engineer, Infrastructure', meta: 'Pune · On-site · ₹45–60L', score: '81' },
-  ]
+/**
+ * The hero's three cards, one surface each, running on past the first screen
+ * until a hover or focus pops one up whole inside it.
+ */
+export function HeroCards() {
   return (
-    <div className="lp-bezel lp-bezel-sm">
-      <div className="lp-bezel-core">
-        <Chrome label="Find roles · example" />
-        <div className="lp-mini">
-          {rows.map(row => (
-            <div className="lp-mini-row" key={row.title}>
-              <span className="lp-mini-mark" aria-hidden="true">{row.mark}</span>
-              <span className="lp-mini-main">
-                <strong>{row.title}</strong>
-                <span>{row.meta}</span>
-              </span>
-              <span className="lp-mini-pill">{row.score}% fit</span>
-            </div>
-          ))}
+    <div className="lp-fcards">
+      <HeroCard position="left" label="Apply" note="See whether a role is still listed before you apply.">
+        <HeroCardHead title="Roles worth applying to" chip="Re-checked" />
+        <HeroCardRow mark="RP" title="Senior Backend Engineer" meta="Razorpay · still listed · Bengaluru" chip="94% fit" azure />
+        <HeroCardRow mark="ZR" title="Platform Engineer, Payments" meta="Zerodha · still listed · Remote" chip="88% fit" azure />
+        <HeroCardRow mark="PM" title="Staff Engineer, Infrastructure" meta="Postman · still listed · Bengaluru" chip="81% fit" azure />
+        <HeroCardRow mark="NL" title="Backend Engineer II" meta="Northstar Labs · re-listed twice · Chennai" chip="Re-listed" />
+      </HeroCard>
+
+      <HeroCard position="center" tone="is-warm" label="Connect" note="Up to five companies a day, with each message drafted for you.">
+        <HeroCardHead title="Today’s outreach" chip="2 of 5 done" />
+        <HeroCardRow mark="RP" title="Razorpay" meta="Engineering Manager · Founder" chip="Ready" azure />
+        <div className="lp-fc-actions" aria-hidden="true">
+          <span className="lp-fc-act">Copy</span>
+          <span className="lp-fc-act is-line">I sent it</span>
         </div>
-      </div>
+        <HeroCardRow mark="PM" title="Postman" meta="Staff Engineer · Careers inbox" chip="Ready" azure />
+        <HeroCardRow mark="ZR" title="Zerodha" meta="First follow-up is due today" chip="Follow up" azure />
+        <HeroCardRow mark="GR" title="Groww" meta="Met at a Bengaluru meetup" chip="Start a thread" />
+      </HeroCard>
+
+      <HeroCard position="right" tone="is-night" label="Practice" note="A question a day, mock interviews, and a ranked take-home every week.">
+        <HeroCardHead title="Mock interview score" chip="Last 7 sessions" />
+        <div className="lp-fc-score"><b>74</b><span className="lp-fc-chip">Up 22 points</span></div>
+        <svg className="lp-fc-chart" viewBox="0 0 320 104" role="img" aria-label="Example chart: interview score rising from 52 to 74 over seven sessions">
+          <defs>
+            <linearGradient id="lp-fc-fade" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopOpacity=".42" />
+              <stop offset="1" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <line className="lp-fc-grid" x1="22" x2="320" y1="34" y2="34" />
+          <line className="lp-fc-grid" x1="22" x2="320" y1="74" y2="74" />
+          <text x="0" y="37">75</text>
+          <text x="0" y="77">50</text>
+          <path d="M28 70.8 75 61.2 123 66 170 53.2 217 48.4 265 40.4 312 35.6V100H28Z" fill="url(#lp-fc-fade)" />
+          <path className="lp-fc-line" d="M28 70.8 75 61.2 123 66 170 53.2 217 48.4 265 40.4 312 35.6" />
+          <circle className="lp-fc-dot" cx="312" cy="35.6" r="4.5" />
+        </svg>
+        <HeroCardRow title="Longest Substring Without Repeating Characters" meta="Today’s question · Medium · Sliding window" />
+        <HeroCardRow title="Last week’s take-home" meta="Rank 12 on the leaderboard" chip="72.0" azure />
+      </HeroCard>
     </div>
   )
 }
 
-export function PipelineMock() {
-  const stages = [
-    { label: 'Saved', count: '14', on: false },
-    { label: 'Applied', count: '9', on: false },
-    { label: 'Screening', count: '4', on: true },
-    { label: 'Interview', count: '2', on: false },
-    { label: 'Offer', count: '0', on: false },
-  ]
+function ValueTile({ title, line, tone = '', delay = 0, children }: {
+  title: string
+  line: string
+  tone?: '' | 'is-warm' | 'is-night'
+  delay?: number
+  children: React.ReactNode
+}) {
   return (
-    <div className="lp-bezel lp-bezel-sm">
-      <div className="lp-bezel-core">
-        <Chrome label="Applications · example" />
-        <div className="lp-mini">
-          <div className="lp-mini-stack">
-            {stages.map(stage => (
-              <div className={`lp-mini-stage ${stage.on ? 'is-on' : ''}`} key={stage.label}>
-                <i aria-hidden="true" />
-                <strong>{stage.label}</strong>
-                <em>{stage.count}</em>
-              </div>
-            ))}
-          </div>
+    <Reveal className="lp-value-cell" delay={delay}>
+      <article className="lp-value">
+        <h3>{title}</h3>
+        <p className="lp-value-line">{line}</p>
+        <p className="lp-fcard-tag"><i aria-hidden="true" />{title} · example</p>
+        <div className="lp-fcard-frame">
+          <div className={`lp-fcard-core ${tone}`.trim()}>{children}</div>
         </div>
-      </div>
-    </div>
+      </article>
+    </Reveal>
   )
 }
 
-export function InterviewMock() {
-  const dims = [
-    { label: 'Structure', score: 82, tone: '' },
-    { label: 'Depth', score: 76, tone: '' },
-    { label: 'Communication', score: 58, tone: 'tone-weak' },
-    { label: 'Trade-offs', score: 88, tone: 'tone-good' },
-  ]
+/** The headline's four verbs, one tile each, with sample cards the hero does not repeat. */
+export function ValueTiles() {
   return (
-    <div className="lp-bezel lp-bezel-sm">
-      <div className="lp-bezel-core">
-        <Chrome label="Interview Lab · example" />
-        <div className="lp-mini">
-          <div className="lp-mini-bars">
-            {dims.map(dim => (
-              <div key={dim.label}>
-                <div className="lp-mini-bar-head"><span>{dim.label}</span><b>{dim.score}</b></div>
-                <div className="lp-mini-track">
-                  <div className={`lp-mini-fill ${dim.tone}`} style={{ width: `${dim.score}%` }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
+    <div className="lp-values">
+      <ValueTile title="Apply" line="See which roles fit you, and whether they are still open.">
+        <HeroCardHead title="Senior Backend Engineer" chip="94% fit" />
+        <HeroCardRow mark="RP" title="Razorpay" meta="Bengaluru · Hybrid" chip="Still listed" azure />
+        <HeroCardRow title="Checked with the employer’s job board" meta="2 days ago" />
+        <HeroCardRow title="Skills to brush up" meta="Kafka, Kubernetes" />
+      </ValueTile>
 
-export function ResumeMock() {
-  return (
-    <div className="lp-bezel lp-bezel-sm">
-      <div className="lp-bezel-core">
-        <Chrome label="Resume Studio · example" />
-        <div className="lp-mini">
-          <div className="lp-mini-row">
-            <span className="lp-mini-mark" aria-hidden="true"><FileCheck2 size={13} strokeWidth={1.25} /></span>
-            <span className="lp-mini-main">
-              <strong>ATS fit against this posting</strong>
-              <span>Recompiled on every keystroke</span>
-            </span>
-            <span className="lp-mini-pill tone-good">86</span>
-          </div>
-          <div className="lp-mini-row">
-            <span className="lp-mini-mark" aria-hidden="true">1</span>
-            <span className="lp-mini-main">
-              <strong>Add &ldquo;Kafka&rdquo; to your platform bullet</strong>
-              <span>Named 4 times in the job description</span>
-            </span>
-            <span className="lp-mini-pill tone-flat">+6</span>
-          </div>
-          <div className="lp-mini-row">
-            <span className="lp-mini-mark" aria-hidden="true">2</span>
-            <span className="lp-mini-main">
-              <strong>Quantify the migration bullet</strong>
-              <span>No measurable outcome detected</span>
-            </span>
-            <span className="lp-mini-pill tone-flat">+4</span>
-          </div>
+      <ValueTile title="Connect" line="Up to five companies a day, with each message drafted for you." tone="is-warm" delay={80}>
+        <HeroCardHead title="Razorpay" chip="Ready" />
+        <HeroCardRow mark="EM" title="Engineering Manager" meta="Found on the company’s site" />
+        <p className="lp-fc-msg">Hi, I have built payment services in Go for four years and saw your team is hiring. Could I ask two questions about the role?</p>
+        <div className="lp-fc-actions" aria-hidden="true">
+          <span className="lp-fc-act">Copy</span>
+          <span className="lp-fc-act is-line">I sent it</span>
         </div>
-      </div>
-    </div>
-  )
-}
+      </ValueTile>
 
-export function IntelMock() {
-  return (
-    <div className="lp-bezel lp-bezel-sm">
-      <div className="lp-bezel-core">
-        <Chrome label="Company Intel · example" />
-        <div className="lp-mini">
-          <div className="lp-mini-row">
-            <span className="lp-mini-mark" aria-hidden="true"><Github size={13} strokeWidth={1.25} /></span>
-            <span className="lp-mini-main">
-              <strong>Public repositories</strong>
-              <span>Go, TypeScript, Kubernetes</span>
-            </span>
-            <span className="lp-mini-pill tone-flat">142</span>
-          </div>
-          <div className="lp-mini-row">
-            <span className="lp-mini-mark" aria-hidden="true">JD</span>
-            <span className="lp-mini-main">
-              <strong>Engineering Manager</strong>
-              <span>Published on the company blog</span>
-            </span>
-            <span className="lp-mini-pill tone-good">Verified</span>
-          </div>
-          <div className="lp-mini-row">
-            <span className="lp-mini-mark" aria-hidden="true">AK</span>
-            <span className="lp-mini-main">
-              <strong>Staff Engineer</strong>
-              <span>Added by you · no email on file</span>
-            </span>
-            <span className="lp-mini-pill tone-flat">Unverified</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
+      <ValueTile title="Practice" line="One question a day, and mock interviews that track your score." tone="is-night">
+        <HeroCardHead title="Today’s question" chip="Medium" />
+        <HeroCardRow title="Longest Substring Without Repeating Characters" meta="Sliding window · picked for your gaps" />
+        <p className="lp-fc-score-label">Mock interview score</p>
+        <div className="lp-fc-score"><b>74</b><span className="lp-fc-chip">Up 22 points</span></div>
+      </ValueTile>
 
-export function CopilotMock() {
-  return (
-    <div className="lp-bezel lp-bezel-sm">
-      <div className="lp-bezel-core">
-        <Chrome label="Career Copilot · example" />
-        <div className="lp-mini">
-          <div className="lp-mini-chat">
-            <div className="lp-mini-ask">Which of my applications should I chase this week?</div>
-            <div className="lp-mini-say">
-              Three are worth a nudge. Razorpay is 9 days past its screening call, and Zerodha and Postman
-              have had no movement since you applied on the 14th. Start with Razorpay — it is the only one
-              where someone has already spoken to you.
-              <span className="lp-mini-cite"><Quote size={10} strokeWidth={1.25} /> From your tracker · 3 records</span>
-            </div>
-          </div>
-        </div>
-      </div>
+      <ValueTile title="Compete" line="A take-home every week, judged and ranked on a leaderboard." delay={80}>
+        <HeroCardHead title="This week’s take-home" chip="48h" />
+        <HeroCardRow mark="11" title="builder-7f3a" meta="Judged" chip="74.5" />
+        <HeroCardRow mark="12" title="You" meta="Judged" chip="72.0" azure />
+        <HeroCardRow mark="13" title="builder-c21e" meta="Judged" chip="70.0" />
+      </ValueTile>
     </div>
   )
 }

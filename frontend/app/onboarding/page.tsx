@@ -4,7 +4,6 @@ import { ChangeEvent, FormEvent, useState } from 'react'
 import Link from 'next/link'
 import BrandLockup from '@/components/BrandLockup'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, ArrowRight, BriefcaseBusiness, Check, Compass, Dumbbell, UploadCloud } from 'lucide-react'
 import RequireAuth from '@/components/RequireAuth'
 import Segmented from '@/components/Segmented'
 import { api } from '@/lib/api'
@@ -21,10 +20,10 @@ const STAGES: { value: Stage; label: string }[] = [
 ]
 
 /** Where each goal lands the user, and the sentence saved as their career goal. */
-const GOALS: { value: Goal; title: string; detail: string; icon: typeof Compass; href: string; sentence: string }[] = [
-  { value: 'apply', title: 'Land a job', detail: 'Openings, who to contact at each company, and a tracker for every application.', icon: BriefcaseBusiness, href: '/search', sentence: 'Land a job: find openings, reach the right people and track applications.' },
-  { value: 'prepare', title: 'Get interview-ready', detail: 'Mock interviews, one problem a day and a weekly contest.', icon: Dumbbell, href: '/practice', sentence: 'Get interview-ready: mock interviews, daily practice and a weekly contest.' },
-  { value: 'both', title: 'Both', detail: 'Start from a day plan that mixes applying and practice.', icon: Compass, href: '/dashboard', sentence: 'Land a job and get interview-ready at the same time.' },
+const GOALS: { value: Goal; title: string; detail: string; href: string; sentence: string }[] = [
+  { value: 'apply', title: 'Land a job', detail: 'Openings, who to contact at each company, and a tracker for every application.', href: '/search', sentence: 'Land a job: find openings, reach the right people and track applications.' },
+  { value: 'prepare', title: 'Get interview-ready', detail: 'Mock interviews, one problem a day and a weekly contest.', href: '/practice', sentence: 'Get interview-ready: mock interviews, daily practice and a weekly contest.' },
+  { value: 'both', title: 'Both', detail: 'Start from a day plan that mixes applying and practice.', href: '/dashboard', sentence: 'Land a job and get interview-ready at the same time.' },
 ]
 
 const STEPS = ['You', 'Your goal', 'Your target'] as const
@@ -116,7 +115,7 @@ export default function OnboardingPage() {
         <span className="brand"><BrandLockup /></span>
         <ol className="onb-steps" aria-label="Progress">
           {STEPS.map((label, i) => <li key={label} data-state={i < step ? 'done' : i === step ? 'now' : undefined} aria-current={i === step ? 'step' : undefined}>
-            <span>{i < step ? <Check size={11} strokeWidth={3} /> : i + 1}</span>{label}
+            <span>{i + 1}</span>{label}
           </li>)}
         </ol>
       </header>
@@ -144,12 +143,10 @@ export default function OnboardingPage() {
             <p className="onb-lead">We&apos;ll take you straight to it. Everything else stays one tap away.</p>
             <div className="onb-goals" role="radiogroup" aria-label="What brings you here?">
               {GOALS.map(option => {
-                const Icon = option.icon
                 const on = goal === option.value
                 return <button type="button" role="radio" aria-checked={on} key={option.value} className="onb-goal" data-on={on ? 'true' : undefined} onClick={() => setGoal(option.value)}>
-                  <span className="onb-goal-icon"><Icon size={20} strokeWidth={1.8} /></span>
                   <span className="onb-goal-text"><strong>{option.title}</strong><small>{option.detail}</small></span>
-                  <span className="onb-goal-check" aria-hidden="true"><Check size={13} strokeWidth={3} /></span>
+                  <span className="onb-goal-check" aria-hidden="true" />
                 </button>
               })}
             </div>
@@ -169,7 +166,6 @@ export default function OnboardingPage() {
               <span>Your resume <small>Optional · we read it against your target role</small></span>
               <div className="onb-upload">
                 <label htmlFor="onboarding-resume" className="outline-button">
-                  {resumeName ? <Check size={15} /> : <UploadCloud size={15} />}
                   {extracting ? 'Reading file…' : resumeName ? resumeName : 'Upload PDF or DOCX'}
                 </label>
                 <input id="onboarding-resume" type="file" accept=".pdf,.docx,.txt" className="file-input" onChange={handleResume} />
@@ -182,10 +178,10 @@ export default function OnboardingPage() {
         {error && <p className="form-error" role="alert">{error}</p>}
         <div className="onb-actions">
           {step > 0
-            ? <button type="button" className="outline-button" onClick={() => { setError(''); setStep(step - 1) }}><ArrowLeft size={15} /> Back</button>
+            ? <button type="button" className="outline-button" onClick={() => { setError(''); setStep(step - 1) }}>Back</button>
             : <Link className="text-button onb-skip" href="/dashboard">Skip for now</Link>}
           <button type="submit" className="primary-button" disabled={saving} aria-disabled={!canNext[step] || undefined}>
-            {last ? (saving ? 'Setting up…' : 'Take me there') : 'Continue'} <ArrowRight size={15} />
+            {last ? (saving ? 'Setting up…' : 'Take me there') : 'Continue'}
           </button>
         </div>
       </form>

@@ -2,7 +2,6 @@
 
 import { FormEvent, ReactNode, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Loader2 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import ContestBoard from '@/components/practice/ContestBoard'
 import CopyButton from '@/components/CopyButton'
@@ -273,7 +272,7 @@ function ChallengeView({ slug }: { slug: string }) {
     }
   }
 
-  if (loading) return <div className="loading-state"><Loader2 className="spin" /> Loading the contest…</div>
+  if (loading) return <div className="loading-state">Loading the contest…</div>
   if (!challenge) return <>
     <p className="form-error" role="alert">{error || 'We could not find that contest.'}</p>
     <p className="pr-help"><Link href="/practice">← Back to Practice</Link></p>
@@ -306,14 +305,14 @@ function ChallengeView({ slug }: { slug: string }) {
   const appealUntil = result?.appeal.until ? dayTime(result.appeal.until) : ''
 
   return <>
-    <section className="page-heading split-heading">
-      <div>
-        <span className="board-kicker">Contest · {trackName(brief.track)} · {brief.hours} h</span>
-        <h1>{brief.title}<span>.</span></h1>
-        <p>{brief.summary}</p>
+    <header className="day-title">
+      <div className="day-head">
+        <h1 className="day-h1 day-h1-name">{brief.title}.</h1>
+        <span className="ov2-date">{strip.big} {strip.small}</span>
       </div>
-      <div className="tracker-total"><strong>{strip.big}</strong><span>{strip.small}</span></div>
-    </section>
+      <p className="ov2-lead">{brief.summary}</p>
+      <p className="day-note">Contest · {trackName(brief.track)}</p>
+    </header>
 
     <div className="pr-brief">
       <div className="pr-prose">

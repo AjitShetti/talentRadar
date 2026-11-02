@@ -1,7 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowUpRight } from 'lucide-react'
 import LivenessStamp from '@/components/LivenessStamp'
 import PublicShell from '@/components/public/PublicShell'
 import RoleViewBeacon from '@/components/public/RoleViewBeacon'
@@ -91,7 +90,7 @@ export default async function PublicRolePage({ params }: Props) {
             <p>Run a mock interview built from this posting, see how your resume lines up against what it asks for, and find out who you know at {role.company || 'the company'} before you apply.</p>
             <div className="pub-actions">
               <Link className="pub-cta" href={`/signup?next=${encodeURIComponent(`/roles/${role.id}`)}`}>Prepare for this role</Link>
-              {original && <a className="pub-link" href={original} {...EXTERNAL_LINK_PROPS}>View the original posting <ArrowUpRight size={13} /></a>}
+              {original && <a className="pub-link" href={original} {...EXTERNAL_LINK_PROPS}>View the original posting <span aria-hidden="true">↗</span></a>}
             </div>
           </>}
       </section>

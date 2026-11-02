@@ -2,13 +2,13 @@
 
 import Link from 'next/link'
 import BrandLockup from '@/components/BrandLockup'
+import DayLine from '@/components/DayLine'
 import ThemeSwitch from '@/components/ThemeSwitch'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { BriefcaseBusiness, ChevronDown, Dumbbell, FileText, Handshake, LogOut, Map as MapIcon, MessageSquare, Search, UserRound, type LucideIcon } from 'lucide-react'
 import { api, currentEmail, PROFILE_NAME_EVENT, signOut } from '@/lib/api'
 
-type NavLink = { label: string; href: string; icon: LucideIcon; blurb: string }
+type NavLink = { label: string; href: string; blurb: string }
 type NavEntry = { label: string; short?: string; href: string; items?: undefined } | { label: string; short?: string; href?: undefined; items: NavLink[] }
 
 /**
@@ -21,16 +21,16 @@ const NAV: NavEntry[] = [
   { label: 'Overview', href: '/dashboard' },
   {
     label: 'Job hunt', short: 'Jobs', items: [
-      { label: 'Find roles', href: '/search', icon: Search, blurb: 'Search live openings across the boards' },
-      { label: 'Applications', href: '/applications', icon: BriefcaseBusiness, blurb: 'Every role, from saved to offer' },
-      { label: 'Outreach', href: '/outreach', icon: Handshake, blurb: 'Who to reach, and when to follow up' },
-      { label: 'Companies', href: '/company-intel', icon: MapIcon, blurb: 'Bengaluru tech employers on a map' },
+      { label: 'Find roles', href: '/search', blurb: 'Search live openings across the boards' },
+      { label: 'Applications', href: '/applications', blurb: 'Every role, from saved to offer' },
+      { label: 'Outreach', href: '/outreach', blurb: 'Who to reach, and when to follow up' },
+      { label: 'Companies', href: '/company-intel', blurb: 'Bengaluru tech employers on a map' },
     ],
   },
   {
     label: 'Prep', items: [
-      { label: 'Practice', href: '/practice', icon: Dumbbell, blurb: 'One problem a day, a weekly contest' },
-      { label: 'Mock interviews', href: '/interview', icon: MessageSquare, blurb: 'Voice or typed, scored answer by answer' },
+      { label: 'Practice', href: '/practice', blurb: 'One problem a day, a weekly contest' },
+      { label: 'Mock interviews', href: '/interview', blurb: 'Voice or typed, scored answer by answer' },
     ],
   },
   { label: 'Events', href: '/events' },
@@ -109,6 +109,8 @@ export default function AppShell({ children, narrow = false, bleed = false }: { 
           : <Link className="small-link" href="/login">Sign in</Link>}
       </div>
     </header>
+    {/* The map fills the viewport under the nav, so the line stays off a bleed page. */}
+    {!bleed && <DayLine />}
     <main className="main-content"><div className={`page-wrap ${narrow ? 'page-wrap-narrow' : ''} ${bleed ? 'page-wrap-bleed' : ''}`}>{children}</div></main>
   </div>
 }
@@ -221,16 +223,12 @@ function NavBar({ current, openMenu, setOpenMenu }: { current: string | null; op
           }}
         >
           {entry.short ? <><span className="nav-label-long">{entry.label}</span><span className="nav-label-short">{entry.short}</span></> : entry.label}
-          <ChevronDown className="nav-chev" size={13} />
+          <i className="nav-chev caret" aria-hidden="true" />
         </button>
         <div className="nav-menu" id={menuId} data-open={open ? 'true' : undefined} onKeyDown={e => menuKeys(e, () => setOpenMenu(null))}>
-          {entry.items.map(item => {
-            const Icon = item.icon
-            return <Link className="nav-menu-item" key={item.href} href={item.href} tabIndex={open ? 0 : -1} data-active={item.href === current ? 'true' : undefined} aria-current={item.href === current ? 'page' : undefined}>
-              <span className="nav-menu-icon"><Icon size={17} strokeWidth={1.9} /></span>
-              <span><strong>{item.label}</strong><small>{item.blurb}</small></span>
-            </Link>
-          })}
+          {entry.items.map(item => <Link className="nav-menu-item" key={item.href} href={item.href} tabIndex={open ? 0 : -1} data-active={item.href === current ? 'true' : undefined} aria-current={item.href === current ? 'page' : undefined}>
+            <strong>{item.label}</strong><small>{item.blurb}</small>
+          </Link>)}
         </div>
       </div>
     })}
@@ -314,7 +312,7 @@ function UserMenu({ email, open, setOpen }: { email: string; open: boolean; setO
     >
       <span className="top-avatar" aria-hidden="true">{initials}</span>
       <span className="user-name">{display.split(' ')[0]}</span>
-      <ChevronDown size={14} />
+      <i className="caret" aria-hidden="true" />
     </button>
     <div className="user-panel" id="user-panel" role="menu" aria-label="Account" data-open={open ? 'true' : undefined} onKeyDown={e => menuKeys(e, () => setOpen(false))}>
       <div className="user-head">
@@ -325,10 +323,10 @@ function UserMenu({ email, open, setOpen }: { email: string; open: boolean; setO
       <div className="user-label">Appearance</div>
       <ThemeSwitch tabbable={open} />
       <hr className="user-sep" />
-      <button type="button" role="menuitem" tabIndex={open ? 0 : -1} className="user-item" onClick={() => go('/settings')}><span><UserRound size={15} />Profile &amp; goals</span></button>
-      <button type="button" role="menuitem" tabIndex={open ? 0 : -1} className="user-item" onClick={() => go('/resume-studio')}><span><FileText size={15} />Resume studio</span></button>
+      <button type="button" role="menuitem" tabIndex={open ? 0 : -1} className="user-item" onClick={() => go('/settings')}><span>Profile &amp; goals</span></button>
+      <button type="button" role="menuitem" tabIndex={open ? 0 : -1} className="user-item" onClick={() => go('/resume-studio')}><span>Resume studio</span></button>
       <hr className="user-sep" />
-      <button type="button" role="menuitem" tabIndex={open ? 0 : -1} className="user-item" data-danger="true" onClick={leave}><span><LogOut size={15} />Sign out</span></button>
+      <button type="button" role="menuitem" tabIndex={open ? 0 : -1} className="user-item" data-danger="true" onClick={leave}><span>Sign out</span></button>
     </div>
   </div>
 }

@@ -91,7 +91,7 @@ export function PackItemRow({ item, writing, onSent, onSkip, onWrite }: ItemProp
               <button type="button" className="primary-button" disabled={busy || !text.trim()} onClick={markSent}>I sent it</button>
               {isEmail && item.address
                 ? <a className="outline-button" href={mailtoHref(item.address.value, subject.trim() || null, text)}>Open in email</a>
-                : linkedin && <a className="outline-button" href={linkedin} {...EXTERNAL_LINK_PROPS}>Open LinkedIn</a>}
+                : linkedin && <a className="outline-button" href={linkedin} {...EXTERNAL_LINK_PROPS}>Open LinkedIn <span aria-hidden="true">↗</span></a>}
               <button type="button" className="outline-button" onClick={copy}>{copied === 'yes' ? 'Copied' : 'Copy'}</button>
               <button type="button" className="text-button" disabled={busy} onClick={() => onSkip(item)}>Skip</button>
             </div>

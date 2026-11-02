@@ -2,7 +2,6 @@
 
 import Link from 'next/link'
 import { FormEvent, useEffect, useRef, useState } from 'react'
-import { Bookmark, ChevronDown, ExternalLink, Globe, MapPin, RefreshCw, Search, SlidersHorizontal } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import FlapText from '@/components/FlapText'
 import LivenessStamp from '@/components/LivenessStamp'
@@ -132,21 +131,19 @@ export default function SearchPage() {
   }
 
   return <AppShell>
-    <section className="page-heading">
-      <div>
-        <span className="board-kicker">Opportunity explorer</span>
-        <h1>Find roles that fit your direction<span>.</span></h1>
-        <p>Every result is a role hiring in India — use natural language, then narrow by city and experience.</p>
+    <header className="day-title">
+      <div className="day-head">
+        <h1 className="day-h1">Find roles that fit your direction.</h1>
+        {jobs.length > 0 && <span className="ov2-date"><FlapText value={jobs.length} /> {jobs.length === 1 ? 'result' : 'results'}</span>}
       </div>
-      {jobs.length > 0 && <div className="tracker-total"><strong><FlapText value={jobs.length} /></strong><span>results on board</span></div>}
-    </section>
+      <p className="ov2-lead">Roles hiring in India. Describe what you want, then narrow by city and experience.</p>
+    </header>
     <form className="search-form" onSubmit={find}>
-      <Search size={20}/>
       <input ref={queryRef} value={query} onChange={e => setQuery(e.target.value)} placeholder="e.g. Senior product design roles in fintech" aria-label="Describe the role you want" required />
       <button type="submit" className="primary-button" disabled={loading}>{loading ? 'Searching…' : 'Search roles'}</button>
     </form>
     <div className="filter-bar">
-      <span className="filter-bar-label"><SlidersHorizontal size={13}/> Filters</span>
+      <span className="filter-bar-label">Filters</span>
       <label>Location
         <input list="india-cities" value={location} onChange={e => setLocation(e.target.value)} placeholder="All India" />
         <datalist id="india-cities">{INDIAN_CITIES.map(city => <option key={city} value={city} />)}</datalist>
@@ -167,7 +164,7 @@ export default function SearchPage() {
     {closedHidden > 0 && <p className="sourcing-note"><span className="sourcing-dot indexed" /> {closedHidden} {closedHidden === 1 ? 'role was' : 'roles were'} left out because the employer no longer lists {closedHidden === 1 ? 'it' : 'them'}.</p>}
     <div className="results-layout">
       <aside className="search-tips">
-        <div className="tips-head"><p className="eyebrow">Search better</p><button type="button" className="icon-refresh" title="Show different ideas" onClick={shuffleTips}><RefreshCw size={13}/></button></div>
+        <div className="tips-head"><p className="eyebrow">Search better</p><button type="button" className="icon-refresh" onClick={shuffleTips}>More ideas</button></div>
         <strong>Try asking for:</strong>
         {tips.map(tip => <button type="button" key={tip} onClick={() => { setQuery(tip); queryRef.current?.focus() }}>{tip}</button>)}
       </aside>
@@ -180,10 +177,10 @@ export default function SearchPage() {
           Scanning the Indian job market…
         </div>}
         {!loading && jobsReady && !jobs.length && (searched
-          ? <div className="empty-state"><Search size={25}/><h2>No roles found yet.</h2><p>{platforms.length
+          ? <div className="empty-state"><h2>No roles found yet.</h2><p>{platforms.length
             ? `Nothing matched on ${platforms.map(platformLabel).join(', ')} just now. Try adding more platforms, a broader title, or search again in a little while.`
             : 'Nothing matched across the index or the job boards just now. Try a broader title, drop a filter, or search again in a little while.'}</p></div>
-          : <div className="empty-state"><Search size={25}/><h2>Start with a conversation.</h2><p>Describe your ideal role, skills, or working style to see relevant opportunities across India.</p></div>)}
+          : <div className="empty-state"><h2>Start with a conversation.</h2><p>Describe your ideal role, skills, or working style to see relevant opportunities across India.</p></div>)}
         {jobs.map(job => <article className="job-card" key={job.id}>
           <div className="job-card-top">
             <div className="company-logo violet">{(job.company_name || job.company || '?').slice(0, 1)}</div>
@@ -191,10 +188,10 @@ export default function SearchPage() {
             {job.match_score != null && <span className="match-pill">{Math.round(job.match_score * (job.match_score <= 1 ? 100 : 1))}% match</span>}
           </div>
           <div className="job-meta">
-            <span><MapPin size={14}/>{job.location_raw || (job.is_remote ? 'Remote' : 'Location not listed')}</span>
+            <span>{job.location_raw || (job.is_remote ? 'Remote' : 'Location not listed')}</span>
             {job.is_remote && <span>Remote-friendly</span>}
             {job.salary_raw && <span>{job.salary_raw}</span>}
-            {platformLabel(job.platform) && <span><Globe size={14}/>via {platformLabel(job.platform)}</span>}
+            {platformLabel(job.platform) && <span>via {platformLabel(job.platform)}</span>}
           </div>
           <LivenessStamp liveness={job.liveness} />
           <div className="chips">{(job.skills || []).slice(0, 5).map(skill => <span key={skill}>{skill}</span>)}</div>
@@ -202,9 +199,9 @@ export default function SearchPage() {
             {isStoredRole(job.id) && <Link className="outline-button" href={`/roles/${job.id}`}>Open dossier</Link>}
             {/* The tracker needs the stored row; a role scraped a moment ago is still being written, and saving it answered "Invalid job_id". */}
             {isStoredRole(job.id)
-              ? <button type="button" className="outline-button" onClick={() => save(job)} disabled={saved.includes(job.id)}><Bookmark size={14}/>{saved.includes(job.id) ? 'Saved' : 'Save to tracker'}</button>
+              ? <button type="button" className="outline-button" onClick={() => save(job)} disabled={saved.includes(job.id)}>{saved.includes(job.id) ? 'Saved' : 'Save to tracker'}</button>
               : <span className="job-fresh-note">Just found · search again in a minute to save it</span>}
-            {externalHref(job.source_url) && <a className="text-button" href={externalHref(job.source_url)!} {...EXTERNAL_LINK_PROPS}>View original <ExternalLink size={14}/></a>}
+            {externalHref(job.source_url) && <a className="text-button" href={externalHref(job.source_url)!} {...EXTERNAL_LINK_PROPS}>View original <span aria-hidden="true">↗</span></a>}
           </div>
         </article>)}
       </section>
@@ -240,7 +237,7 @@ function PlatformPicker({ selected, onChange }: { selected: string[]; onChange: 
   return <div className="filter-field">
     <span id="platform-picker-label">Posted on</span>
     <details className="platform-picker" ref={ref}>
-      <summary aria-labelledby="platform-picker-label"><span>{summary}</span><ChevronDown size={13}/></summary>
+      <summary aria-labelledby="platform-picker-label"><span>{summary}</span><span className="caret" aria-hidden="true" /></summary>
       <div className="platform-menu" role="group" aria-label="Platforms">
         {JOB_PLATFORMS.map(platform => <label key={platform.key}>
           <input type="checkbox" checked={selected.includes(platform.key)} onChange={() => toggle(platform.key)} />

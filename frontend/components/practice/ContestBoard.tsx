@@ -2,7 +2,6 @@
 
 import { Fragment, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Loader2 } from 'lucide-react'
 import FlapText from '@/components/FlapText'
 import { api, ApiError, BoardRow, ChallengeBoard, OverallBoard } from '@/lib/api'
 import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
@@ -119,7 +118,7 @@ export default function ContestBoard({ slug = null, tabs = false, heading, noWee
     {ready?.error && <p className="form-error" role="alert">{ready.error}</p>}
 
     {waiting
-      ? <div className="loading-state"><Loader2 className="spin" /> Loading the ranking…</div>
+      ? <div className="loading-state">Loading the ranking…</div>
       : <>
         {!wanted && noWeek && <p className="muted-copy">{noWeek}</p>}
 

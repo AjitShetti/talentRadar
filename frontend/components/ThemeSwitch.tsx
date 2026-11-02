@@ -1,13 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Monitor, Moon, Sun, type LucideIcon } from 'lucide-react'
 import { DEFAULT_THEME, readChoice, saveChoice, THEME_EVENT, THEME_KEY, type ThemeChoice } from '@/lib/theme'
 
-const OPTIONS: { value: ThemeChoice; label: string; icon: LucideIcon }[] = [
-  { value: 'system', label: 'System', icon: Monitor },
-  { value: 'light', label: 'Light', icon: Sun },
-  { value: 'dark', label: 'Dark', icon: Moon },
+const OPTIONS: { value: ThemeChoice; label: string }[] = [
+  { value: 'system', label: 'System' },
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
 ]
 
 /**
@@ -44,7 +43,7 @@ export default function ThemeSwitch({ tabbable = true }: { tabbable?: boolean })
     }}
   >
     <span className="theme-switch-glider" aria-hidden="true" />
-    {OPTIONS.map(({ value, label, icon: Icon }) => <button
+    {OPTIONS.map(({ value, label }) => <button
       key={value}
       type="button"
       role="radio"
@@ -52,6 +51,6 @@ export default function ThemeSwitch({ tabbable = true }: { tabbable?: boolean })
       data-value={value}
       tabIndex={tabbable && choice === value ? 0 : -1}
       onClick={() => pick(value)}
-    ><Icon size={13} aria-hidden="true" />{label}</button>)}
+    >{label}</button>)}
   </div>
 }

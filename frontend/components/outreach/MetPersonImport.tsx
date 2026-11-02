@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Loader2 } from 'lucide-react'
 import AddCompany, { AddChoice } from '@/components/outreach/AddCompany'
 import { track } from '@/lib/analytics'
 import { api, MetAtEvent } from '@/lib/api'
@@ -119,8 +118,8 @@ export default function MetPersonImport({ reference, onDone, onCancel }: Props) 
 
   return <section className="or-section or-met" role="status" aria-live="polite">
     <div className="or-head"><h2>Person you met</h2><span className="or-rule" /></div>
-    {phase.kind === 'finding' && <div className="loading-state"><Loader2 className="spin" /> Finding them in the people you met&hellip;</div>}
-    {phase.kind === 'working' && <div className="loading-state"><Loader2 className="spin" /> Adding {phase.met.name} to your outreach&hellip;</div>}
+    {phase.kind === 'finding' && <div className="loading-state">Finding them in the people you met&hellip;</div>}
+    {phase.kind === 'working' && <div className="loading-state">Adding {phase.met.name} to your outreach&hellip;</div>}
     {phase.kind === 'missing' && <>
       <p>That person is no longer in the people you met. They may have been removed from the event.</p>
       <div className="or-met-actions"><button type="button" className="outline-button" onClick={onCancel}>Dismiss</button></div>

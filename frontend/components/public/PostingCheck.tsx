@@ -2,7 +2,6 @@
 
 import { FormEvent, useState } from 'react'
 import Link from 'next/link'
-import { ArrowRight } from 'lucide-react'
 import LivenessStamp from '@/components/LivenessStamp'
 import { API_URL, Liveness } from '@/lib/api'
 import { track } from '@/lib/analytics'
@@ -75,8 +74,8 @@ export default function PostingCheck({ compact = false }: { compact?: boolean })
           ? <LivenessStamp liveness={result.liveness} open />
           : <><strong>{HEADLINE[result.status]}</strong><p>{result.message}</p></>}
         {result.role
-          ? <Link className="posting-check-next" href={`/r/${result.role.slug}`}>See the full evidence <ArrowRight size={13} /></Link>
-          : result.status === 'open_now' && <Link className="posting-check-next" href="/signup">Track it and prepare for the interview <ArrowRight size={13} /></Link>}
+          ? <Link className="posting-check-next" href={`/r/${result.role.slug}`}>See the full evidence</Link>
+          : result.status === 'open_now' && <Link className="posting-check-next" href="/signup">Track it and prepare for the interview</Link>}
       </div>}
     </div>
   </div>

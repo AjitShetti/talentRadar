@@ -1,7 +1,6 @@
 'use client'
 
 import { KeyboardEvent, useEffect, useRef, useState } from 'react'
-import { Search } from 'lucide-react'
 import { api, OutreachCompanyMatch } from '@/lib/api'
 
 /** A stored company the user picked, or a name we have no record of. */
@@ -80,7 +79,6 @@ export default function AddCompany({ onAdd }: Props) {
 
   return <>
     <div className="or-add">
-      <Search size={15} aria-hidden />
       <input
         ref={inputRef}
         type="text"

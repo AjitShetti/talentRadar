@@ -1,6 +1,7 @@
 'use client'
 
 import { apiIsWaking, markApiAlive } from '@/lib/api-warmup'
+import { clearDay } from '@/lib/day-line'
 import { clearPersistedState } from '@/lib/persistent-state'
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
@@ -247,7 +248,7 @@ export function signedIn() {
   return true
 }
 export function currentEmail() { return typeof window === 'undefined' ? null : localStorage.getItem(EMAIL_KEY) }
-export function signOut() { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(EMAIL_KEY); clearPersistedState() }
+export function signOut() { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(EMAIL_KEY); clearPersistedState(); clearDay() }
 
 /** The one path every API call takes: auth header, cold-start message, 401 and 429 handling. Resolves to an ok response. */
 async function send(path: string, options: RequestInit = {}, authenticated = false): Promise<Response> {
@@ -270,7 +271,9 @@ async function send(path: string, options: RequestInit = {}, authenticated = fal
   if (response.status < 500) markApiAlive()
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as { detail?: unknown; message?: string }
-    if (response.status === 401) {
+    // Only a request that sent a token can have an expired session. A wrong
+    // password is a 401 too, and the server's own message is the right one for it.
+    if (response.status === 401 && authenticated) {
       // Clearing the token was not enough: the page had already rendered, so
       // the user sat looking at a broken screen. Send them to sign in and
       // remember where they were.

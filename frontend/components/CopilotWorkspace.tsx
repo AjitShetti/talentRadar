@@ -2,10 +2,6 @@
 
 import Link from 'next/link'
 import { FormEvent, useEffect, useRef, useState } from 'react'
-import {
-  ArrowRight, Brain, ExternalLink, Lightbulb, Loader2, MapPin,
-  Plus, Send, Trash2,
-} from 'lucide-react'
 import { AgentMemory, api, ChatJob, LearningPlan, LearningTask } from '@/lib/api'
 import { isTaskRunning, runTask, usePersistentState, useTaskRunning } from '@/lib/persistent-state'
 import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
@@ -29,9 +25,9 @@ function JobResult({ job }: { job: ChatJob }) {
       {job.skills!.slice(0, 5).map(skill => <span key={skill}>{skill}</span>)}
     </div>}
     <div className="cp-job-actions">
-      <Link href="/search" className="text-button">Open in search <ArrowRight size={12}/></Link>
+      <Link href="/search" className="text-button">Open in search</Link>
       {externalHref(job.source_url) && <a href={externalHref(job.source_url)!} {...EXTERNAL_LINK_PROPS} className="text-button">
-        Posting <ExternalLink size={12}/>
+        Posting <span aria-hidden="true">↗</span>
       </a>}
     </div>
   </div>
@@ -73,7 +69,7 @@ function LearningPlanList({ plan, onClear }: { plan: LearningPlan; onClear: () =
       {(task.resources?.length ?? 0) > 0 && <div className="cp-plan-links">
         {task.resources!.map(resource => resource.startsWith('http')
           ? <a key={resource} href={externalHref(resource)!} {...EXTERNAL_LINK_PROPS}>
-              {hostOf(resource)} <ExternalLink size={11}/>
+              {hostOf(resource)} <span aria-hidden="true">↗</span>
             </a>
           : <span key={resource}>{resource}</span>)}
       </div>}
@@ -218,7 +214,7 @@ export default function CopilotWorkspace({ acceptUrlQuestion = false }: { accept
               </div>}
             </div>)}
             {thinking && <div className="cp-turn" data-role="assistant">
-              <div className="cp-bubble cp-thinking"><Loader2 size={13} className="spin"/> Thinking…</div>
+              <div className="cp-bubble cp-thinking">Thinking…</div>
             </div>}
             <div ref={threadEnd}/>
           </div>
@@ -231,7 +227,7 @@ export default function CopilotWorkspace({ acceptUrlQuestion = false }: { accept
               aria-label="Message your career copilot"
             />
             <button className="primary-button" type="submit" disabled={thinking || !draft.trim()}>
-              <Send size={14}/> Send
+              Send
             </button>
           </form>
         </section>
@@ -243,7 +239,6 @@ export default function CopilotWorkspace({ acceptUrlQuestion = false }: { accept
             <div>
               <h2>What your copilot knows</h2>
             </div>
-            <Brain size={17}/>
           </div>
           {memories.length > 0
             ? <div className="cp-memories">{memories.map(memory => <div key={memory.id}>
@@ -252,7 +247,7 @@ export default function CopilotWorkspace({ acceptUrlQuestion = false }: { accept
                   <p>{memory.content}</p>
                 </div>
                 <button type="button" className="icon-refresh" title="Forget this" aria-label={`Forget: ${memory.content}`} onClick={() => forget(memory.id)}>
-                  <Trash2 size={13}/>
+                  Forget
                 </button>
               </div>)}</div>
             : <p className="muted-copy">Nothing saved yet. Ask about a role or location and your copilot will start remembering what you&apos;re after.</p>}
@@ -263,7 +258,7 @@ export default function CopilotWorkspace({ acceptUrlQuestion = false }: { accept
               placeholder="Teach it something — “I want to stay in Pune”"
               aria-label="Teach your copilot"
             />
-            <button className="icon-refresh" type="submit" title="Save" aria-label="Save to your copilot's memory" disabled={!newMemory.trim()}><Plus size={15}/></button>
+            <button className="icon-refresh" type="submit" title="Save" aria-label="Save to your copilot's memory" disabled={!newMemory.trim()}>Save</button>
           </form>
         </section>
 
@@ -272,11 +267,10 @@ export default function CopilotWorkspace({ acceptUrlQuestion = false }: { accept
             <div>
               <h2>Close your gaps</h2>
             </div>
-            <MapPin size={17}/>
           </div>
           <p className="muted-copy">Turn the skills employers keep asking for into a concrete study plan.</p>
           <button className="outline-button full-width" onClick={generatePlan} disabled={planning}>
-            {planning ? <><Loader2 size={14} className="spin"/> Building…</> : <><Lightbulb size={14}/> Generate learning plan</>}
+            {planning ? 'Building…' : 'Generate learning plan'}
           </button>
           {learning && <LearningPlanList plan={learning} onClear={() => setLearning(null)}/>}
         </section>

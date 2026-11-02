@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { Check, Copy } from 'lucide-react'
 
 export default function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false)
@@ -15,7 +14,6 @@ export default function CopyButton({ text }: { text: string }) {
         setTimeout(() => setCopied(false), 1500)
       }}
     >
-      {copied ? <Check size={13} /> : <Copy size={13} />}
       {copied ? 'Copied' : 'Copy'}
     </button>
   )

@@ -2,23 +2,21 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowRight, ArrowUpRight, CheckCircle2, ChevronRight, Lightbulb, Sparkles, Target, TrendingDown, TrendingUp, X } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import BriefingFeed from '@/components/BriefingFeed'
 import CopilotWorkspace from '@/components/CopilotWorkspace'
+import { useDay, useDayLit, useIstMinute } from '@/components/DayLine'
 import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
-import { Ring, ScoreBars, Segment, Sparkline, StackBar } from '@/components/overview/Charts'
-import { AgendaItem, api, Briefing, BriefingCard, JobMatch, OutreachHome, SkillsFocus } from '@/lib/api'
+import { ScoreBars } from '@/components/overview/Charts'
+import { AgendaItem, api, Briefing, BriefingCard, currentEmail, JobMatch, OutreachHome, SkillsFocus } from '@/lib/api'
+import { arrivalPending, markForAction, nextMark, publishBriefing, setDayLit, untilLabel } from '@/lib/day-line'
 import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 
 type Dimension = { key: string; label: string; score: number; weakest: boolean }
 type TrackStat = { track: string; label: string; score: number; sessions: number }
 type TrendPoint = { label: string; score: number; date: string | null; completed: boolean }
 type InterviewInsights = { sessions_analyzed: number; questions_analyzed: number; average_score: number; delta: number; abandoned: number; trend: TrendPoint[]; dimensions: Dimension[]; weakest_dimension: { key: string; label: string; score: number; hint: string } | null; tracks: TrackStat[]; weakest_track: TrackStat | null; focus: string[] }
-
-/** One stage of GET /dashboard/overview's `funnel`: how many applications sit at it now. */
-type FunnelStage = { stage: string; count: number; conversion_rate: number }
 
 /** What the last overnight sweep did — services/sweep.py::get_last_sweep(). */
 type Sweep = { finished_at: string | null; sources: string[]; boards: number; postings_read: number; postings_added: number }
@@ -299,22 +297,6 @@ const greeting = () => {
   return hour < 5 ? 'Good evening' : hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
 }
 
-/** Application statuses as parts of the whole, in pipeline order. Anything else (screening, withdrawn) is "Other". */
-function pipeline(funnel: FunnelStage[], analytics: Record<string, number> | undefined): Segment[] {
-  const saved = funnel.find(stage => stage.stage === 'saved')?.count ?? 0
-  const parts: Segment[] = [
-    { key: 'saved', label: 'Saved', value: saved, color: '#636366' },
-    { key: 'applied', label: 'Applied', value: analytics?.applied ?? 0, color: 'var(--accent)' },
-    { key: 'oa', label: 'Assessment', value: analytics?.online_assessment ?? 0, color: 'var(--teal)' },
-    { key: 'interview', label: 'Interview', value: analytics?.interview ?? 0, color: 'var(--indigo)' },
-    { key: 'offer', label: 'Offer', value: analytics?.offers ?? 0, color: 'var(--success)' },
-    { key: 'rejected', label: 'Closed', value: analytics?.rejected ?? 0, color: 'var(--danger)' },
-  ]
-  const other = (analytics?.total_applications ?? 0) - parts.reduce((sum, part) => sum + part.value, 0)
-  if (other > 0) parts.push({ key: 'other', label: 'Other', value: other, color: '#48484A' })
-  return parts
-}
-
 export default function Dashboard() {
   const [data, setData] = useState<Record<string, unknown> | null>(null)
   const [briefing, setBriefing] = useState<Briefing | null>(null)
@@ -324,6 +306,10 @@ export default function Dashboard() {
   const [error, setError] = useState('')
   const [copilotOpen, setCopilotOpen] = useState(false)
   const fabRef = useRef<HTMLButtonElement>(null)
+  // Only read here: the day line records that it played. The tree it decides is client-only, behind RequireAuth.
+  const [arrive] = useState(() => typeof window !== 'undefined' && arrivalPending())
+  const { marks } = useDay()
+  const lit = useDayLit()
 
   const loadBriefing = useCallback(async () => {
     try {
@@ -345,6 +331,9 @@ export default function Dashboard() {
       .catch(() => setPack(null))
   }, [loadBriefing])
 
+  // The line reads the same briefing rather than asking again, and a dismissed card leaves it too.
+  useEffect(() => { if (briefing) publishBriefing(briefing, currentEmail()) }, [briefing])
+
   async function dismiss(cardId: string, snoozeDays?: number) {
     setBriefing(current => current
       ? { ...current, cards: current.cards.filter(c => c.id !== cardId), hidden_count: current.hidden_count + 1 }
@@ -358,7 +347,6 @@ export default function Dashboard() {
 
   const profile = data?.profile as { full_name?: string; onboarding_completed?: boolean; target_roles?: string[] | null } | undefined
   const analytics = data?.analytics as Record<string, number> | undefined
-  const funnel = (data?.funnel as FunnelStage[] | undefined) || []
   const skillsFocus = data?.skills_focus as SkillsFocus | null | undefined
   const interviews = data?.interviews as InterviewInsights | null | undefined
   const jobMatches = data?.job_matches as JobMatch[] | null | undefined
@@ -385,10 +373,21 @@ export default function Dashboard() {
 
   return <RequireAuth><AppShell>
     <div className="ov2">
-      <header className="ov2-hero">
-        <p className="ov2-date">{new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</p>
-        <h1>{greeting()}{first ? `, ${first}` : ''}.</h1>
+      <header className="ov2-hero" data-arrive={arrive ? 'true' : undefined}>
+        <div className="day-head">
+          <h1>{greeting()}{first ? `, ${first}` : ''}.</h1>
+          <span className="ov2-date">{new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</span>
+        </div>
         <p className="ov2-lead">{headline}</p>
+        <NextOnTheLine />
+        <button
+          ref={fabRef}
+          className="outline-button ov2-copilot"
+          type="button"
+          aria-expanded={copilotOpen}
+          aria-controls="ov-copilot"
+          onClick={() => setCopilotOpen(open => !open)}
+        >Ask copilot</button>
       </header>
 
       {error && <p className="form-error">{error}</p>}
@@ -399,62 +398,58 @@ export default function Dashboard() {
         {!data && !error
           ? <div className="ov2-card ov2-skeleton" aria-busy="true"><i /><i /><i /></div>
           : actions.length > 0
-            ? <ol className="ov2-card ov2-next">
-              {actions.map((action, i) => <li key={action.key} data-lead={i === 0 ? 'true' : undefined} style={{ animationDelay: `${80 + i * 70}ms` }}>
-                <span className="ov2-num">{i + 1}</span>
-                <div className="ov2-next-body">
-                  <h3>{action.title}</h3>
-                  <p>{action.why}</p>
-                  {action.tags.length > 0 && <div className="ov2-tags">{action.tags.map(tag => <span key={tag.label} data-hot={tag.hot ? 'true' : undefined}>{tag.label}</span>)}</div>}
-                </div>
-                <ActionButton action={action} lead={i === 0} />
-              </li>)}
+            ? <ol className="ov2-next">
+              {actions.map((action, i) => {
+                const mark = markForAction(action.key, marks)
+                return <li
+                  key={action.key}
+                  data-lead={i === 0 ? 'true' : undefined}
+                  data-lit={mark && lit === mark.id ? 'true' : undefined}
+                  style={{ '--d': `${(arrive ? 380 : 0) + i * 90}ms` } as React.CSSProperties}
+                  onPointerEnter={mark ? () => setDayLit(mark.id) : undefined}
+                  onPointerLeave={mark ? () => setDayLit(null) : undefined}
+                  onFocus={mark ? () => setDayLit(mark.id) : undefined}
+                  onBlur={mark ? () => setDayLit(null) : undefined}
+                >
+                  <span className="ov2-num"><FlapText value={i + 1} /></span>
+                  <div className="ov2-next-body">
+                    <h3>{action.title}</h3>
+                    <p>{action.why}</p>
+                    {action.tags.length > 0 && <div className="ov2-tags">{action.tags.map(tag => <span key={tag.label} data-hot={tag.hot ? 'true' : undefined}>{tag.label}</span>)}</div>}
+                  </div>
+                  <ActionButton action={action} lead={i === 0} />
+                </li>
+              })}
             </ol>
-            : <div className="ov2-card ov2-clear"><CheckCircle2 size={18} /> All clear. Nothing scheduled and nothing going stale.</div>}
+            : <div className="ov2-card ov2-clear">All clear. Nothing scheduled and nothing going stale.</div>}
       </section>}
 
-      {/* ── your journey, as pictures ────────────────────────────────────── */}
+      {/* ── your journey, as a ledger ───────────────────────────────────── */}
       {data && <section className="ov2-section" aria-labelledby="ov2-journey">
         <div className="ov2-head"><h2 id="ov2-journey">Your journey so far</h2></div>
-        <div className="ov2-bento">
-          <Link href="/applications" className="ov2-card ov2-tile ov2-wide">
-            <div className="ov2-tile-top"><span>Applications</span><ChevronRight size={16} /></div>
-            <div className="ov2-big"><FlapText value={analytics?.total_applications ?? 0} /><small>tracked</small></div>
-            <StackBar label="Applications by status" segments={pipeline(funnel, analytics)} />
+        <div className="ov2-ledger">
+          <Link href="/applications">
+            <span>Applications</span>
+            <b><FlapText value={analytics?.total_applications ?? 0} /></b>
+            <small>tracked</small>
           </Link>
-
-          <Link href="/outreach" className="ov2-card ov2-tile">
-            <div className="ov2-tile-top"><span>People</span><ChevronRight size={16} /></div>
-            {outreach
-              ? <OutreachTile home={outreach} />
-              : <p className="ov2-quiet">Start a conversation with someone at a company you like.</p>}
+          <Link href="/outreach">
+            <span>People</span>
+            {outreach ? <OutreachLedger home={outreach} /> : <><b>—</b><small>Start a conversation with someone at a company you like.</small></>}
           </Link>
-
-          <Link href="/applications" className="ov2-card ov2-tile">
-            <div className="ov2-tile-top"><span>Interviews</span><ChevronRight size={16} /></div>
-            <div className="ov2-ring-row">
-              <Ring value={(analytics?.interview ?? 0) + (analytics?.offers ?? 0)} max={Math.max(1, analytics?.total_applications ?? 0)} color="var(--indigo)">
-                <b><FlapText value={(analytics?.interview ?? 0) + (analytics?.offers ?? 0)} /></b><small>reached</small>
-              </Ring>
-              <dl className="ov2-dl">
-                <div><dt>In progress</dt><dd>{analytics?.interview ?? 0}</dd></div>
-                <div><dt>Cracked</dt><dd className="ov2-good">{analytics?.offers ?? 0}</dd></div>
-                <div><dt>Coming up</dt><dd>{agenda.length}</dd></div>
-              </dl>
-            </div>
+          <Link href="/applications">
+            <span>Interviews</span>
+            <b><FlapText value={(analytics?.interview ?? 0) + (analytics?.offers ?? 0)} /></b>
+            <small>{analytics?.interview ?? 0} in progress · {analytics?.offers ?? 0} cracked · {agenda.length} coming up</small>
           </Link>
-
-          <Link href="/interview" className="ov2-card ov2-tile">
-            <div className="ov2-tile-top"><span>Mock interviews</span><ChevronRight size={16} /></div>
+          <Link href="/interview">
+            <span>Mock interviews</span>
             {interviews && interviews.sessions_analyzed > 0
               ? <>
-                <div className="ov2-big"><FlapText value={Math.round(interviews.average_score)} /><small>avg score</small>
-                  {interviews.delta !== 0 && <em data-up={interviews.delta > 0 ? 'true' : undefined}>{interviews.delta > 0 ? '+' : ''}{Math.round(interviews.delta)}</em>}
-                </div>
-                <Sparkline points={interviews.trend.map(point => point.score)} />
-                <p className="ov2-quiet">{interviews.sessions_analyzed} session{interviews.sessions_analyzed === 1 ? '' : 's'} · {interviews.questions_analyzed} answers</p>
+                <b><FlapText value={Math.round(interviews.average_score)} />{interviews.delta !== 0 && <em data-up={interviews.delta > 0 ? 'true' : undefined}>{interviews.delta > 0 ? '+' : ''}{Math.round(interviews.delta)}</em>}</b>
+                <small>avg score · {interviews.sessions_analyzed} session{interviews.sessions_analyzed === 1 ? '' : 's'} · {interviews.questions_analyzed} answers</small>
               </>
-              : <p className="ov2-quiet">No sessions yet. One mock sets your baseline.</p>}
+              : <><b>—</b><small>No sessions yet. One mock sets your baseline.</small></>}
           </Link>
         </div>
       </section>}
@@ -465,19 +460,17 @@ export default function Dashboard() {
       {/* ── what the sweep brought back ────────────────────────────────── */}
       {data && jobMatches && jobMatches.length > 0 && <section className="ov2-section" id="sweep" aria-labelledby="ov2-sweep">
         <div className="ov2-head"><h2 id="ov2-sweep">Found while you were away</h2><span>Read against your resume{sweep?.finished_at ? ` · ${sweepTime(sweep.finished_at)}` : ''}</span></div>
-        <div className="ov2-card ov2-list">
+        <div className="ov2-card">
           {jobMatches.map(job => <Link className="ov2-role" key={job.id} href={`/roles/${encodeURIComponent(job.id)}`}>
-            <span className="ov2-logo" aria-hidden="true">{(job.company || '?').slice(0, 1).toUpperCase()}</span>
             <div>
               <strong>{job.title}</strong>
               <p>{job.company || 'Company not listed'} · {job.location || (job.is_remote ? 'Remote' : 'Location not listed')}{job.salary_raw ? ` · ${job.salary_raw}` : ''}</p>
             </div>
             {matchedRoles.size > 1 && <span className="ov2-pill" title="The target role this was found for">{job.matched_role}</span>}
-            <ChevronRight size={16} className="ov2-chev" />
           </Link>)}
           <div className="ov2-list-foot">
             <span>{sweep ? `${sweep.boards} board${sweep.boards === 1 ? '' : 's'} · ${sweep.postings_read} postings read · ${jobMatches.length} kept` : `${jobMatches.length} kept for your target roles`}</span>
-            <Link className="ov-link" href="/search">Search for more <ArrowRight size={13} /></Link>
+            <Link className="ov-link" href="/search">Search for more</Link>
           </div>
         </div>
       </section>}
@@ -489,34 +482,26 @@ export default function Dashboard() {
       </section> : null}
     </div>
 
-    {/* ── the copilot: a floating button and a drawer ───────────────────── */}
-    <button
-      ref={fabRef}
-      className="ov2-copilot"
-      type="button"
-      aria-expanded={copilotOpen}
-      aria-controls="ov-copilot"
-      onClick={() => setCopilotOpen(open => !open)}
-    ><Sparkles size={16} /> Ask copilot</button>
-
     <CopilotDrawer open={copilotOpen} onClose={() => { setCopilotOpen(false); fabRef.current?.focus() }} />
   </AppShell></RequireAuth>
 }
 
-/** The people tile: who replied, who has not yet, and referrals won. */
-function OutreachTile({ home }: { home: OutreachHome }) {
-  const by = (stage: string) => home.threads.filter(thread => thread.stage === stage).length
-  const talking = by('replied')
+/** The next dated thing today, counted down on the minute. Nothing dated, nothing said. */
+function NextOnTheLine() {
+  const now = useIstMinute()
+  const { marks } = useDay()
+  const next = now === null ? null : nextMark(marks, now)
+  if (now === null || !next) return null
+  return <p className="ov2-quiet"><Link className="ov2-when" href={next.href}>{next.label} in <b>{untilLabel(next.at - now)}</b></Link></p>
+}
+
+/** The people cell: who is talking, and the referrals and conversations behind it. */
+function OutreachLedger({ home }: { home: OutreachHome }) {
+  const talking = home.threads.filter(thread => thread.stage === 'replied').length
   const referrals = home.threads.filter(thread => thread.outcome === 'referred').length
-  const segments: Segment[] = [
-    { key: 'replied', label: 'Talking', value: talking, color: 'var(--success)' },
-    { key: 'waiting', label: 'Waiting', value: by('waiting'), color: 'var(--warning)' },
-    { key: 'planned', label: 'Planned', value: by('planned'), color: '#636366' },
-  ]
   return <>
-    <div className="ov2-big"><FlapText value={talking} /><small>talking to you</small></div>
-    <StackBar label="Companies by stage" segments={segments} />
-    <p className="ov2-quiet"><b className="ov2-good">{referrals}</b> referral{referrals === 1 ? '' : 's'} · {home.conversations_started} conversation{home.conversations_started === 1 ? '' : 's'} started</p>
+    <b><FlapText value={talking} /></b>
+    <small>talking to you · {referrals} referral{referrals === 1 ? '' : 's'} · {home.conversations_started} started</small>
   </>
 }
 
@@ -539,20 +524,20 @@ function StrengthsAndGaps({ interviews, focus }: { interviews: InterviewInsights
         <h3 className="ov2-sub">How your answers score</h3>
         <ScoreBars rows={dims.map(d => ({ key: d.key, label: d.label, score: d.score, tone: strong.some(s => s.key === d.key) ? 'good' : weak.some(w => w.key === d.key) ? 'weak' : 'plain' }))} />
         <div className="ov2-chips">
-          {strong.map(d => <span key={d.key} data-tone="good"><TrendingUp size={13} /> Strong: {d.label.toLowerCase()}</span>)}
-          {weak.map(d => <span key={d.key} data-tone="weak"><TrendingDown size={13} /> Work on: {d.label.toLowerCase()}</span>)}
+          {strong.map(d => <span key={d.key} data-tone="good">Strong: {d.label.toLowerCase()}</span>)}
+          {weak.map(d => <span key={d.key} data-tone="weak">Work on: {d.label.toLowerCase()}</span>)}
         </div>
       </div>}
       <div className="ov2-card ov2-pad">
         <h3 className="ov2-sub">How to improve</h3>
         <ul className="ov2-tips">
-          {tips.map(tip => <li key={tip}><Lightbulb size={15} /><span>{tip}</span></li>)}
-          {gaps.map(gap => <li key={gap.title}><Target size={15} /><span><b>{focus?.kind === 'resume_improvements' ? gap.title : `Learn ${gap.title}`}.</b> {gap.detail}</span></li>)}
-          {tips.length === 0 && gaps.length === 0 && <li><Lightbulb size={15} /><span>Run a mock interview and we&apos;ll tell you exactly what to work on.</span></li>}
+          {tips.map(tip => <li key={tip}>{tip}</li>)}
+          {gaps.map(gap => <li key={gap.title}><b>{focus?.kind === 'resume_improvements' ? gap.title : `Learn ${gap.title}`}.</b> {gap.detail}</li>)}
+          {tips.length === 0 && gaps.length === 0 && <li>Run a mock interview and we&apos;ll tell you exactly what to work on.</li>}
         </ul>
         <div className="ov2-tip-actions">
           <Link className="outline-button" href="/interview">Practise an answer</Link>
-          {gaps.length > 0 && <Link className="text-button" href={focus?.kind === 'resume_improvements' ? '/resume-studio' : '/agent'}>{focus?.kind === 'resume_improvements' ? 'Fix it in Resume studio' : 'Build a study plan'} <ArrowRight size={13} /></Link>}
+          {gaps.length > 0 && <Link className="text-button" href={focus?.kind === 'resume_improvements' ? '/resume-studio' : '/agent'}>{focus?.kind === 'resume_improvements' ? 'Fix it in Resume studio' : 'Build a study plan'}</Link>}
         </div>
       </div>
     </div>
@@ -565,11 +550,11 @@ function ActionButton({ action, lead }: { action: Action; lead: boolean }) {
   const external = externalHref(action.href)
   if (external) {
     return <a className={className} href={external} {...EXTERNAL_LINK_PROPS}>
-      {action.cta} <ArrowUpRight size={14} />
+      {action.cta} <span aria-hidden="true">↗</span>
     </a>
   }
   return <Link className={className} href={action.href}>
-    {action.cta} <ArrowRight size={14} />
+    {action.cta}
   </Link>
 }
 
@@ -595,7 +580,7 @@ function CopilotDrawer({ open, onClose }: { open: boolean; onClose: () => void }
           <h2>Ask your copilot</h2>
           <p>Briefed on your profile, your tracker and last night&apos;s sweep.</p>
         </div>
-        <button className="ov-x" type="button" onClick={onClose} aria-label="Close copilot"><X size={15} /></button>
+        <button className="ov-close" type="button" onClick={onClose} aria-label="Close copilot">Close</button>
       </div>
       <div className="ov-drawer-body" ref={panel}>
         {/* Mounted only while open: CopilotWorkspace fetches on mount, and an

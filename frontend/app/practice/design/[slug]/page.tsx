@@ -3,7 +3,6 @@
 import { ComponentType, useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
-import { Loader2 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import FlapText from '@/components/FlapText'
 import PrepTabs from '@/components/PrepTabs'
@@ -46,7 +45,7 @@ const DesignBoard = dynamic<DesignBoardProps>(() => {
   // Excalidraw reads this for its fonts, which we serve; otherwise it asks a public CDN for them.
   (window as unknown as { EXCALIDRAW_ASSET_PATH: string }).EXCALIDRAW_ASSET_PATH = '/excalidraw/'
   return import('@/components/practice/DesignBoard').catch(() => ({ default: BoardMissing as ComponentType<DesignBoardProps> }))
-}, { ssr: false, loading: () => <div className="loading-state"><Loader2 className="spin" /> Loading the whiteboard…</div> })
+}, { ssr: false, loading: () => <div className="loading-state">Loading the whiteboard…</div> })
 
 export default function DesignProblemPage({ params, searchParams }: { params: { slug: string }; searchParams: { day?: string } }) {
   // Its own instance per answer: leaving one flushes it and ends whatever was still on its way to it.
@@ -179,7 +178,7 @@ function DesignView({ slug, day }: { slug: string; day?: string }) {
     <p><Link href="/practice">Back to Practice</Link></p>
   </div>
   if (error) return <p className="form-error" role="alert">{error}</p>
-  if (!page) return <div className="loading-state"><Loader2 className="spin" /> Loading the problem…</div>
+  if (!page) return <div className="loading-state">Loading the problem…</div>
 
   const { problem, answer, feedback } = page
   const cleared = !!answer && answer.elements === null
@@ -189,13 +188,13 @@ function DesignView({ slug, day }: { slug: string; day?: string }) {
   const lastAnswer = !day && page.last_answer_day
 
   return <>
-    <section className="page-heading split-heading">
-      <div>
-        <span className="board-kicker">Practice · system design</span>
-        <h1>{problem.title}<span>.</span></h1>
-        <p>{problem.summary} About {problem.minutes} minutes.</p>
+    <header className="day-title">
+      <div className="day-head">
+        <h1 className="day-h1 day-h1-name">{problem.title}.</h1>
       </div>
-    </section>
+      <p className="ov2-lead">{problem.summary}</p>
+      <p className="day-note">System design · about {problem.minutes} min</p>
+    </header>
 
     <div className="pr-solve">
       <div className="pr-prose">

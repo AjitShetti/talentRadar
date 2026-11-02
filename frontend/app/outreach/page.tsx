@@ -2,7 +2,6 @@
 
 import { Suspense, useCallback, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Loader2 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
@@ -185,26 +184,25 @@ function OutreachBoard() {
   const reached = home?.target.reached_today ?? 0
 
   return <>
-    <section className="page-heading split-heading">
-      <div>
-        <span className="board-kicker">Outreach &middot; Bengaluru</span>
-        <h1>Start conversations<span>.</span></h1>
-        <p>Who to reach, how, and when to follow up. Nothing is ever sent for you.</p>
-        {home && <div className="or-target">
-          <span className="or-ticks" aria-hidden>
-            {Array.from({ length: Math.min(daily, 10) }, (_, i) => <i key={i} data-on={i < reached ? '' : undefined} />)}
-          </span>
-          <span>{daily === 0 ? 'Daily target off' : `${reached} of ${daily} reached today`}</span>
-          <label>
-            Daily target
-            <select value={daily} onChange={e => saveTarget(Number(e.target.value))}>
-              {TARGETS.map(n => <option key={n} value={n}>{n === 0 ? 'Off' : n}</option>)}
-            </select>
-          </label>
-        </div>}
+    <header className="day-title">
+      <div className="day-head">
+        <h1 className="day-h1">Start conversations.</h1>
+        <span className="ov2-date"><FlapText value={home?.conversations_started ?? 0} /> {home?.conversations_started === 1 ? 'conversation' : 'conversations'} started</span>
       </div>
-      <div className="tracker-total"><strong><FlapText value={home?.conversations_started ?? 0} /></strong><span>conversations started</span></div>
-    </section>
+      <p className="ov2-lead">Who to reach in Bengaluru, and when to follow up. Nothing is ever sent for you.</p>
+      {home && <div className="or-target">
+        <span className="or-ticks" aria-hidden>
+          {Array.from({ length: Math.min(daily, 10) }, (_, i) => <i key={i} data-on={i < reached ? '' : undefined} />)}
+        </span>
+        <span>{daily === 0 ? 'Daily target off' : `${reached} of ${daily} reached today`}</span>
+        <label>
+          Daily target
+          <select value={daily} onChange={e => saveTarget(Number(e.target.value))}>
+            {TARGETS.map(n => <option key={n} value={n}>{n === 0 ? 'Off' : n}</option>)}
+          </select>
+        </label>
+      </div>}
+    </header>
 
     {error && <p className="form-error" role="alert">{error}</p>}
 
@@ -231,7 +229,7 @@ function OutreachBoard() {
           <div className="or-head"><h2>Your threads</h2><span className="or-rule" />{home && <span className="or-note">{threads.length}</span>}</div>
           {home
             ? <ThreadList threads={threads} onOpen={t => openThread({ threadId: t.id, personId: null, mode: null })} />
-            : homeLoading && <div className="loading-state"><Loader2 className="spin" /> Loading your threads&hellip;</div>}
+            : homeLoading && <div className="loading-state">Loading your threads&hellip;</div>}
         </section>
       </div>
 
@@ -240,7 +238,7 @@ function OutreachBoard() {
           <div className="or-head"><h2>Who to reach</h2><span className="or-rule" /><span className="or-note">Ranked &middot; no AI</span></div>
           <AddCompany onAdd={addTyped} />
           {suggestionsLoading
-            ? <div className="loading-state"><Loader2 className="spin" /> Ranking companies&hellip;</div>
+            ? <div className="loading-state">Ranking companies&hellip;</div>
             : <SuggestionList data={suggestions} focusId={focusCompany} onAdd={addSuggestion} onDismiss={dismissSuggestion} />}
         </section>
       </aside>
@@ -252,7 +250,7 @@ function OutreachBoard() {
 
 export default function OutreachPage() {
   return <RequireAuth><AppShell>
-    <Suspense fallback={<div className="loading-state"><Loader2 className="spin" /> Loading outreach&hellip;</div>}>
+    <Suspense fallback={<div className="loading-state">Loading outreach&hellip;</div>}>
       <OutreachBoard />
     </Suspense>
   </AppShell></RequireAuth>
