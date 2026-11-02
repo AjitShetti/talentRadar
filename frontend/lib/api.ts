@@ -1,6 +1,7 @@
 'use client'
 
 import { apiIsWaking, markApiAlive } from '@/lib/api-warmup'
+import { clearDay } from '@/lib/day-line'
 import { clearPersistedState } from '@/lib/persistent-state'
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
@@ -242,7 +243,7 @@ export function signedIn() {
   return true
 }
 export function currentEmail() { return typeof window === 'undefined' ? null : localStorage.getItem(EMAIL_KEY) }
-export function signOut() { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(EMAIL_KEY); clearPersistedState() }
+export function signOut() { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(EMAIL_KEY); clearPersistedState(); clearDay() }
 
 /** The one path every API call takes: auth header, cold-start message, 401 and 429 handling. Resolves to an ok response. */
 async function send(path: string, options: RequestInit = {}, authenticated = false): Promise<Response> {
