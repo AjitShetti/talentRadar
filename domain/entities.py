@@ -222,6 +222,7 @@ class JobApplication(BaseModel):
     applied_at: datetime | None = None
     oa_completed_at: datetime | None = None
     interview_scheduled_at: datetime | None = None
+    interview_at: datetime | None = None
     outcome_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None

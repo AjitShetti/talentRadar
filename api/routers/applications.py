@@ -5,7 +5,7 @@ Job application tracking endpoints (auth required).
 
 GET    /applications           - list user's applications
 POST   /applications           - create/save an application
-PATCH  /applications/{id}      - update status or notes
+PATCH  /applications/{id}      - update status, notes or the interview's time
 DELETE /applications/{id}      - remove an application
 """
 
@@ -14,6 +14,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import uuid
+from datetime import UTC
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -80,6 +81,7 @@ def _app_to_response(app: JobApplication, job: Job | None) -> ApplicationRespons
         status=app.status.value,
         notes=app.notes,
         applied_at=app.applied_at,
+        interview_at=app.interview_at,
         created_at=app.created_at,
         updated_at=app.updated_at,
         job=_job_to_schema(job),
@@ -200,6 +202,8 @@ async def update_application(
         app.notes = body.notes
     if body.applied_at is not None:
         app.applied_at = body.applied_at
+    if "interview_at" in body.model_fields_set:
+        app.interview_at = body.interview_at.astimezone(UTC) if body.interview_at else None
 
     db.add(app)
     await db.flush()

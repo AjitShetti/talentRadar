@@ -22,7 +22,7 @@ export type Dossier = { role: DossierRole; liveness: Liveness | null; fit: Dossi
 // One of the dashboard's daily top-3 picks for a Profile.target_roles entry —
 // computed by the APScheduler job in api/main.py (services/job_matching.py).
 export type JobMatch = { id: string; title: string; company: string; location: string; is_remote: boolean; skills: string[]; salary_raw?: string | null; source_url?: string | null; posted_at?: string | null; matched_role: string }
-export type Application = { id: string; job_id?: string | null; status: string; notes?: string | null; applied_at?: string | null; created_at: string; job?: Job | null }
+export type Application = { id: string; job_id?: string | null; status: string; notes?: string | null; applied_at?: string | null; interview_at?: string | null; created_at: string; job?: Job | null }
 // What a semantic search did about going out to the job boards. Present so a
 // thinner-than-usual result set is explainable in the UI rather than silent:
 // `reason` says why sourcing did or did not run, and `sources_stats` carries
@@ -351,7 +351,8 @@ export const api = {
   applications: {
     list: () => request<{ applications: Application[]; total: number }>('/api/v1/applications/', {}, true),
     create: (job_id: string, status = 'saved', notes?: string) => request<Application>('/api/v1/applications/', { method: 'POST', body: JSON.stringify({ job_id, status, notes }) }, true),
-    update: (id: string, payload: { status?: string; notes?: string }) => request<Application>(`/api/v1/applications/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }, true),
+    // `interview_at` is the time the user typed: an absent key is left alone and null clears it.
+    update: (id: string, payload: { status?: string; notes?: string; interview_at?: string | null }) => request<Application>(`/api/v1/applications/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }, true),
     remove: (id: string) => request<void>(`/api/v1/applications/${id}`, { method: 'DELETE' }, true),
   },
   profile: {

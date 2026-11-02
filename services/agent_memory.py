@@ -188,7 +188,7 @@ async def recommend_next_action(
       2. No applications                      → "Discover jobs to apply"
       3. Has saved but not applied            → "Apply to saved jobs"
       4. Applied but no interview             → "Practice interviews / prepare"
-      5. Has interviews scheduled             → "Complete interview prep plan"
+      5. Has roles at interview stage         → "Complete interview prep plan"
       6. Has weaknesses                       → "Follow learning plan"
       7. Otherwise                            → "Track market trends"
     """
@@ -233,7 +233,10 @@ async def recommend_next_action(
     elif interviews > 0:
         action = "interview_prep"
         title = "Complete your interview prep plan"
-        detail = "You have interviews scheduled. Review the personalised prep plan."
+        detail = (
+            f"You have {interviews} role{'' if interviews == 1 else 's'} at interview stage. "
+            "Review the personalised prep plan."
+        )
         href = "/interview"
     else:
         weaknesses = await identify_weaknesses(user_id=user_id, limit=5)
