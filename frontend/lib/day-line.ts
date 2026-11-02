@@ -28,14 +28,15 @@ const text = (value: unknown) => typeof value === 'string' ? value : ''
 
 /**
  * The field holding a card's time, and what the line calls it. Event cards title
- * themselves "Tonight: <event>". A `scheduled_interview` card is not here: its
- * `scheduled_at` is when the status moved to interview, not when the interview is.
+ * themselves "Tonight: <event>". An interview card carries only the time the user
+ * entered (`interview_at`); a role at interview stage with no time has a card of another kind.
  */
 const TIMED: Record<string, { field: string; label: (card: BriefingCard) => string }> = {
   event_today: { field: 'starts_at', label: card => card.title.replace(/^[^:]*:\s*/, '') },
   event_soon: { field: 'starts_at', label: card => card.title.replace(/^[^:]*:\s*/, '') },
   practice_deadline: { field: 'deadline_at', label: () => 'Take-home due' },
   practice_contest: { field: 'starts_at', label: () => 'Weekly contest' },
+  scheduled_interview: { field: 'scheduled_at', label: card => `Interview, ${text(card.meta.company)}` },
 }
 
 /** What today holds, in time order. A cancelled event is not on the day any more. */
@@ -89,12 +90,20 @@ export function labelledMarks(marks: DayMark[], width: number): Set<string> {
   return shown
 }
 
-/** The application a stale card is about, as "stale_application:<application id>", with what its row should say. */
-export function applicationNotes(cards: BriefingCard[]): Map<string, string> {
+/**
+ * What a row should say, from the card about its application ("<kind>:<application id>"):
+ * a stale one has gone quiet, and one with an entered interview time today says when.
+ */
+export function applicationNotes(cards: BriefingCard[], nowMs: number): Map<string, string> {
   const notes = new Map<string, string>()
   for (const card of cards) {
     const [kind, id] = card.id.split(':')
-    if (kind === 'stale_application' && id) notes.set(id, 'Gone quiet')
+    if (!id) continue
+    if (kind === 'stale_application') notes.set(id, 'Gone quiet')
+    if (kind === 'scheduled_interview') {
+      const ms = Date.parse(text(card.meta.scheduled_at))
+      if (!Number.isNaN(ms) && istDay(ms) === istDay(nowMs)) notes.set(id, `Interview today, ${clockLabel(istMinutes(ms))}`)
+    }
   }
   return notes
 }
@@ -126,7 +135,7 @@ export function publishBriefing(briefing: Briefing, owner: string | null) {
   // A page left open past midnight may hand back the briefing it read yesterday.
   const read = Date.parse(briefing.generated_at)
   if (!Number.isNaN(read) && istDay(read) !== istDay(now)) return
-  snapshot = { owner, at: now, marks: marksFromCards(briefing.cards, now), notes: applicationNotes(briefing.cards) }
+  snapshot = { owner, at: now, marks: marksFromCards(briefing.cards, now), notes: applicationNotes(briefing.cards, now) }
   notify()
 }
 

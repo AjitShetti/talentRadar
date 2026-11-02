@@ -114,6 +114,7 @@ export default function ApplicationsPage() {
     try {
       const updated = await api.applications.update(id, { interview_at: interviewAt })
       setApps(current => current.map(app => app.id === id ? updated : app))
+      forgetNote(id)
       setError('')
       return true
     } catch (err) {

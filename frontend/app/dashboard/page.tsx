@@ -125,7 +125,8 @@ function buildActions(
     const next = today[0]
     const at = istClock(next.scheduled_at)
     out.push({
-      key: 'interview-today',
+      // Keyed as its briefing card, so the row and its mark on the day line find each other.
+      key: `briefing-scheduled_interview:${next.application_id}`,
       title: `Prep for ${next.company}`,
       why: `Your ${next.role} interview is today${at ? ` at ${at} IST` : ''}. Everything below can wait until it is done.`,
       tags: [{ label: at ? `Today ${at}` : 'Today', hot: true }, ...(today.length > 1 ? [{ label: `${today.length} interviews today` }] : [])],
@@ -158,7 +159,7 @@ function buildActions(
   // An interview within a day. Today's is already the first action, and the briefing
   // has a card for the same interview: showing it again would spend a second slot
   // saying it twice, so that card is skipped here and as the lead.
-  const interviewTodayShown = out.some(action => action.key === 'interview-today')
+  const interviewTodayShown = today.length > 0
   const repeatsToday = (card: BriefingCard) =>
     interviewTodayShown && card.kind === 'scheduled_interview' && metaNumber(card, 'days_away') === 0
   const soon = cards.find(card => {

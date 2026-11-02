@@ -32,12 +32,21 @@ test('a dated card for today becomes a mark at its IST time, linking where the c
   expect(marks).toEqual([{ id: 'practice_deadline:a1', at: 16 * 60, time: '16:00', label: 'Take-home due', href: '/somewhere' }])
 })
 
-test('an interview card makes no mark and no row note: its time is when the status moved', () => {
+test('an interview card marks the time the user entered, and its row says so', () => {
   const interview = card({
     id: 'scheduled_interview:a1', kind: 'scheduled_interview', meta: { scheduled_at: '2026-11-01T10:30:00Z', company: 'Northwind', days_away: 0 },
   })
-  expect(marksFromCards([interview], NOW)).toEqual([])
-  expect(applicationNotes([interview]).size).toBe(0)
+  expect(marksFromCards([interview], NOW)).toEqual([{ id: 'scheduled_interview:a1', at: 16 * 60, time: '16:00', label: 'Interview, Northwind', href: '/somewhere' }])
+  expect(applicationNotes([interview], NOW).get('a1')).toBe('Interview today, 16:00')
+})
+
+test('an interview on another IST day, and a role at interview stage with no time, make no mark and no note', () => {
+  const tomorrow = card({
+    id: 'scheduled_interview:a1', kind: 'scheduled_interview', meta: { scheduled_at: '2026-11-01T18:30:00Z', company: 'Northwind', days_away: 1 },
+  })
+  const atStage = card({ id: 'interview_stage:a2', kind: 'interview_stage', meta: { application_id: 'a2', company: 'Contoso' } })
+  expect(marksFromCards([tomorrow, atStage], NOW)).toEqual([])
+  expect(applicationNotes([tomorrow, atStage], NOW).size).toBe(0)
 })
 
 test('a card with no clock time, a card for another IST day, and an unreadable time make no mark', () => {
@@ -148,7 +157,7 @@ test('a row is only told what a card says about that application', () => {
   const notes = applicationNotes([
     card({ id: 'stale_application:a3', kind: 'stale_application' }),
     card({ id: 'saved_backlog', kind: 'saved_backlog' }),
-  ])
+  ], NOW)
   expect(notes.get('a3')).toBe('Gone quiet')
   expect(notes.size).toBe(1)
 })
