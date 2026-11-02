@@ -2,7 +2,6 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
-import { ArrowLeft, Bookmark, Check, ExternalLink, FileText, Mic, Users } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import LivenessStamp from '@/components/LivenessStamp'
 import ReferralAsk from '@/components/ReferralAsk'
@@ -65,20 +64,19 @@ function DossierView({ jobId }: { jobId: string }) {
   const original = externalHref(role.source_url)
 
   return <>
-    <Link className="dossier-back" href="/search"><ArrowLeft size={13} /> Find roles</Link>
-    <section className="page-heading dossier-heading">
-      <div>
-        <span className="board-kicker">Role dossier</span>
-        <h1>{role.title}<span>.</span></h1>
-        <p>
-          {role.company || 'Company not listed'}
-          {role.location ? ` · ${role.location}` : role.is_remote ? ' · Remote' : ''}
-          {role.salary_raw ? ` · ${role.salary_raw}` : ''}
-          {platformLabel(role.platform) ? ` · via ${platformLabel(role.platform)}` : ''}
-        </p>
+    <Link className="dossier-back" href="/search"><span aria-hidden="true">←</span> Find roles</Link>
+    <header className="day-title">
+      <div className="day-head">
+        <h1 className="day-h1 day-h1-name">{role.title}.</h1>
+        {original && <a className="outline-button" href={original} {...EXTERNAL_LINK_PROPS}>View original <span aria-hidden="true">↗</span></a>}
       </div>
-      {original && <a className="outline-button" href={original} {...EXTERNAL_LINK_PROPS}>View original <ExternalLink size={13} /></a>}
-    </section>
+      <p className="ov2-lead">
+        {role.company || 'Company not listed'}
+        {role.location ? ` · ${role.location}` : role.is_remote ? ' · Remote' : ''}
+        {role.salary_raw ? ` · ${role.salary_raw}` : ''}
+        {platformLabel(role.platform) ? ` · via ${platformLabel(role.platform)}` : ''}
+      </p>
+    </header>
 
     {error && <p className="form-error" role="alert">{error}</p>}
 
@@ -124,8 +122,8 @@ function DossierView({ jobId }: { jobId: string }) {
                 <div className="dossier-unnamed-ask"><span>Already know someone there?</span><ReferralAsk jobId={role.id} /></div>
               </>}
             <div className="dossier-actions">
-              <Link className="outline-button" href="/company-intel"><Users size={13} /> Find or add a contact</Link>
-              {externalHref(wayIn.careers_url) && <a className="text-button" href={externalHref(wayIn.careers_url)!} {...EXTERNAL_LINK_PROPS}>Careers page <ExternalLink size={12} /></a>}
+              <Link className="outline-button" href="/company-intel">Find or add a contact</Link>
+              {externalHref(wayIn.careers_url) && <a className="text-button" href={externalHref(wayIn.careers_url)!} {...EXTERNAL_LINK_PROPS}>Careers page <span aria-hidden="true">↗</span></a>}
             </div>
           </>}
         </div>
@@ -139,8 +137,8 @@ function DossierView({ jobId }: { jobId: string }) {
             ? <p className="dossier-lead">Your last practice round for this role scored <strong>{Math.round(readiness.last_score)}</strong> out of 100{readiness.sessions > 1 ? `, across ${readiness.sessions} rounds` : ''}.</p>
             : <p className="dossier-lead">You have not practised for this role yet. A round takes about fifteen minutes and is built from this posting.</p>}
           <div className="dossier-actions">
-            <Link className="primary-button" href={prepHref}><Mic size={14} /> {readiness?.sessions ? 'Practise again' : 'Prepare for this role'}</Link>
-            <Link className="outline-button" href="/resume-studio"><FileText size={13} /> Tailor my resume</Link>
+            <Link className="primary-button" href={prepHref}>{readiness?.sessions ? 'Practise again' : 'Prepare for this role'}</Link>
+            <Link className="outline-button" href="/resume-studio">Tailor my resume</Link>
           </div>
         </div>
       </li>
@@ -148,12 +146,11 @@ function DossierView({ jobId }: { jobId: string }) {
 
     <section className="dossier-track">
       <div>
-        <span className="board-kicker">Tracker</span>
         <p>{status ? <>This role is in your tracker as <strong>{status.replace(/_/g, ' ')}</strong>.</> : 'This role is not in your tracker.'}</p>
       </div>
       <div className="dossier-actions">
-        {!status && <button type="button" className="outline-button" disabled={saving} onClick={() => setTracked('saved')}><Bookmark size={13} /> Save to tracker</button>}
-        {(!status || status === 'saved') && <button type="button" className="outline-button" disabled={saving || closed} onClick={() => setTracked('applied')}><Check size={13} /> I applied</button>}
+        {!status && <button type="button" className="outline-button" disabled={saving} onClick={() => setTracked('saved')}>Save to tracker</button>}
+        {(!status || status === 'saved') && <button type="button" className="outline-button" disabled={saving || closed} onClick={() => setTracked('applied')}>I applied</button>}
         {status && <Link className="text-button" href="/applications">Open tracker</Link>}
       </div>
     </section>
@@ -186,7 +183,7 @@ function Contact({ contact, jobId }: { contact: CompanyContact; jobId: string })
       {contact.title && <span>{contact.title}</span>}
     </div>
     <span className="dossier-provenance">{contact.is_curated ? 'Published' : 'Added by you'}{contact.verified ? ' · verified' : ''}</span>
-    {link && <a className="text-button" href={link} {...EXTERNAL_LINK_PROPS}>Open <ExternalLink size={12} /></a>}
+    {link && <a className="text-button" href={link} {...EXTERNAL_LINK_PROPS}>Open <span aria-hidden="true">↗</span></a>}
     {/* A careers inbox is not a person to ask for a referral. */}
     {contact.name && <div className="dossier-contact-ask"><ReferralAsk jobId={jobId} recipientName={contact.name} recipientTitle={contact.title} /></div>}
   </li>

@@ -2,7 +2,6 @@
 
 import Link from 'next/link'
 import { FormEvent, ReactNode, useCallback, useEffect, useId, useRef, useState } from 'react'
-import { Loader2, MoreHorizontal, X } from 'lucide-react'
 import DraftPanel, { SnapshotIssue } from '@/components/outreach/DraftPanel'
 import { track } from '@/lib/analytics'
 import {
@@ -290,12 +289,12 @@ export default function ThreadDrawer({ threadId, focusPersonId, openDraft, openR
             <ThreadNote value={detail.note} busy={busy} onSave={saveNote} />
           </>}
         </div>
-        <button type="button" className="ci-close" onClick={requestClose} aria-label="Close" data-autofocus><X size={18} /></button>
+        <button type="button" className="ci-close" onClick={requestClose} aria-label="Close" data-autofocus>Close</button>
       </header>
 
       <div className="ci-drawer-body">
         {loadError && <p className="form-error" style={{ marginTop: 18 }}>{loadError}</p>}
-        {!detail && !loadError && <div className="cm-drawer-loading" aria-busy="true"><Loader2 size={16} className="spin" />Loading…</div>}
+        {!detail && !loadError && <div className="cm-drawer-loading" aria-busy="true">Loading…</div>}
         {actionError && <p className="form-error" role="alert" style={{ marginTop: 18 }}>{actionError}</p>}
         {notice && <p className="or-hint" role="status" style={{ marginTop: 18 }}>{notice}</p>}
 
@@ -417,7 +416,7 @@ export default function ThreadDrawer({ threadId, focusPersonId, openDraft, openR
 function ExtLinkButton({ href, children }: { href: string; children: ReactNode }) {
   const safe = externalHref(href)
   if (!safe) return null
-  return <a className="ci-link" href={safe} {...EXTERNAL_LINK_PROPS}>{children}</a>
+  return <a className="ci-link" href={safe} {...EXTERNAL_LINK_PROPS}>{children} <span aria-hidden="true">↗</span></a>
 }
 
 function ChannelLink({ channel }: { channel: OutreachChannel }) {
@@ -469,7 +468,7 @@ function PersonRow({ person: p, busy, menuOpen, panel, onDraft, onReplyForm, onS
       {wait && <span className="or-wait">{wait}</span>}
       {canMarkSent(p) && <button type="button" className="outline-button" onClick={onSent} disabled={busy} aria-label={`I sent it to ${p.name}`}>I sent it</button>}
       {canReply && <button type="button" className="outline-button" onClick={onReplyForm} disabled={busy} aria-expanded={panel === 'reply'} aria-label={`They replied (${p.name})`}>They replied</button>}
-      <button type="button" className="outline-button or-more" onClick={onMenu} aria-expanded={menuOpen} aria-controls={menuId} aria-label={`More actions for ${p.name}`}><MoreHorizontal size={14} /></button>
+      <button type="button" className="outline-button or-more" onClick={onMenu} aria-expanded={menuOpen} aria-controls={menuId} aria-label={`More actions for ${p.name}`}>More</button>
     </div>
     {menuOpen && <div className="or-actions" id={menuId}>
       {canSnooze && <button type="button" className="text-button" onClick={onSnooze} disabled={busy}>Snooze {SNOOZE_DAYS} days</button>}

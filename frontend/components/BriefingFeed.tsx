@@ -1,7 +1,6 @@
 'use client'
 
 import Link from 'next/link'
-import { AlarmClock, ArrowRight, ArrowUpRight, Loader2, Sparkles, X } from 'lucide-react'
 import { Briefing, BriefingCard } from '@/lib/api'
 import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 
@@ -37,12 +36,8 @@ function Card({ card, onDismiss }: { card: BriefingCard; onDismiss: (id: string,
       <div className="cp-card-headrow">
         <h3>{card.title}<span className="cp-card-kind">{kindLabel(card)}</span></h3>
         {card.dismissible && <div className="cp-card-tools">
-          <button className="icon-refresh" title="Snooze for a week" onClick={() => onDismiss(card.id, 7)}>
-            <AlarmClock size={14}/>
-          </button>
-          <button className="icon-refresh" title="Dismiss" onClick={() => onDismiss(card.id)}>
-            <X size={14}/>
-          </button>
+          <button className="cp-tool" title="Snooze for a week" onClick={() => onDismiss(card.id, 7)}>Later</button>
+          <button className="cp-tool" onClick={() => onDismiss(card.id)}>Dismiss</button>
         </div>}
       </div>
       <p>{card.detail}</p>
@@ -52,8 +47,8 @@ function Card({ card, onDismiss }: { card: BriefingCard; onDismiss: (id: string,
           // An absolute http(s) URL (the LeetCode cards) opens in a new tab; an in-app path stays a Link.
           const external = externalHref(action.href)
           return external
-            ? <a key={action.label} href={external} className={className} {...EXTERNAL_LINK_PROPS}>{action.label} <ArrowUpRight size={13}/></a>
-            : <Link key={action.label} href={action.href} className={className}>{action.label} <ArrowRight size={13}/></Link>
+            ? <a key={action.label} href={external} className={className} {...EXTERNAL_LINK_PROPS}>{action.label} <span aria-hidden="true">↗</span></a>
+            : <Link key={action.label} href={action.href} className={className}>{action.label}</Link>
         })}
       </div>}
     </div>
@@ -89,14 +84,13 @@ export default function BriefingFeed({
       {briefing && briefing.hidden_count > 0 && <span className="ci-count">{briefing.hidden_count} hidden</span>}
     </div>
 
-    {!briefing && !failed && <div className="loading-state"><Loader2 size={16} className="spin"/> Reading your career context…</div>}
+    {!briefing && !failed && <div className="loading-state">Reading your career context…</div>}
     {failed && !briefing && <p className="muted-copy">Your briefing is unavailable right now. The rest of your overview is still live.</p>}
 
     {briefing && cards.length === 0 && <div className="cp-clear">
-      <Sparkles size={20}/>
       <strong>Nothing needs you right now</strong>
       <p>No stale applications, no unfinished saves. Go find new roles, or ask your copilot a question.</p>
-      <Link href="/search" className="outline-button">Find roles <ArrowRight size={13}/></Link>
+      <Link href="/search" className="outline-button">Find roles</Link>
     </div>}
 
     {cards.length > 0 && <div className="cp-briefing">

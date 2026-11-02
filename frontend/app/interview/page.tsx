@@ -1,10 +1,6 @@
 'use client'
 
 import { FormEvent, Fragment, ReactNode, useCallback, useEffect, useRef, useState } from 'react'
-import {
-  ArrowRight, BarChart3, Blocks, BookOpen, Clock3, Code2, CornerDownRight, Keyboard, Loader2, Mic, Play,
-  RefreshCw, Send, SkipForward, StopCircle, Users, Volume2,
-} from 'lucide-react'
 import Link from 'next/link'
 import AppShell from '@/components/AppShell'
 import PrepTabs from '@/components/PrepTabs'
@@ -52,10 +48,10 @@ type Suggestions = { for_you: string[]; recent: string[]; popular: string[] }
 
 /** Round styles — the value is the interview_track_enum value the API stores. */
 const STYLES = [
-  { value: 'technical', label: 'Concepts', hint: 'How it works, trade-offs, pitfalls', Icon: BookOpen },
-  { value: 'coding', label: 'Problem solving', hint: 'Talk through an approach and its cost', Icon: Code2 },
-  { value: 'system_design', label: 'System design', hint: 'Architecture, scale, failure modes', Icon: Blocks },
-  { value: 'behavioral', label: 'Behavioral', hint: 'Past experience, told as STAR stories', Icon: Users },
+  { value: 'technical', label: 'Concepts', hint: 'How it works, trade-offs, pitfalls' },
+  { value: 'coding', label: 'Problem solving', hint: 'Talk through an approach and its cost' },
+  { value: 'system_design', label: 'System design', hint: 'Architecture, scale, failure modes' },
+  { value: 'behavioral', label: 'Behavioral', hint: 'Past experience, told as STAR stories' },
 ] as const
 
 const STYLE_LABEL: Record<string, string> = Object.fromEntries(STYLES.map(s => [s.value, s.label]))
@@ -424,14 +420,13 @@ export default function InterviewPage() {
 
   return <RequireAuth><AppShell narrow>
     <PrepTabs />
-    <section className="page-heading">
-      <div>
-        <span className="board-kicker">Mock interviews</span>
-        <h1>Practise the conversation before it counts<span>.</span></h1>
-        <p>Pick any subject. Your interviewer asks, listens, probes the weak spots, and tells you what to sharpen.</p>
+    <header className="day-title">
+      <div className="day-head">
+        <h1 className="day-h1">Practise the conversation before it counts.</h1>
+        {history.length > 0 && <span className="ov2-date"><FlapText value={history.length} /> {history.length === 1 ? 'session' : 'sessions'} logged</span>}
       </div>
-      {history.length > 0 && <div className="tracker-total"><strong><FlapText value={history.length} /></strong><span>sessions logged</span></div>}
-    </section>
+      <p className="ov2-lead">Pick a subject. Your interviewer probes the weak spots and says what to sharpen.</p>
+    </header>
 
     {error && <p className="form-error">{error}</p>}
     {notice && <p className="voice-notice">{notice}</p>}
@@ -457,7 +452,7 @@ export default function InterviewPage() {
 
       <p className="topic-label">Round style</p>
       <div className="style-picker" role="radiogroup" aria-label="Round style">
-        {STYLES.map(({ value, label, hint, Icon }) => <button
+        {STYLES.map(({ value, label, hint }) => <button
           key={value}
           type="button"
           role="radio"
@@ -465,7 +460,6 @@ export default function InterviewPage() {
           className={style === value ? 'mode-card selected' : 'mode-card'}
           onClick={() => setStyle(value)}
         >
-          <Icon size={17} />
           <strong>{label}</strong>
           <span>{hint}</span>
         </button>)}
@@ -492,7 +486,6 @@ export default function InterviewPage() {
           onClick={() => setMode('voice')}
           disabled={!voiceReady}
         >
-          <Mic size={17} />
           <strong>Voice interview</strong>
           <span>{voiceReady
             ? 'Hands-free. It asks, you answer out loud, it follows up.'
@@ -505,14 +498,13 @@ export default function InterviewPage() {
           aria-checked={mode === 'text' || !voiceReady}
           onClick={() => setMode('text')}
         >
-          <Keyboard size={17} />
           <strong>Typed interview</strong>
           <span>Write your answers at your own pace.</span>
         </button>
       </div>
 
       <button type="submit" className="primary-button" disabled={loading || topic.trim().length < 2}>
-        {loading ? 'Preparing your first question…' : <>Start interview <ArrowRight size={16} /></>}
+        {loading ? 'Preparing your first question…' : 'Start interview'}
       </button>
       {mode === 'voice' && voiceReady && <p className="voice-hint">
         Your browser will ask for microphone access. Headphones keep the interviewer&apos;s voice out of your answer.
@@ -524,11 +516,11 @@ export default function InterviewPage() {
           <h2>{active.done
             ? 'Session complete'
             // question_index already points past the question a follow-up probes.
-            : <>Question {Math.min(active.followup ? Math.max(active.index, 1) : active.index + 1, max)} <small>of {max}</small>{active.followup && <span className="followup-badge"><CornerDownRight size={12} />Follow-up</span>}</>}
+            : <>Question {Math.min(active.followup ? Math.max(active.index, 1) : active.index + 1, max)} <small>of {max}</small>{active.followup && <span className="followup-badge">Follow-up</span>}</>}
           </h2>
         </div>
         {!active.done && <button className="outline-button danger-outline" onClick={end} disabled={ending}>
-          <StopCircle size={15} />{ending ? 'Ending…' : 'End session'}
+          {ending ? 'Ending…' : 'End session'}
         </button>}
       </div>
 
@@ -570,7 +562,7 @@ export default function InterviewPage() {
             placeholder="Think out loud. Explain your approach, decisions, and trade-offs…"
           />
           <button type="submit" className="primary-button" disabled={loading || busy || !answer.trim()}>
-            {loading || busy ? 'Evaluating…' : <>Submit answer <Send size={15} /></>}
+            {loading || busy ? 'Evaluating…' : 'Submit answer'}
           </button>
         </form>}
       </>}
@@ -587,7 +579,6 @@ export default function InterviewPage() {
     <section className="history-section">
       <div className="panel-heading">
         <div><p className="eyebrow">Recent practice</p><h2>Interview history</h2></div>
-        <Clock3 size={17} />
       </div>
       {history.length ? <div className="history-list">{history.map(session => <div key={session.id}>
         <span className={session.topic ? 'history-topic' : undefined}>{sessionLabel(session)}</span>
@@ -648,7 +639,7 @@ function Results({ closing, scores, finalScore, topic, onAgain, onNew }: {
       <ol className="results-answers">
         {scores.map((s, i) => <li key={i}>
           <div>
-            <p>{s.was_followup && <span className="followup-badge"><CornerDownRight size={11} />Follow-up</span>}{withCode(s.question_text || 'Question')}</p>
+            <p>{s.was_followup && <span className="followup-badge">Follow-up</span>}{withCode(s.question_text || 'Question')}</p>
             {s.tip && <small>{withCode(s.tip)}</small>}
           </div>
           <strong>{s.unscored ? '—' : average(s).toFixed(1)}</strong>
@@ -656,7 +647,7 @@ function Results({ closing, scores, finalScore, topic, onAgain, onNew }: {
       </ol>
     </>}
     <div className="results-actions">
-      {topic && <button className="primary-button" onClick={onAgain}><RefreshCw size={15} /> Practice {topic} again</button>}
+      {topic && <button className="primary-button" onClick={onAgain}>Practice {topic} again</button>}
       <button className="outline-button" onClick={onNew}>Choose a new topic</button>
     </div>
   </div>
@@ -717,13 +708,7 @@ function VoiceStage({ stage, phase, level, caption, onSkipSpeech, onDone, onType
   return <div className="voice-stage" data-stage={stage} data-phase={phase}>
     <div className="voice-ring">
       <span className="voice-pulse" style={{ transform: `scale(${scale})` }} />
-      <span className="voice-core">
-        {stage === 'speaking' && <Volume2 size={22} />}
-        {stage === 'listening' && <Mic size={22} />}
-        {(stage === 'transcribing' || stage === 'evaluating') && <Loader2 size={22} className="spin" />}
-        {(stage === 'paused' || stage === 'typing') && <Play size={22} />}
-        {stage === 'complete' && <BarChart3 size={22} />}
-      </span>
+      <span className="voice-core" />
     </div>
 
     <p className="voice-status" aria-live="polite">{status}</p>
@@ -731,25 +716,25 @@ function VoiceStage({ stage, phase, level, caption, onSkipSpeech, onDone, onType
 
     <div className="voice-controls">
       {stage === 'speaking' && <button type="button" className="outline-button" onClick={onSkipSpeech}>
-        <SkipForward size={14} /> Skip to answering
+        Skip to answering
       </button>}
       {stage === 'listening' && <>
         <button type="button" className="primary-button" onClick={onDone}>
-          <Send size={14} /> I&apos;m done answering
+          I&apos;m done answering
         </button>
         <button type="button" className="outline-button" onClick={onRepeat}>
-          <RefreshCw size={14} /> Repeat question
+          Repeat question
         </button>
         <button type="button" className="outline-button" onClick={onType}>
-          <Keyboard size={14} /> Type instead
+          Type instead
         </button>
       </>}
       {(stage === 'paused' || stage === 'typing') && <>
         <button type="button" className="outline-button" onClick={onResume}>
-          <Mic size={14} /> Answer by voice
+          Answer by voice
         </button>
         <button type="button" className="outline-button" onClick={onRepeat}>
-          <RefreshCw size={14} /> Repeat the question
+          Repeat the question
         </button>
       </>}
     </div>

@@ -1,7 +1,6 @@
 'use client'
 
 import { ChangeEvent, FormEvent, useEffect, useState } from 'react'
-import { Check, UploadCloud } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import RequireAuth from '@/components/RequireAuth'
 import { api } from '@/lib/api'
@@ -102,13 +101,12 @@ export default function SettingsPage() {
   }
 
   return <RequireAuth><AppShell narrow>
-    <section className="page-heading">
-      <div>
-        <span className="board-kicker">Profile &amp; goals</span>
-        <h1>Set the direction of your search<span>.</span></h1>
-        <p>Your city, experience, and target roles pre-fill the job search filters. Add your resume too — we read it against those roles and show you what&apos;s missing on your dashboard.</p>
+    <header className="day-title">
+      <div className="day-head">
+        <h1 className="day-h1">Set the direction of your search.</h1>
       </div>
-    </section>
+      <p className="ov2-lead">These pre-fill your search. Add a resume and the Overview shows what&apos;s missing.</p>
+    </header>
     <form className="card-form settings-form" onSubmit={save}>
       <label>Full name<input value={name} onChange={e => edit(setName)(e.target.value)} /></label>
       <label>Professional headline<input value={headline} onChange={e => edit(setHeadline)(e.target.value)} placeholder="e.g. Product designer focused on fintech" /></label>
@@ -132,10 +130,9 @@ export default function SettingsPage() {
       <p className="eyebrow">Your resume</p>
       <h2>Upload the resume you actually send out.</h2>
       <p className="muted-copy">We compare it against the target roles above and surface the two or three skills those roles ask for that your resume doesn&apos;t show yet — or, if it already covers them, how to make it read stronger.</p>
-      {resumeName && <p className="resume-status"><Check size={13} /> Using <strong>{resumeName}</strong>{resumeSavedAt ? ` · saved ${formatDate(resumeSavedAt)}` : ''}</p>}
+      {resumeName && <p className="resume-status">Using <strong>{resumeName}</strong>{resumeSavedAt ? ` · saved ${formatDate(resumeSavedAt)}` : ''}</p>}
       <div className="resume-upload">
         <label htmlFor="profile-resume" className="outline-button upload-trigger">
-          <UploadCloud size={14} />
           {extracting ? 'Reading file…' : resumeName ? 'Replace resume' : 'Upload PDF or DOCX'}
         </label>
         <input id="profile-resume" type="file" accept=".pdf,.docx,.txt" className="file-input" onChange={handleResume} />

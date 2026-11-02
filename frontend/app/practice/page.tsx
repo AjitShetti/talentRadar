@@ -1,7 +1,6 @@
 'use client'
 
 import { FormEvent, useEffect, useState } from 'react'
-import { Loader2 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import PrepTabs from '@/components/PrepTabs'
 import ActivityGraph from '@/components/practice/ActivityGraph'
@@ -125,17 +124,16 @@ export default function PracticePage() {
 
   return <RequireAuth><AppShell>
     <PrepTabs />
-    <section className="page-heading split-heading">
-      <div>
-        <span className="board-kicker">Practice</span>
-        <h1>Practise a little, every day<span>.</span></h1>
-        <p>{subhead}</p>
+    <header className="day-title">
+      <div className="day-head">
+        <h1 className="day-h1">Practise a little, every day.</h1>
+        <a className="pr-ghost" href="#today">Today&apos;s problem <span aria-hidden="true">↓</span></a>
       </div>
-      <a className="pr-ghost" href="#today">Today&apos;s problem <span aria-hidden="true">↓</span></a>
-    </section>
+      <p className="ov2-lead">{subhead}</p>
+    </header>
 
     {loading
-      ? <div className="loading-state"><Loader2 className="spin" /> Loading Practice…</div>
+      ? <div className="loading-state">Loading Practice…</div>
       : <>
         {newcomer && todayCard}
 

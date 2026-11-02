@@ -15,17 +15,12 @@ import RequireAuth from '@/components/RequireAuth'
  */
 export default function AgentPage() {
   return <RequireAuth><AppShell>
-    <section className="page-heading">
-      <div>
-        <span className="board-kicker">Career copilot</span>
-        <h1>Ask anything about your search<span>.</span></h1>
-        <p>
-        It reads your profile, tracker and interview history — not guesswork.
-        This now lives on your <Link className="text-button" href="/dashboard">overview</Link>,
-          next to today&apos;s briefing.
-        </p>
+    <header className="day-title">
+      <div className="day-head">
+        <h1 className="day-h1">Ask anything about your search.</h1>
       </div>
-    </section>
+      <p className="ov2-lead">It reads your profile, tracker and interview history. It also lives on your <Link href="/dashboard">Overview</Link>.</p>
+    </header>
 
     <CopilotWorkspace acceptUrlQuestion/>
   </AppShell></RequireAuth>

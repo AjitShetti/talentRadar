@@ -2,10 +2,6 @@
 
 import Link from 'next/link'
 import { Fragment, FormEvent, ReactNode, RefObject, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
-import {
-  Briefcase, Building2, CalendarDays, ChevronDown, ChevronUp, ExternalLink, Github, Globe, Info, Linkedin, List,
-  Loader2, Mail, Map as MapIcon, Newspaper, Plus, Search, SlidersHorizontal, Sparkles, Star, Trash2, Users, X,
-} from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import CompanyMap from '@/components/CompanyMap'
 import FlapText from '@/components/FlapText'
@@ -338,7 +334,7 @@ export default function CompanyIntelPage() {
           {(narrow || view === 'list') && stats(narrow)}
         </div>
 
-        {mapDown && <div className="cm-inner"><p className="cm-fallback" role="status"><Info size={15} /><span>Map unavailable — showing the list.</span><small>{mapDown}</small></p></div>}
+        {mapDown && <div className="cm-inner"><p className="cm-fallback" role="status"><span>Map unavailable — showing the list.</span><small>{mapDown}</small></p></div>}
         {error && <div className="cm-inner"><p className="form-error cm-error">{error}</p></div>}
 
         {!mapDown && <section className="cm-stage" hidden={view !== 'map'} data-testid="company-map-stage" data-drawer={drawerOpen ? 'open' : 'closed'}>
@@ -499,7 +495,6 @@ function ControlPanel(p: PanelProps) {
   return <div className="cm-panel" role="search" aria-label="Find companies" data-testid="control-panel">
     <div className="cm-row cm-row-main">
       <div className="cm-search">
-        <Search size={16} aria-hidden="true" />
         <input
           type="search"
           value={p.q}
@@ -519,8 +514,8 @@ function ControlPanel(p: PanelProps) {
           aria-controls={popOpen ? popId : undefined}
           aria-label={p.activeCount > 0 ? `Filters, ${p.activeCount} active` : 'Filters'}
         >
-          <SlidersHorizontal size={13} aria-hidden="true" />Filters{p.activeCount > 0 && <b aria-hidden="true">{p.activeCount}</b>}
-          {!narrow && <ChevronDown size={12} className="cm-chev" aria-hidden="true" />}
+          Filters{p.activeCount > 0 && <b aria-hidden="true">{p.activeCount}</b>}
+          {!narrow && <span className="caret cm-chev" aria-hidden="true" />}
         </button>
         {popOpen && <FiltersPopover
           id={popId}
@@ -535,30 +530,26 @@ function ControlPanel(p: PanelProps) {
         />}
       </div>
       <div className="cm-view" role="group" aria-label="View" data-testid="view-switch">
-        <button type="button" aria-pressed={view === 'map'} aria-disabled={p.mapDown} title={p.mapDown ? 'Map unavailable' : undefined} onClick={() => p.onView('map')}>
-          <MapIcon size={13} aria-hidden="true" /><span className="cm-view-label">Map</span>
-        </button>
+        <button type="button" aria-pressed={view === 'map'} aria-disabled={p.mapDown} title={p.mapDown ? 'Map unavailable' : undefined} onClick={() => p.onView('map')}>Map</button>
         <i aria-hidden="true" />
-        <button type="button" aria-pressed={view === 'list'} onClick={() => p.onView('list')}>
-          <List size={13} aria-hidden="true" /><span className="cm-view-label">List</span>
-        </button>
+        <button type="button" aria-pressed={view === 'list'} onClick={() => p.onView('list')}>List</button>
       </div>
     </div>
 
     {showSub && <div className="cm-row cm-row-sub">
       <button type="button" className={`ci-chip ci-chip-toggle cm-toggle ${filters.hiring ? 'active' : ''}`} aria-pressed={filters.hiring} onClick={() => p.onHiring(!filters.hiring)}>
-        <Sparkles size={12} />Hiring now
+        Hiring now
       </button>
       <button type="button" className={`ci-chip ci-chip-toggle cm-toggle ${filters.raised ? 'active' : ''}`} aria-pressed={filters.raised} onClick={() => p.onRaised(!filters.raised)}>
         Raised ≤ {RAISED_DAYS} days
       </button>
       {SELECTS.filter(spec => filters[spec.key]).map(spec =>
         <button type="button" key={spec.key} className="ci-chip cm-applied" onClick={() => setters[spec.key]('')} aria-label={`Clear ${spec.label}: ${spec.names?.[filters[spec.key]] || filters[spec.key]}`}>
-          {spec.names?.[filters[spec.key]] || filters[spec.key]}<X size={11} />
+          {spec.names?.[filters[spec.key]] || filters[spec.key]}<span aria-hidden="true">×</span>
         </button>)}
-      {filters.unpinned && <button type="button" className="ci-chip cm-applied" onClick={() => p.onUnpinned(false)} aria-label="Clear Location unknown">Location unknown<X size={11} /></button>}
-      {narrow && filters.hiring && <button type="button" className="ci-chip cm-applied" onClick={() => p.onHiring(false)} aria-label="Clear Hiring now">Hiring now<X size={11} /></button>}
-      {narrow && filters.raised && <button type="button" className="ci-chip cm-applied" onClick={() => p.onRaised(false)} aria-label="Clear Raised">Raised ≤ {RAISED_DAYS} days<X size={11} /></button>}
+      {filters.unpinned && <button type="button" className="ci-chip cm-applied" onClick={() => p.onUnpinned(false)} aria-label="Clear Location unknown">Location unknown<span aria-hidden="true">×</span></button>}
+      {narrow && filters.hiring && <button type="button" className="ci-chip cm-applied" onClick={() => p.onHiring(false)} aria-label="Clear Hiring now">Hiring now<span aria-hidden="true">×</span></button>}
+      {narrow && filters.raised && <button type="button" className="ci-chip cm-applied" onClick={() => p.onRaised(false)} aria-label="Clear Raised">Raised ≤ {RAISED_DAYS} days<span aria-hidden="true">×</span></button>}
       {p.activeCount > 0 && <button type="button" className="cm-clear" onClick={p.onClear}>Clear all</button>}
       {p.anyFilter && <span className="ci-count cm-count" role="status">
         {p.shown === null ? <span className="cm-dash">—</span> : <FlapText value={fmt(p.shown)} />} shown
@@ -610,7 +601,7 @@ function NewsStrip({ items, open, onToggle, onOpen }: {
   </span>
   return <div className={`cm-float cm-news ${open ? 'is-open' : ''}`} data-testid="news-strip">
     <button type="button" className="cm-news-head" onClick={onToggle} aria-expanded={open} aria-controls="cm-news-list">
-      <Newspaper size={14} /><strong>Latest</strong><em>{items.length}</em><ChevronUp size={14} className="cm-chev" />
+<strong>Latest</strong><em>{items.length}</em><span className="caret cm-chev" aria-hidden="true" />
     </button>
     <ol id="cm-news-list" hidden={!open}>
       {items.map(item =>
@@ -620,7 +611,7 @@ function NewsStrip({ items, open, onToggle, onOpen }: {
                 <b>{item.title}</b>{meta(item)}
               </button>
             : <ExtLink href={item.url} className="cm-news-item">
-                <b>{item.title}<ExternalLink size={10} className="cm-ext" /></b>{meta(item)}
+                <b>{item.title}<span className="cm-ext" aria-hidden="true">↗</span></b>{meta(item)}
               </ExtLink>}
         </li>)}
     </ol>
@@ -646,7 +637,7 @@ function FilterSheet({ filters, options, count, setters, onHiring, onRaised, onC
       <span className="cm-sheet-grip" aria-hidden="true" />
       <div className="cm-sheet-head">
         <h2 id="cm-sheet-title">Filters</h2>
-        <button type="button" className="ci-close" onClick={onClose} aria-label="Close filters" data-autofocus><X size={18} /></button>
+        <button type="button" className="ci-close" onClick={onClose} aria-label="Close filters" data-autofocus>Close</button>
       </div>
       {SELECTS.map(spec =>
         <label key={spec.key}>
@@ -658,7 +649,7 @@ function FilterSheet({ filters, options, count, setters, onHiring, onRaised, onC
         </label>)}
       <div className="cm-sheet-toggles">
         <button type="button" className={`ci-chip ci-chip-toggle cm-toggle ${filters.hiring ? 'active' : ''}`} aria-pressed={filters.hiring} onClick={() => onHiring(!filters.hiring)}>
-          <Sparkles size={12} />Hiring now
+          Hiring now
         </button>
         <button type="button" className={`ci-chip ci-chip-toggle cm-toggle ${filters.raised ? 'active' : ''}`} aria-pressed={filters.raised} onClick={() => onRaised(!filters.raised)}>
           Raised ≤ {RAISED_DAYS} days
@@ -750,7 +741,6 @@ function DirectoryList({ filters, unpinnedCount, selectedId, onPick, onToggleUnp
         </div>
       : cards.length === 0
         ? <div className="empty-state">
-            <Building2 size={24} />
             <h2>No companies match those filters.</h2>
             <p>{anyFilter ? `Clear a filter to see more of ${CITY}.` : <>Seed the catalogue with <code>python scripts/seed_companies.py</code> if this is a fresh database.</>}</p>
           </div>
@@ -858,17 +848,17 @@ function CompanyDrawer({ companyId, fallbackName, hiringForYou, docked, closeOnE
     onKeyDown={onKeyDown}
   >
     <header className="ci-drawer-head">
-      {detail ? <Logo company={detail} /> : <span className="ci-logo">{fallbackName ? initials(fallbackName) : <Building2 size={18} />}</span>}
+      {detail ? <Logo company={detail} /> : <span className="ci-logo">{fallbackName ? initials(fallbackName) : ''}</span>}
       <div className="ci-drawer-title">
         <h2 id="cm-drawer-title">{name}</h2>
         {detail && <DrawerSummary detail={detail} hiringForYou={hiringForYou} />}
       </div>
-      <button type="button" className="ci-close" onClick={onClose} aria-label="Close" data-autofocus><X size={18} /></button>
+      <button type="button" className="ci-close" onClick={onClose} aria-label="Close" data-autofocus>Close</button>
     </header>
 
     <div className="ci-drawer-body" ref={bodyRef}>
       {error && <p className="form-error" style={{ marginTop: 18 }}>{error}</p>}
-      {!detail && !error && <div className="cm-drawer-loading" aria-busy="true"><Loader2 size={16} className="spin" />Loading…</div>}
+      {!detail && !error && <div className="cm-drawer-loading" aria-busy="true">Loading…</div>}
 
       {detail && <>
         <CompanyOutreachBlock companyId={detail.id} />
@@ -920,17 +910,17 @@ function Facts({ detail }: { detail: CompanyDetail }) {
 }
 
 function LinkRow({ detail }: { detail: CompanyDetail }) {
-  const links: Array<[string, string | null | undefined, JSX.Element | null]> = [
-    ['Website', detail.website_url, <Globe size={13} key="w" />],
-    ['Careers', detail.careers_url, <ExternalLink size={13} key="c" />],
-    ['LinkedIn', detail.linkedin_url, <Linkedin size={13} key="l" />],
-    ['GitHub', detail.github?.html_url, <Github size={13} key="g" />],
-    ['X', detail.x_url, null],
+  const links: Array<[string, string | null | undefined]> = [
+    ['Website', detail.website_url],
+    ['Careers', detail.careers_url],
+    ['LinkedIn', detail.linkedin_url],
+    ['GitHub', detail.github?.html_url],
+    ['X', detail.x_url],
   ]
   const shown = links.filter(([, href]) => externalHref(href))
   if (!shown.length) return null
   return <div className="ci-links">
-    {shown.map(([label, href, icon]) => <ExtLink key={label} className="ci-link" href={href}>{icon}{label}</ExtLink>)}
+    {shown.map(([label, href]) => <ExtLink key={label} className="ci-link" href={href}>{label} <span aria-hidden="true">↗</span></ExtLink>)}
   </div>
 }
 
@@ -949,7 +939,7 @@ function About({ detail }: { detail: CompanyDetail }) {
 function RolesSection({ detail }: { detail: CompanyDetail }) {
   const careers = externalHref(detail.careers_url)
   return <section className="ci-section">
-    <h3><Briefcase size={13} />Open roles on TalentRadar</h3>
+    <h3>Open roles on TalentRadar</h3>
     {detail.jobs.length === 0
       ? <p className="ci-empty-small">
           No live postings ingested for {detail.name} yet. Their careers page is the fastest route
@@ -965,11 +955,11 @@ function RolesSection({ detail }: { detail: CompanyDetail }) {
                   .filter(Boolean).join(' · ') || 'Details on the posting'}
               </span>
             </Link>
-            {posting && <a className="cm-job-ext" href={posting} aria-label={`Open the ${job.title} posting on the employer's site`} {...EXTERNAL_LINK_PROPS}><ExternalLink size={13} /></a>}
+            {posting && <a className="cm-job-ext" href={posting} aria-label={`Open the ${job.title} posting on the employer's site`} {...EXTERNAL_LINK_PROPS}>Posting <span aria-hidden="true">↗</span></a>}
           </div>
         })}
     {detail.jobs.length > 0 && careers &&
-      <div className="ci-links"><ExtLink className="ci-link" href={careers}><ExternalLink size={13} />All roles on their careers page</ExtLink></div>}
+      <div className="ci-links"><ExtLink className="ci-link" href={careers}>All roles on their careers page <span aria-hidden="true">↗</span></ExtLink></div>}
   </section>
 }
 
@@ -978,11 +968,11 @@ function PersonRow({ person }: { person: CompanyPerson }) {
   const search = linkedin ? null : externalHref(person.linkedin_search_url)
   const source = externalHref(person.source_url)
   const links: ReactNode[] = []
-  if (linkedin) links.push(<ExtLink key="li" href={linkedin}><Linkedin size={12} />LinkedIn</ExtLink>)
-  else if (search) links.push(<ExtLink key="ls" href={search}><Linkedin size={12} />Search LinkedIn<ExternalLink size={10} /></ExtLink>)
-  if (externalHref(person.x_url)) links.push(<ExtLink key="x" href={person.x_url}>X</ExtLink>)
-  if (externalHref(person.github_url)) links.push(<ExtLink key="gh" href={person.github_url}><Github size={12} />GitHub</ExtLink>)
-  if (externalHref(person.profile_url)) links.push(<ExtLink key="site" href={person.profile_url}><Globe size={12} />Site</ExtLink>)
+  if (linkedin) links.push(<ExtLink key="li" href={linkedin}>LinkedIn <span aria-hidden="true">↗</span></ExtLink>)
+  else if (search) links.push(<ExtLink key="ls" href={search}>Search LinkedIn <span aria-hidden="true">↗</span></ExtLink>)
+  if (externalHref(person.x_url)) links.push(<ExtLink key="x" href={person.x_url}>X <span aria-hidden="true">↗</span></ExtLink>)
+  if (externalHref(person.github_url)) links.push(<ExtLink key="gh" href={person.github_url}>GitHub <span aria-hidden="true">↗</span></ExtLink>)
+  if (externalHref(person.profile_url)) links.push(<ExtLink key="site" href={person.profile_url}>Site <span aria-hidden="true">↗</span></ExtLink>)
   const name = person.name || 'Unnamed'
   return <div className="cm-person">
     <span className="ci-contact-icon">{initials(name)}</span>
@@ -1025,7 +1015,6 @@ function PeopleSection({ detail, onFounders }: { detail: CompanyDetail; onFounde
       : <div className="cm-empty">
           <p>No founders on record{searched ? ' yet' : ''}.</p>
           <button type="button" className="outline-button" onClick={findFounders} disabled={searching || searched}>
-            {searching ? <Loader2 size={13} className="spin" /> : <Search size={13} />}
             {searching ? 'Searching…' : searched ? 'Searched' : 'Find founders'}
           </button>
         </div>}
@@ -1059,7 +1048,7 @@ function PeopleSection({ detail, onFounders }: { detail: CompanyDetail; onFounde
       ? <div className="ci-links cm-presets">
           {links.map((link, i) =>
             <ExtLink key={link.label} className="ci-link" href={link.url}>
-              <Linkedin size={13} />{link.label}{i >= 3 && <em className="cm-yours-text">your role</em>}
+              {link.label} <span aria-hidden="true">↗</span>{i >= 3 && <em className="cm-yours-text">your role</em>}
             </ExtLink>)}
         </div>
       : <div className="cm-empty"><p>No LinkedIn searches available for this company.</p></div>}
@@ -1069,7 +1058,7 @@ function PeopleSection({ detail, onFounders }: { detail: CompanyDetail; onFounde
   // A bigger company is read by its headcount and leadership, and reached
   // through LinkedIn searches; a startup is read by its founders (spec §4.5).
   return <section className="ci-section" data-testid="drawer-people">
-    <h3><Users size={13} />People</h3>
+    <h3>People</h3>
     {bigger
       ? <>
           {leadersBlock}{linkedinBlock}{githubBlock}{foundersBlock}
@@ -1080,7 +1069,7 @@ function PeopleSection({ detail, onFounders }: { detail: CompanyDetail; onFounde
 
 function NewsSection({ detail }: { detail: CompanyDetail }) {
   return <section className="ci-section">
-    <h3><Newspaper size={13} />News</h3>
+    <h3>News</h3>
     {detail.news.length === 0
       ? <p className="ci-empty-small">No news on record for {detail.name}.</p>
       : detail.news.map(item => {
@@ -1114,7 +1103,7 @@ function EventsSection({ detail }: { detail: CompanyDetail }) {
 
   if (events.length === 0) return null
   return <section className="ci-section" data-testid="drawer-events">
-    <h3><CalendarDays size={13} />Hosted by {detail.name}</h3>
+    <h3>Hosted by {detail.name}</h3>
     {events.map(event => <Link key={event.id} className="ci-job" href={`/events?event=${encodeURIComponent(event.id)}`}>
       <strong>{event.title}</strong>
       <span>{[whenLabel(event), event.is_online ? 'Online' : event.area, event.is_cancelled ? 'Cancelled' : null].filter(Boolean).join(' · ')}</span>
@@ -1126,7 +1115,7 @@ function TechSection({ detail }: { detail: CompanyDetail }) {
   const { tech_stack_curated: curated, tech_stack_from_postings: live } = detail
   if (!curated.length && !live.length) return null
   return <section className="ci-section">
-    <h3><Sparkles size={13} />Technology they work on</h3>
+    <h3>Technology they work on</h3>
     {curated.length > 0 && <>
       <p className="ci-stack-label">Known stack</p>
       <div className="ci-stack">{curated.map(tech => <span key={tech}>{tech}</span>)}</div>
@@ -1141,7 +1130,7 @@ function TechSection({ detail }: { detail: CompanyDetail }) {
 function GithubSection({ detail }: { detail: CompanyDetail }) {
   const gh = detail.github
   return <section className="ci-section">
-    <h3><Github size={13} />Open source</h3>
+    <h3>Open source</h3>
     {!gh
       ? <p className="ci-empty-small">
           {detail.github_org
@@ -1158,15 +1147,15 @@ function GithubSection({ detail }: { detail: CompanyDetail }) {
               <strong>{gh.name}</strong>
               <span>@{gh.org} · {gh.public_repos} repos · {gh.followers.toLocaleString()} followers</span>
             </div>
-            <ExternalLink size={14} color="var(--faint)" />
+            <span aria-hidden="true">↗</span>
           </ExtLink>
           {gh.top_repos.map(repo =>
             <ExtLink key={repo.full_name} className="ci-repo" href={repo.html_url}>
               <span className="ci-repo-top">
-                <strong>{repo.name}</strong>
+                <strong>{repo.name} <span aria-hidden="true">↗</span></strong>
                 <span className="ci-repo-meta">
                   {repo.language && <span>{repo.language}</span>}
-                  <span><Star size={9} style={{ verticalAlign: -1 }} /> {repo.stars.toLocaleString()}</span>
+                  <span>{repo.stars.toLocaleString()} {repo.stars === 1 ? 'star' : 'stars'}</span>
                 </span>
               </span>
               {repo.description && <p>{repo.description}</p>}
@@ -1225,7 +1214,7 @@ function ContactsSection({ detail, onContactsChange }: {
   }
 
   return <section className="ci-section">
-    <h3><Mail size={13} />Talent contacts</h3>
+    <h3>Talent contacts</h3>
 
     <p className="ci-note">
       <strong>Nothing here is guessed.</strong> Contacts are either a channel the company
@@ -1238,7 +1227,6 @@ function ContactsSection({ detail, onContactsChange }: {
 
     {contacts.map(contact =>
       <div key={contact.id} className="ci-contact">
-        <span className="ci-contact-icon">{contact.email ? <Mail size={14} /> : <Globe size={14} />}</span>
         <div className="ci-contact-body">
           <strong>
             {contact.name || contact.title || contact.kind.replace('_', ' ')}
@@ -1254,18 +1242,17 @@ function ContactsSection({ detail, onContactsChange }: {
             <small>Source: <ExtLink href={contact.source_url}>{contact.source_url}</ExtLink></small>}
         </div>
         {!contact.is_curated &&
-          <button type="button" className="ci-close" onClick={() => remove(contact.id)} aria-label="Remove contact"><Trash2 size={14} /></button>}
+          <button type="button" className="ci-close" onClick={() => remove(contact.id)} aria-label="Remove contact">Remove</button>}
       </div>)}
 
     {formError && <p className="form-error" style={{ marginTop: 12 }}>{formError}</p>}
 
     <div className="ci-contact-actions">
       <button type="button" className="outline-button" onClick={runLookup} disabled={searching}>
-        {searching ? <Loader2 size={13} className="spin" /> : <Search size={13} />}
         {searching ? 'Searching the web…' : 'Find contacts on the web'}
       </button>
       <button type="button" className="outline-button" onClick={() => setShowForm(!showForm)}>
-        <Plus size={13} />{showForm ? 'Cancel' : 'Add a contact'}
+        {showForm ? 'Cancel' : 'Add a contact'}
       </button>
     </div>
 
@@ -1273,7 +1260,6 @@ function ContactsSection({ detail, onContactsChange }: {
 
     {candidates?.map(candidate =>
       <div key={candidate.email || candidate.source_url} className="ci-candidate" style={{ marginTop: 10 }}>
-        <span className="ci-contact-icon"><Mail size={14} /></span>
         <div>
           <a href={`mailto:${candidate.email}`}>{candidate.email}</a>
           <small>
