@@ -758,6 +758,7 @@ async def test_every_card_kind_the_briefing_had_before_outreach_still_reaches_th
         "saved_backlog",
         "closed_role",
         "interview_momentum",
+        "interview_stage",
     ]
     cards = [_card(card_id=kind, kind=kind, title=f"title {kind}", detail="d") for kind in kinds[:4]]
 

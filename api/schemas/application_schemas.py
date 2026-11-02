@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 
 
 class ApplicationCreateSchema(BaseModel):
@@ -21,6 +21,9 @@ class ApplicationUpdateSchema(BaseModel):
     status: str | None = Field(None)
     notes: str | None = Field(None)
     applied_at: datetime | None = Field(None)
+    # An absent key is left alone and null clears it. A time without an offset is
+    # refused: read as any one zone, it could be hours off what the user typed.
+    interview_at: AwareDatetime | None = Field(None)
 
 
 class ApplicationJobSchema(BaseModel):
@@ -40,6 +43,7 @@ class ApplicationResponseSchema(BaseModel):
     status: str
     notes: str | None
     applied_at: datetime | None
+    interview_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
     job: ApplicationJobSchema | None = None

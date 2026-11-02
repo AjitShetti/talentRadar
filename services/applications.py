@@ -5,7 +5,7 @@ Deterministic tools for the Application Tracker.
 
     update_application()  — advance status with event logging + timestamps
     tracker_analytics()   — funnel / conversion analytics for a user
-    day_agenda()          — interviews scheduled today / in the days ahead
+    day_agenda()          — interviews the user entered a time for, today / in the days ahead
     recent_activity()     — what actually moved on the tracker lately
 """
 
@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from domain.event_time import effective_end, ist_date, when_label
 from services.base import parse_uuid
 from storage.database import AsyncSessionLocal
 from storage.models import ApplicationEvent, ApplicationStatus, Company, Job, JobApplication
@@ -29,7 +30,8 @@ logger = logging.getLogger(__name__)
 #: How far ahead the overview's agenda looks for scheduled interviews.
 AGENDA_HORIZON_DAYS = 7
 
-# Status → timestamp column to keep in sync
+# Status → timestamp column to keep in sync. Each says when the row moved:
+# interview_scheduled_at is not the interview's time, which is interview_at.
 _TIMESTAMP_COLUMNS: dict[str, str] = {
     ApplicationStatus.APPLIED.value: "applied_at_explicit",
     ApplicationStatus.ONLINE_ASSESSMENT.value: "oa_completed_at",
@@ -159,7 +161,9 @@ async def _serialise_application(session: AsyncSession, app: JobApplication) -> 
         "cover_letter_id": str(app.cover_letter_id) if app.cover_letter_id else None,
         "applied_at_explicit": app.applied_at_explicit.isoformat() if app.applied_at_explicit else None,
         "oa_completed_at": app.oa_completed_at.isoformat() if app.oa_completed_at else None,
-        "interview_scheduled_at": app.interview_scheduled_at.isoformat() if app.interview_scheduled_at else None,
+        # The chat reads this payload, so the stamp is not named as if it were the interview's time.
+        "reached_interview_at": app.interview_scheduled_at.isoformat() if app.interview_scheduled_at else None,
+        "interview_at": app.interview_at.isoformat() if app.interview_at else None,
         "outcome_at": app.outcome_at.isoformat() if app.outcome_at else None,
         "events": [
             {
@@ -237,11 +241,9 @@ async def tracker_analytics(
         await session.close()
 
 
-def _day_offset(moment: datetime) -> int:
-    """Calendar days from today to ``moment``, in the server's UTC day."""
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=UTC)
-    return (moment.astimezone(UTC).date() - datetime.now(UTC).date()).days
+def _day_offset(moment: datetime, now: datetime | None = None) -> int:
+    """Calendar days from today to ``moment``. A day is an IST day."""
+    return (ist_date(moment) - ist_date(now or datetime.now(UTC))).days
 
 
 def _when_label(days: int) -> str:
@@ -256,14 +258,20 @@ async def day_agenda(
     *,
     user_id: str,
     within_days: int = AGENDA_HORIZON_DAYS,
+    now: datetime | None = None,
 ) -> list[dict[str, Any]]:
     """
-    Interviews the user has on the calendar, soonest first.
+    Interviews the user entered a time for, soonest first.
 
-    Only forward-looking rows in a live stage are returned: a scheduled date
-    that has passed, or one on an application that was since rejected, is
-    history rather than something to prepare for.
+    ``interview_at`` is the only source: a role at interview stage with no time
+    entered is not on the agenda, because nothing says when its interview is.
+
+    Only forward-looking rows in a live stage are returned: an interview that is
+    over (two hours after its start, the same assumption as an event with no
+    stated end), or one on an application that has since closed or reached an
+    offer, is history rather than something to prepare for.
     """
+    moment = now or datetime.now(UTC)
     session = AsyncSessionLocal()
     try:
         user_uuid = parse_uuid(user_id)
@@ -275,21 +283,22 @@ async def day_agenda(
             .outerjoin(Job, Job.id == JobApplication.job_id)
             .outerjoin(Company, Company.id == Job.company_id)
             .where(JobApplication.user_id == user_uuid)
-            .where(JobApplication.interview_scheduled_at.is_not(None))
+            .where(JobApplication.interview_at.is_not(None))
             .where(JobApplication.status.notin_([
+                ApplicationStatus.OFFER,
                 ApplicationStatus.REJECTED,
                 ApplicationStatus.WITHDRAWN,
             ]))
-            .order_by(JobApplication.interview_scheduled_at.asc())
+            .order_by(JobApplication.interview_at.asc())
         )
 
         agenda: list[dict[str, Any]] = []
         for app, job_title, company_name in result.all():
-            scheduled = app.interview_scheduled_at
-            if scheduled is None:
+            scheduled = app.interview_at
+            if scheduled is None or effective_end(scheduled, None) <= moment:
                 continue
-            days = _day_offset(scheduled)
-            if days < 0 or days > within_days:
+            days = _day_offset(scheduled, moment)
+            if days > within_days:
                 continue
             agenda.append({
                 "application_id": str(app.id),
@@ -300,6 +309,7 @@ async def day_agenda(
                 "scheduled_at": scheduled.isoformat(),
                 "days_away": days,
                 "when_label": _when_label(days),
+                "time_label": when_label(scheduled, None),
             })
         return agenda
     except Exception as exc:  # the agenda is additive — never blank the page

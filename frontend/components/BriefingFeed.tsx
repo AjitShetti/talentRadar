@@ -8,6 +8,7 @@ import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 const KIND_LABELS: Record<string, string> = {
   priority: 'Do this first',
   scheduled_interview: 'On the calendar',
+  interview_stage: 'No time ahead',
   stale_application: 'Going cold',
   saved_backlog: 'Unfinished',
   closed_role: 'No longer listed',

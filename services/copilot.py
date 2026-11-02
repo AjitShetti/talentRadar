@@ -98,6 +98,7 @@ PREFERENCE_TYPE = "preference"
 MODEL_VISIBLE_CARD_KINDS = frozenset({
     "closed_role",
     "interview_momentum",
+    "interview_stage",
     "priority",
     "saved_backlog",
     "scheduled_interview",
@@ -219,6 +220,7 @@ async def _application_cards(user_id: str) -> list[dict[str, Any]]:
         )
         rows = result.all()
 
+        now = _now()
         cards: list[dict[str, Any]] = []
         stale_saved: list[tuple[JobApplication, str | None]] = []
 
@@ -261,6 +263,26 @@ async def _application_cards(user_id: str) -> list[dict[str, Any]]:
                         "company": company,
                     },
                 ))
+            elif (
+                app.status == ApplicationStatus.INTERVIEW
+                and (app.interview_at is None or effective_end(app.interview_at, None) <= now)
+            ):
+                # Interview stage with no time ahead. It names no time and no day, because
+                # nothing says when the interview is: only the user can enter that.
+                cards.append(_card(
+                    card_id=f"interview_stage:{app.id}",
+                    kind="interview_stage",
+                    title=f"{job_title or 'A role'} at {company} is at interview stage",
+                    detail=(
+                        "There is no upcoming interview time on your tracker. "
+                        "Add the date and time on Applications once you have them."
+                    ),
+                    actions=[
+                        {"label": "Add the time", "href": "/applications", "style": "primary"},
+                        {"label": "Prep with a mock", "href": "/interview", "style": "ghost"},
+                    ],
+                    meta={"application_id": str(app.id), "company": company},
+                ))
 
         # Saved-but-untouched roles collapse into one card — a list of six
         # identical nudges is noise, one card with a count is a decision.
@@ -293,15 +315,16 @@ async def _application_cards(user_id: str) -> list[dict[str, Any]]:
 
 async def _scheduled_interview_cards(user_id: str) -> list[dict[str, Any]]:
     """
-    Interviews already on the calendar.
+    Interviews the user entered a time for.
 
     This outranks everything else the briefing can say: a stale application
     costs a reply, an interview tomorrow costs the round. Cards are emitted
     only inside the prep window — a date three weeks out is not today's work.
+    A role at interview stage with no time is ``_application_cards``' to raise.
     """
     from services.applications import day_agenda
 
-    agenda = await day_agenda(user_id=user_id, within_days=SCHEDULED_PREP_WINDOW_DAYS)
+    agenda = await day_agenda(user_id=user_id, within_days=SCHEDULED_PREP_WINDOW_DAYS, now=_now())
 
     cards: list[dict[str, Any]] = []
     for item in agenda:
@@ -312,7 +335,7 @@ async def _scheduled_interview_cards(user_id: str) -> list[dict[str, Any]]:
             kind="scheduled_interview",
             title=f"{item['role']} interview at {item['company']} — {when}",
             detail=(
-                f"Scheduled for {_clock(item['scheduled_at'])}. "
+                f"Scheduled for {item['time_label']}. "
                 + (
                     "Run one mock round on this company's stack before you sit down."
                     if days <= 1
@@ -333,14 +356,6 @@ async def _scheduled_interview_cards(user_id: str) -> list[dict[str, Any]]:
             dismissible=days > 0,
         ))
     return cards
-
-
-def _clock(iso: str) -> str:
-    """Render a stored ISO timestamp as a readable time, tolerating junk."""
-    try:
-        return datetime.fromisoformat(iso).strftime("%d %b, %H:%M")
-    except ValueError:
-        return "a time on your tracker"
 
 
 def _event_link(event_id: uuid.UUID, anchor: str = "") -> str:

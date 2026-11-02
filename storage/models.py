@@ -752,7 +752,13 @@ class JobApplication(Base):
     oa_completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # When the status moved to interview, not when the interview is: nothing a
+    # person reads may present this as the interview's time. That is interview_at.
     interview_scheduled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # The interview's time as the user entered it; empty until they do.
+    interview_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     outcome_at: Mapped[datetime | None] = mapped_column(

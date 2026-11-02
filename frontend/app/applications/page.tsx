@@ -1,14 +1,16 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { FormEvent, useEffect, useRef, useState } from 'react'
 import AppShell from '@/components/AppShell'
 import { useDay } from '@/components/DayLine'
 import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
 import { api, Application } from '@/lib/api'
 import { forgetNote } from '@/lib/day-line'
+import { asksInterviewTime, inputFromInterviewAt, interviewAtFromInput } from '@/lib/interview-time'
 import { usePersistentState } from '@/lib/persistent-state'
+import { dayTime } from '@/lib/practice-time'
 import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 
 // Must stay in sync with ApplicationStatus in storage/models.py — the PATCH
@@ -33,6 +35,47 @@ function StageTicks({ status }: { status: string }) {
       data-on={i < at ? '' : undefined}
       data-now={i === at ? '' : undefined}
     />)}
+  </div>
+}
+
+/**
+ * The interview's time, as the user enters it. Nothing else knows it: moving a role to
+ * interview says nothing about when the interview is, so the Overview only asks until this is set.
+ */
+function InterviewTime({ app, onSave }: { app: Application; onSave: (interviewAt: string | null) => Promise<boolean> }) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState('')
+  const [busy, setBusy] = useState(false)
+  const shown = useRef<HTMLDivElement>(null)
+  const role = app.job?.title || 'this application'
+
+  // The control that had focus leaves the page with its form; keep the keyboard on the Edit button.
+  const stopEditing = () => {
+    setEditing(false)
+    setTimeout(() => shown.current?.querySelector('button')?.focus(), 0)
+  }
+  const save = async (next: string | null) => {
+    setBusy(true)
+    const saved = await onSave(next)
+    setBusy(false)
+    if (saved) stopEditing()
+  }
+  const submit = (e: FormEvent) => {
+    e.preventDefault()
+    if (value && !busy) void save(interviewAtFromInput(value))
+  }
+  const edit = () => { setValue(inputFromInterviewAt(app.interview_at)); setEditing(true) }
+
+  if (editing) return <form className="application-when" onSubmit={submit} aria-label={`Interview time for ${role}`}>
+    <label>Interview (IST)<input type="datetime-local" autoFocus value={value} onChange={e => setValue(e.target.value)} required /></label>
+    <button type="submit" className="outline-button" disabled={busy || !value}>{busy ? 'Saving…' : 'Save time'}</button>
+    {app.interview_at && <button type="button" className="text-button" disabled={busy} onClick={() => void save(null)}>Remove</button>}
+    <button type="button" className="text-button" disabled={busy} onClick={stopEditing}>Cancel</button>
+  </form>
+
+  return <div className="application-when" ref={shown}>
+    <span>{app.interview_at ? `Interview ${dayTime(app.interview_at)}` : 'No interview time yet'}</span>
+    <button type="button" className="text-button" onClick={edit} aria-label={`${app.interview_at ? 'Edit the interview time' : 'Add the interview time'} for ${role}`}>{app.interview_at ? 'Edit' : 'Add the time'}</button>
   </div>
 }
 
@@ -64,6 +107,19 @@ export default function ApplicationsPage() {
       forgetNote(id)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not update application.')
+    }
+  }
+
+  async function saveInterviewTime(id: string, interviewAt: string | null) {
+    try {
+      const updated = await api.applications.update(id, { interview_at: interviewAt })
+      setApps(current => current.map(app => app.id === id ? updated : app))
+      forgetNote(id)
+      setError('')
+      return true
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the interview time.')
+      return false
     }
   }
 
@@ -124,6 +180,7 @@ export default function ApplicationsPage() {
                 {posting && <a href={posting} {...EXTERNAL_LINK_PROPS} aria-label="Open the original posting">Open <span aria-hidden="true">↗</span></a>}
                 <button type="button" onClick={() => remove(app.id)} aria-label={`Remove ${app.job?.title || 'this application'} from your tracker`}>Remove</button>
               </div>
+              {asksInterviewTime(app.status, app.interview_at) && <InterviewTime app={app} onSave={next => saveInterviewTime(app.id, next)} />}
             </article>
           })}</div>}
   </AppShell></RequireAuth>

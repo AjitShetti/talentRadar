@@ -11,6 +11,7 @@ import RequireAuth from '@/components/RequireAuth'
 import { ScoreBars } from '@/components/overview/Charts'
 import { AgendaItem, api, Briefing, BriefingCard, currentEmail, JobMatch, OutreachHome, SkillsFocus } from '@/lib/api'
 import { arrivalPending, markForAction, nextMark, publishBriefing, setDayLit, untilLabel } from '@/lib/day-line'
+import { clock as istClock } from '@/lib/practice-time'
 import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 
 type Dimension = { key: string; label: string; score: number; weakest: boolean }
@@ -85,12 +86,17 @@ const todayTag = (card: BriefingCard) => card.tone === 'warning'
  *   5. a take-home due within hours (Practice);
  *   6. an Outreach follow-up that is due;
  *   7. today's outreach pack, while a company in it is still to review;
- *   8. the briefing's own next-best action;
- *   9. the week's event, then who the user met;
- *  10. the one company worth a note (the Outreach suggestion), only without a pack;
- *  11. the cheapest durable win (a first mock), then study, then apply;
- *  12. the one Practice suggestion (the weekly contest, else today's question).
+ *   8. a role at interview stage with no time ahead, asking for one;
+ *   9. the briefing's own next-best action;
+ *  10. the week's event, then who the user met;
+ *  11. the one company worth a note (the Outreach suggestion), only without a pack;
+ *  12. the cheapest durable win (a first mock), then study, then apply;
+ *  13. the one Practice suggestion (the weekly contest, else today's question).
  *
+ * The agenda and the interview cards hold only times the user entered, so 1 and 4 can
+ * state a clock. A role at interview stage with none names no time and no day, and
+ * nothing says when it is, so it ranks after today's commitments and ahead of the
+ * next-best action: only the user can fill in the time.
  * An event for today is the next dated commitment after an interview, and it
  * expires tonight, so it outranks setup. A follow-up is a date the user set
  * themselves, so it outranks the briefing's next-best action; an interview within a
@@ -117,11 +123,12 @@ function buildActions(
   const today = agenda.filter(item => item.days_away === 0)
   if (today.length > 0) {
     const next = today[0]
-    const at = clock(next.scheduled_at)
+    const at = istClock(next.scheduled_at)
     out.push({
-      key: 'interview-today',
+      // Keyed as its briefing card, so the row and its mark on the day line find each other.
+      key: `briefing-scheduled_interview:${next.application_id}`,
       title: `Prep for ${next.company}`,
-      why: `Your ${next.role} interview is today${at ? ` at ${at}` : ''}. Everything below can wait until it is done.`,
+      why: `Your ${next.role} interview is today${at ? ` at ${at} IST` : ''}. Everything below can wait until it is done.`,
       tags: [{ label: at ? `Today ${at}` : 'Today', hot: true }, ...(today.length > 1 ? [{ label: `${today.length} interviews today` }] : [])],
       cta: 'Open prep',
       href: '/interview',
@@ -152,7 +159,7 @@ function buildActions(
   // An interview within a day. Today's is already the first action, and the briefing
   // has a card for the same interview: showing it again would spend a second slot
   // saying it twice, so that card is skipped here and as the lead.
-  const interviewTodayShown = out.some(action => action.key === 'interview-today')
+  const interviewTodayShown = today.length > 0
   const repeatsToday = (card: BriefingCard) =>
     interviewTodayShown && card.kind === 'scheduled_interview' && metaNumber(card, 'days_away') === 0
   const soon = cards.find(card => {
@@ -196,6 +203,12 @@ function buildActions(
     })
   }
   const packShown = out.some(action => action.href === '/outreach#today')
+
+  // A role at interview stage with no time ahead. The card names none, and asks for it.
+  const atStage = cards.find(card => card.kind === 'interview_stage')
+  if (atStage && out.length < 3 && !taken(atStage)) {
+    out.push(fromCard(atStage, [{ label: 'Interview stage' }, { label: 'No time ahead' }], { cta: 'Add the time', href: '/applications' }))
+  }
 
   // The lead is the briefing's next-best action. Outreach, event and Practice cards have
   // their own slots: as the lead they would count the same card twice.
