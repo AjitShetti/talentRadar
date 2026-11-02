@@ -46,7 +46,7 @@ function Card({ card, onDismiss }: { card: BriefingCard; onDismiss: (id: string,
           // An absolute http(s) URL (the LeetCode cards) opens in a new tab; an in-app path stays a Link.
           const external = externalHref(action.href)
           return external
-            ? <a key={action.label} href={external} className={className} {...EXTERNAL_LINK_PROPS}>{action.label}</a>
+            ? <a key={action.label} href={external} className={className} {...EXTERNAL_LINK_PROPS}>{action.label} <span aria-hidden="true">↗</span></a>
             : <Link key={action.label} href={action.href} className={className}>{action.label}</Link>
         })}
       </div>}

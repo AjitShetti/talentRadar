@@ -6,7 +6,6 @@
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AddLayerObject, GeoJSONSource, Map as MapLibreMap, Marker } from 'maplibre-gl'
-import { Loader2, Maximize, Minus, Plus } from 'lucide-react'
 import { isApproximate, type GeoPrecision, type MapCompany } from '@/lib/api'
 import { EXTERNAL_LINK_PROPS } from '@/lib/safe-url'
 import { BBOX, STYLE_URL, loadMapLibre, reducedMotion, token, webglAvailable, withAlpha } from '@/lib/maplibre'
@@ -73,9 +72,9 @@ function pinLayers(): AddLayerObject[] {
   const ink2 = token('--ink-2', '#C7CBD1')
   const paper = token('--paper', '#131211')
   const faint = token('--faint', '#868C94')
-  const accent = token('--accent', '#FFB020')
-  const accentSoft = token('--accent-soft', 'rgba(255,176,32,.14)')
-  const accentBorder = token('--accent-border', 'rgba(255,176,32,.34)')
+  const accent = token('--accent', '#2C75FF')
+  const accentSoft = token('--accent-soft', 'rgba(44,117,255,.18)')
+  const accentBorder = token('--accent-border', 'rgba(44,117,255,.45)')
   const hole = withAlpha(paper, 0.72)
   const radius = (base: number): CirclePaint['circle-radius'] =>
     ['interpolate', ['linear'], ['zoom'], 9, base - 1.4, 13, base, 17, base + 2]
@@ -455,15 +454,15 @@ export default function CompanyMap({ rows, litIds, selectedId, selected, active,
       role="region"
       aria-label="Map of Bengaluru employers. Pins are companies; the List view lists them all."
     />
-    {!ready && <div className="cm-plate" role="status"><Loader2 size={16} className="spin" />Loading map…</div>}
+    {!ready && <div className="cm-plate" role="status">Loading map…</div>}
     <div ref={tipRef} className="cm-tip" hidden aria-hidden="true"><strong /><small /></div>
 
     <div className="cm-rail">
       {railTop}
       <div className="cm-float cm-zoom" role="group" aria-label="Map zoom">
-        <button type="button" onClick={() => mapRef.current?.zoomIn({ duration: reducedMotion() ? 0 : 250 })} aria-label="Zoom in"><Plus size={15} /></button>
-        <button type="button" onClick={() => mapRef.current?.zoomOut({ duration: reducedMotion() ? 0 : 250 })} aria-label="Zoom out"><Minus size={15} /></button>
-        <button type="button" onClick={fit} aria-label="Fit Bengaluru"><Maximize size={14} /></button>
+        <button type="button" onClick={() => mapRef.current?.zoomIn({ duration: reducedMotion() ? 0 : 250 })} aria-label="Zoom in">+</button>
+        <button type="button" onClick={() => mapRef.current?.zoomOut({ duration: reducedMotion() ? 0 : 250 })} aria-label="Zoom out">−</button>
+        <button type="button" onClick={fit} aria-label="Fit Bengaluru">Fit</button>
       </div>
       {railBottom}
     </div>

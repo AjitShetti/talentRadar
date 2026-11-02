@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Pause, Play } from 'lucide-react'
 import { onMotionChange, setMotionPaused } from './motion'
 
 /** The page's one pause control. A viewer who asked for reduced motion starts paused. */
@@ -21,7 +20,7 @@ export default function MotionButton({ className }: { className: string }) {
       onClick={() => setMotionPaused(!paused)}
       aria-label={paused ? 'Play motion' : 'Pause motion'}
     >
-      {paused ? <Play size={12} fill="currentColor" strokeWidth={0} /> : <Pause size={12} fill="currentColor" strokeWidth={0} />}
+      {paused ? 'Play' : 'Pause'}
     </button>
   )
 }

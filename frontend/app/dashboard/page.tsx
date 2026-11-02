@@ -380,6 +380,14 @@ export default function Dashboard() {
         </div>
         <p className="ov2-lead">{headline}</p>
         <NextOnTheLine />
+        <button
+          ref={fabRef}
+          className="outline-button ov2-copilot"
+          type="button"
+          aria-expanded={copilotOpen}
+          aria-controls="ov-copilot"
+          onClick={() => setCopilotOpen(open => !open)}
+        >Ask copilot</button>
       </header>
 
       {error && <p className="form-error">{error}</p>}
@@ -474,16 +482,6 @@ export default function Dashboard() {
       </section> : null}
     </div>
 
-    {/* ── the copilot: a floating button and a drawer ───────────────────── */}
-    <button
-      ref={fabRef}
-      className="ov2-copilot"
-      type="button"
-      aria-expanded={copilotOpen}
-      aria-controls="ov-copilot"
-      onClick={() => setCopilotOpen(open => !open)}
-    >Ask copilot</button>
-
     <CopilotDrawer open={copilotOpen} onClose={() => { setCopilotOpen(false); fabRef.current?.focus() }} />
   </AppShell></RequireAuth>
 }
@@ -552,7 +550,7 @@ function ActionButton({ action, lead }: { action: Action; lead: boolean }) {
   const external = externalHref(action.href)
   if (external) {
     return <a className={className} href={external} {...EXTERNAL_LINK_PROPS}>
-      {action.cta}
+      {action.cta} <span aria-hidden="true">↗</span>
     </a>
   }
   return <Link className={className} href={action.href}>

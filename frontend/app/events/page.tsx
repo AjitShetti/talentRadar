@@ -4,7 +4,6 @@ import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { FormEvent, ReactNode, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Bookmark, CalendarDays, Check, Download, Info, List, Loader2, Map as MapIcon, Search, SlidersHorizontal, Trash2, Users, X } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import type { EventMapProps } from '@/components/EventMap'
 import FlapText from '@/components/FlapText'
@@ -29,7 +28,7 @@ function MapChunkFailed({ onUnavailable }: EventMapProps) {
 }
 const EventMap = dynamic<EventMapProps>(
   () => import('@/components/EventMap').catch(() => ({ default: MapChunkFailed })),
-  { ssr: false, loading: () => <div className="cm-plate" role="status"><Loader2 size={16} className="spin" />Loading map…</div> },
+  { ssr: false, loading: () => <div className="cm-plate" role="status">Loading map…</div> },
 )
 
 const PAGE_SIZE = 100
@@ -127,7 +126,7 @@ function fileSlug(title: string): string {
 export default function EventsPage() {
   // useSearchParams needs a Suspense boundary above it; the shell stays outside so the nav never blinks.
   return <RequireAuth><AppShell>
-    <Suspense fallback={<div className="loading-state"><Loader2 className="spin" /> Loading events…</div>}>
+    <Suspense fallback={<div className="loading-state">Loading events…</div>}>
       <EventsView />
     </Suspense>
   </AppShell></RequireAuth>
@@ -292,14 +291,13 @@ function EventsView() {
   const addLink = (variant: 'inline' | 'sheet') => <AddByLink variant={variant} onSubmit={importLink} />
 
   return <>
-    <section className="page-heading split-heading">
-      <div>
-        <span className="board-kicker">Events — Bengaluru</span>
-        <h1>Where to meet people this week<span>.</span></h1>
-        <p>Tech meetups, talks and demo nights from Luma, GDG and Eventbrite. We never register for you.</p>
+    <header className="day-title">
+      <div className="day-head">
+        <h1 className="day-h1">Where to meet people this week.</h1>
+        <span className="ov2-date"><FlapText value={meta ? meta.counts.upcoming : '—'} /> upcoming</span>
       </div>
-      <div className="tracker-total ev-total"><strong><FlapText value={meta ? meta.counts.upcoming : '—'} /></strong><span>upcoming</span></div>
-    </section>
+      <p className="ov2-lead">Bengaluru meetups, talks and demo nights. We never register for you.</p>
+    </header>
     {meta && <Ledger counts={meta.counts} sources={meta.sources} now={now} />}
 
     <Toolbar
@@ -316,10 +314,10 @@ function EventsView() {
 
     {manual && <ManualForm draft={manual} onCancel={() => setManual(null)} onAdded={manualAdded} />}
     {notice && <p className={notice.kind === 'error' ? 'form-error' : 'ci-empty-small'} role={notice.kind === 'error' ? 'alert' : 'status'}>{notice.text}</p>}
-    {mapDown && <p className="cm-fallback" role="status"><Info size={15} aria-hidden="true" /><span>Map unavailable — showing the list.</span><small>{mapDown}</small></p>}
+    {mapDown && <p className="cm-fallback" role="status"><span>Map unavailable — showing the list.</span><small>{mapDown}</small></p>}
 
     {loadState === 'loading' && !events.length
-      ? <div className="loading-state"><Loader2 className="spin" /> Loading events…</div>
+      ? <div className="loading-state">Loading events…</div>
       : loadState === 'error'
         ? <p className="form-error" role="alert">{loadError}</p>
         : !events.length
@@ -449,7 +447,6 @@ function Toolbar({ filters, set, counts, activeCount, view, mapDown, onView, onO
   const railCount = (id: Rail) => (counts ? (id === 'all' ? counts.upcoming : id === 'going' ? counts.going : null) : null)
   return <div className="ev-toolbar">
     <div className="ci-searchbar ev-searchbar">
-      <Search size={16} aria-hidden="true" />
       <input
         aria-label="Search events"
         placeholder="Search title or organiser — e.g. Swift, Qiskit, product"
@@ -465,14 +462,14 @@ function Toolbar({ filters, set, counts, activeCount, view, mapDown, onView, onO
       <ToggleChip pressed={filters.online} disabled={filters.rail !== 'all'} onToggle={() => set('online', !filters.online)}>Online too</ToggleChip>
       <ToggleChip pressed={filters.hidePaid} onToggle={() => set('hidePaid', !filters.hidePaid)}>Hide paid</ToggleChip>
       <button type="button" className="ci-chip ev-filterbtn" aria-haspopup="dialog" onClick={onOpenSheet}>
-        <SlidersHorizontal size={13} aria-hidden="true" />{activeCount > 0 ? `Filters (${activeCount})` : 'Filters'}
+        {activeCount > 0 ? `Filters (${activeCount})` : 'Filters'}
       </button>
       <div className="ev-viewswitch" role="group" aria-label="View" data-testid="view-switch">
         <button type="button" aria-pressed={view === 'list'} onClick={() => onView('list')}>
-          <List size={13} aria-hidden="true" />List
+          List
         </button>
         <button type="button" aria-pressed={view === 'map'} aria-disabled={mapDown} title={mapDown ? 'Map unavailable' : undefined} onClick={() => onView('map')}>
-          <MapIcon size={13} aria-hidden="true" />Map
+          Map
         </button>
       </div>
     </div>
@@ -536,7 +533,7 @@ function FilterSheet({ filters, set, count, onClear, onClose, addLink }: {
       <span className="cm-sheet-grip" aria-hidden="true" />
       <div className="cm-sheet-head">
         <h2 id="ev-sheet-title">Filters</h2>
-        <button type="button" className="ci-close" onClick={onClose} aria-label="Close filters" data-autofocus><X size={18} /></button>
+        <button type="button" className="ci-close" onClick={onClose} aria-label="Close filters" data-autofocus>Close</button>
       </div>
       <WhenSelect bare value={filters.when} disabled={filters.rail !== 'all'} onChange={value => set('when', value)} />
       <TopicSelect bare value={filters.topic} onChange={value => set('topic', value)} />
@@ -629,10 +626,10 @@ function EventRow({ event, now, selected, onToggleSave }: {
       type="button"
       className="ev-save"
       aria-pressed={saved}
-      aria-label={`Save ${event.title}`}
+      aria-label={`${event.my_status === 'going' ? 'Going' : saved ? 'Saved' : 'Save'}: ${event.title}`}
       title={event.my_status === 'going' ? 'Going — click to remove' : saved ? 'Saved — click to remove' : 'Save this event'}
       onClick={() => onToggleSave(event)}
-    ><Bookmark size={16} aria-hidden="true" /></button>
+    >{event.my_status === 'going' ? 'Going' : saved ? 'Saved' : 'Save'}</button>
   </article>
 }
 
@@ -651,7 +648,6 @@ function EmptyState({ rail, anyFilter, online, upcoming, going, nextRead, onClea
 }) {
   if (anyFilter) {
     return <div className="empty-state">
-      <CalendarDays size={18} aria-hidden="true" />
       <h2>Nothing matches these filters.</h2>
       <button type="button" className="outline-button" style={{ marginTop: 12 }} onClick={onClear}>Clear filters</button>
     </div>
@@ -659,34 +655,29 @@ function EmptyState({ rail, anyFilter, online, upcoming, going, nextRead, onClea
   // The ledger says they are going to something: never answer "you haven't" over that.
   if (rail !== 'all' && going) {
     return <div className="empty-state">
-      <Check size={18} aria-hidden="true" />
       <h2>You&apos;re going to {going} {going === 1 ? 'event' : 'events'}.</h2>
       <p>{going === 1 ? 'It is' : 'They are'} not in this view yet. Reload, or look under All.</p>
     </div>
   }
   if (rail === 'saved') {
     return <div className="empty-state">
-      <Bookmark size={18} aria-hidden="true" />
       <h2>You haven&apos;t saved an event.</h2>
       <p>Save one from the list and it shows up on your Overview the day it happens.</p>
     </div>
   }
   if (rail === 'going') {
     return <div className="empty-state">
-      <Check size={18} aria-hidden="true" />
       <h2>You haven&apos;t marked an event as going.</h2>
       <p>Mark Going in an event&apos;s details and it shows up on your Overview the day it happens.</p>
     </div>
   }
   if (upcoming && !online) {
     return <div className="empty-state">
-      <CalendarDays size={18} aria-hidden="true" />
       <h2>No in-person events in the next 30 days.</h2>
       <button type="button" className="outline-button" style={{ marginTop: 12 }} onClick={onOnline}>Include online events</button>
     </div>
   }
   return <div className="empty-state">
-    <CalendarDays size={18} aria-hidden="true" />
     <h2>No events on record yet.</h2>
     <p>The next read is at {nextRead} IST.</p>
   </div>
@@ -750,17 +741,16 @@ function EventDrawer({ eventId, fallback, now, closeOnEscape, onClose, onStatus,
     onKeyDown={onKeyDown}
   >
     <header className="ci-drawer-head">
-      <span className="ci-logo"><CalendarDays size={18} aria-hidden="true" /></span>
       <div className="ci-drawer-title">
         <h2 id="ev-drawer-title">{head ? head.title : 'Loading…'}</h2>
         {head && <Head event={head} now={now} />}
       </div>
-      <button type="button" className="ci-close" onClick={onClose} aria-label="Close" data-autofocus><X size={18} /></button>
+      <button type="button" className="ci-close" onClick={onClose} aria-label="Close" data-autofocus>Close</button>
     </header>
 
     <div className="ci-drawer-body" ref={bodyRef}>
       {error && <p className="form-error" role="alert" style={{ marginTop: 18 }}>{error}</p>}
-      {!detail && !error && <div className="cm-drawer-loading" aria-busy="true"><Loader2 size={16} className="spin" />Loading…</div>}
+      {!detail && !error && <div className="cm-drawer-loading" aria-busy="true">Loading…</div>}
       {detail && <>
         <Actions detail={detail} started={started} onChange={patch} onStatus={onStatus} onDeleted={onDeleted} />
         {detail.source !== 'user' && <WhySection reasons={detail.reasons} />}
@@ -844,16 +834,16 @@ function Actions({ detail, started, onChange, onStatus, onDeleted }: {
         {register ? `Register on ${label}` : `Open on ${label}`} <span aria-hidden="true">↗</span>
       </a>}
       <button type="button" className="ev-toggle" aria-pressed={status === 'going'} disabled={busy} onClick={() => setStatus(status === 'going' ? 'saved' : 'going')}>
-        <Check size={13} aria-hidden="true" />Going
+        Going
       </button>
       {status !== 'going' && <button type="button" className="ev-toggle" aria-pressed={status === 'saved'} disabled={busy} onClick={() => setStatus(status === 'saved' ? null : 'saved')}>
-        <Bookmark size={13} aria-hidden="true" />Save
+        Save
       </button>}
       <button type="button" className="ev-toggle" disabled={busy} onClick={calendar}>
-        <Download size={13} aria-hidden="true" />Add to calendar (.ics)
+        Add to calendar (.ics)
       </button>
       {detail.source === 'user' && <button type="button" className="ev-toggle is-danger" disabled={busy} onClick={remove}>
-        <Trash2 size={13} aria-hidden="true" />Delete event
+        Delete event
       </button>}
     </div>
     {message && <p className="form-error" role="alert">{message}</p>}
@@ -885,7 +875,7 @@ function HostsSection({ detail }: { detail: EventDetail }) {
   if (!hosts.length) return null
   const anyCompany = hosts.some(h => h.companyId)
   return <section className="ci-section ev-hosts">
-    <h3><Users size={13} aria-hidden="true" />Hosted by</h3>
+    <h3>Hosted by</h3>
     <p>
       {hosts.map((host, index) => <span key={host.name}>
         {index > 0 && ' · '}
@@ -986,7 +976,7 @@ function PeopleSection({ detail, onChange, onStatus }: {
   }
 
   return <section className="ci-section" id="people">
-    <h3><Users size={13} aria-hidden="true" />People you met · {people.length}</h3>
+    <h3>People you met · {people.length}</h3>
     {!people.length && <p className="ci-empty-small">Who did you meet? Add them while names are fresh.</p>}
     {people.map(person => <PersonRow key={person.id} person={person} onRemove={() => void remove(person)} />)}
     {error && <p className="form-error" role="alert">{error}</p>}
@@ -1009,7 +999,7 @@ function PersonRow({ person, onRemove }: { person: EventContact; onRemove: () =>
       {x && <a href={x} {...EXTERNAL_LINK_PROPS}>X ↗</a>}
       {github && <a href={github} {...EXTERNAL_LINK_PROPS}>GitHub ↗</a>}
       {FEATURES.outreach && <Link href={`/outreach?add=event_contact:${person.id}`}>Start a thread</Link>}
-      <button type="button" className="ev-person-remove" onClick={onRemove} aria-label={`Remove ${person.name}`}><X size={14} aria-hidden="true" /></button>
+      <button type="button" className="ev-person-remove" onClick={onRemove} aria-label={`Remove ${person.name}`}>Remove</button>
     </div>
     {person.note && <p>{person.note}</p>}
   </div>

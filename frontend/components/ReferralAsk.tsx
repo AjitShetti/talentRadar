@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { PenLine } from 'lucide-react'
 import CopyButton from '@/components/CopyButton'
 import { api } from '@/lib/api'
 import { track } from '@/lib/analytics'
@@ -44,7 +43,7 @@ export default function ReferralAsk({ jobId, recipientName, recipientTitle }: { 
     } finally { setBusy(false) }
   }
 
-  if (!open) return <button type="button" className="text-button" onClick={() => setOpen(true)}><PenLine size={12} /> Draft a referral ask</button>
+  if (!open) return <button type="button" className="text-button" onClick={() => setOpen(true)}>Draft a referral ask</button>
 
   return <div className="referral-ask">
     <label>How do you know {recipientName || 'them'}?

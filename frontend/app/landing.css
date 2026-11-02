@@ -237,11 +237,11 @@ html:has(.lp)::-webkit-scrollbar-thumb:hover{background:rgb(255 255 255 / .34)}
 .lp-motion{
   position:fixed;z-index:800;
   right:max(16px,env(safe-area-inset-right,0px));bottom:max(16px,env(safe-area-inset-bottom,0px));
-  display:grid;place-items:center;width:30px;height:30px;border-radius:50%;
+  height:30px;padding:0 12px;font:500 12px var(--font-text);border-radius:var(--r-pill,999px);
   background:rgb(0 0 0 / .45);border:1px solid rgb(var(--hi) / .34);color:var(--ink);
 }
 .lp-motion:hover{background:rgb(0 0 0 / .65)}
-.lp-motion:focus-visible{border-radius:50%;outline-color:#FFFFFF;box-shadow:0 0 0 6px rgb(0 0 0 / .7)}
+.lp-motion:focus-visible{outline-color:#FFFFFF;box-shadow:0 0 0 6px rgb(0 0 0 / .7)}
 
 /* ── Hero cards. --u is one design pixel: a card is drawn 380 wide and every
    length inside it scales with the room the container has, so all three fit
@@ -432,7 +432,7 @@ html:has(.lp)::-webkit-scrollbar-thumb:hover{background:rgb(255 255 255 / .34)}
 .lp-faq summary::-webkit-details-marker{display:none}
 .lp-faq summary:hover{color:var(--accent)}
 .lp-faq-mark{
-  display:grid;place-items:center;width:28px;height:28px;border-radius:50%;flex-shrink:0;
+  display:grid;place-items:center;width:28px;height:28px;border-radius:50%;flex-shrink:0;font:400 18px/1 var(--font-text);
   background:rgb(var(--hi) / .05);border:1px solid var(--line);color:var(--muted);
   transition:transform .55s var(--ease),background .45s var(--ease),color .45s var(--ease);
 }

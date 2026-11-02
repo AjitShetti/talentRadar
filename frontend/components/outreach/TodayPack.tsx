@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Loader2 } from 'lucide-react'
 import PackCompanyCard, { PackItemRow } from '@/components/outreach/PackCompanyCard'
 import { track } from '@/lib/analytics'
 import { api, OutreachPack, PackCompany, PackItem } from '@/lib/api'
@@ -158,7 +157,7 @@ export default function TodayPack({ onChanged }: Props) {
     {error && <p className="form-error">{error}</p>}
 
     {loading
-      ? <div className="loading-state"><Loader2 className="spin" /> Picking today&rsquo;s companies&hellip;</div>
+      ? <div className="loading-state">Picking today&rsquo;s companies&hellip;</div>
       : pack && (pack.companies.length === 0 && followUps.length === 0
         ? <div className="empty-state"><p>Nothing new matched today. Add skills or target roles to widen it. <Link href="/settings">Open your profile &rarr;</Link></p></div>
         : <>

@@ -1,9 +1,6 @@
 'use client'
 
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  Check, ChevronDown, ChevronUp, Download, Eye, EyeOff, Plus, RefreshCw, Trash2, UploadCloud,
-} from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
@@ -381,13 +378,12 @@ export default function ResumeStudioPage() {
   return (
     <RequireAuth>
       <AppShell>
-        <section className="page-heading">
-          <div>
-            <span className="board-kicker">Resume studio</span>
-            <h1>Build your resume, section by section<span>.</span></h1>
-            <p>Edit structured sections on the left — your LaTeX source, compiled PDF, and ATS score all update live as you type.</p>
+        <header className="day-title">
+          <div className="day-head">
+            <h1 className="day-h1">Build your resume, section by section.</h1>
           </div>
-        </section>
+          <p className="ov2-lead">LaTeX, PDF and ATS score update as you type.</p>
+        </header>
 
         {loading && <div className="card-empty">Loading your resume…</div>}
         {loadError && <p className="form-error">{loadError}</p>}
@@ -418,7 +414,7 @@ export default function ResumeStudioPage() {
               <div className="editor-panel-head">
                 <h2>Resume sections</h2>
                 <label htmlFor="resume-import-file" className="outline-button upload-trigger">
-                  <UploadCloud size={13} /> {importing ? 'Importing…' : 'Import resume'}
+                  {importing ? 'Importing…' : 'Import resume'}
                 </label>
                 <input id="resume-import-file" type="file" accept=".pdf,.docx,.txt" className="file-input" onChange={handleImport} disabled={importing} />
               </div>
@@ -434,7 +430,7 @@ export default function ResumeStudioPage() {
                     type="button" className="editor-icon-btn" aria-expanded={expanded === 'personal'}
                     aria-label={expanded === 'personal' ? 'Collapse personal details' : 'Expand personal details'}
                     onClick={e => { e.stopPropagation(); setExpanded(expanded === 'personal' ? null : 'personal') }}
-                  >{expanded === 'personal' ? <ChevronUp size={15} /> : <ChevronDown size={15} />}</button>
+                  ><span className="caret" aria-hidden="true" /></button>
                 </div>
                 {expanded === 'personal' && (
                   <div className="editor-section-body">
@@ -450,10 +446,10 @@ export default function ResumeStudioPage() {
                         <div key={i} className="editor-bullet-row">
                           <input aria-label={`Link ${i + 1} label`} placeholder="Label (e.g. GitHub)" value={link.label} onChange={e => updateLink(i, 'label', e.target.value)} />
                           <input aria-label={`Link ${i + 1} URL`} placeholder="URL" value={link.url} onChange={e => updateLink(i, 'url', e.target.value)} />
-                          <button type="button" className="editor-icon-btn" onClick={() => removeLink(i)} title="Remove link"><Trash2 size={13} /></button>
+                          <button type="button" className="editor-icon-btn" onClick={() => removeLink(i)} title="Remove link" aria-label={`Remove link ${i + 1}`}>Remove</button>
                         </div>
                       ))}
-                      <button type="button" className="editor-add-link" onClick={addLink}><Plus size={12} /> Add link</button>
+                      <button type="button" className="editor-add-link" onClick={addLink}>Add link</button>
                     </div>
                   </div>
                 )}
@@ -466,12 +462,12 @@ export default function ResumeStudioPage() {
                       <div className="editor-reorder-btns">
                         <button
                           type="button" className="editor-icon-btn" disabled={idx === 0}
-                          onClick={e => { e.stopPropagation(); moveSection(section.id, -1) }} title="Move up"
-                        ><ChevronUp size={13} /></button>
+                          onClick={e => { e.stopPropagation(); moveSection(section.id, -1) }} title="Move up" aria-label={`Move ${section.title || 'section'} up`}
+                        >Up</button>
                         <button
                           type="button" className="editor-icon-btn" disabled={idx === sortedSections.length - 1}
-                          onClick={e => { e.stopPropagation(); moveSection(section.id, 1) }} title="Move down"
-                        ><ChevronDown size={13} /></button>
+                          onClick={e => { e.stopPropagation(); moveSection(section.id, 1) }} title="Move down" aria-label={`Move ${section.title || 'section'} down`}
+                        >Down</button>
                       </div>
                       <div className="editor-section-title">
                         <input
@@ -487,18 +483,19 @@ export default function ResumeStudioPage() {
                         type="button" className="editor-icon-btn"
                         onClick={e => { e.stopPropagation(); toggleVisible(section.id) }}
                         title={section.visible ? 'Hide section' : 'Show section'}
+                        aria-label={`${section.visible ? 'Hide' : 'Show'} ${section.title || 'section'}`}
                       >
-                        {section.visible ? <Eye size={14} /> : <EyeOff size={14} />}
+                        {section.visible ? 'Hide' : 'Show'}
                       </button>
                       <button
                         type="button" className="editor-icon-btn"
-                        onClick={e => { e.stopPropagation(); removeSection(section) }} title="Remove section"
-                      ><Trash2 size={14} /></button>
+                        onClick={e => { e.stopPropagation(); removeSection(section) }} title="Remove section" aria-label={`Remove ${section.title || 'section'}`}
+                      >Remove</button>
                       <button
                         type="button" className="editor-icon-btn" aria-expanded={expanded === section.id}
                         aria-label={`${expanded === section.id ? 'Collapse' : 'Expand'} ${section.title || 'section'}`}
                         onClick={e => { e.stopPropagation(); setExpanded(expanded === section.id ? null : section.id) }}
-                      >{expanded === section.id ? <ChevronUp size={15} /> : <ChevronDown size={15} />}</button>
+                      ><span className="caret" aria-hidden="true" /></button>
                     </div>
 
                     {expanded === section.id && (
@@ -518,7 +515,7 @@ export default function ResumeStudioPage() {
                                 <div key={itemIndex} className="editor-item-card">
                                   <div className="editor-item-head">
                                     <span>Item {itemIndex + 1}</span>
-                                    <button type="button" className="editor-remove-link" onClick={() => removeItem(section.id, itemIndex)}>Remove</button>
+                                    <button type="button" className="editor-remove-link" onClick={() => removeItem(section.id, itemIndex)} aria-label={`Remove item ${itemIndex + 1}`}>Remove</button>
                                   </div>
                                   <div className="editor-field-row">
                                     {ITEM_FIELDS[section.type].map(field => (
@@ -538,12 +535,12 @@ export default function ResumeStudioPage() {
                                           <input aria-label={`${LIST_LABEL[section.type]} ${valueIndex + 1}`} value={value} onChange={e => updateListValue(section.id, itemIndex, listKey, valueIndex, e.target.value)} />
                                           <button
                                             type="button" className="editor-icon-btn"
-                                            onClick={() => removeListValue(section.id, itemIndex, listKey, valueIndex)} title="Remove"
-                                          ><Trash2 size={13} /></button>
+                                            onClick={() => removeListValue(section.id, itemIndex, listKey, valueIndex)} aria-label={`Remove ${LIST_LABEL[section.type]} ${valueIndex + 1}`}
+                                          >Remove</button>
                                         </div>
                                       ))}
                                       <button type="button" className="editor-add-link" onClick={() => addListValue(section.id, itemIndex, listKey)}>
-                                        <Plus size={12} /> Add {LIST_LABEL[section.type]}
+                                        Add {LIST_LABEL[section.type]}
                                       </button>
                                     </div>
                                   )}
@@ -551,7 +548,7 @@ export default function ResumeStudioPage() {
                               )
                             })}
                             <button type="button" className="editor-add-link" onClick={() => addItem(section.id)} style={{ marginTop: 10 }}>
-                              <Plus size={12} /> Add {SECTION_LABELS[section.type].toLowerCase()} item
+                              Add {SECTION_LABELS[section.type].toLowerCase()} item
                             </button>
                           </>
                         )}
@@ -578,7 +575,7 @@ export default function ResumeStudioPage() {
                     type="button" className="editor-icon-btn" aria-expanded={showLatex}
                     aria-label={showLatex ? 'Hide LaTeX source' : 'Show LaTeX source'}
                     onClick={e => { e.stopPropagation(); setShowLatex(v => !v) }}
-                  >{showLatex ? <ChevronUp size={15} /> : <ChevronDown size={15} />}</button>
+                  ><span className="caret" aria-hidden="true" /></button>
                 </div>
                 {showLatex && (
                   <div className="editor-latex-source">
@@ -592,20 +589,18 @@ export default function ResumeStudioPage() {
             <div className="editor-preview">
               <div className="editor-preview-head">
                 <span className={`editor-status-pill${saving ? ' compiling' : saveError ? ' error' : ''}`} data-testid="resume-save-status">
-                  {saving ? <RefreshCw size={12} className="spin" /> : <Check size={12} />}
                   {saving ? 'Saving…' : saveError ? 'Not saved' : draft ? 'Unsaved changes' : 'All changes saved'}
                 </span>
                 <span className={`editor-status-pill${compiling ? ' compiling' : compileError ? ' error' : ''}`}>
-                  {compiling ? <RefreshCw size={12} className="spin" /> : <Check size={12} />}
                   {compiling ? 'Compiling…' : compileError ? 'Compile error' : 'PDF up to date'}
                 </span>
                 <div className="editor-preview-actions">
                   <button type="button" className="outline-button" onClick={() => doc && compileNow(doc)} disabled={compiling}>
-                    <RefreshCw size={13} className={compiling ? 'spin' : ''} /> Compile now
+                    Compile now
                   </button>
                   {pdfUrl && (
                     <button type="button" className="primary-button" onClick={downloadPdf}>
-                      <Download size={13} /> Download PDF
+                      Download PDF
                     </button>
                   )}
                 </div>

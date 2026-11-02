@@ -1,7 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import BrandLockup from '@/components/BrandLockup'
-import { Plus } from 'lucide-react'
 import LandingMotion from '@/components/landing/LandingMotion'
 import LandingNav from '@/components/landing/LandingNav'
 import PrismGround from '@/components/landing/PrismGround'
@@ -227,7 +226,7 @@ export default function LandingPage() {
                 <details key={faq.q}>
                   <summary>
                     {faq.q}
-                    <span className="lp-faq-mark" aria-hidden="true"><Plus size={14} strokeWidth={1.5} /></span>
+                    <span className="lp-faq-mark" aria-hidden="true">+</span>
                   </summary>
                   <p>{faq.a}</p>
                 </details>

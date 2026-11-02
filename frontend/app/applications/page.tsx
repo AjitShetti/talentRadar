@@ -121,7 +121,7 @@ export default function ApplicationsPage() {
               </select>
               <span className="application-date">Added {added(app.created_at)}</span>
               <div className="application-acts">
-                {posting && <a href={posting} {...EXTERNAL_LINK_PROPS} aria-label="Open the original posting">Open</a>}
+                {posting && <a href={posting} {...EXTERNAL_LINK_PROPS} aria-label="Open the original posting">Open <span aria-hidden="true">↗</span></a>}
                 <button type="button" onClick={() => remove(app.id)} aria-label={`Remove ${app.job?.title || 'this application'} from your tracker`}>Remove</button>
               </div>
             </article>
