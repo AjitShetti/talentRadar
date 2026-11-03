@@ -6,28 +6,20 @@
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AddLayerObject, GeoJSONSource, Map as MapLibreMap, Marker } from 'maplibre-gl'
-import { isApproximate, type GeoPrecision, type MapCompany } from '@/lib/api'
+import type { GeoPrecision, MapCompany } from '@/lib/api'
 import { EXTERNAL_LINK_PROPS } from '@/lib/safe-url'
 import { BBOX, STYLE_URL, loadMapLibre, reducedMotion, token, webglAvailable, withAlpha } from '@/lib/maplibre'
 
 const SRC_POINTS = 'cm-companies'
 const SRC_LIT = 'cm-lit'
-/** Rows the server placed near the city centre. Their own source, so their clusters never inflate a real pin's count. */
-const SRC_APPROX = 'cm-approx'
 const PIN_LAYERS = ['cm-pin-solid', 'cm-pin-ring']
-const APPROX_LAYERS = ['cm-approx-ring']
-const LIT_LAYERS = ['cm-lit-solid', 'cm-lit-ring', 'cm-lit-approx']
-const HIT_LAYERS = [...LIT_LAYERS, ...PIN_LAYERS, ...APPROX_LAYERS]
-/** The two clustered sources, with the prefix that keeps their cluster buttons apart. */
-const CLUSTERED = [
-  { source: SRC_POINTS, prefix: 'p', approx: false },
-  { source: SRC_APPROX, prefix: 'a', approx: true },
-] as const
+const LIT_LAYERS = ['cm-lit-solid', 'cm-lit-ring']
+const HIT_LAYERS = [...LIT_LAYERS, ...PIN_LAYERS]
 /** Above this zoom the source stops clustering, so every company is its own pin. */
 const CLUSTER_MAX_ZOOM = 14
 const REVEAL_ZOOM = CLUSTER_MAX_ZOOM + 0.6
-/** A company with no location on record is shown at city scale, never down to a street it is not on. */
-const APPROX_REVEAL_ZOOM = 12
+/** A company known only by its area is shown at neighbourhood scale, never down to a street it is not on. */
+const AREA_REVEAL_ZOOM = 14
 /** Give the style and the first tiles this long before the map counts as down. */
 const LOAD_TIMEOUT_MS = 20000
 /** Tile failures with not one tile ever drawn before the map counts as down. */
@@ -42,13 +34,13 @@ type PinCollection = {
 function toCollection(rows: MapCompany[], selectedId: string | null): PinCollection {
   const features: PinCollection['features'] = []
   for (const row of rows) {
-    if (row.lat == null || row.lng == null) continue
+    // Only a position we know is drawn: a `city` row has none (services/company_map/read.py::_position).
+    if (row.lat == null || row.lng == null || row.precision === 'city') continue
     features.push({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [row.lng, row.lat] },
-      // A lit pin is solid at a real address, a ring at an area (1), and a faint
-      // labelled ring when no location is on record (2).
-      properties: { id: row.id, name: row.name, area: row.area, prec: row.precision, ring: row.precision === 'city' ? 2 : row.precision === 'area' ? 1 : 0, selected: row.id === selectedId ? 1 : 0 },
+      // Solid at a real address, a ring at an area (1).
+      properties: { id: row.id, name: row.name, area: row.area, prec: row.precision, ring: row.precision === 'area' ? 1 : 0, selected: row.id === selectedId ? 1 : 0 },
     })
   }
   return { type: 'FeatureCollection', features }
@@ -58,7 +50,7 @@ const PRECISION_NOTE: Record<GeoPrecision, string> = {
   exact: 'Exact location',
   street: 'Street-level location',
   area: 'Approximate — area only',
-  city: 'Location not on record — shown near the city centre',
+  city: 'Location not on record',
 }
 
 function clusterSize(count: number): number {
@@ -71,7 +63,6 @@ function pinLayers(): AddLayerObject[] {
   const ink = token('--ink', '#ECEEF0')
   const ink2 = token('--ink-2', '#C7CBD1')
   const paper = token('--paper', '#131211')
-  const faint = token('--faint', '#868C94')
   const accent = token('--accent', '#2C75FF')
   const accentSoft = token('--accent-soft', 'rgba(44,117,255,.18)')
   const accentBorder = token('--accent-border', 'rgba(44,117,255,.45)')
@@ -104,20 +95,6 @@ function pinLayers(): AddLayerObject[] {
         'circle-stroke-width': 1.7,
       },
     },
-    // Faint hollow ring: placed near the city centre because no location is on
-    // record. Smaller, thinner and dimmer than the area ring, so it never reads
-    // as a place.
-    {
-      id: 'cm-approx-ring', type: 'circle', source: SRC_APPROX,
-      filter: ['!', ['has', 'point_count']],
-      paint: {
-        'circle-radius': radius(4.2),
-        'circle-color': withAlpha(paper, 0.3),
-        'circle-stroke-color': hover(faint, ink2),
-        'circle-stroke-width': 1.1,
-        'circle-stroke-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.9, 0.5],
-      },
-    },
     // The lamp. Lit only for the selected company and companies hiring for the
     // user's target role, at whatever precision; these never cluster, so the
     // lamp is never swallowed.
@@ -136,33 +113,20 @@ function pinLayers(): AddLayerObject[] {
       filter: ['==', ['get', 'ring'], 1],
       paint: { 'circle-radius': radius(6.6), 'circle-color': hole, 'circle-stroke-color': accent, 'circle-stroke-width': 2.2 },
     },
-    // Lit but not located: thinner and dimmer than the area ring, and named as
-    // such under the pin, so a phone (no hover, no legend) still says it.
-    {
-      id: 'cm-lit-approx', type: 'circle', source: SRC_LIT,
-      filter: ['==', ['get', 'ring'], 2],
-      paint: { 'circle-radius': radius(6), 'circle-color': hole, 'circle-stroke-color': accent, 'circle-stroke-width': 1.3, 'circle-stroke-opacity': 0.7 },
-    },
-    {
-      id: 'cm-lit-approx-label', type: 'symbol', source: SRC_LIT,
-      filter: ['all', ['==', ['get', 'ring'], 2], ['==', ['get', 'selected'], 1]],
-      layout: { 'text-field': 'Location unknown', 'text-font': ['Noto Sans Regular'], 'text-size': 11, 'text-offset': [0, 1.5], 'text-anchor': 'top', 'text-allow-overlap': true },
-      paint: { 'text-color': accent, 'text-halo-color': hole, 'text-halo-width': 1.2 },
-    },
   ]
 }
 
 export type CompanyMapProps = {
   /** The rows the filters leave. Rows without a position are ignored here. */
   rows: MapCompany[]
-  /** Companies hiring for the user's target role. Lit amber. */
+  /** Companies hiring for the user's target role. Lit in the accent. */
   litIds: ReadonlySet<string>
   selectedId: string | null
   /** The selected company, looked up in the unfiltered rows so a filter never unlights it. */
   selected: MapCompany | null
   /** The map is only created the first time it is shown, and resized each time after. */
   active: boolean
-  /** Width in px that a docked drawer covers on the right, so a revealed pin is not hidden behind it. */
+  /** Width in px that something over the map covers on the right, so a revealed pin is not hidden behind it. */
   rightInset: number
   onSelect: (id: string) => void
   /** Sits on the right-hand rail above the zoom controls (the stats plate). */
@@ -193,18 +157,15 @@ export default function CompanyMap({ rows, litIds, selectedId, selected, active,
 
   // Clusters count only what is neither lit nor selected: both are always their own
   // pin (litData), so leaving the selected company in here would count it twice.
-  // Approximate rows have a source of their own so a real cluster's count stays honest.
   const plainRows = useMemo(() => rows.filter(r => !litIds.has(r.id) && r.id !== selectedId), [rows, litIds, selectedId])
-  const pointsData = useMemo(() => toCollection(plainRows.filter(r => r.precision !== 'city'), null), [plainRows])
-  const approxData = useMemo(() => toCollection(plainRows.filter(isApproximate), null), [plainRows])
-  const anyApprox = useMemo(() => rows.some(isApproximate), [rows])
+  const pointsData = useMemo(() => toCollection(plainRows, null), [plainRows])
   const litData = useMemo(() => {
     const lit = rows.filter(r => litIds.has(r.id))
     if (selected && !litIds.has(selected.id)) lit.push(selected)
     return toCollection(lit, selectedId)
   }, [rows, litIds, selected, selectedId])
-  const latest = useRef({ pointsData, approxData, litData })
-  latest.current = { pointsData, approxData, litData }
+  const latest = useRef({ pointsData, litData })
+  latest.current = { pointsData, litData }
 
   // Create the map: once, the first time it is shown, and never again.
   useEffect(() => {
@@ -269,10 +230,10 @@ export default function CompanyMap({ rows, litIds, selectedId, selected, active,
         }
       })
       m.on('sourcedata', e => {
-        if ('tile' in e && e.sourceId && e.sourceId !== SRC_POINTS && e.sourceId !== SRC_APPROX && e.sourceId !== SRC_LIT) tilesDrawn += 1
+        if ('tile' in e && e.sourceId && e.sourceId !== SRC_POINTS && e.sourceId !== SRC_LIT) tilesDrawn += 1
       })
 
-      // ── Clusters are DOM buttons: real Fragment Mono, a pointer cursor, and
+      // ── Clusters are DOM buttons: the page's own type, a pointer cursor, and
       // keyboard focus, none of which a WebGL label gives for free.
       const zoomInto = (sourceId: string, clusterId: number, center: [number, number]) => {
         const source = m.getSource(sourceId) as GeoJSONSource | undefined
@@ -284,8 +245,8 @@ export default function CompanyMap({ rows, litIds, selectedId, selected, active,
       }
       const syncClusters = () => {
         const seen = new Set<string>()
-        for (const { source, prefix, approx } of CLUSTERED) {
-          if (!m.getSource(source)) continue
+        const source = SRC_POINTS
+        if (m.getSource(source)) {
           for (const feature of m.querySourceFeatures(source, { filter: ['has', 'point_count'] })) {
             const props = feature.properties as { cluster_id?: number; point_count?: number }
             const clusterId = props.cluster_id
@@ -296,19 +257,16 @@ export default function CompanyMap({ rows, litIds, selectedId, selected, active,
             // different filter states with the same number of points hand out the same id
             // for different clusters. An id alone would keep the old button, at its old
             // position with its old count. The count and the position make the key
-            // describe the cluster rather than name a slot. The prefix keeps the two
-            // sources, whose ids are numbered independently, from colliding.
-            const key = `${prefix}:${clusterId}:${count}:${lng.toFixed(5)},${lat.toFixed(5)}`
+            // describe the cluster rather than name a slot.
+            const key = `${clusterId}:${count}:${lng.toFixed(5)},${lat.toFixed(5)}`
             if (seen.has(key)) continue
             seen.add(key)
             if (markers.has(key)) continue
             const el = document.createElement('button')
             el.type = 'button'
-            el.className = approx ? 'cm-cluster is-approx' : 'cm-cluster'
+            el.className = 'cm-cluster'
             el.style.setProperty('--d', `${clusterSize(count)}px`)
-            el.setAttribute('aria-label', approx
-              ? `${count} companies with no location on record, placed near the city centre. Zoom in.`
-              : `${count} companies close together. Zoom in.`)
+            el.setAttribute('aria-label', `${count} companies close together. Zoom in.`)
             const label = document.createElement('span')
             label.textContent = String(count)
             el.append(label)
@@ -366,10 +324,9 @@ export default function CompanyMap({ rows, litIds, selectedId, selected, active,
         loaded = true
         if (timer) clearTimeout(timer)
         m.addSource(SRC_POINTS, { type: 'geojson', data: latest.current.pointsData, cluster: true, clusterRadius: 46, clusterMaxZoom: CLUSTER_MAX_ZOOM, promoteId: 'id' })
-        m.addSource(SRC_APPROX, { type: 'geojson', data: latest.current.approxData, cluster: true, clusterRadius: 46, clusterMaxZoom: CLUSTER_MAX_ZOOM, promoteId: 'id' })
         m.addSource(SRC_LIT, { type: 'geojson', data: latest.current.litData, promoteId: 'id' })
         pinLayers().forEach(layer => m.addLayer(layer))
-        m.on('sourcedata', e => { if ((e.sourceId === SRC_POINTS || e.sourceId === SRC_APPROX) && e.isSourceLoaded) syncClusters() })
+        m.on('sourcedata', e => { if (e.sourceId === SRC_POINTS && e.isSourceLoaded) syncClusters() })
         m.on('moveend', syncClusters)
         m.on('idle', syncClusters)
         setReady(true)
@@ -387,28 +344,21 @@ export default function CompanyMap({ rows, litIds, selectedId, selected, active,
     }
   }, [started])
 
-  // Drops the cluster buttons of one source (by key prefix) when its data changes.
-  const dropClusters = useCallback((prefix: string) => {
-    markersRef.current.forEach((marker, key) => {
-      if (key.startsWith(prefix)) { marker.remove(); markersRef.current.delete(key) }
-    })
+  // Drops every cluster button when the data changes.
+  const dropClusters = useCallback(() => {
+    markersRef.current.forEach(marker => marker.remove())
+    markersRef.current.clear()
   }, [])
 
   // Filters and selection change the data, never the map. New data means new
-  // clusters: drop that source's buttons now; its own `sourcedata` event
+  // clusters: drop the buttons now; the source's own `sourcedata` event
   // rebuilds them from the new tiles.
   useEffect(() => {
     const m = mapRef.current
     if (!m || !ready) return
-    dropClusters('p:')
+    dropClusters()
     ;(m.getSource(SRC_POINTS) as GeoJSONSource | undefined)?.setData(pointsData)
   }, [pointsData, ready, dropClusters])
-  useEffect(() => {
-    const m = mapRef.current
-    if (!m || !ready) return
-    dropClusters('a:')
-    ;(m.getSource(SRC_APPROX) as GeoJSONSource | undefined)?.setData(approxData)
-  }, [approxData, ready, dropClusters])
   useEffect(() => {
     const m = mapRef.current
     if (!m || !ready) return
@@ -425,7 +375,7 @@ export default function CompanyMap({ rows, litIds, selectedId, selected, active,
   // so it is not left inside a cluster.
   useEffect(() => {
     const m = mapRef.current
-    if (!m || !ready || !active || !selected || selected.lat == null || selected.lng == null) return
+    if (!m || !ready || !active || !selected || selected.lat == null || selected.lng == null || selected.precision === 'city') return
     const fromPin = clickedRef.current === selected.id
     clickedRef.current = null
     const inset = insetRef.current
@@ -438,7 +388,7 @@ export default function CompanyMap({ rows, litIds, selectedId, selected, active,
     if (fromPin && visible) return
     m.easeTo({
       center: [selected.lng, selected.lat],
-      zoom: fromPin ? zoom : isApproximate(selected) ? APPROX_REVEAL_ZOOM : Math.max(zoom, REVEAL_ZOOM),
+      zoom: fromPin ? zoom : selected.precision === 'area' ? Math.max(zoom, AREA_REVEAL_ZOOM) : Math.max(zoom, REVEAL_ZOOM),
       offset: [-inset / 2, 0],
       duration: reducedMotion() ? 0 : 600,
     })
@@ -452,7 +402,7 @@ export default function CompanyMap({ rows, litIds, selectedId, selected, active,
       className="cm-map"
       data-testid="company-map"
       role="region"
-      aria-label="Map of Bengaluru employers. Pins are companies; the List view lists them all."
+      aria-label="Map of Bengaluru employers with a known location. The List view lists every employer."
     />
     {!ready && <div className="cm-plate" role="status">Loading map…</div>}
     <div ref={tipRef} className="cm-tip" hidden aria-hidden="true"><strong /><small /></div>
@@ -470,7 +420,6 @@ export default function CompanyMap({ rows, litIds, selectedId, selected, active,
     <div className="cm-legend" aria-hidden="true">
       <span><svg width="12" height="12"><circle cx="6" cy="6" r="4" className="cm-key-dot" /></svg>Exact or street address</span>
       <span><svg width="12" height="12"><circle cx="6" cy="6" r="4" className="cm-key-ring" /></svg>Area only — approximate</span>
-      {anyApprox && <span><svg width="12" height="12"><circle cx="6" cy="6" r="3.2" className="cm-key-approx" /></svg>Location unknown — placed near the centre</span>}
       <span><svg width="12" height="12"><circle cx="6" cy="6" r="4.5" className="cm-key-lit" /></svg>{litIds.size > 0 ? 'Hiring for your role · selected' : 'Selected'}</span>
       <span><svg width="12" height="12"><circle cx="6" cy="6" r="5.4" className="cm-key-cluster" /></svg>Cluster — click to zoom</span>
     </div>

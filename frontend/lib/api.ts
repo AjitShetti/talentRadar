@@ -87,9 +87,9 @@ export type CompanyNewsItem = { id: string; url: string; title: string; source?:
 export type CompanyDetail = CompanyCard & { linkedin_url?: string | null; github?: GithubOrg | null; tech_stack_curated: string[]; tech_stack_from_postings: string[]; culture_summary?: string | null; contacts: CompanyContact[]; jobs: CompanyRole[]; has_profile: boolean; address?: string | null; x_url?: string | null; last_funding_at?: string | null; employee_count?: number | null; is_bigger?: boolean; people: CompanyPeople; linkedin_links: LinkedInLink[]; news: CompanyNewsItem[] }
 // The on-demand founder lookup. `available: false` carries the reason in `message`. A person found is stored, so the caller re-reads the company.
 export type FounderDiscovery = { available: boolean; people: Array<{ name: string; kind: string; source_url: string; source_kind: string; title?: string | null }>; message?: string | null }
-// GET /company-intel/map. Each row is positional, to keep the payload small (services/company_map/read.py::MAP_COLUMNS). A `city` row carries a deterministic approximate point near the city centre, so `lat`/`lng` are null only for a row that has none at all.
+// GET /company-intel/map. Each row is positional, to keep the payload small (services/company_map/read.py::MAP_COLUMNS). A `city` row has no known location and null `lat`/`lng`; an `area` row is drawn near its area's centroid.
 export type MapRow = [id: string, name: string, lat: number | null, lng: number | null, precision: GeoPrecision, tier: string | null, stage: string | null, sector: string | null, area: string | null, size: string | null, open_roles: number, raised_90d: boolean]
-// `pinned` counts only exact, street and area rows; `approximate` counts the `city` rows placed near the centre (absent on an older API).
+// `pinned` counts exact, street and area rows; `approximate` counts the `city` rows, which have no position.
 export type MapPayload = { generated_at: string; city: string; total: number; pinned: number; approximate?: number; rows: MapRow[] }
 export type MapCompany = { id: string; name: string; lat: number | null; lng: number | null; precision: GeoPrecision; tier: string | null; stage: string | null; sector: string | null; area: string | null; size: string | null; openRoles: number; raised90d: boolean }
 /** Must match services/company_map/read.py::MAP_COLUMNS. A row of any other length comes from a different contract. */
@@ -102,7 +102,6 @@ export function decodeMapRows(rows: MapRow[]): MapCompany[] {
       ({ id, name, lat, lng, precision, tier, stage, sector, area, size, openRoles, raised90d }))
 }
 /** A `city` row the server placed near the centre: on the map, but not a real location. */
-export const isApproximate = (row: MapCompany): boolean => row.precision === 'city' && row.lat != null && row.lng != null
 /** A row with a real position: exact, street or area precision (what `MapPayload.pinned` counts). */
 export const isPinned = (row: MapCompany): boolean => row.precision !== 'city' && row.lat != null && row.lng != null
 export type CompanyListFilters = { city?: string; tier?: string; industry?: string; q?: string; hasOpenRoles?: boolean; stage?: string; sector?: string; area?: string; size?: string; raisedWithinDays?: number; pinned?: boolean; limit?: number; offset?: number }

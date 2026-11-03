@@ -167,7 +167,7 @@ test('every page in the app loads without errors', async ({ page, account, error
     ['/interview', /Practise the conversation before it counts/],
     ['/resume-studio', /Build your resume, section by section/],
     ['/settings', /Set the direction of your search/],
-    ['/company-intel', /Every employer in .*, on one map/],
+    ['/company-intel', /Who is building in Bengaluru/],
     ['/onboarding', /Let.s get to know you/],
     ['/agent', /./],
   ]
