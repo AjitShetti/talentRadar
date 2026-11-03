@@ -1,14 +1,16 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { usePathname } from 'next/navigation'
 import { api, currentEmail, signedIn } from '@/lib/api'
 import {
   arrivalPending, clockLabel, dayFor, dayIsFresh, dayLit, daySnapshot, DAY_MINUTES, istDay, istMinutes, labelFlips, labelledMarks,
-  markArrived, onDayLit, onDaySnapshot, publishBriefing, setDayLit, type DayMark,
+  markArrived, mergeMarks, onDayLit, onDaySnapshot, onRoutine, publishBriefing, publishRoutine, routineFor, routineIsFresh, routineSnapshot,
+  setDayLit, type DayMark,
 } from '@/lib/day-line'
 import { createRail, type Rail } from '@/lib/day-rail'
+import { currentBlock, routineMarks, type Routine } from '@/lib/routine'
 import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 
 /** The minute now in IST, updated on the minute and on coming back to the tab. Null until mounted. */
@@ -29,9 +31,26 @@ export function useIstMinute() {
   return minute
 }
 
+/** The user's routine for today, or null: not read yet, signed out, or the stored one is from another day. */
+export function useRoutine(): Routine | null {
+  useSyncExternalStore(onRoutine, routineSnapshot, routineSnapshot)
+  return routineFor(currentEmail(), Date.now())
+}
+
+/**
+ * What today holds: the briefing's marks and the routine's blocks together, in time order, so
+ * the Overview counts a block exactly as it counts a dated card.
+ */
 export function useDay() {
   const day = useSyncExternalStore(onDaySnapshot, daySnapshot, daySnapshot)
-  return dayFor(day, currentEmail(), Date.now())
+  const shown = dayFor(day, currentEmail(), Date.now())
+  const routine = useRoutine()
+  // `shown` and `routine` keep their identity until the store changes, so these do too.
+  const marks = useMemo(
+    () => routine ? mergeMarks(shown.marks, routineMarks(routine.blocks, routine.done_today)) : shown.marks,
+    [shown.marks, routine],
+  )
+  return useMemo(() => ({ ...shown, marks }), [shown, marks])
 }
 
 export function useDayLit() {
@@ -59,6 +78,7 @@ export default function DayLine() {
   const onOverview = path === '/dashboard'
   const now = useIstMinute()
   const { marks } = useDay()
+  const routine = useRoutine()
   const lit = useDayLit()
 
   const box = useRef<HTMLDivElement>(null)
@@ -67,7 +87,7 @@ export default function DayLine() {
   const rail = useRef<Rail | null>(null)
   const [width, setWidth] = useState(0)
   // Marks already known on mount are not news; marks that arrive afterwards drop in.
-  const [freshMarks] = useState(() => daySnapshot().marks.length === 0)
+  const [freshMarks] = useState(() => daySnapshot().marks.length === 0 && (routineSnapshot().routine?.blocks.length ?? 0) === 0)
   const [playing] = useState(() => onOverview && arrivalPending())
   const [landed, setLanded] = useState(!playing)
 
@@ -84,6 +104,17 @@ export default function DayLine() {
     api.agent.briefing().then(briefing => { if (live) publishBriefing(briefing, owner) }).catch(() => {})
     return () => { live = false }
   }, [onOverview, day])
+
+  // The routine is its own read from its own route. Every page makes it (the Overview too) unless a recent one is
+  // stored, and a page left open past midnight makes it again. A read that fails shows nothing and says nothing.
+  useEffect(() => {
+    if (day === null || !signedIn()) return
+    const owner = currentEmail()
+    if (routineIsFresh(owner)) return
+    let live = true
+    api.routine.get().then(routine => { if (live) publishRoutine(routine, owner) }).catch(() => {})
+    return () => { live = false }
+  }, [day])
 
   useEffect(() => {
     if (!canvas.current || !box.current) return
@@ -126,10 +157,13 @@ export default function DayLine() {
   }
 
   const labelled = labelledMarks(marks, width)
+  // The block to do now stays in the phone's list while it is under way, as on the Overview's "Your day".
+  const current = routine && now !== null ? currentBlock(routine.blocks, routine.done_today, now) : null
+  const currentMark = current ? `routine:${current.id}` : null
   const pct = (minute: number) => `${(minute / DAY_MINUTES) * 100}%`
   const animateMarks = playing || freshMarks
 
-  return <section className="day-line" aria-label={now === null ? 'Today, in IST' : `Today, in IST. It is ${clockLabel(now)}.`}>
+  return <section className="day-line" data-tour="day" aria-label={now === null ? 'Today, in IST' : `Today, in IST. It is ${clockLabel(now)}.`}>
     <div className="day-box" ref={box} onPointerMove={onMove} onPointerLeave={onLeave}>
       <canvas className="day-canvas" ref={canvas} aria-hidden="true" />
       {now !== null && <>
@@ -150,7 +184,15 @@ export default function DayLine() {
       </>}
     </div>
     {now !== null && marks.length > 0 && <ul className="day-list">
-      {marks.map(mark => <li key={mark.id} data-past={mark.at <= now ? 'true' : undefined}><MarkLink href={mark.href}>{mark.time} {mark.label}</MarkLink></li>)}
+      {marks.map(mark => <li
+        key={mark.id}
+        data-past={mark.at <= now ? 'true' : undefined}
+        data-routine={mark.routine ? 'true' : undefined}
+        data-done={mark.done ? 'true' : undefined}
+        data-current={mark.id === currentMark ? 'true' : undefined}
+      >
+        <MarkLink href={mark.href} aria-label={mark.done ? `${mark.time} ${mark.label}, done` : undefined}>{mark.time} {mark.label}</MarkLink>
+      </li>)}
     </ul>}
   </section>
 }
@@ -166,8 +208,10 @@ function MarkOnLine({ mark, past, labelled, flip, lit, left, order }: { mark: Da
     className="day-mark"
     href={mark.href}
     style={{ left, '--i': order ?? 0 } as React.CSSProperties}
-    aria-label={`${mark.label} at ${mark.time}`}
+    aria-label={`${mark.label} at ${mark.time}${mark.done ? ', done' : ''}`}
     data-past={past ? 'true' : undefined}
+    data-routine={mark.routine ? 'true' : undefined}
+    data-done={mark.done ? 'true' : undefined}
     data-end={flip ? 'true' : undefined}
     data-lit={lit ? 'true' : undefined}
     data-drop={order !== null ? 'true' : undefined}

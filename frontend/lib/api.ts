@@ -3,6 +3,7 @@
 import { apiIsWaking, markApiAlive } from '@/lib/api-warmup'
 import { clearDay } from '@/lib/day-line'
 import { clearPersistedState } from '@/lib/persistent-state'
+import type { Routine, RoutineBlock } from '@/lib/routine'
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 const WAKING_MESSAGE = 'The server is still starting up — give it a few seconds and try again.'
@@ -554,5 +555,12 @@ export const api = {
     overall: () => request<OverallBoard>('/api/v1/practice/leaderboard', {}, true),
     settings: () => request<PracticeSettings>('/api/v1/practice/settings', {}, true),
     saveSettings: (payload: Pick<PracticeSettings, 'display_name' | 'show_repo' | 'contest_reminder'>) => request<PracticeSettings>('/api/v1/practice/settings', { method: 'PUT', body: JSON.stringify(payload) }, true),
+  },
+  // The user's daily routine (api/routers/routine.py). Every call answers the whole routine. A refused save is a 422 whose message is the sentence to show; a block that is not theirs is a 404.
+  routine: {
+    get: () => request<Routine>('/api/v1/routine', {}, true),
+    save: (blocks: RoutineBlock[]) => request<Routine>('/api/v1/routine', { method: 'PUT', body: JSON.stringify({ blocks }) }, true),
+    tick: (id: string, done: boolean) => request<Routine>(`/api/v1/routine/blocks/${encodeURIComponent(id)}/done`, { method: 'PUT', body: JSON.stringify({ done }) }, true),
+    tourSeen: () => request<Routine>('/api/v1/routine/tour-seen', { method: 'POST' }, true),
   },
 }

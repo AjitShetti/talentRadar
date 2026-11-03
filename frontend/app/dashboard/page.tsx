@@ -9,6 +9,7 @@ import { useDay, useDayLit, useIstMinute } from '@/components/DayLine'
 import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
 import { ScoreBars } from '@/components/overview/Charts'
+import YourDay from '@/components/overview/YourDay'
 import { AgendaItem, api, Briefing, BriefingCard, currentEmail, JobMatch, OutreachHome, SkillsFocus } from '@/lib/api'
 import { arrivalPending, markForAction, nextMark, publishBriefing, setDayLit, untilLabel } from '@/lib/day-line'
 import { interviewPrepHref } from '@/lib/interview-prep'
@@ -437,6 +438,9 @@ export default function Dashboard() {
             </ol>
             : <div className="ov2-card ov2-clear">All clear. Nothing scheduled and nothing going stale.</div>}
       </section>}
+
+      {/* ── the routine, to tick off: it is not here until the day line has read it ── */}
+      <YourDay />
 
       {/* ── your journey, as a ledger ───────────────────────────────────── */}
       {data && <section className="ov2-section" aria-labelledby="ov2-journey">

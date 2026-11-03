@@ -4,11 +4,14 @@ import { ChangeEvent, FormEvent, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import AppShell from '@/components/AppShell'
 import RequireAuth from '@/components/RequireAuth'
+import RoutineEditor from '@/components/RoutineEditor'
 import Segmented from '@/components/Segmented'
-import { api } from '@/lib/api'
+import { api, currentEmail } from '@/lib/api'
+import { publishRoutine } from '@/lib/day-line'
 import { INDIAN_CITIES } from '@/lib/filters'
 import { Goal, goalFromSentence, GOALS } from '@/lib/goals'
 import { readPersisted, usePersistentState } from '@/lib/persistent-state'
+import type { Routine } from '@/lib/routine'
 
 function formatDate(iso: string | null) {
   if (!iso) return ''
@@ -45,7 +48,14 @@ export default function SettingsPage() {
   const [extracting, setExtracting] = useState(false)
   const [resumeError, setResumeError] = useState('')
 
+  // The routine has its own form and its own save, apart from the profile's.
+  const [routine, setRoutine] = useState<Routine | null>(null)
+  const [routineError, setRoutineError] = useState('')
+  const [routineSaved, setRoutineSaved] = useState(false)
+
   useEffect(() => {
+    api.routine.get().then(setRoutine).catch(() => setRoutineError('Could not load your routine.'))
+
     // The saved resume is what the dashboard compares against the target roles
     // below, so it is loaded and replaced right here alongside them.
     api.resumes.me().then(saved => {
@@ -67,6 +77,11 @@ export default function SettingsPage() {
       setGoal(goalFromSentence(profile.career_goals) ?? '')
     }).catch(err => setError(err instanceof Error ? err.message : 'Could not load profile.'))
   }, [])
+
+  function routineSavedAs(saved: Routine) {
+    publishRoutine(saved, currentEmail())
+    setRoutineSaved(true)
+  }
 
   function list(value: string) { return value.split(',').map(v => v.trim()).filter(Boolean) }
 
@@ -143,6 +158,16 @@ export default function SettingsPage() {
       {message && <p className="success-message">{message}</p>}
       <button type="submit" className="primary-button" disabled={saving}>{saving ? 'Saving…' : 'Save profile'}</button>
     </form>
+
+    <section className="card-form routine-card">
+      <h2>Daily routine</h2>
+      <p className="muted-copy">What each part of your day is for. It shows on the line under the menu.</p>
+      {routineError && <p className="form-error" role="alert">{routineError}</p>}
+      {routine && <div onInput={() => setRoutineSaved(false)} onClick={() => setRoutineSaved(false)}>
+        <RoutineEditor initial={routine.blocks} onSaved={routineSavedAs} />
+      </div>}
+      {routineSaved && <p className="success-message" role="status">Saved.</p>}
+    </section>
 
     <section className="card-form resume-goals-card">
       <p className="eyebrow">Your resume</p>

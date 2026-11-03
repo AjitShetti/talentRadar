@@ -6,10 +6,12 @@ import BrandLockup from '@/components/BrandLockup'
 import { useRouter } from 'next/navigation'
 import RequireAuth from '@/components/RequireAuth'
 import Segmented from '@/components/Segmented'
-import { api } from '@/lib/api'
+import { api, currentEmail } from '@/lib/api'
+import { publishRoutine } from '@/lib/day-line'
 import { INDIAN_CITIES } from '@/lib/filters'
 import { Goal, GOALS } from '@/lib/goals'
 import { usePersistentState } from '@/lib/persistent-state'
+import { starterRoutine } from '@/lib/routine'
 import { safeNextPath } from '@/lib/safe-url'
 
 type Stage = 'student' | 'working' | 'between'
@@ -97,6 +99,13 @@ export default function OnboardingPage() {
         years_experience: yearsValue,
         skills: skills.split(',').map(s => s.trim()).filter(Boolean),
       })
+      // The day starts with a routine for what they came to do, unless they already made one on the Overview: a save replaces the whole routine.
+      // Whichever routine they end with is published, so the Overview does not show the one it read before. A failure here never keeps them on this page.
+      try {
+        let routine = await api.routine.get()
+        if (!routine.has_routine) routine = await api.routine.save(starterRoutine(goal || 'both'))
+        publishRoutine(routine, currentEmail())
+      } catch { /* the Overview offers a routine to anyone without one */ }
       setStep(0)
       router.push(next || chosen.href)
     } catch (err) {
