@@ -2460,10 +2460,15 @@ code,pre,kbd,.latex-editor,.editor-code,textarea.code{font-family:var(--font-mon
 .day-now{z-index:1;display:inline-flex;overflow:hidden;padding:0 5px;background:var(--paper);color:var(--ink);font-weight:600}
 .day-read{z-index:3;padding:0 5px;background:var(--paper);color:var(--accent-dark);opacity:0;pointer-events:none;transition:opacity .12s}
 .day-digit{display:inline-block;animation:digit-in .34s var(--ease-day) backwards}
+/* A briefing mark is salmon (it needs you); a routine block is ink, and sits under a briefing mark at the same minute.
+   Order matters at equal specificity: routine first, then hover (z-index), then past (colour). */
 .day-mark{position:absolute;top:0;bottom:18px;z-index:2;width:24px;transform:translateX(-50%);color:var(--warm-ink)}
+.day-mark[data-routine]{z-index:1;color:var(--ink)}
 .day-mark:hover,.day-mark:focus-visible{z-index:3}
 .day-mark[data-past]{color:var(--faint)}
 .day-mark i{position:absolute;left:50%;bottom:0;width:2px;height:18px;margin-left:-1px;background:currentColor;transform-origin:bottom;transition:transform .26s var(--ease-day)}
+.day-mark[data-done] i{background:var(--success)}
+.day-mark[data-done] span{text-decoration:line-through}
 .day-mark:hover i,.day-mark[data-lit] i{transform:scaleY(1.45)}
 .day-mark span{position:absolute;top:0;left:50%;padding-right:6px;background:var(--paper);font:500 12px var(--font-text);font-variant-numeric:tabular-nums;white-space:nowrap;max-width:240px;overflow:hidden;text-overflow:ellipsis}
 .day-mark[data-end] span{left:auto;right:50%;padding:0 0 0 6px}
@@ -2483,7 +2488,9 @@ code,pre,kbd,.latex-editor,.editor-code,textarea.code{font-family:var(--font-mon
   .day-mark span{display:none}
   .day-list{display:grid;gap:0;list-style:none;margin:8px 0 0;padding:0}
   .day-list a{display:flex;align-items:center;min-height:44px;font:500 13px var(--font-text);color:var(--warm-ink);font-variant-numeric:tabular-nums}
+  .day-list li[data-routine] a{color:var(--ink)}
   .day-list li[data-past] a{color:var(--faint)}
+  .day-list li[data-done] a{text-decoration:line-through}
 }
 
 /* ── Overview: up next, then the journey. The page is lines on black, no cards ── */
