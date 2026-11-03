@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import and_, func, or_, select
 
-from domain.areas import approximate_point, in_bengaluru
+from domain.areas import area_for_text, centroid, in_bengaluru, jitter
 from domain.company_taxonomy import size_bucket
 from domain.geo import city_search_terms, resolve_city
 from domain.linkedin_links import person_search_link
@@ -81,8 +81,8 @@ PEOPLE_GROUPS: dict[str, str] = {
 
 _COORD_DECIMALS = 5  # ~1 m; more is payload, not precision
 
-#: A row at one of these precisions is drawn at a position we know; ``city`` is
-#: drawn at an approximate one (see :func:`_position`).
+#: A row at one of these precisions is drawn; ``city`` has no position and is
+#: listed only (see :func:`_position`).
 _PINNED_PRECISIONS = frozenset({"exact", "street", "area"})
 _MAX_PEOPLE = 60
 _MAX_NEWS = 50
@@ -170,26 +170,44 @@ def _round(value: float | None) -> float | None:
     return None if value is None else round(float(value), _COORD_DECIMALS)
 
 
+def _known_area(area: str | None, address: str | None) -> str | None:
+    """The canonical area a company is in: its stored ``area``, else one its address names."""
+    if area and centroid(area) is not None:
+        return area
+    return area_for_text(area) or area_for_text(address)
+
+
 def _position(
-    city: str, key: str, lat: float | None, lng: float | None, precision: str | None
+    city: str,
+    key: str,
+    lat: float | None,
+    lng: float | None,
+    precision: str | None,
+    area: str | None = None,
 ) -> tuple[float | None, float | None, str]:
     """
     Where to draw a company, never more precisely than we know.
 
-    No coordinate, or a Bengaluru company whose stored point is outside the
-    Bengaluru box, is ``city`` precision. Since 2026-10-15 a Bengaluru ``city``
-    row is still drawn: as an approximate point in a ring round the city centre
-    (:func:`domain.areas.approximate_point`, fixed by ``key``, the company id),
-    which the frontend marks "location unknown". The point is computed here and
-    never stored, so a real address found later simply replaces it. Another city
-    has no centre to draw round, so its ``city`` rows keep a null position.
+    A stored point inside the city is drawn as stored. Without one, a
+    Bengaluru company whose canonical ``area`` is known is drawn at that area's
+    centroid, nudged by :func:`domain.areas.jitter` (fixed by ``key``, the
+    company id) so neighbours do not stack, at ``area`` precision: exactly the
+    pin the geocode step would store for it, so a refresh that has not run yet
+    costs the map nothing. Anything else is ``city`` precision with no position.
+    A stored point outside the Bengaluru box is never drawn.
+
+    Until 2026-11-03 a ``city`` row was drawn at a computed point in a ring
+    round the centre; on a map where few companies are located those points
+    were most of what it showed, as clusters that looked like places. They are
+    now listed, not drawn.
     """
-    if lat is None or lng is None or (city == AREA_CITY and not in_bengaluru(lat, lng)):
-        if city == AREA_CITY:
-            ring_lat, ring_lng = approximate_point(key)
-            return ring_lat, ring_lng, "city"
-        return None, None, "city"
-    return _round(lat), _round(lng), precision or "exact"
+    if lat is not None and lng is not None and (city != AREA_CITY or in_bengaluru(lat, lng)):
+        return _round(lat), _round(lng), precision or "exact"
+    middle = centroid(area) if city == AREA_CITY and area else None
+    if area and middle is not None:
+        area_lat, area_lng = jitter(key, *middle)
+        return _round(area_lat), _round(area_lng), "area"
+    return None, None, "city"
 
 
 async def _build_map(city: str) -> dict[str, Any]:
@@ -206,6 +224,7 @@ async def _build_map(city: str) -> dict[str, Any]:
                 Company.stage,
                 Company.sector,
                 Company.area,
+                Company.address,
                 Company.employee_count,
                 Company.employee_count_range,
                 Company.last_funding_at,
@@ -218,7 +237,8 @@ async def _build_map(city: str) -> dict[str, Any]:
 
     rows: list[list[Any]] = []
     for c in companies:
-        lat, lng, precision = _position(city, str(c.id), c.lat, c.lng, c.geo_precision)
+        area = _known_area(c.area, c.address) if city == AREA_CITY else c.area
+        lat, lng, precision = _position(city, str(c.id), c.lat, c.lng, c.geo_precision, area)
         rows.append(
             [
                 str(c.id),
@@ -229,7 +249,7 @@ async def _build_map(city: str) -> dict[str, Any]:
                 c.tier,
                 c.stage,
                 c.sector,
-                c.area,
+                area,
                 size_bucket(c.employee_count, c.employee_count_range),
                 counts.get(c.id, 0),
                 raised_within(c.last_funding_at, RAISED_RECENTLY_DAYS, now),
@@ -251,8 +271,8 @@ async def map_rows(city: str = "Bengaluru") -> dict[str, Any]:
 
     Each row is positional (:data:`MAP_COLUMNS`) to keep the payload small.
     ``pinned`` counts rows at street, exact or area precision and ``approximate``
-    those at ``city`` precision, whose ``lat``/``lng`` are a computed point in a
-    ring round the city centre rather than a known one. Cached for an hour under
+    those at ``city`` precision: no location is known, ``lat``/``lng`` are null
+    and the map does not draw them (the key keeps its name for older clients). Cached for an hour under
     ``tr:map:<city>``, keyed by the canonical city name so "Bangalore" and
     "Bengaluru" share one entry. An unknown city is an empty map, not cached.
     """

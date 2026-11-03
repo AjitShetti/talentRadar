@@ -1573,126 +1573,84 @@ body{position:relative}
 }
 
 /* ── Company Intel → the company map ─────────────────────────────────────────
-   Same idiom as the rest of the sheet: hairline rules, one lamp, Fragment Mono
-   for data, Big Shoulders for labels. Boxes only where a surface floats over the
-   map. Amber on the map is the selected company and the companies hiring for the
-   user's target role, nothing else. */
+   The Events page's shape: the day title, a ledger of counts, the search bar and
+   one row of filters, then the map in a frame (or the list). The map draws only
+   what has a known place; the search lists every match, placed or not. Azure on
+   the map is the selected company and the companies hiring for the user's
+   target role, nothing else. */
 :root{
   --cm-float-bg:color-mix(in srgb,var(--surface) 90%,transparent);
   --cm-veil:color-mix(in srgb,var(--paper) 78%,transparent);
   --cm-halo:color-mix(in srgb,var(--surface-3) 45%,transparent);
 }
-/* The bleed shell loses its gutters at 800px to the generic .page-wrap rule; this page owns its own. */
-.page-wrap-bleed:has(>.cm-root){padding:0}
 .cm-root{min-width:0}
 .cm-root :is(a,button,select,summary,input):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-/* --cm-statsw is the widest the stats plate may be; --cm-rail is how much of the
-   right-hand side the plate and the zoom controls take, which the control panel
-   leaves clear so the two never overlap. --cm-drawer is what the docked drawer covers. */
-.cm-page{position:relative;display:flex;flex-direction:column;min-width:0;--cm-gap:14px;--cm-drawer:0px;--cm-statsw:340px;--cm-rail:var(--cm-statsw)}
-@media(min-width:1280px){.cm-page{--cm-statsw:520px}}
-@media(max-width:999px){.cm-page{--cm-statsw:280px}}
-.cm-page[data-drawer="open"]{--cm-drawer:540px;--cm-statsw:340px}
-/* With the drawer docked, the map beside it is too narrow to hold the plate and the
-   panel on one line below 1440px, so the plate steps aside and the zoom controls alone slide over. */
-@media(max-width:1439px){.cm-page[data-drawer="open"]{--cm-rail:32px}.cm-page[data-drawer="open"] .cm-stats{display:none}}
-.cm-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
-
-/* The map fills what is left of the viewport under the nav (--nav-h, set with the
-   nav itself), so the page never scrolls behind it. The controls float over it. */
-.cm-page.is-map{height:calc(100vh - var(--nav-h));height:calc(100dvh - var(--nav-h));min-height:480px;overflow:hidden}
-.cm-inner{width:100%;max-width:1260px;margin:0 auto;padding:0 42px}
 .cm-dash{color:var(--ghost)}
 
-/* The band holds the control panel (and, in the list, the stats plate). On the map
-   it floats top-left; in the list it is an ordinary row above the results. */
-.cm-page.is-map .cm-band{position:absolute;z-index:6;top:var(--cm-gap);left:var(--cm-gap);width:min(640px,calc(100% - 2 * var(--cm-gap) - var(--cm-drawer) - var(--cm-rail) - 12px));pointer-events:none}
-.cm-page.is-map .cm-band>*{pointer-events:auto}
-.cm-page.is-list .cm-band{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:14px 32px;padding-top:22px;padding-bottom:8px}
-
-/* The control panel: one calm instrument. Row 1 is search, Filters, Map | List,
-   divided by hairlines; row 2 is the toggles and whatever is switched on. */
-.cm-panel{position:relative;min-width:0;background:var(--cm-float-bg);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border:1px solid var(--line);border-radius:12px;box-shadow:inset 0 1px 0 rgb(var(--hi) / .03),0 10px 24px rgb(0 0 0 / calc(.35 * var(--shade)))}
-.cm-page.is-list .cm-panel{flex:0 1 640px;background:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none}
-.cm-row{display:flex;align-items:center;min-width:0}
-.cm-row-main{align-items:stretch;min-height:44px}
-.cm-search{position:relative;flex:1 1 120px;min-width:0;display:flex;align-items:center;gap:9px;padding-left:13px;color:var(--muted);border-radius:12px 0 0 0;transition:box-shadow var(--t-fast) var(--ease-fast)}
-.cm-search input{flex:1;min-width:0;border:0;outline:0;background:transparent;color:var(--ink);font:13px var(--font-text);padding:12px 8px 12px 0}
-.cm-search input::placeholder{color:var(--faint)}
-.cm-root .cm-search input:focus-visible{outline:0}
-.cm-search:focus-within{box-shadow:inset 0 -2px 0 var(--accent)}
-.cm-filters{flex:none;display:flex;border-left:1px solid var(--line-soft)}
-.cm-filter-btn{display:flex;align-items:center;gap:6px;padding:0 13px;background:transparent;color:var(--ink-2);font:600 11px var(--font-display);letter-spacing:-.005em;white-space:nowrap;transition:color var(--t-fast) var(--ease-fast),background var(--t-fast) var(--ease-fast)}
-.cm-filter-btn:hover,.cm-filter-btn[aria-expanded="true"]{color:var(--ink);background:var(--line-soft)}
-.cm-filter-btn:active{background:var(--line)}
-.cm-filter-btn b{font:400 11px var(--font-label);letter-spacing:0;color:var(--accent-light);background:var(--accent-soft);border-radius:999px;padding:1px 6px;font-variant-numeric:tabular-nums}
-.cm-filter-btn .cm-chev{color:var(--faint);transition:transform var(--t) var(--ease-out)}
-.cm-filter-btn[aria-expanded="true"] .cm-chev{transform:rotate(180deg)}
-.cm-root .cm-filter-btn:focus-visible{outline-offset:-2px}
-.cm-view{flex:none;display:flex;align-items:stretch;gap:2px;padding:0 4px;border-left:1px solid var(--line-soft)}
-.cm-view button{position:relative;display:flex;align-items:center;gap:6px;background:transparent;color:var(--muted);padding:0 10px;border-radius:8px;font:600 11px var(--font-display);letter-spacing:-.005em;transition:color var(--t-fast) var(--ease-fast)}
-.cm-view button::after{content:'';position:absolute;left:10px;right:10px;bottom:0;height:2px;background:var(--accent);transform:scaleX(0);transform-origin:left;transition:transform var(--t) var(--ease-out)}
-.cm-view button:hover{color:var(--ink)}
-.cm-view button[aria-pressed="true"]{color:var(--ink)}
-.cm-view button[aria-pressed="true"]::after{transform:scaleX(1)}
-.cm-view button[aria-disabled="true"]{color:var(--ghost);cursor:not-allowed}
-.cm-root .cm-view button:focus-visible{outline-offset:-2px}
-.cm-view i{align-self:center;width:1px;height:14px;background:var(--line)}
-.cm-row-sub{flex-wrap:wrap;gap:6px;padding:8px 11px 9px;border-top:1px solid var(--line-soft)}
+/* Toolbar: the search bar, then the filters (rules shared with .ev-controls). */
+.cm-toolbar .ci-searchbar input[type=search]::-webkit-search-cancel-button{display:none}
+.cm-toolbar .ci-searchbar .cm-clear{flex:none}
+.cm-root .cm-toolbar .ci-searchbar input:focus-visible{outline:0}
+.cm-toolbar .ci-searchbar:focus-within{border-color:var(--accent-border);box-shadow:0 0 0 3px var(--accent-ring)}
+.cm-controls .cm-field{width:150px}
 .cm-root select option{background:var(--surface);color:var(--ink)}
 .cm-root .ci-chip{transition:border-color var(--t-fast) var(--ease-fast),color var(--t-fast) var(--ease-fast),background var(--t-fast) var(--ease-fast),transform var(--t-fast) var(--ease-out)}
 .cm-root .ci-chip:active{transform:translateY(1px)}
-.cm-row-sub .ci-chip{padding:5px 11px}
-.cm-applied{color:var(--ink-2);background:var(--line-soft)}
-.cm-clear{background:transparent;color:var(--faint);font-size:11px;padding:6px 6px;border-radius:10px;transition:color var(--t-fast) var(--ease-fast)}
-.cm-clear:hover{color:var(--ink)}
+.cm-toggle:disabled{opacity:.45;cursor:not-allowed}
+.cm-toggle:disabled:hover{border-color:var(--line);color:var(--muted)}
+.cm-applied-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:12px 2px 0}
+.cm-applied{color:var(--ink-2);background:rgb(var(--hi) / .06)}
+.cm-applied span{margin-left:2px;color:var(--faint)}
+.cm-clear{background:transparent;color:var(--faint);font:500 12px var(--font-text);padding:6px 8px;border-radius:var(--r-pill);transition:color var(--t-fast) var(--ease-fast),background var(--t-fast) var(--ease-fast)}
+.cm-clear:hover{color:var(--ink);background:rgb(var(--hi) / .06)}
 .cm-count{margin-left:auto;display:inline-flex;align-items:center;gap:6px}
-
-/* The Filters popover: opaque, because a blur inside a blurred panel shows nothing. */
-.cm-pop{position:absolute;z-index:20;left:0;right:0;top:calc(100% + 6px);padding:14px 14px 12px;background:var(--surface-2);border:1px solid var(--line-strong);border-radius:12px;box-shadow:inset 0 1px 0 rgb(var(--hi) / .03),0 16px 36px rgb(0 0 0 / calc(.5 * var(--shade)));animation:cm-pop-in var(--t) var(--ease-out) both}
-@keyframes cm-pop-in{from{opacity:0;transform:translateY(-6px)}}
-.cm-pop-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px 14px}
 .cm-field{display:flex;flex-direction:column;gap:5px;min-width:0}
 .cm-field span{font:600 11.5px var(--font-display);letter-spacing:-.005em;color:var(--faint)}
-.cm-field select{width:100%;min-width:0;border:1px solid var(--line);border-radius:10px;padding:8px 9px;background:var(--surface);color:var(--muted);font:12px var(--font-text);cursor:pointer;transition:border-color var(--t-fast) var(--ease-fast),color var(--t-fast) var(--ease-fast)}
-.cm-field select:hover,.cm-field select[data-set="true"]{color:var(--ink);border-color:var(--line-strong)}
-.cm-pop-foot{display:flex;align-items:center;gap:10px;margin-top:14px;padding-top:11px;border-top:1px solid var(--line-soft)}
-.cm-pop-foot .ci-count{margin-right:auto;display:inline-flex;gap:6px}
-.cm-done{background:transparent;border:1px solid var(--line);border-radius:10px;padding:7px 14px;color:var(--ink-2);font:600 11px var(--font-display);letter-spacing:-.005em;transition:border-color var(--t-fast) var(--ease-fast),color var(--t-fast) var(--ease-fast)}
-.cm-done:hover{border-color:var(--accent-border);color:var(--ink)}
-.cm-done:active{transform:translateY(1px)}
-
-/* The stats plate: what the system holds, set small. On the map it rides the
-   right-hand rail; in the list it is plain text at the right of the band. */
-.cm-stats{width:max-content;max-width:var(--cm-statsw);padding:9px 12px 10px;text-align:right;background:var(--cm-float-bg);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:12px;box-shadow:inset 0 1px 0 rgb(var(--hi) / .03),0 10px 24px rgb(0 0 0 / calc(.35 * var(--shade)))}
-.cm-page.is-list .cm-stats{margin-left:auto;padding:4px 0 0;background:transparent;-webkit-backdrop-filter:none;backdrop-filter:none;border:0;box-shadow:none}
-.cm-stats-label{display:block;margin-bottom:5px;font:600 11.5px var(--font-display);letter-spacing:-.005em;color:var(--faint)}
-.cm-stats-line{margin:0;font:400 11px/1.6 var(--font-text);color:var(--muted)}
-.cm-stat{white-space:nowrap}
-.cm-stat b{display:inline-flex;font:400 12px var(--font-label);color:var(--ink);font-variant-numeric:tabular-nums}
-.cm-stats-line i{margin:0 7px;font-style:normal;color:var(--faint)}
+.cm-field select{width:100%;min-width:0;border:1px solid var(--field-border);border-radius:var(--r-md);padding:9px 10px;background:var(--field);color:var(--muted);font:13px var(--font-text);cursor:pointer;transition:border-color var(--t-fast) var(--ease-fast),color var(--t-fast) var(--ease-fast),background var(--t-fast) var(--ease-fast)}
+.cm-field select:hover{background:var(--field-hover)}
+.cm-field select:hover,.cm-field select[data-set="true"]{color:var(--ink)}
+.cm-field select[data-set="true"]{border-color:var(--accent-border)}
+.cm-ledger{margin-top:-18px}
 
 /* Notes under the toolbar */
 .cm-fallback{display:flex;align-items:center;gap:9px;margin:0;padding:13px 2px;border-top:1px solid var(--line-soft);font-size:12.5px;color:var(--ink-2)}
 .cm-fallback small{margin-left:auto;font:9.5px var(--font-label);letter-spacing:.3px;color:var(--faint)}
 .cm-error{margin:12px 0 0}
 
-/* The map: the whole page area. Hairline paper shows for the instant before the first tiles draw. */
-.cm-stage{position:relative;flex:1 1 auto;min-height:0;overflow:hidden;background-color:var(--paper);background-image:linear-gradient(var(--line-soft) 1px,transparent 1px),linear-gradient(90deg,var(--line-soft) 1px,transparent 1px);background-size:56px 56px}
-.cm-page.is-map .cm-stage{position:absolute;inset:0}
-.cm-stage[hidden]{display:none}
-.cm-stage-inner{position:absolute;inset:0}
+/* The map, in a frame under the toolbar. Its floating parts are the rules below,
+   which the Events map (.ev-map) shares. */
+.cm-frame{--cm-gap:14px;position:relative;isolation:isolate;height:clamp(440px,calc(100vh - var(--nav-h) - 260px),820px);height:clamp(440px,calc(100dvh - var(--nav-h) - 260px),820px);margin-top:18px;border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden;background:var(--paper)}
+.cm-frame[hidden]{display:none}
 .cm-map-root{position:absolute;inset:0}
 .cm-map-root>.cm-map{position:absolute;inset:0;width:100%;height:100%;background:var(--paper)}
 .cm-map .maplibregl-canvas{outline:none}
 .cm-map .maplibregl-canvas:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-.cm-plate{position:absolute;z-index:2;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:9px;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:var(--cm-float-bg);color:var(--faint);font:11px var(--font-label);letter-spacing:-.005em;}
+.cm-plate{position:absolute;z-index:2;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:9px;padding:10px 16px;border:1px solid var(--line);border-radius:var(--r-pill);background:var(--cm-float-bg);color:var(--faint);font:12px var(--font-text);letter-spacing:-.005em}
+
+/* Nothing to draw: a plate in the middle of the map that says why and offers the list. */
+.cm-empty-plate{position:absolute;z-index:4;left:50%;top:50%;transform:translate(-50%,-50%);width:min(420px,calc(100% - 32px));padding:22px 24px;text-align:center;background:var(--cm-float-bg);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-pop)}
+.cm-empty-plate strong{display:block;font:600 17px/1.3 var(--font-display);letter-spacing:-.015em;color:var(--ink)}
+.cm-empty-plate p{margin:8px 0 0;font-size:13px;line-height:1.5;color:var(--muted)}
+.cm-empty-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:16px}
+.cm-empty-actions .primary-button,.cm-empty-actions .outline-button{margin:0}
+
+/* Search results over the map, top-left: every match, with or without a place. */
+.cm-matches{top:var(--cm-gap);left:var(--cm-gap);z-index:5;width:min(340px,calc(100% - 2 * var(--cm-gap) - 56px));max-height:calc(100% - 2 * var(--cm-gap));display:flex;flex-direction:column;overflow:hidden;border-radius:var(--r-lg)}
+.cm-matches-head{margin:0;padding:11px 14px 9px;font:600 12px var(--font-text);color:var(--faint);border-bottom:1px solid var(--line-soft)}
+.cm-matches ol{list-style:none;margin:0;padding:4px;overflow-y:auto}
+.cm-match{display:grid;grid-template-columns:12px minmax(0,1fr);align-items:center;gap:2px 10px;width:100%;padding:8px 10px;border-radius:var(--r-md);background:transparent;color:inherit;text-align:left;transition:background var(--t-fast) var(--ease-fast)}
+.cm-match:hover{background:rgb(var(--hi) / .07)}
+.cm-match.is-selected{background:var(--accent-soft)}
+.cm-match-name{font:600 13px var(--font-text);color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cm-match small{grid-column:2;font-size:11.5px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cm-matches-more{margin:0 4px 4px;padding:9px 10px;border-radius:var(--r-md);background:transparent;color:var(--accent-dark);font:600 12px var(--font-text);text-align:left}
+.cm-matches-more:hover{background:rgb(var(--hi) / .07)}
 
 /* Controls that float over the map keep a frame, a blur and the ambient lift. */
-.cm-float{position:absolute;z-index:3;background:var(--cm-float-bg);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:10px;box-shadow:inset 0 1px 0 rgb(var(--hi) / .03),0 10px 24px rgb(0 0 0 / calc(.35 * var(--shade)))}
-.cm-unpinned{width:auto;padding:7px 12px;color:var(--ink-2)}
-.cm-unpinned strong{font:400 11px var(--font-label);color:var(--ink);font-variant-numeric:tabular-nums}
-/* Stats plate, zoom controls and the unlocated chip share one column, so they stack instead of colliding. */
+.cm-float{position:absolute;z-index:3;background:var(--cm-float-bg);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border:1px solid var(--line);border-radius:var(--r-md);box-shadow:inset 0 1px 0 rgb(var(--hi) / .03),0 10px 24px rgb(0 0 0 / calc(.35 * var(--shade)))}
+.cm-unpinned{width:auto;padding:7px 13px;border-radius:var(--r-pill);color:var(--ink-2);font-size:12px}
+.cm-unpinned strong{font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
+/* Zoom controls and the "not on the map" chip share one column, so they stack instead of colliding. */
 .cm-rail{position:absolute;z-index:3;top:var(--cm-gap);right:var(--cm-gap);display:flex;flex-direction:column;align-items:flex-end;gap:10px;pointer-events:none;transition:transform var(--t-travel) var(--ease-out)}
 .cm-rail>*{pointer-events:auto}
 .cm-rail .cm-float{position:static}
@@ -1702,41 +1660,35 @@ body{position:relative}
 .cm-zoom button:hover{background:var(--line-soft);color:var(--ink)}
 .cm-zoom button:active{background:var(--line)}
 .cm-zoom button:focus-visible{outline-offset:-2px}
-.cm-legend{position:absolute;z-index:3;right:14px;bottom:32px;display:flex;flex-direction:column;gap:6px;padding:9px 11px;border-radius:8px;background:var(--cm-veil);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);font:9.5px var(--font-label);letter-spacing:.3px;color:var(--muted)}
+.cm-legend{position:absolute;z-index:3;right:14px;bottom:32px;display:flex;flex-direction:column;gap:6px;padding:10px 12px;border-radius:var(--r-md);background:var(--cm-veil);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);font:11px var(--font-text);color:var(--muted)}
 .cm-legend span{display:flex;align-items:center;gap:8px;white-space:nowrap}
 .cm-key-dot{fill:var(--ink-2)}
 .cm-key-ring{fill:none;stroke:var(--ink-2);stroke-width:1.6}
-.cm-key-approx{fill:none;stroke:var(--faint);stroke-width:1.1;opacity:.6}
 .cm-key-lit{fill:var(--accent)}
 .cm-key-cluster{fill:var(--ink-4);stroke:var(--line-strong)}
 .cm-attrib{position:absolute;z-index:3;right:8px;bottom:6px;padding:2px 6px;border-radius:6px;background:var(--cm-veil);font:11px var(--font-label);color:var(--faint);white-space:nowrap;transition:transform var(--t-travel) var(--ease-out)}
 .cm-attrib a{text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:2px;transition:color var(--t-fast) var(--ease-fast)}
 .cm-attrib a:hover{color:var(--ink)}
-.has-drawer .cm-rail,.has-drawer .cm-attrib{transform:translateX(-540px)}
-.has-drawer .cm-legend{display:none}
 
 /* Pins are drawn by the map; these are the parts the DOM draws. */
 .cm-cluster{display:grid;place-items:center;width:var(--d,34px);height:var(--d,34px);padding:0;border-radius:50%;background:var(--ink-4);border:1px solid var(--line-strong);box-shadow:0 0 0 4px var(--cm-halo);color:var(--ink-2);font:400 11px var(--font-label);font-variant-numeric:tabular-nums;cursor:pointer;transition:background var(--t-fast) var(--ease-fast),border-color var(--t-fast) var(--ease-fast),color var(--t-fast) var(--ease-fast)}
-.cm-cluster.is-approx{background:transparent;border:1px dashed var(--faint);box-shadow:none;color:var(--faint)}
-.cm-cluster.is-approx:hover{background:var(--line-soft);border-color:var(--ink-2);color:var(--ink)}
 .cm-cluster:hover{background:var(--ink-5);border-color:var(--ink-2);color:var(--ink)}
 .cm-cluster:active span{transform:translateY(1px)}
 .cm-cluster:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 .cm-tip{position:absolute;z-index:4;pointer-events:none;transform:translate(-50%,calc(-100% - 14px));background:var(--surface-3);border:1px solid var(--line);border-radius:10px;padding:6px 9px;color:var(--ink);white-space:nowrap;box-shadow:0 8px 18px rgb(0 0 0 / calc(.4 * var(--shade)))}
 .cm-tip[hidden]{display:none}
 .cm-tip strong{display:block;font-size:11.5px;font-weight:600}
-.cm-tip small{display:block;margin-top:2px;font:9.5px var(--font-label);letter-spacing:.2px;color:var(--faint)}
+.cm-tip small{display:block;margin-top:2px;font:11px var(--font-text);color:var(--faint)}
 .cm-glyph-dot{fill:var(--ink-2)}
 .cm-glyph-ring{fill:none;stroke:var(--ink-2);stroke-width:1.5}
 .cm-glyph-none{fill:none;stroke:var(--faint);stroke-width:1.1;opacity:.7}
 
 /* News strip, bottom-left. */
 .cm-news{left:14px;bottom:30px;width:min(360px,calc(100% - 28px));overflow:hidden}
-.has-drawer .cm-news{width:min(360px,calc(100% - 540px - 28px))}
 .cm-news-head{display:flex;align-items:center;gap:8px;width:100%;padding:10px 13px;background:transparent;color:var(--ink);text-align:left;transition:background var(--t-fast) var(--ease-fast)}
 .cm-news-head:hover{background:var(--line-soft)}
-.cm-news-head strong{font:600 11px var(--font-display);letter-spacing:-.005em;}
-.cm-news-head em{font:normal 10px var(--font-label);color:var(--faint);font-variant-numeric:tabular-nums}
+.cm-news-head strong{font:600 12px var(--font-text)}
+.cm-news-head em{font:normal 11px var(--font-text);color:var(--faint);font-variant-numeric:tabular-nums}
 .cm-news-head .cm-chev{margin-left:auto;transform:rotate(180deg);transition:transform var(--t) var(--ease-out)}
 .cm-news.is-open .cm-chev{transform:none}
 .cm-news ol{list-style:none;margin:0;padding:0;max-height:clamp(120px,38vh,300px);overflow-y:auto;border-top:1px solid var(--line-soft)}
@@ -1749,14 +1701,11 @@ body{position:relative}
 .cm-news-item:hover b{color:var(--accent-light)}
 .cm-news-item b{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:12px;font-weight:600;line-height:1.45;color:var(--ink-2);transition:color var(--t-fast) var(--ease-fast)}
 .cm-ext{margin-left:5px;color:var(--faint)}
-.cm-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:5px;font:9.5px var(--font-label);letter-spacing:.3px;color:var(--faint)}
-.cm-tag{font:11px var(--font-label);letter-spacing:-.005em;color:var(--ink-2);background:var(--line-soft);border:1px solid var(--line);border-radius:8px;padding:1px 5px}
+.cm-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:5px;font:11px var(--font-text);color:var(--faint)}
+.cm-tag{font:500 11px var(--font-text);color:var(--ink-2);background:rgb(var(--hi) / .07);border-radius:var(--r-pill);padding:1px 7px}
 
-/* The drawer docks over the map's right edge, so the map stays live beside it.
-   Over the list, or on a narrow screen, it is the fixed overlay it always was,
-   lifted above the sticky nav. */
-.cm-stage-inner .ci-drawer.is-docked{position:absolute;top:0;bottom:0;right:0;z-index:5;width:min(540px,100%)}
-.ci-drawer.is-docked,.ci-drawer.cm-over{animation:cm-drawer-in var(--t-travel) var(--ease-out) both}
+/* The drawer is a fixed overlay, lifted above the sticky nav (Events uses it too). */
+.ci-drawer.cm-over{animation:cm-drawer-in var(--t-travel) var(--ease-out) both}
 .ci-backdrop.cm-over{z-index:61}
 .ci-drawer.cm-over{z-index:62}
 @keyframes cm-drawer-in{from{opacity:0;transform:translateX(32px)}}
@@ -1770,9 +1719,9 @@ body{position:relative}
 .cm-yours i{width:6px;height:6px;border-radius:50%;background:var(--accent)}
 .cm-yours-text{font-style:normal;margin-left:2px;font:11px var(--font-label);letter-spacing:-.005em;color:var(--accent-dark)}
 .cm-summary{font-size:13px;line-height:1.55;color:var(--ink-2);margin:10px 0 0}
-.cm-prov{display:block;margin-top:3px;font:9.5px var(--font-label);letter-spacing:.4px;color:var(--faint)}
+.cm-prov{display:block;margin-top:3px;font:11px var(--font-text);color:var(--faint)}
 .cm-place{display:grid;grid-template-columns:12px minmax(0,1fr);gap:3px 9px;align-items:start;margin-top:12px;font-size:12px;line-height:1.5;color:var(--ink-2)}
-.cm-place small{grid-column:2;font:9.5px var(--font-label);letter-spacing:.3px;color:var(--faint)}
+.cm-place small{grid-column:2;font:11px var(--font-text);color:var(--faint)}
 .ci-drawer-body>.ci-links{padding:14px 0 18px;border-bottom:1px solid var(--line-soft)}
 .cm-about{padding:16px 0 6px;border-bottom:1px solid var(--line-soft)}
 .cm-about p{font-size:12.5px;line-height:1.65;color:var(--ink-2);margin:0 0 12px}
@@ -1784,7 +1733,7 @@ body{position:relative}
 .cm-sub{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:18px 0 4px}
 .cm-sub:first-of-type{margin-top:0}
 .cm-sub .ci-stack-label{margin:0}
-.cm-sub em{font:normal 9.5px var(--font-label);color:var(--faint);text-align:right}
+.cm-sub em{font:normal 11px var(--font-text);color:var(--faint);text-align:right}
 .cm-person{display:grid;grid-template-columns:29px minmax(0,1fr);gap:10px;padding:11px 0;border-top:1px solid var(--line-soft)}
 .cm-sub+.cm-person{border-top:0}
 .cm-person .ci-contact-icon{font:600 11px var(--font-label);color:var(--ink-2)}
@@ -1811,7 +1760,7 @@ body{position:relative}
 .cm-round{display:block;margin-top:4px;font:11px var(--font-label);color:var(--ink-2);letter-spacing:.2px}
 
 /* List view: the ranked rows, with area and stage · sector columns added. */
-.cm-list{padding-top:4px;padding-bottom:40px}
+.cm-list{padding-top:10px}
 .cm-list .ci-grid{margin-top:0}
 .cm-list .ci-card{grid-template-columns:36px minmax(0,1fr) minmax(0,1.2fr) 124px 118px 112px 140px}
 .cm-list .ci-card:active{background:var(--line)}
@@ -1823,7 +1772,7 @@ body{position:relative}
 .cm-cell-area{grid-column:4;grid-row:1;display:flex;flex-direction:column;gap:3px;min-width:0;font-size:11px;color:var(--ink-2)}
 .cm-cell-area span{display:flex;align-items:center;gap:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cm-cell-area small{font:11px var(--font-label);letter-spacing:-.005em;color:var(--faint);}
-.cm-cell-codes{grid-column:5;grid-row:1;display:flex;flex-direction:column;gap:4px;min-width:0;font:9.5px var(--font-label);letter-spacing:-.005em;color:var(--muted)}
+.cm-cell-codes{grid-column:5;grid-row:1;display:flex;flex-direction:column;gap:4px;min-width:0;font:11px var(--font-text);color:var(--muted)}
 .cm-cell-codes span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cm-cell-codes span+span{color:var(--faint)}
 .cm-list-head{display:grid;grid-template-columns:36px minmax(0,1fr) minmax(0,1.2fr) 124px 118px 112px 140px;gap:16px;padding:14px 4px 10px;border-bottom:1px solid var(--line-soft);font:11px var(--font-label);letter-spacing:-.005em;color:var(--faint)}
@@ -1831,7 +1780,7 @@ body{position:relative}
 .cm-list-head span:last-child{text-align:right}
 .cm-unpinned-note{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:12px 2px;border-bottom:1px solid var(--line-soft);font-size:12px;color:var(--muted)}
 .cm-note-text{display:flex;align-items:baseline;gap:8px;min-width:0;flex:1 1 320px}
-.cm-unpinned-note strong{font:400 12px var(--font-label);color:var(--ink);font-variant-numeric:tabular-nums}
+.cm-unpinned-note strong{font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
 .cm-unpinned-note .ci-chip{margin-left:auto;padding:5px 11px}
 .cm-skel-row{display:grid;grid-template-columns:36px minmax(0,1fr) minmax(0,1.6fr) 120px;gap:16px;align-items:center;padding:17px 4px;border-top:1px solid var(--line-soft)}
 .cm-skel-row:first-child{border-top:0}
@@ -1844,7 +1793,7 @@ body{position:relative}
 
 /* Filter sheet, below 700px */
 .cm-sheet-backdrop{position:fixed;inset:0;z-index:63;background:rgb(0 0 0 / calc(.42 * var(--shade)));border:0;padding:0;width:100%;cursor:default;animation:ci-fade var(--t-fast) ease}
-.cm-sheet{position:fixed;left:0;right:0;bottom:0;z-index:64;max-height:86%;overflow-y:auto;background:var(--surface);border-top:1px solid var(--line-strong);border-radius:14px 14px 0 0;box-shadow:0 -16px 44px rgb(0 0 0 / calc(.5 * var(--shade)));padding:8px 16px 18px;animation:cm-rise var(--t) var(--ease-out)}
+.cm-sheet{position:fixed;left:0;right:0;bottom:0;z-index:64;max-height:86%;overflow-y:auto;background:var(--surface);border-top:1px solid var(--line-strong);border-radius:var(--r-xl) var(--r-xl) 0 0;box-shadow:0 -16px 44px rgb(0 0 0 / calc(.5 * var(--shade)));padding:8px 16px 18px;animation:cm-rise var(--t) var(--ease-out)}
 .cm-sheet:focus{outline:none}
 @keyframes cm-rise{from{transform:translateY(24px);opacity:.5}}
 .cm-sheet-grip{display:block;width:36px;height:4px;border-radius:6px;background:var(--line-strong);margin:2px auto 10px}
@@ -1852,7 +1801,7 @@ body{position:relative}
 .cm-sheet-head h2{font:700 18px var(--font-display);letter-spacing:-.2px;margin:0}
 .cm-sheet label{display:grid;grid-template-columns:76px minmax(0,1fr);align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line-soft)}
 .cm-sheet label span{font:600 11.5px var(--font-display);letter-spacing:-.005em;color:var(--faint)}
-.cm-sheet select{width:100%;min-width:0;border:1px solid var(--line);border-radius:10px;padding:9px 10px;background:var(--surface-2);color:var(--ink);font:13px var(--font-text)}
+.cm-sheet select{width:100%;min-width:0;border:1px solid var(--field-border);border-radius:var(--r-md);padding:10px 11px;background:var(--field);color:var(--ink);font:14px var(--font-text)}
 .cm-sheet-toggles{display:flex;flex-wrap:wrap;gap:6px;padding:14px 0}
 .cm-sheet-foot{display:flex;gap:10px;align-items:center;padding-top:6px}
 .cm-sheet-foot .primary-button{flex:1;justify-content:center;margin-top:0}
@@ -1865,7 +1814,6 @@ body{position:relative}
 }
 @media(max-width:920px){.cm-list .ci-card:hover{transform:none}}
 @media(max-width:800px){
-  .cm-inner{padding:0 16px}
   .cm-list-head{display:none}
   .cm-list .ci-card{grid-template-columns:36px minmax(0,1fr) auto;gap:6px 12px}
   .cm-list .ci-card-desc{grid-column:2/-1;grid-row:2;-webkit-line-clamp:2}
@@ -1875,42 +1823,25 @@ body{position:relative}
   .cm-list .ci-mini-chips{justify-content:flex-start;flex-wrap:wrap}
   .cm-unpinned-note .ci-chip{margin-left:0}
 }
-/* Below 700px (the page's own NARROW_QUERY) the map is the whole screen under the
-   nav, search floats on top with the stats as a one-line strip under it, the
-   filters move into a sheet, the news is a pill and the drawer is full width. */
+/* Below 700px (the page's own NARROW_QUERY) the selects and toggles move into the
+   sheet behind Filters, the legend goes, and the drawer is full width. */
 @media(max-width:699px){
-  .cm-page.is-map{min-height:420px}
-  .cm-page.is-map .cm-band{top:10px;left:10px;right:10px;width:auto;display:flex;flex-direction:column;gap:6px}
-  .cm-page.is-list .cm-band{flex-direction:column;align-items:stretch;flex-wrap:nowrap;gap:8px;padding-top:14px;padding-bottom:4px}
-  .cm-page.is-list .cm-panel{flex:none}
-  .cm-row-main{min-height:42px}
-  .cm-search{padding-left:11px}
-  .cm-filters .cm-filter-btn{padding:0 10px}
-  .cm-view{padding:0 2px}
-  .cm-view button{padding:0 9px}
-  .cm-view button::after{left:9px;right:9px}
-  .cm-row-sub{padding:7px 9px 8px}
-  .cm-row-sub .cm-toggle{display:none}
-  .cm-stats.is-strip{width:auto;max-width:none;padding:6px 10px;text-align:left;border-radius:10px;background:var(--cm-veil);box-shadow:none;overflow-x:auto;scrollbar-width:none;-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 20px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 20px),transparent)}
-  .cm-stats.is-strip::-webkit-scrollbar{display:none}
-  .cm-page.is-list .cm-stats.is-strip{margin-left:0;padding:2px 0 0;border-radius:0;background:transparent}
-  .cm-stats.is-strip .cm-stats-line{white-space:nowrap;font-size:11.5px}
-  .cm-stats.is-strip .cm-stat b{font-size:11px}
+  .cm-ledger{margin-top:-6px;column-gap:14px}
+  .cm-controls .cm-field,.cm-controls .cm-toggle{display:none}
+  .cm-frame{height:clamp(380px,calc(100dvh - var(--nav-h) - 300px),620px);border-radius:var(--r-md)}
+  .cm-matches{right:var(--cm-gap);width:auto;max-height:55%}
   .cm-legend{display:none}
   .cm-rail{top:auto;bottom:26px;right:10px}
-  .cm-news{left:10px;bottom:26px;width:auto;max-width:calc(100% - 20px)}
-  .cm-news.is-open{right:10px}
+  .cm-news{left:10px;bottom:26px;width:auto;max-width:calc(100% - 70px)}
+  .cm-news.is-open{right:60px}
   .cm-attrib{right:4px;bottom:3px;font-size:10px}
   .cm-fallback small{display:none}
   .ci-drawer-head{padding:16px}
   .ci-drawer-body{padding:0 16px 28px}
 }
-@media(max-width:479px){
-  .cm-view button{padding:0 11px}
-}
 @media(prefers-reduced-motion:reduce){
-  .ci-drawer.is-docked,.ci-drawer.cm-over,.cm-sheet,.cm-sheet-backdrop,.cm-skel,.cm-pop{animation:none}
-  .cm-rail,.cm-attrib,.cm-news-head .cm-chev,.cm-filter-btn .cm-chev,.cm-view button::after,.cm-root .ci-chip,.cm-search{transition:none}
+  .ci-drawer.cm-over,.cm-sheet,.cm-sheet-backdrop,.cm-skel{animation:none}
+  .cm-rail,.cm-attrib,.cm-news-head .cm-chev,.cm-root .ci-chip,.cm-match,.cm-field select{transition:none}
 }
 
 /* ── Outreach: /outreach, the thread drawer, the company-drawer block ─────

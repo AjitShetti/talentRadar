@@ -28,7 +28,7 @@ from sqlalchemy import String, and_, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from domain.areas import BENGALURU_BBOX
+from domain.areas import BENGALURU_AREAS, BENGALURU_BBOX
 from domain.company_taxonomy import SECTORS, SIZES, STAGES, is_bigger_company, size_bucket
 from domain.linkedin_links import company_people_links
 from services.base import parse_uuid
@@ -166,15 +166,22 @@ def _pinned_clause(city: str | None, pinned: bool) -> ColumnElement[bool]:
     """
     Whether the map can draw the company: the list's twin of
     ``services.company_map.read._position``. A Bengaluru company whose stored
-    point is outside the Bengaluru box is not drawn, so it is *not pinned*.
+    point is outside the Bengaluru box is not drawn by that point; one with a
+    canonical area is drawn in it all the same, so it *is pinned*. (An area
+    named only inside the address is the one case the map places and this
+    clause does not: geocoding stores an area for every address it reads.)
     """
     has_point = and_(Company.lat.is_not(None), Company.lng.is_not(None))
     if canonical_city(city) == AREA_CITY:
         south, west, north, east = BENGALURU_BBOX
-        has_point = and_(
-            has_point,
-            Company.lat.between(south, north),
-            Company.lng.between(west, east),
+        has_point = or_(
+            and_(
+                has_point,
+                Company.lat.between(south, north),
+                Company.lng.between(west, east),
+            ),
+            # IS NOT NULL first: a bare IN over a NULL area is NULL, and ``~`` keeps it NULL.
+            and_(Company.area.is_not(None), Company.area.in_([a.name for a in BENGALURU_AREAS])),
         )
     return has_point if pinned else ~has_point
 
