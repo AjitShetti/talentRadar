@@ -1,4 +1,5 @@
 import type { Briefing, BriefingCard } from '@/lib/api'
+import { istDayKey, type Routine } from '@/lib/routine'
 
 /**
  * The day line's rules and its small shared store. Pure rules first, so
@@ -22,7 +23,8 @@ export const clockLabel = (minutes: number) => {
   return `${String(Math.floor(whole / 60)).padStart(2, '0')}:${String(whole % 60).padStart(2, '0')}`
 }
 
-export type DayMark = { id: string; at: number; time: string; label: string; href: string }
+/** `routine` marks one from the user's own routine (lib/routine.ts), drawn apart from the briefing's; `done` is that block's tick today. */
+export type DayMark = { id: string; at: number; time: string; label: string; href: string; routine?: true; done?: boolean }
 
 const text = (value: unknown) => typeof value === 'string' ? value : ''
 
@@ -148,9 +150,55 @@ export function forgetNote(applicationId: string) {
   notify()
 }
 
+/**
+ * The briefing's marks and the routine's, in time order. At one minute the briefing's comes
+ * first (the sort is stable, and the briefing's marks are listed before the routine's).
+ */
+export const mergeMarks = (briefing: DayMark[], routine: DayMark[]): DayMark[] =>
+  [...briefing, ...routine].sort((a, b) => a.at - b.at)
+
+/* ── the routine: its own read, beside the briefing's, because it comes from its own route ── */
+
+type RoutineSnapshot = { owner: string | null; at: number; routine: Routine | null }
+
+const NO_ROUTINE: RoutineSnapshot = { owner: null, at: 0, routine: null }
+
+let routineStore = NO_ROUTINE
+const routineListeners = new Set<() => void>()
+const notifyRoutine = () => routineListeners.forEach(listener => listener())
+
+export const routineSnapshot = () => routineStore
+export const onRoutine = (listener: () => void) => { routineListeners.add(listener); return () => { routineListeners.delete(listener) } }
+
+export function publishRoutine(routine: Routine, owner: string | null) {
+  routineStore = { owner, at: Date.now(), routine }
+  notifyRoutine()
+}
+
+/** What may be shown: nothing when signed out, another account's routine never, and yesterday's ticks never as today's. */
+export function routineFor(owner: string | null, nowMs: number): Routine | null {
+  const { routine } = routineStore
+  if (owner === null || routineStore.owner !== owner || !routine) return null
+  return routine.day === istDayKey(nowMs) ? routine : null
+}
+
+export const routineIsFresh = (owner: string | null, nowMs = Date.now()) =>
+  routineFor(owner, nowMs) !== null && nowMs - routineStore.at < FRESH_MS
+
+/** A tick made on the page, shown before the server has answered. The reply, or a reload, is what settles it. */
+export function tickLocally(id: string, done: boolean) {
+  const { routine } = routineStore
+  if (!routine || routine.done_today.includes(id) === done) return
+  const done_today = done ? [...routine.done_today, id] : routine.done_today.filter(ticked => ticked !== id)
+  routineStore = { ...routineStore, routine: { ...routine, done_today } }
+  notifyRoutine()
+}
+
 export function clearDay() {
   snapshot = EMPTY
   notify()
+  routineStore = NO_ROUTINE
+  notifyRoutine()
 }
 
 /** The mark being pointed at, from the line or from a row: each lights the other. */
