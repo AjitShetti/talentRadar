@@ -734,6 +734,12 @@ class JobApplication(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # A role the user found somewhere we never indexed has no ``job_id``: it is what they
+    # typed (migration 023). Readers show the posting's own title and company first.
+    role_title: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    company_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    posting_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Document tracking — which resume version / cover letter was used
     resume_version_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
@@ -1098,6 +1104,17 @@ class Profile(Base):
     career_goals: Mapped[str | None] = mapped_column(Text, nullable=True)
     onboarding_completed: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
+    )
+    # The morning email (services/digest.py). Off until the user turns it on (migration 024).
+    digest_email: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+
+    # The user's daily routine: {"blocks": [...], "done": {"day", "ids"}}, see domain/routine.py
+    routine: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    # When the first-run tour was finished or skipped; null means it has not been seen yet.
+    tour_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
     # Active resume reference

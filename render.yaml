@@ -53,6 +53,22 @@ services:
         sync: false
       - key: GITHUB_TOKEN
         sync: false
+      # The shared secret every scheduled GitHub workflow sends as X-Cron-Token.
+      # Set the same value as the CRON_TOKEN repository secret, or every
+      # workflow (news, company map, events, practice, outreach, reverify)
+      # skips its work while still reporting success.
+      - key: CRON_TOKEN
+        sync: false
+      # Mail: the password-reset link and the opt-in morning email
+      # (services/email.py). Optional; without it no mail is sent.
+      - key: RESEND_API_KEY
+        sync: false
+      # A sender on a domain verified with Resend, e.g. "TalentRadar <hello@your.domain>".
+      - key: EMAIL_FROM
+        sync: false
+      # Links in mail start here.
+      - key: SITE_URL
+        value: https://talent-radar-ten.vercel.app
 
       # ---- Generated once by Render, then held stable ----
       # A fresh 32+ character secret per environment. Rotating it invalidates

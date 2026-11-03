@@ -1,29 +1,25 @@
 'use client'
 
-import { ChangeEvent, FormEvent, useState } from 'react'
+import { ChangeEvent, FormEvent, useEffect, useState } from 'react'
 import Link from 'next/link'
 import BrandLockup from '@/components/BrandLockup'
 import { useRouter } from 'next/navigation'
 import RequireAuth from '@/components/RequireAuth'
 import Segmented from '@/components/Segmented'
-import { api } from '@/lib/api'
+import { api, currentEmail } from '@/lib/api'
+import { publishRoutine } from '@/lib/day-line'
 import { INDIAN_CITIES } from '@/lib/filters'
+import { Goal, GOALS } from '@/lib/goals'
 import { usePersistentState } from '@/lib/persistent-state'
+import { starterRoutine } from '@/lib/routine'
+import { safeNextPath } from '@/lib/safe-url'
 
 type Stage = 'student' | 'working' | 'between'
-type Goal = 'apply' | 'prepare' | 'both'
 
 const STAGES: { value: Stage; label: string }[] = [
   { value: 'student', label: 'Student' },
   { value: 'working', label: 'Working' },
   { value: 'between', label: 'Between jobs' },
-]
-
-/** Where each goal lands the user, and the sentence saved as their career goal. */
-const GOALS: { value: Goal; title: string; detail: string; href: string; sentence: string }[] = [
-  { value: 'apply', title: 'Land a job', detail: 'Openings, who to contact at each company, and a tracker for every application.', href: '/search', sentence: 'Land a job: find openings, reach the right people and track applications.' },
-  { value: 'prepare', title: 'Get interview-ready', detail: 'Mock interviews, one problem a day and a weekly contest.', href: '/practice', sentence: 'Get interview-ready: mock interviews, daily practice and a weekly contest.' },
-  { value: 'both', title: 'Both', detail: 'Start from a day plan that mixes applying and practice.', href: '/dashboard', sentence: 'Land a job and get interview-ready at the same time.' },
 ]
 
 const STEPS = ['You', 'Your goal', 'Your target'] as const
@@ -45,6 +41,11 @@ export default function OnboardingPage() {
   const [resumeName, setResumeName] = useState<string | null>(null)
   const [extracting, setExtracting] = useState(false)
   const [resumeError, setResumeError] = useState('')
+
+  // Someone who signed up from a public role page came for that role: once set up, or on
+  // "Skip for now", they go on to it. Read after mount to keep the page out of a Suspense boundary.
+  const [next, setNext] = useState<string | null>(null)
+  useEffect(() => { setNext(safeNextPath(new URLSearchParams(window.location.search).get('next'))) }, [])
 
   // A student's experience is zero unless they say otherwise; the server needs a number to call the profile complete.
   const yearsValue = years.trim() === '' ? (stage === 'student' ? 0 : null) : Number(years)
@@ -98,8 +99,15 @@ export default function OnboardingPage() {
         years_experience: yearsValue,
         skills: skills.split(',').map(s => s.trim()).filter(Boolean),
       })
+      // The day starts with a routine for what they came to do, unless they already made one on the Overview: a save replaces the whole routine.
+      // Whichever routine they end with is published, so the Overview does not show the one it read before. A failure here never keeps them on this page.
+      try {
+        let routine = await api.routine.get()
+        if (!routine.has_routine) routine = await api.routine.save(starterRoutine(goal || 'both'))
+        publishRoutine(routine, currentEmail())
+      } catch { /* the Overview offers a routine to anyone without one */ }
       setStep(0)
-      router.push(chosen.href)
+      router.push(next || chosen.href)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save your profile.')
     } finally {
@@ -157,7 +165,7 @@ export default function OnboardingPage() {
             <h1>{goal === 'prepare' ? 'What are you preparing for?' : 'What are you looking for?'}</h1>
             <p className="onb-lead">This sets your searches, your daily question and the gaps we point out.</p>
             <label className="onb-field">Target role<input autoFocus value={role} onChange={e => setRole(e.target.value)} placeholder="e.g. Frontend engineer" /></label>
-            <label className="onb-field"><span>Preferred city <small>Optional</small></span>
+            <label className="onb-field"><span>Preferred city <small>Optional · jobs cover all of India; Companies and Events are Bengaluru only for now</small></span>
               <input list="onb-cities" value={location} onChange={e => setLocation(e.target.value)} placeholder="Bengaluru, or Remote" />
               <datalist id="onb-cities">{INDIAN_CITIES.map(city => <option key={city} value={city} />)}</datalist>
             </label>
@@ -179,7 +187,7 @@ export default function OnboardingPage() {
         <div className="onb-actions">
           {step > 0
             ? <button type="button" className="outline-button" onClick={() => { setError(''); setStep(step - 1) }}>Back</button>
-            : <Link className="text-button onb-skip" href="/dashboard">Skip for now</Link>}
+            : <Link className="text-button onb-skip" href={next || '/dashboard'}>Skip for now</Link>}
           <button type="submit" className="primary-button" disabled={saving} aria-disabled={!canNext[step] || undefined}>
             {last ? (saving ? 'Setting up…' : 'Take me there') : 'Continue'}
           </button>

@@ -122,6 +122,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             coalesce=True,
             max_instances=1,
         )
+        # The morning email (services/digest.py): only to users who turned it on, and only
+        # while mail is configured. It is idempotent per user and IST day, so a missed run
+        # that fires on wake cannot send twice.
+        from services.digest import send_daily_digests
+
+        scheduler.add_job(
+            send_daily_digests,
+            trigger="cron",
+            hour=settings.digest_hour,
+            minute=settings.digest_minute,
+            id="daily_digest",
+            misfire_grace_time=3 * 3600,
+            coalesce=True,
+            max_instances=1,
+        )
         scheduler.start()
         logger.info(
             "Overnight sweep scheduled for %02d:%02d server time (ingest=%s)",
@@ -267,6 +282,7 @@ from api.routers import (  # noqa: E402
     recommend,
     resumes,
     roles,
+    routine,
     search,
 )
 
@@ -289,6 +305,7 @@ app.include_router(agent.router, prefix="/api/v1")
 app.include_router(dashboard.router, prefix="/api/v1")
 app.include_router(events.router, prefix="/api/v1")
 app.include_router(practice.router, prefix="/api/v1")
+app.include_router(routine.router, prefix="/api/v1")
 
 
 # API documentation

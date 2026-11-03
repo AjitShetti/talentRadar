@@ -20,6 +20,38 @@ const statuses = ['saved', 'applied', 'online_assessment', 'screening', 'intervi
 const label = (status: string) => { const words = status.replace(/_/g, ' '); return words.charAt(0).toUpperCase() + words.slice(1) }
 const added = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
 
+/** A row's role and company: the posting's own, else what the user typed for a role found elsewhere. */
+const roleOf = (app: Application) => app.job?.title || app.role_title || 'Job no longer available'
+const companyOf = (app: Application) => app.job?.company_name || app.company_name || 'Company not listed'
+
+/** Track a role found somewhere TalentRadar never indexed. Nothing is fetched from its link. */
+function AddRole({ onAdded, onCancel }: { onAdded: (app: Application) => void; onCancel: () => void }) {
+  const [title, setTitle] = useState(''); const [company, setCompany] = useState(''); const [link, setLink] = useState(''); const [status, setStatus] = useState('applied')
+  const [busy, setBusy] = useState(false); const [error, setError] = useState('')
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    setBusy(true); setError('')
+    try {
+      onAdded(await api.applications.createTyped({ role_title: title, company_name: company, posting_url: link.trim() || undefined, status }))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not add that role.')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return <form className="application-add" onSubmit={submit} aria-label="Add a role you found elsewhere">
+    <label>Role<input autoFocus required maxLength={300} value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Backend engineer" /></label>
+    <label>Company<input required maxLength={200} value={company} onChange={e => setCompany(e.target.value)} placeholder="e.g. Lumen Works" /></label>
+    <label><span>Posting link <small>Optional</small></span><input type="url" maxLength={512} value={link} onChange={e => setLink(e.target.value)} placeholder="https://" /></label>
+    <label>Status<select value={status} onChange={e => setStatus(e.target.value)}>{statuses.map(option => <option value={option} key={option}>{label(option)}</option>)}</select></label>
+    {error && <p className="form-error" role="alert">{error}</p>}
+    <div className="application-add-acts">
+      <button type="button" className="text-button" onClick={onCancel}>Cancel</button>
+      <button type="submit" className="primary-button" disabled={busy}>{busy ? 'Adding…' : 'Add to tracker'}</button>
+    </div>
+  </form>
+}
+
 /** The six steps a role moves through. Rejected and withdrawn are where it stopped, not steps. */
 const STEPS = statuses.slice(0, 6)
 const STEP_NAMES = ['Saved', 'Applied', 'Online assessment', 'Screening', 'Interview', 'Offer']
@@ -47,7 +79,7 @@ function InterviewTime({ app, onSave }: { app: Application; onSave: (interviewAt
   const [value, setValue] = useState('')
   const [busy, setBusy] = useState(false)
   const shown = useRef<HTMLDivElement>(null)
-  const role = app.job?.title || 'this application'
+  const role = app.job?.title || app.role_title || 'this application'
 
   // The control that had focus leaves the page with its form; keep the keyboard on the Edit button.
   const stopEditing = () => {
@@ -85,6 +117,7 @@ export default function ApplicationsPage() {
   const [error, setError] = useState('')
   const [filter, setFilter] = usePersistentState('applications.filter', 'all')
   const { notes } = useDay()
+  const [adding, setAdding] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -142,8 +175,10 @@ export default function ApplicationsPage() {
         <h1 className="day-h1">Keep every opportunity moving.</h1>
         <span className="ov2-date"><FlapText value={apps.length} /> in your tracker</span>
       </div>
-      <p className="ov2-lead">Roles saved from Find roles appear here automatically.</p>
+      <p className="ov2-lead">Roles saved from Find roles appear here automatically. Found one somewhere else? <button type="button" className="text-button" onClick={() => setAdding(true)} aria-expanded={adding}>Add a role</button></p>
     </header>
+
+    {adding && <AddRole onCancel={() => setAdding(false)} onAdded={app => { setApps(current => [app, ...current]); setAdding(false); setFilter('all') }} />}
 
     <div className="status-tabs" role="group" aria-label="Filter by status">
       {['all', ...statuses].map(status =>
@@ -159,26 +194,26 @@ export default function ApplicationsPage() {
       : !shown.length
         ? <div className="empty-state">
             <h2>{filter === 'all' ? 'No applications yet.' : `Nothing at ${label(filter).toLowerCase()} right now.`}</h2>
-            <p>Save roles from Find roles and move them through your search here.</p>
+            <p>Save roles from Find roles, or add one you found elsewhere, and move them through your search here.</p>
             <Link className="outline-button" href="/search">Find roles</Link>
           </div>
         : <div className="application-table">{shown.map((app, i) => {
-            const posting = externalHref(app.job?.source_url)
+            const posting = externalHref(app.job?.source_url || app.posting_url)
             const note = STEPS.includes(app.status) ? notes.get(app.id) : undefined
             return <article className="application-row" key={app.id} style={{ '--i': i } as React.CSSProperties}>
               <div className="application-role">
-                <strong>{app.job_id && app.job ? <Link href={`/roles/${encodeURIComponent(app.job_id)}`}>{app.job.title}</Link> : app.job?.title || 'Job no longer available'}</strong>
-                <span>{app.job?.company_name || 'Company not listed'} · {app.job?.location_raw || (app.job?.is_remote ? 'Remote' : '—')}</span>
+                <strong>{app.job_id && app.job ? <Link href={`/roles/${encodeURIComponent(app.job_id)}`}>{app.job.title}</Link> : roleOf(app)}</strong>
+                <span>{companyOf(app)} · {app.job ? app.job.location_raw || (app.job.is_remote ? 'Remote' : '—') : app.role_title ? 'Added by you' : '—'}</span>
                 {note && <em className="hot-note">{note}</em>}
               </div>
               <StageTicks status={app.status} />
-              <select value={app.status} onChange={e => changeStatus(app.id, e.target.value)} aria-label={`Status of ${app.job?.title || 'this application'}`}>
+              <select value={app.status} onChange={e => changeStatus(app.id, e.target.value)} aria-label={`Status of ${roleOf(app)}`}>
                 {statuses.map(status => <option value={status} key={status}>{label(status)}</option>)}
               </select>
               <span className="application-date">Added {added(app.created_at)}</span>
               <div className="application-acts">
                 {posting && <a href={posting} {...EXTERNAL_LINK_PROPS} aria-label="Open the original posting">Open <span aria-hidden="true">↗</span></a>}
-                <button type="button" onClick={() => remove(app.id)} aria-label={`Remove ${app.job?.title || 'this application'} from your tracker`}>Remove</button>
+                <button type="button" onClick={() => remove(app.id)} aria-label={`Remove ${roleOf(app)} from your tracker`}>Remove</button>
               </div>
               {asksInterviewTime(app.status, app.interview_at) && <InterviewTime app={app} onSave={next => saveInterviewTime(app.id, next)} />}
             </article>

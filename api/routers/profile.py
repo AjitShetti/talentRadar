@@ -17,6 +17,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from api.auth import get_current_user
+from services.digest import turn_off_digest
+from services.email import email_enabled
 from services.profiles import get_or_create_profile, get_profile, upsert_profile
 
 logger = logging.getLogger(__name__)
@@ -52,6 +54,7 @@ class ProfileUpsertSchema(BaseModel):
     years_experience: float | None = None
     current_role: str | None = None
     career_goals: str | None = None
+    digest_email: bool | None = None
     active_resume_id: str | None = None
     skills: list[ProfileSkillSchema | str] | None = None
 
@@ -60,9 +63,11 @@ class ProfileUpsertSchema(BaseModel):
 async def get_profile_endpoint(user_id: CurrentUserId):
     """Get the current user's career profile."""
     profile = await get_profile(user_id=user_id)
+    # Whether this server can send mail at all, so Settings offers the morning email only when it can.
+    mail = email_enabled()
     if profile is None:
-        return {"onboarding_completed": False, "profile": None}
-    return {"onboarding_completed": profile["onboarding_completed"], "profile": profile}
+        return {"onboarding_completed": False, "profile": None, "mail_enabled": mail}
+    return {"onboarding_completed": profile["onboarding_completed"], "profile": profile, "mail_enabled": mail}
 
 
 @router.post("/")
@@ -89,3 +94,18 @@ async def ensure_profile(user_id: CurrentUserId):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return result
+
+
+class DigestUnsubscribeSchema(BaseModel):
+    token: str = Field(..., max_length=2048)
+
+
+@router.post("/digest/unsubscribe")
+async def unsubscribe_digest(body: DigestUnsubscribeSchema) -> dict[str, bool]:
+    """Turn the morning email off from the link at the foot of one, without signing in.
+
+    The link's token is signed for this alone and names one user. An invalid one is a 400.
+    """
+    if not await turn_off_digest(body.token):
+        raise HTTPException(status_code=400, detail="This link is not valid. Turn the email off in Settings instead.")
+    return {"digest_email": False}

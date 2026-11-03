@@ -16,7 +16,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -279,7 +279,7 @@ async def day_agenda(
             return []
 
         result = await session.execute(
-            select(JobApplication, Job.title, Company.name)
+            select(JobApplication, func.coalesce(Job.title, JobApplication.role_title), func.coalesce(Company.name, JobApplication.company_name))
             .outerjoin(Job, Job.id == JobApplication.job_id)
             .outerjoin(Company, Company.id == Job.company_id)
             .where(JobApplication.user_id == user_uuid)
@@ -333,7 +333,7 @@ async def recent_activity(*, user_id: str, limit: int = 6) -> list[dict[str, Any
             return []
 
         result = await session.execute(
-            select(ApplicationEvent, Job.title, Company.name)
+            select(ApplicationEvent, func.coalesce(Job.title, JobApplication.role_title), func.coalesce(Company.name, JobApplication.company_name))
             .join(JobApplication, JobApplication.id == ApplicationEvent.application_id)
             .outerjoin(Job, Job.id == JobApplication.job_id)
             .outerjoin(Company, Company.id == Job.company_id)

@@ -37,7 +37,14 @@ from starlette.types import ASGIApp
 EXEMPT_PATHS = frozenset({"/health", "/docs", "/redoc", "/openapi.json", "/docs/oauth2-redirect"})
 
 # Credential endpoints get the strict budget.
-AUTH_PATHS = frozenset({"/api/auth/login", "/api/auth/signup"})
+AUTH_PATHS = frozenset({
+    "/api/auth/login",
+    "/api/auth/signup",
+    "/api/auth/password",
+    "/api/auth/account/delete",
+    "/api/auth/forgot-password",
+    "/api/auth/reset-password",
+})
 
 # Everything on the strict budget. Besides credentials, that is the public
 # posting check: it needs no account and makes an outbound request per call,
