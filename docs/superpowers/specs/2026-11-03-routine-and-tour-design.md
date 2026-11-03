@@ -70,7 +70,8 @@ new IST day every block is open again. There is no history, no streak and no
   block that is current (the latest one whose time has passed and isn't
   ticked) is highlighted, and the hero's existing "next on the line" sentence
   ("Practice in 2h 10m") counts routine blocks too. Up next itself is unchanged.
-- **Editing** happens in a dialog opened by an "Edit" control at the end of
+- **Editing** happens inline (changed during the build from a dialog: the list turns
+  into a form, as the interview time on `/applications` does), opened by an "Edit" control in the head of
   "Your day" (and by "Edit first" on the starter offer). In it you can add a
   block, remove one, change its time, kind or label, then Save. Block ids are
   made on the client when a block is added (`crypto.randomUUID()`, cut to 12
@@ -142,7 +143,7 @@ The user picked B and the in-house tour.
 - **`services/routine.py`** reads and writes the profile row (creating it if
   absent, like `/profile/ensure`). **`api/routers/routine.py`** under `/api/v1`,
   signed-in only, thin:
-  - `GET /routine` → `{has_routine, blocks, done_today: [ids], day, tour_seen}`.
+  - `GET /routine` → `{has_routine, blocks, done_today: [ids], day, tour_seen, onboarding_completed}`.
     `blocks` is `[]` when no routine is set, and `has_routine` says whether one
     was ever saved (a saved empty routine is a choice, and the starter offer
     isn't shown again).
@@ -189,3 +190,9 @@ The user picked B and the in-house tour.
 
 The exact styling of a routine mark versus a briefing mark, the tour card's
 placement maths, the dialog's field layout, and test file splits.
+
+## Changes made during the build
+
+- The editor is inline, not a dialog, following the project's own in-place edit pattern.
+- `GET /routine` also answers `onboarding_completed`, which gates the tour.
+- On a phone, the day line's list shows only routine blocks still ahead and not ticked; "Your day" has all of them.
