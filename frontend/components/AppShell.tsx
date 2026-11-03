@@ -4,12 +4,14 @@ import Link from 'next/link'
 import BrandLockup from '@/components/BrandLockup'
 import DayLine from '@/components/DayLine'
 import ThemeSwitch from '@/components/ThemeSwitch'
+import Tour from '@/components/Tour'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { api, currentEmail, PROFILE_NAME_EVENT, signOut } from '@/lib/api'
+import { TOUR_EVENT, type TourTarget } from '@/lib/tour'
 
 type NavLink = { label: string; href: string; blurb: string }
-type NavEntry = { label: string; short?: string; href: string; items?: undefined } | { label: string; short?: string; href?: undefined; items: NavLink[] }
+type NavEntry = { label: string; short?: string; href: string; items?: undefined } | { label: string; short?: string; href?: undefined; items: NavLink[]; tour?: TourTarget }
 
 /**
  * The bar holds four things. Everything that gets someone hired sits under
@@ -20,7 +22,7 @@ type NavEntry = { label: string; short?: string; href: string; items?: undefined
 const NAV: NavEntry[] = [
   { label: 'Overview', href: '/dashboard' },
   {
-    label: 'Job hunt', short: 'Jobs', items: [
+    label: 'Job hunt', short: 'Jobs', tour: 'jobs', items: [
       { label: 'Find roles', href: '/search', blurb: 'Search live openings across the boards' },
       { label: 'Applications', href: '/applications', blurb: 'Every role, from saved to offer' },
       { label: 'Outreach', href: '/outreach', blurb: 'Who to reach, and when to follow up' },
@@ -28,7 +30,7 @@ const NAV: NavEntry[] = [
     ],
   },
   {
-    label: 'Prep', items: [
+    label: 'Prep', tour: 'prep', items: [
       { label: 'Practice', href: '/practice', blurb: 'One problem a day, a weekly contest' },
       { label: 'Mock interviews', href: '/interview', blurb: 'Voice or typed, scored answer by answer' },
     ],
@@ -112,6 +114,7 @@ export default function AppShell({ children, narrow = false, bleed = false }: { 
     {/* The map fills the viewport under the nav, so the line stays off a bleed page. */}
     {!bleed && <DayLine />}
     <main className="main-content"><div className={`page-wrap ${narrow ? 'page-wrap-narrow' : ''} ${bleed ? 'page-wrap-bleed' : ''}`}>{children}</div></main>
+    {email && <Tour />}
   </div>
 }
 
@@ -209,6 +212,7 @@ function NavBar({ current, openMenu, setOpenMenu }: { current: string | null; op
           aria-expanded={open}
           aria-haspopup="true"
           aria-controls={menuId}
+          data-tour={entry.tour}
           onClick={() => {
             if (hoverTimer.current) clearTimeout(hoverTimer.current)
             const close = open && !openedByHover.current
@@ -294,6 +298,13 @@ function UserMenu({ email, open, setOpen }: { email: string; open: boolean; setO
     signOut(); router.push('/login')
   }
 
+  const takeTour = () => {
+    setOpen(false)
+    // The tour hands focus back to whatever had it. The menu item goes hidden with the menu, so give it the trigger.
+    rootRef.current?.querySelector<HTMLElement>('.user-trigger')?.focus({ preventScroll: true })
+    window.dispatchEvent(new Event(TOUR_EVENT))
+  }
+
   return <div className="user-menu" ref={rootRef}>
     <button
       type="button"
@@ -325,6 +336,7 @@ function UserMenu({ email, open, setOpen }: { email: string; open: boolean; setO
       <hr className="user-sep" />
       <button type="button" role="menuitem" tabIndex={open ? 0 : -1} className="user-item" onClick={() => go('/settings')}><span>Profile &amp; goals</span></button>
       <button type="button" role="menuitem" tabIndex={open ? 0 : -1} className="user-item" onClick={() => go('/resume-studio')}><span>Resume studio</span></button>
+      <button type="button" role="menuitem" tabIndex={open ? 0 : -1} className="user-item" onClick={takeTour}><span>Take the tour</span></button>
       <hr className="user-sep" />
       <button type="button" role="menuitem" tabIndex={open ? 0 : -1} className="user-item" data-danger="true" onClick={leave}><span>Sign out</span></button>
     </div>

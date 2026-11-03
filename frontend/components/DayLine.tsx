@@ -159,7 +159,7 @@ export default function DayLine() {
   const pct = (minute: number) => `${(minute / DAY_MINUTES) * 100}%`
   const animateMarks = playing || freshMarks
 
-  return <section className="day-line" aria-label={now === null ? 'Today, in IST' : `Today, in IST. It is ${clockLabel(now)}.`}>
+  return <section className="day-line" data-tour="day" aria-label={now === null ? 'Today, in IST' : `Today, in IST. It is ${clockLabel(now)}.`}>
     <div className="day-box" ref={box} onPointerMove={onMove} onPointerLeave={onLeave}>
       <canvas className="day-canvas" ref={canvas} aria-hidden="true" />
       {now !== null && <>

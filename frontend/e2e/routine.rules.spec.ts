@@ -6,6 +6,7 @@ import {
 import {
   clearDay, mergeMarks, nextMark, onRoutine, publishRoutine, resetArrival, routineFor, routineIsFresh, routineSnapshot, tickLocally, type DayMark,
 } from '../lib/day-line'
+import { CARD_GAP, GUTTER, SPOT_PAD, TOUR_EVENT, TOUR_STEPS, placeCard, shouldAutoStart, spotlight } from '../lib/tour'
 
 /**
  * The routine's rules, run on `lib/routine.ts` and the routine half of `lib/day-line.ts` with no
@@ -271,4 +272,64 @@ test('with no half hour left after the latest block, the earliest free one of th
   const evening = Array.from({ length: MAX_BLOCKS }, (_, i) => block(`id${i}`, `${20 + Math.floor(i / 2)}:${i % 2 ? '30' : '00'}`))
   expect(evening.map(b => b.at)).toEqual(['20:00', '20:30', '21:00', '21:30', '22:00', '22:30', '23:00', '23:30'])
   expect(nextBlockTime(evening)).toBe('00:00')
+})
+
+test('the tour starts by itself for someone onboarded who has not seen it, on a page of the product', () => {
+  expect(shouldAutoStart(routine({ tour_seen: false }), '/search')).toBe(true)
+  expect(shouldAutoStart(routine({ tour_seen: false }), '/dashboard')).toBe(true)
+  expect(shouldAutoStart(routine({ tour_seen: false }), '/roles/abc')).toBe(true)
+})
+
+test('the tour stays away from sign-in and onboarding, from someone not onboarded, from someone who has seen it, and while nothing is read', () => {
+  const fresh = routine({ tour_seen: false })
+  for (const path of ['/onboarding', '/login', '/signup']) expect(shouldAutoStart(fresh, path)).toBe(false)
+  expect(shouldAutoStart(routine({ tour_seen: false, onboarding_completed: false }), '/search')).toBe(false)
+  expect(shouldAutoStart(routine({ tour_seen: true }), '/search')).toBe(false)
+  expect(shouldAutoStart(null, '/search')).toBe(false)
+})
+
+test('the tour has five steps, in the order of the page: Job hunt three times, Prep, then the day line', () => {
+  expect(TOUR_EVENT).toBe('tr:tour')
+  expect(TOUR_STEPS.map(step => step.target)).toEqual(['jobs', 'jobs', 'jobs', 'prep', 'day'])
+  expect(TOUR_STEPS.map(step => step.title)).toEqual(['Find roles', 'Applications', 'Outreach and Companies', 'Practice and mock interviews', 'Your day'])
+  expect(TOUR_STEPS[0].body).toBe('Search live openings across the boards, then apply from the role.')
+  expect(TOUR_STEPS[4].body).toBe('This line is your routine: what each hour is for. Tick blocks off under Your day on the Overview, and change the times whenever you like.')
+  for (const step of TOUR_STEPS) expect(step.body.length).toBeGreaterThan(0)
+})
+
+test('the cut-out is the target and six pixels around it, and there is none without a target', () => {
+  expect(SPOT_PAD).toBe(6)
+  expect(spotlight({ left: 400, top: 8, width: 100, height: 40 })).toEqual({ left: 394, top: 2, width: 112, height: 52 })
+  expect(spotlight(null)).toBeNull()
+})
+
+const CARD = { width: 360, height: 200 }
+const DESK = { width: 1280, height: 800 }
+
+test('the card sits below the cut-out, centred on the target', () => {
+  expect(placeCard({ left: 400, top: 8, width: 100, height: 40 }, CARD, DESK)).toEqual({ pinned: false, left: 270, top: 2 + 52 + CARD_GAP })
+})
+
+test('the card is kept inside the viewport with a gutter of sixteen pixels', () => {
+  expect(GUTTER).toBe(16)
+  const left = placeCard({ left: 0, top: 8, width: 50, height: 40 }, CARD, DESK)
+  expect(left).toMatchObject({ pinned: false, left: 16 })
+  const right = placeCard({ left: 1250, top: 8, width: 30, height: 40 }, CARD, DESK)
+  expect(right).toMatchObject({ pinned: false, left: 1280 - 16 - 360 })
+  // Below the target there is no room: it is lifted until it fits.
+  expect(placeCard({ left: 400, top: 8, width: 100, height: 40 }, CARD, { width: 1280, height: 250 })).toMatchObject({ top: 250 - 16 - 200 })
+  // A card taller than the viewport starts at the gutter rather than above it.
+  expect(placeCard({ left: 400, top: 8, width: 100, height: 40 }, { width: 360, height: 900 }, DESK)).toMatchObject({ top: 16 })
+  // A card wider than the room, with its gutters, starts at the gutter rather than off the left edge.
+  expect(placeCard({ left: 10, top: 8, width: 100, height: 40 }, { width: 600, height: 200 }, { width: 580, height: 800 })).toMatchObject({ left: 16 })
+})
+
+test('with no target the card is centred', () => {
+  expect(placeCard(null, CARD, DESK)).toEqual({ pinned: false, left: 460, top: 300 })
+})
+
+test('below 560 pixels the card is pinned to the bottom, and at 560 it floats', () => {
+  expect(placeCard({ left: 10, top: 8, width: 50, height: 40 }, CARD, { width: 559, height: 800 }).pinned).toBe(true)
+  expect(placeCard(null, CARD, { width: 375, height: 700 }).pinned).toBe(true)
+  expect(placeCard({ left: 10, top: 8, width: 50, height: 40 }, CARD, { width: 560, height: 800 }).pinned).toBe(false)
 })

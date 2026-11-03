@@ -2802,3 +2802,23 @@ code,pre,kbd,.latex-editor,.editor-code,textarea.code{font-family:var(--font-mon
   .pr-solve{grid-template-columns:minmax(0,1fr);gap:24px}
   .pr-whiteboard{height:480px}
 }
+
+/* ── The first-run tour (components/Tour.tsx, lib/tour.ts) ────────────────── */
+/* Three fixed layers. The shield takes a click on the dim and does nothing with it; the cut-out's spread shadow
+   dims everything but the target (the dim is the filters sheet's); the card says what the target is. */
+.tour-shield{position:fixed;inset:0;z-index:90;cursor:default}
+.tour-cut{position:fixed;z-index:90;border-radius:var(--r-md);pointer-events:none;box-shadow:0 0 0 1.5px var(--accent),0 0 0 100vmax rgb(0 0 0 / calc(.42 * var(--shade)));transition:left .45s var(--ease-day),top .45s var(--ease-day),width .45s var(--ease-day),height .45s var(--ease-day);animation:ci-fade var(--t-fast) ease}
+.tour-cut[data-none]{box-shadow:0 0 0 100vmax rgb(0 0 0 / calc(.42 * var(--shade)))}
+.tour-card{position:fixed;z-index:91;width:360px;max-width:calc(100vw - 32px);display:grid;gap:16px;padding:18px 18px 14px;background:var(--surface);border:1px solid var(--line-strong);border-radius:var(--r-md);box-shadow:0 16px 44px rgb(0 0 0 / calc(.5 * var(--shade)));transition:left .45s var(--ease-day),top .45s var(--ease-day);animation:ci-fade var(--t-fast) ease}
+.tour-card:focus{outline:none}
+.tour-text h2{margin:0 0 6px;font:700 18px var(--font-display);letter-spacing:-.2px;color:var(--ink)}
+.tour-text p{margin:0;font:400 14px/1.5 var(--font-text);color:var(--muted)}
+.tour-foot{display:flex;align-items:center;gap:14px}
+.tour-count{font:500 12px var(--font-text);font-variant-numeric:tabular-nums;color:var(--faint)}
+.tour-nav{display:flex;align-items:center;gap:16px;margin-left:auto}
+.tour-foot .text-button{font:500 13px var(--font-text);padding:6px 2px}
+.tour-foot .primary-button{width:auto;margin-top:0;padding:10px 16px}
+/* On a phone the card is a sheet on the bottom edge, as the filters' sheet is. */
+.tour-card[data-pinned]{left:0;right:0;bottom:0;width:auto;max-width:none;border-width:1px 0 0;border-radius:14px 14px 0 0;padding-bottom:max(14px,env(safe-area-inset-bottom))}
+@media(max-width:560px){.tour-foot .text-button,.tour-foot .primary-button{min-height:44px}}
+@media(prefers-reduced-motion:reduce){.tour-cut,.tour-card{transition:none;animation:none}}
