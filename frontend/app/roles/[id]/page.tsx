@@ -8,6 +8,7 @@ import ReferralAsk from '@/components/ReferralAsk'
 import RequireAuth from '@/components/RequireAuth'
 import { api, CompanyContact, Dossier } from '@/lib/api'
 import { platformLabel } from '@/lib/filters'
+import { interviewPrepHref } from '@/lib/interview-prep'
 import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 import { track } from '@/lib/analytics'
 
@@ -60,7 +61,7 @@ function DossierView({ jobId }: { jobId: string }) {
   const { role, liveness, fit, way_in: wayIn, readiness } = dossier
   const closed = liveness?.state === 'closed'
   const status = readiness?.application?.status
-  const prepHref = `/interview?job=${encodeURIComponent(role.id)}&role=${encodeURIComponent(role.title)}&company=${encodeURIComponent(role.company || '')}`
+  const prepHref = interviewPrepHref(role.id, role.title, role.company)
   const original = externalHref(role.source_url)
 
   return <>

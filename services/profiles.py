@@ -82,6 +82,7 @@ async def get_profile(*, user_id: str) -> dict[str, Any] | None:
             "current_role": profile.current_role,
             "career_goals": profile.career_goals,
             "onboarding_completed": profile.onboarding_completed,
+            "digest_email": profile.digest_email,
             "active_resume_id": str(profile.active_resume_id) if profile.active_resume_id else None,
             "skills": [
                 {"name": s.skill_name, "proficiency": s.proficiency}
@@ -157,7 +158,7 @@ async def upsert_profile(*, user_id: str, data: dict[str, Any]) -> dict[str, Any
                 "full_name", "headline", "summary", "target_roles",
                 "target_locations", "is_remote_preferred", "target_salary_min",
                 "target_salary_max", "salary_currency", "years_experience",
-                "current_role", "career_goals",
+                "current_role", "career_goals", "digest_email",
             }:
                 setattr(profile, field, value)
             elif field == "active_resume_id" and parse_uuid(value):

@@ -183,6 +183,21 @@ New environment variables:
 | Vercel (Config, not Secret) | `NEXT_PUBLIC_SITE_URL` | Canonical origin for the sitemap and canonical links. |
 | Vercel (Config, optional) | `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` | Analytics. Absent key means no events are sent. |
 
+## Account and mail additions
+
+Run migrations `023_application_manual_role` and `024_profile_digest_email`
+(`alembic upgrade head` against Neon).
+
+| Where | Variable | Purpose |
+|---|---|---|
+| Render (API) | `RESEND_API_KEY` | Resend key (free tier). Turns on "Forgot password" and the opt-in morning email. Without it neither sends anything. |
+| Render (API) | `EMAIL_FROM` | Sender on a domain verified with Resend. The default `onboarding@resend.dev` only delivers to the Resend account's own address. |
+| Render (API) | `SITE_URL` | Where the web app is served; reset and unsubscribe links start here. |
+| Render (API) | `DIGEST_HOUR`, `DIGEST_MINUTE` | When the morning email goes out, in UTC. Default 01:30 UTC (07:00 IST). |
+
+The morning email runs in the API's in-process scheduler, like the overnight
+sweep, so it relies on the keepalive workflow keeping the instance awake.
+
 The public pages (`/r/...`, `/hiring/...`) are built at deploy time from
 `GET /api/v1/public/roles` and revalidated every six hours. The Vercel build
 therefore calls the API; if it is asleep the build still succeeds and those

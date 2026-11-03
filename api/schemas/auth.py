@@ -27,3 +27,21 @@ class UserResponse(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str = Field(..., min_length=8, description="Password must be at least 8 characters long")
+
+
+class AccountDelete(BaseModel):
+    password: str
+
+
+class PasswordForgot(BaseModel):
+    email: EmailStr
+
+
+class PasswordReset(BaseModel):
+    token: str = Field(..., max_length=2048)
+    new_password: str = Field(..., min_length=8, description="Password must be at least 8 characters long")

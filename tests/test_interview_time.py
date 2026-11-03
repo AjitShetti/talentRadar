@@ -354,7 +354,7 @@ def test_022_follows_021_and_only_adds_the_column() -> None:
     assert "UPDATE " not in text  # no stamp is copied in: none of them is a time anybody entered
 
 
-def test_022_is_the_only_head() -> None:
+def test_the_chain_has_one_head() -> None:
     revisions: dict[str, str | None] = {}
     for path in VERSIONS.glob("*.py"):
         source = path.read_text(encoding="utf-8")
@@ -362,4 +362,6 @@ def test_022_is_the_only_head() -> None:
         down = re.search(r'^down_revision(?:: [^=]+)? = ["\']([^"\']+)', source, re.M)
         if revision:
             revisions[revision.group(1)] = down.group(1) if down else None
-    assert set(revisions) - set(revisions.values()) == {"022_application_interview_at"}
+    heads = set(revisions) - set(revisions.values())
+    assert len(heads) == 1, heads
+    assert "022_application_interview_at" in revisions.values()  # something builds on 022

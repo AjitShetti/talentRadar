@@ -213,9 +213,24 @@ class Settings(BaseSettings):
     # left out of repr() so printing the settings cannot leak it.
     eventbrite_token: str | None = Field(default=None, repr=False)
 
-    @field_validator("eventbrite_token", mode="before")
+    # Mail sent to a user: the password-reset link and the opt-in daily digest. Sent through
+    # Resend's HTTP API (free tier: 3,000 a month, 100 a day). Without a key no mail is sent:
+    # "Forgot password" says reset by email is not set up and the digest never runs. Blank
+    # means unset; left out of repr() like the other secrets.
+    resend_api_key: str | None = Field(default=None, repr=False)
+    # The sender. Resend's shared ``onboarding@resend.dev`` only delivers to the Resend
+    # account's own address; any other recipient needs a domain verified with Resend.
+    email_from: str = Field(default="TalentRadar <onboarding@resend.dev>")
+    # Where the web app is served. Links in mail (reset, digest, unsubscribe) start here.
+    site_url: str = Field(default="http://localhost:3000")
+    # When the morning email goes out, on the server clock (UTC on Render, like the sweep).
+    # 01:30 UTC is 07:00 IST. Only users who turned it on in Settings get one.
+    digest_hour: int = Field(default=1, ge=0, le=23)
+    digest_minute: int = Field(default=30, ge=0, le=59)
+
+    @field_validator("eventbrite_token", "resend_api_key", mode="before")
     @classmethod
-    def _blank_eventbrite_token_is_unset(cls, value: object) -> object:
+    def _blank_token_is_unset(cls, value: object) -> object:
         if isinstance(value, str):
             return value.strip() or None
         return value

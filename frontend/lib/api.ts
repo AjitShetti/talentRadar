@@ -23,7 +23,7 @@ export type Dossier = { role: DossierRole; liveness: Liveness | null; fit: Dossi
 // One of the dashboard's daily top-3 picks for a Profile.target_roles entry —
 // computed by the APScheduler job in api/main.py (services/job_matching.py).
 export type JobMatch = { id: string; title: string; company: string; location: string; is_remote: boolean; skills: string[]; salary_raw?: string | null; source_url?: string | null; posted_at?: string | null; matched_role: string }
-export type Application = { id: string; job_id?: string | null; status: string; notes?: string | null; applied_at?: string | null; interview_at?: string | null; created_at: string; job?: Job | null }
+export type Application = { id: string; job_id?: string | null; status: string; notes?: string | null; applied_at?: string | null; interview_at?: string | null; created_at: string; job?: Job | null; role_title?: string | null; company_name?: string | null; posting_url?: string | null }
 // What a semantic search did about going out to the job boards. Present so a
 // thinner-than-usual result set is explainable in the UI rather than silent:
 // `reason` says why sourcing did or did not run, and `sources_stats` carries
@@ -345,6 +345,14 @@ export const api = {
       return result
     },
     signup: (email: string, password: string) => request('/api/auth/signup', { method: 'POST', body: JSON.stringify({ email, password }) }),
+    changePassword: (current_password: string, new_password: string) => request<void>('/api/auth/password', { method: 'POST', body: JSON.stringify({ current_password, new_password }) }, true),
+    /** Deletes the account and everything in it, then signs out of this browser. */
+    async deleteAccount(password: string) {
+      await request<void>('/api/auth/account/delete', { method: 'POST', body: JSON.stringify({ password }) }, true)
+      signOut()
+    },
+    forgotPassword: (email: string) => request<{ message: string }>('/api/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
+    resetPassword: (token: string, new_password: string) => request<void>('/api/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, new_password }) }),
   },
   dashboard: () => request<Record<string, unknown>>('/api/v1/dashboard/overview', {}, true),
   search: {
@@ -354,12 +362,17 @@ export const api = {
   applications: {
     list: () => request<{ applications: Application[]; total: number }>('/api/v1/applications/', {}, true),
     create: (job_id: string, status = 'saved', notes?: string) => request<Application>('/api/v1/applications/', { method: 'POST', body: JSON.stringify({ job_id, status, notes }) }, true),
+    /** A role found somewhere TalentRadar never indexed: what the user typed, with no posting behind it. */
+    createTyped: (role: { role_title: string; company_name: string; posting_url?: string; status?: string }) => request<Application>('/api/v1/applications/', { method: 'POST', body: JSON.stringify(role) }, true),
     // `interview_at` is the time the user typed: an absent key is left alone and null clears it.
     update: (id: string, payload: { status?: string; notes?: string; interview_at?: string | null }) => request<Application>(`/api/v1/applications/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }, true),
     remove: (id: string) => request<void>(`/api/v1/applications/${id}`, { method: 'DELETE' }, true),
   },
   profile: {
-    get: () => request<{ onboarding_completed: boolean; profile: Record<string, unknown> | null }>('/api/v1/profile/', {}, true),
+    /** `mail_enabled` says whether this server can send mail at all (the morning email needs it). */
+    get: () => request<{ onboarding_completed: boolean; profile: Record<string, unknown> | null; mail_enabled?: boolean }>('/api/v1/profile/', {}, true),
+    /** Turns the morning email off from the link in one, without signing in. */
+    unsubscribeDigest: (token: string) => request<{ digest_email: boolean }>('/api/v1/profile/digest/unsubscribe', { method: 'POST', body: JSON.stringify({ token }) }),
     save: async (payload: Record<string, unknown>) => {
       const result = await request<{ profile: Record<string, unknown> }>('/api/v1/profile/', { method: 'POST', body: JSON.stringify(payload) }, true)
       // The account menu caches the name; tell it the name changed.
