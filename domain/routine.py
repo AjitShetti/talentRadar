@@ -25,6 +25,7 @@ A ``RoutineInvalid`` message is the sentence the user reads, so it says what to 
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
@@ -90,12 +91,28 @@ def ist_day(now: datetime) -> date:
 # --- the blocks ---------------------------------------------------------------------
 
 
+def _clean_label(value: str) -> str:
+    """The name as it is stored: control and invisible characters gone, whitespace one space.
+
+    A character of category Cc (control, a NUL included: Postgres refuses it in JSONB) or Cf
+    (format: zero-width space and joiner, soft hyphen, BOM) is dropped, except that a Cc
+    which is whitespace (tab, newline, the information separators) still ends a word.
+    frontend/lib/routine.ts::cleanLabel does the same.
+    """
+    kept = (
+        " " if char.isspace() else char
+        for char in value
+        if char.isspace() or unicodedata.category(char) not in ("Cc", "Cf")
+    )
+    return " ".join("".join(kept).split())
+
+
 def _label(value: object, kind: str) -> str:
     if value is None:
         value = ""
     if not isinstance(value, str):
         raise RoutineInvalid("A block's name has to be text.")
-    label = " ".join(value.split())
+    label = _clean_label(value)
     if not label:
         if kind == "custom":
             raise RoutineInvalid("Your own block needs a name.")
@@ -121,8 +138,9 @@ def _block(item: Mapping[str, object]) -> Block:
 def validate_blocks(raw: list[dict[str, object]]) -> list[Block]:
     """The blocks as they will be stored: cleaned, checked and in clock order.
 
-    The label is trimmed and its runs of whitespace collapsed, and an empty one on a block
-    that is not the user's own takes the kind's default. Raises ``RoutineInvalid``.
+    The label loses its control and invisible characters, is trimmed and has its runs of
+    whitespace collapsed, and an empty one on a block that is not the user's own takes the
+    kind's default. Raises ``RoutineInvalid``.
     """
     if len(raw) > MAX_BLOCKS:
         raise RoutineInvalid(f"A routine holds at most {MAX_BLOCKS} blocks.")

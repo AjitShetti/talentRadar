@@ -102,6 +102,20 @@ test('a name is cut to sixty characters counted as the server counts them, after
   expect(routineProblem([block('a', '09:00', 'practice', '')])).toBeNull()
 })
 
+test('control and invisible characters are not part of a name, as on the server, but whitespace controls still end a word', () => {
+  const blank = 'Your own block needs a name.'
+  // Only characters that are stripped: a blank name, whatever the block is.
+  expect(routineProblem([block('a', '09:00', 'custom', '\u0000\u200b\u0007 \ufeff')])).toBe(blank)
+  expect(routineProblem([block('a', '09:00', 'mock', '\u0000\u200b')])).toBeNull()
+  // They are not counted: sixty visible characters and a run of invisible ones fit.
+  expect(routineProblem([block('a', '09:00', 'custom', `${'x'.repeat(60)}${'\u200b\u0000'.repeat(5)}`)])).toBeNull()
+  expect(routineProblem([block('a', '09:00', 'custom', `${'x'.repeat(61)}\u200b`)])).toBe("A block's name can be at most 60 characters.")
+  // A tab, a newline and the information separators are whitespace: "a\x85b" is two words, not one.
+  expect(routineProblem([block('a', '09:00', 'custom', `${'x'.repeat(30)}\x85${'y'.repeat(30)}`)])).toBe("A block's name can be at most 60 characters.")
+  expect(routineProblem([block('a', '09:00', 'custom', `${'x'.repeat(30)}\x1c${'y'.repeat(30)}`)])).toBe("A block's name can be at most 60 characters.")
+  expect(routineProblem([block('a', '09:00', 'custom', `${'x'.repeat(30)}\u200b${'y'.repeat(30)}`)])).toBeNull()
+})
+
 test('a bad id, time or kind reads as the server says it, one block at a time and before any repeat is looked for', () => {
   const cannot = 'A block could not be saved. Reload the page and try again.'
   expect(routineProblem([block('', '09:00')])).toBe(cannot)
@@ -171,15 +185,39 @@ test('a routine shows to the account that read it, and to nobody else', () => {
   clearDay()
 })
 
-test('a routine read on an earlier IST day is not today\'s, and stops being fresh after five minutes', () => {
+test('a routine read on an earlier IST day, by this device\'s clock, is not today\'s', () => {
   clearDay()
+  // Read yesterday evening (IST) and still held when today comes: its ticks are yesterday's.
+  Date.now = () => Date.parse('2026-10-31T17:00:00Z')
   publishRoutine(routine({ day: '2026-10-31' }), OWNER)
+  expect(routineFor(OWNER, Date.parse('2026-10-31T17:00:00Z'))).not.toBeNull()
   expect(routineFor(OWNER, NOW)).toBeNull()
+  // The same, with a server that answered for today: what the device's clock says about when it was read is what counts.
+  publishRoutine(routine({ day: '2026-11-01' }), OWNER)
+  expect(routineFor(OWNER, NOW)).toBeNull()
+  Date.now = () => NOW
+  // A tomorrow that has begun in IST makes a routine read today yesterday's.
   publishRoutine(routine(), OWNER)
   expect(routineFor(OWNER, NOW)).not.toBeNull()
-  // A tomorrow that has begun in IST makes today's routine yesterday's.
+  expect(routineFor(OWNER, Date.parse('2026-11-01T18:29:00Z'))).not.toBeNull()
   expect(routineFor(OWNER, Date.parse('2026-11-01T18:30:00Z'))).toBeNull()
+  clearDay()
+})
 
+test('the server\'s day is not compared with the device\'s clock: a routine read today is shown whatever day the server named', () => {
+  clearDay()
+  // A device whose clock is hours off the server's: the server's `day` differs from this device's IST day.
+  publishRoutine(routine({ day: '2026-11-02', blocks: [block('a', '09:00')], done_today: ['a'] }), OWNER)
+  expect(routineFor(OWNER, NOW)?.done_today).toEqual(['a'])
+  publishRoutine(routine({ day: '2026-10-31', blocks: [block('a', '09:00')] }), OWNER)
+  expect(routineFor(OWNER, NOW)?.blocks.map(b => b.id)).toEqual(['a'])
+  // The owner check still holds.
+  expect(routineFor('b@example.test', NOW)).toBeNull()
+  expect(routineFor(null, NOW)).toBeNull()
+  clearDay()
+})
+
+test('a routine stops being fresh after five minutes', () => {
   clearDay()
   publishRoutine(routine(), OWNER)
   const at = routineSnapshot().at

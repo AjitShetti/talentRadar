@@ -10,7 +10,7 @@ import {
   setDayLit, type DayMark,
 } from '@/lib/day-line'
 import { createRail, type Rail } from '@/lib/day-rail'
-import { routineMarks, type Routine } from '@/lib/routine'
+import { currentBlock, routineMarks, type Routine } from '@/lib/routine'
 import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 
 /** The minute now in IST, updated on the minute and on coming back to the tab. Null until mounted. */
@@ -78,6 +78,7 @@ export default function DayLine() {
   const onOverview = path === '/dashboard'
   const now = useIstMinute()
   const { marks } = useDay()
+  const routine = useRoutine()
   const lit = useDayLit()
 
   const box = useRef<HTMLDivElement>(null)
@@ -156,6 +157,9 @@ export default function DayLine() {
   }
 
   const labelled = labelledMarks(marks, width)
+  // The block to do now stays in the phone's list while it is under way, as on the Overview's "Your day".
+  const current = routine && now !== null ? currentBlock(routine.blocks, routine.done_today, now) : null
+  const currentMark = current ? `routine:${current.id}` : null
   const pct = (minute: number) => `${(minute / DAY_MINUTES) * 100}%`
   const animateMarks = playing || freshMarks
 
@@ -185,6 +189,7 @@ export default function DayLine() {
         data-past={mark.at <= now ? 'true' : undefined}
         data-routine={mark.routine ? 'true' : undefined}
         data-done={mark.done ? 'true' : undefined}
+        data-current={mark.id === currentMark ? 'true' : undefined}
       >
         <MarkLink href={mark.href} aria-label={mark.done ? `${mark.time} ${mark.label}, done` : undefined}>{mark.time} {mark.label}</MarkLink>
       </li>)}

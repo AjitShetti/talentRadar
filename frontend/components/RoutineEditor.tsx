@@ -65,42 +65,44 @@ export default function RoutineEditor({ initial, onSaved, onCancel, saveLabel = 
     }
   }
 
+  // The fieldset is only there to switch every field and button off while a save is on its way, so nothing typed then is dropped.
   return <form className="yd-edit" onSubmit={submit} aria-label="Daily routine">
-    <div className="yd-fields">
-      {blocks.length > 0 && <>
-        <p className="ov2-quiet">Times are in IST. Leave a name empty to use the kind&apos;s own.</p>
-        <ul className="yd-rows">
-          {blocks.map((block, i) => <li className="yd-row" key={block.id}>
-            <input
-              className="yd-at"
-              type="time"
-              step={300}
-              autoFocus={block.id === added}
-              aria-label={`Time of block ${i + 1}`}
-              value={block.at}
-              onChange={e => change(block.id, { at: e.target.value })}
-            />
-            <select className="yd-kind" aria-label={`What block ${i + 1} is for`} value={block.kind} onChange={e => changeKind(block, e.target.value as RoutineKind)}>
-              {KIND_KEYS.map(kind => <option key={kind} value={kind}>{KINDS[kind].name}</option>)}
-            </select>
-            <input
-              className="yd-name"
-              maxLength={LABEL_MAX}
-              aria-label={`Name of block ${i + 1}`}
-              placeholder={KINDS[block.kind]?.label || 'Name it'}
-              value={block.label}
-              onChange={e => change(block.id, { label: e.target.value })}
-            />
-            <button type="button" className="text-button yd-remove" aria-label={`Remove block ${i + 1}`} onClick={() => remove(block.id)}>Remove</button>
-          </li>)}
-        </ul>
-      </>}
-      <button type="button" className="outline-button yd-add" ref={addButton} disabled={blocks.length >= MAX_BLOCKS} onClick={add}>Add a block</button>
-    </div>
-    <div className="yd-actions">
-      <button type="submit" className="primary-button" disabled={busy}>{busy ? 'Saving…' : saveLabel}</button>
-      {onCancel && <button type="button" className="text-button" disabled={busy} onClick={onCancel}>Cancel</button>}
-    </div>
+    <fieldset className="yd-set" disabled={busy}>
+      <div className="yd-fields">
+        {blocks.length > 0 && <>
+          <p className="ov2-quiet">Times are in IST. Leave a name empty to use the kind&apos;s own.</p>
+          <ul className="yd-rows">
+            {blocks.map((block, i) => <li className="yd-row" key={block.id}>
+              <input
+                className="yd-at"
+                type="time"
+                autoFocus={block.id === added}
+                aria-label={`Time of block ${i + 1}`}
+                value={block.at}
+                onChange={e => change(block.id, { at: e.target.value })}
+              />
+              <select className="yd-kind" aria-label={`What block ${i + 1} is for`} value={block.kind} onChange={e => changeKind(block, e.target.value as RoutineKind)}>
+                {KIND_KEYS.map(kind => <option key={kind} value={kind}>{KINDS[kind].name}</option>)}
+              </select>
+              <input
+                className="yd-name"
+                maxLength={LABEL_MAX}
+                aria-label={`Name of block ${i + 1}`}
+                placeholder={KINDS[block.kind]?.label || 'Name it'}
+                value={block.label}
+                onChange={e => change(block.id, { label: e.target.value })}
+              />
+              <button type="button" className="text-button yd-remove" aria-label={`Remove block ${i + 1}`} onClick={() => remove(block.id)}>Remove</button>
+            </li>)}
+          </ul>
+        </>}
+        <button type="button" className="outline-button yd-add" ref={addButton} disabled={blocks.length >= MAX_BLOCKS} onClick={add}>Add a block</button>
+      </div>
+      <div className="yd-actions">
+        <button type="submit" className="primary-button" disabled={busy}>{busy ? 'Saving…' : saveLabel}</button>
+        {onCancel && <button type="button" className="text-button" disabled={busy} onClick={onCancel}>Cancel</button>}
+      </div>
+    </fieldset>
     {error && <p className="form-error" role="alert">{error}</p>}
   </form>
 }

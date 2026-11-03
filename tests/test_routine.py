@@ -99,6 +99,33 @@ def test_validate_strips_and_collapses_the_label() -> None:
     assert block.label == "Read the docs"
 
 
+def test_control_and_invisible_characters_are_stripped_from_the_label() -> None:
+    # A NUL would be refused by Postgres' JSONB, and a zero-width space is a gap nobody can see.
+    [block] = validate_blocks(
+        [raw("a", "09:00", "custom", "Re\u200bad\u0000 the \u200d  docs\x07")]
+    )
+    assert block.label == "Read the docs"
+
+
+def test_whitespace_controls_still_separate_words() -> None:
+    # Tab, newline and the information separators are whitespace, so they split: not simply dropped.
+    [block] = validate_blocks([raw("a", "09:00", "custom", "Read\x85the\x1cdocs\tnow\n")])
+    assert block.label == "Read the docs now"
+
+
+def test_a_label_of_only_control_characters_is_a_blank_one() -> None:
+    with pytest.raises(RoutineInvalid) as refused:
+        validate_blocks([raw("a", "09:00", "custom", "\u0000\u200b\x07 \ufeff")])
+    assert str(refused.value) == "Your own block needs a name."
+    [block] = validate_blocks([raw("a", "09:00", "mock", "\u0000\u200b")])
+    assert block.label == DEFAULT_LABELS["mock"]
+
+
+def test_the_limit_does_not_count_characters_that_are_stripped() -> None:
+    [block] = validate_blocks([raw("a", "09:00", "custom", "x" * LABEL_MAX + "\u200b\u0000" * 5)])
+    assert block.label == "x" * LABEL_MAX
+
+
 def test_a_label_of_exactly_the_limit_is_kept() -> None:
     [block] = validate_blocks([raw("a", "09:00", "custom", "x" * LABEL_MAX)])
     assert len(block.label) == LABEL_MAX

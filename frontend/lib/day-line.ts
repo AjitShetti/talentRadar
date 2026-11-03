@@ -175,11 +175,17 @@ export function publishRoutine(routine: Routine, owner: string | null) {
   notifyRoutine()
 }
 
-/** What may be shown: nothing when signed out, another account's routine never, and yesterday's ticks never as today's. */
+/**
+ * What may be shown: nothing when signed out, another account's routine never, and yesterday's
+ * ticks never as today's. "Today" is decided by this device's clock alone, as `dayFor` does: the
+ * IST day it was read on against the IST day it is now. The server's own `day` is not compared
+ * with it, because a device whose clock is off would then lose the routine for hours; the
+ * server's `done_today` is its ticks for the day it answered, and is trusted as read.
+ */
 export function routineFor(owner: string | null, nowMs: number): Routine | null {
   const { routine } = routineStore
   if (owner === null || routineStore.owner !== owner || !routine) return null
-  return routine.day === istDayKey(nowMs) ? routine : null
+  return istDayKey(routineStore.at) === istDayKey(nowMs) ? routine : null
 }
 
 export const routineIsFresh = (owner: string | null, nowMs = Date.now()) =>

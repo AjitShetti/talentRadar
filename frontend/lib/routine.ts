@@ -93,8 +93,16 @@ export function nextBlockTime(blocks: readonly { at: string }[]): string {
 
 const CANNOT_SAVE = 'A block could not be saved. Reload the page and try again.'
 
-/** What the server stores as the name: trimmed, runs of whitespace one space. */
-const cleanLabel = (label: string) => label.split(/\s+/).filter(Boolean).join(' ')
+// Written as a string so the `u` flag and the property escapes do not depend on the compile target.
+const INVISIBLE = new RegExp('[\\p{Cc}\\p{Cf}]', 'gu')
+
+/**
+ * What the server stores as the name (domain/routine.py::_clean_label): control and invisible
+ * characters gone (a NUL, a zero-width space), then trimmed, runs of whitespace one space. A
+ * control that is whitespace in Python (tab, newline, `\x1c` to `\x1f`, `\x85`) still ends a word.
+ */
+const cleanLabel = (label: string) =>
+  label.replace(/[\t-\r\x1c-\x1f\x85]/g, ' ').replace(INVISIBLE, '').split(/\s+/).filter(Boolean).join(' ')
 
 /** A block as the editor holds it: `kind` may not be picked yet, so it is a string here and checked. */
 type DraftBlock = { id: string; at: string; kind: string; label: string }
