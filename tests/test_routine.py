@@ -5,18 +5,27 @@ A user's daily routine: the blocks they set for the day and the ticks they make 
 
 The rules are pure and run on plain values, so nothing here needs a database. The clock is
 always passed in. The migration is read as text, the way ``test_interview_time.py`` reads 022.
+
+The endpoints run through the real app on in-memory SQLite, with the service's clock pinned.
+Every user and block is fictional.
 """
 
 from __future__ import annotations
 
 import importlib.util
+from collections.abc import AsyncIterator
 from copy import deepcopy
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from api.auth import create_access_token
 from domain.routine import (
     DEFAULT_LABELS,
     KINDS,
@@ -30,9 +39,16 @@ from domain.routine import (
     with_blocks,
     with_tick,
 )
+from services import routine as routine_service
+from storage.database import get_db_dep
+from storage.models import Profile, User
+from tests.outreach_support import make_user, outreach_db  # noqa: F401
+
+Factory = async_sessionmaker[AsyncSession]
 
 VERSIONS = Path(__file__).resolve().parents[1] / "storage" / "migrations" / "versions"
 TODAY = date(2026, 11, 3)
+NOW = datetime(2026, 11, 3, 6, 0, tzinfo=UTC)  # Tue 3 Nov, 11:30 IST
 
 
 def raw(block_id: str, at: str, kind: str = "apply", label: str = "") -> dict[str, object]:
@@ -255,7 +271,9 @@ def test_a_tick_on_nothing_stored_makes_a_routine_with_no_blocks() -> None:
 def test_the_result_does_not_share_its_blocks_with_the_input() -> None:
     original = stored_with([])
     ticked = with_tick(original, "a", True, TODAY)
-    ticked["blocks"][0]["label"] = "changed"
+    blocks = ticked["blocks"]
+    assert isinstance(blocks, list)
+    blocks[0]["label"] = "changed"
     assert original["blocks"][0]["label"] == ""
 
 
@@ -314,3 +332,344 @@ def test_023_follows_022_and_backfills_tour_for_the_onboarded() -> None:
     assert "onboarding_completed IS TRUE" in text
     assert "DROP COLUMN IF EXISTS routine" in text
     assert "DROP COLUMN IF EXISTS tour_seen_at" in text
+
+
+# --- the endpoints ----------------------------------------------------------------
+
+ROUTINE = "/api/v1/routine"
+EMPTY = {
+    "has_routine": False,
+    "blocks": [],
+    "done_today": [],
+    "day": "2026-11-03",
+    "tour_seen": False,
+    "onboarding_completed": False,
+}
+
+
+@pytest.fixture
+def db(outreach_db: Factory, monkeypatch: pytest.MonkeyPatch) -> Factory:  # noqa: F811
+    monkeypatch.setattr(routine_service, "AsyncSessionLocal", outreach_db)
+    monkeypatch.setattr(routine_service, "_now", lambda: NOW)
+    return outreach_db
+
+
+@pytest_asyncio.fixture
+async def client(db: Factory) -> AsyncIterator[AsyncClient]:
+    from api.main import app
+
+    async def _session() -> AsyncIterator[AsyncSession]:
+        async with db() as session:
+            yield session
+            await session.commit()
+
+    app.dependency_overrides[get_db_dep] = _session
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
+            yield http
+    finally:
+        app.dependency_overrides.pop(get_db_dep, None)
+
+
+def auth(user: User) -> dict[str, str]:
+    token = create_access_token(data={"sub": str(user.id), "email": user.email, "role": "user"})
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def new_user(db: Factory) -> User:
+    async with db() as session:
+        return await make_user(session)
+
+
+async def profile_of(db: Factory, user: User) -> Profile | None:
+    async with db() as session:
+        found = await session.execute(select(Profile).where(Profile.user_id == user.id))
+        return found.scalar_one_or_none()
+
+
+async def count_profiles(db: Factory) -> int:
+    async with db() as session:
+        return (await session.execute(select(func.count()).select_from(Profile))).scalar_one()
+
+
+async def save(client: AsyncClient, user: User, *blocks: dict[str, object]) -> Any:
+    return await client.put(ROUTINE, json={"blocks": list(blocks)}, headers=auth(user))
+
+
+async def tick(client: AsyncClient, user: User, block_id: str, done: bool = True) -> Any:
+    return await client.put(
+        f"{ROUTINE}/blocks/{block_id}/done", json={"done": done}, headers=auth(user)
+    )
+
+
+async def test_get_with_no_profile_is_empty_and_creates_no_row(
+    db: Factory, client: AsyncClient
+) -> None:
+    user = await new_user(db)
+
+    response = await client.get(ROUTINE, headers=auth(user))
+
+    assert response.status_code == 200
+    assert response.json() == EMPTY
+    assert await count_profiles(db) == 0
+
+
+async def test_put_then_get_round_trips_sorted(db: Factory, client: AsyncClient) -> None:
+    user = await new_user(db)
+
+    saved = await save(
+        client,
+        user,
+        raw("late", "22:00", "mock", "Mock round"),
+        raw("early", "09:00", "apply", " "),
+    )
+    read = await client.get(ROUTINE, headers=auth(user))
+
+    assert saved.status_code == 200
+    expected = {
+        **EMPTY,
+        "has_routine": True,
+        "blocks": [
+            {"id": "early", "at": "09:00", "kind": "apply", "label": "Find roles and apply"},
+            {"id": "late", "at": "22:00", "kind": "mock", "label": "Mock round"},
+        ],
+    }
+    assert read.json() == expected
+    assert saved.json() == expected  # a save answers what a read would
+
+
+async def test_put_creates_the_profile_row_when_there_is_none(
+    db: Factory, client: AsyncClient
+) -> None:
+    user = await new_user(db)
+
+    await save(client, user, raw("a", "09:00"))
+
+    profile = await profile_of(db, user)
+    assert profile is not None
+    assert profile.onboarding_completed is False
+
+
+async def test_put_invalid_is_422_with_the_reason(db: Factory, client: AsyncClient) -> None:
+    user = await new_user(db)
+
+    response = await save(client, user, raw("a", "09:00"), raw("b", "09:00", "mock"))
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "Two blocks are at 09:00. Move one of them."}
+    assert (await client.get(ROUTINE, headers=auth(user))).json() == EMPTY
+
+
+async def test_a_block_missing_fields_gets_a_sentence_not_a_schema_dump(
+    db: Factory, client: AsyncClient
+) -> None:
+    user = await new_user(db)
+
+    no_kind = await save(client, user, {"id": "a", "at": "09:00"})
+    no_id = await save(client, user, {"at": "09:00", "kind": "apply"})
+    no_time = await save(client, user, {"id": "a", "kind": "apply"})
+
+    assert no_kind.status_code == no_id.status_code == no_time.status_code == 422
+    assert no_kind.json() == {"detail": "Pick what each block is for."}
+    assert isinstance(no_id.json()["detail"], str)
+    assert "time" in no_time.json()["detail"]
+
+
+async def test_saved_empty_routine_has_routine_true(db: Factory, client: AsyncClient) -> None:
+    user = await new_user(db)
+
+    saved = await save(client, user)
+
+    assert saved.status_code == 200
+    assert saved.json() == {**EMPTY, "has_routine": True}
+    assert (await client.get(ROUTINE, headers=auth(user))).json()["has_routine"] is True
+
+
+async def test_saving_again_replaces_the_blocks(db: Factory, client: AsyncClient) -> None:
+    user = await new_user(db)
+    await save(client, user, raw("a", "09:00"), raw("b", "10:00", "mock"))
+
+    saved = await save(client, user, raw("c", "08:00", "events"))
+
+    assert [block["id"] for block in saved.json()["blocks"]] == ["c"]
+
+
+async def test_tick_then_untick(db: Factory, client: AsyncClient) -> None:
+    user = await new_user(db)
+    await save(client, user, raw("a", "09:00"), raw("b", "10:00", "mock"))
+
+    ticked = await tick(client, user, "a")
+
+    assert ticked.status_code == 200
+    assert ticked.json()["done_today"] == ["a"]
+    assert (await client.get(ROUTINE, headers=auth(user))).json()["done_today"] == ["a"]
+
+    again = await tick(client, user, "a")
+    assert again.json()["done_today"] == ["a"]  # ticking a ticked block ticks it once
+
+    cleared = await tick(client, user, "a", done=False)
+    assert cleared.status_code == 200
+    assert cleared.json()["done_today"] == []
+    assert (await client.get(ROUTINE, headers=auth(user))).json()["done_today"] == []
+
+
+@pytest.mark.parametrize("done", [True, False])
+async def test_tick_unknown_block_is_404(db: Factory, client: AsyncClient, done: bool) -> None:
+    user = await new_user(db)
+    await save(client, user, raw("a", "09:00"))
+
+    response = await tick(client, user, "nope", done=done)
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "That block is not in your routine."}
+
+
+async def test_tick_with_no_routine_is_404_and_creates_no_row(
+    db: Factory, client: AsyncClient
+) -> None:
+    user = await new_user(db)
+
+    response = await tick(client, user, "a")
+
+    assert response.status_code == 404
+    assert await count_profiles(db) == 0
+
+
+async def test_tick_needs_a_boolean(db: Factory, client: AsyncClient) -> None:
+    user = await new_user(db)
+    await save(client, user, raw("a", "09:00"))
+
+    response = await client.put(f"{ROUTINE}/blocks/a/done", json={}, headers=auth(user))
+
+    assert response.status_code == 422
+
+
+async def test_ticks_reset_at_ist_midnight(
+    db: Factory, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user = await new_user(db)
+    await save(client, user, raw("a", "09:00"))
+    await tick(client, user, "a")
+
+    # 18:30 UTC is 00:00 IST on the 4th. 18:29 is still the 3rd.
+    monkeypatch.setattr(routine_service, "_now", lambda: datetime(2026, 11, 3, 18, 29, tzinfo=UTC))
+    before = (await client.get(ROUTINE, headers=auth(user))).json()
+    assert (before["day"], before["done_today"]) == ("2026-11-03", ["a"])
+
+    monkeypatch.setattr(routine_service, "_now", lambda: datetime(2026, 11, 3, 18, 31, tzinfo=UTC))
+    after = (await client.get(ROUTINE, headers=auth(user))).json()
+    assert (after["day"], after["done_today"]) == ("2026-11-04", [])
+
+    again = await tick(client, user, "a")  # the new day starts afresh
+    assert again.json()["done_today"] == ["a"]
+
+
+async def test_moving_a_block_keeps_its_tick_and_removing_drops_it(
+    db: Factory, client: AsyncClient
+) -> None:
+    user = await new_user(db)
+    await save(client, user, raw("a", "09:00"), raw("b", "10:00", "mock"))
+    await tick(client, user, "a")
+    await tick(client, user, "b")
+
+    moved = await save(client, user, raw("a", "21:15"))  # a moved, b removed
+
+    assert [(b["id"], b["at"]) for b in moved.json()["blocks"]] == [("a", "21:15")]
+    assert moved.json()["done_today"] == ["a"]
+
+    back = await save(client, user, raw("a", "21:15"), raw("b", "10:00", "mock"))
+    assert back.json()["done_today"] == ["a"]  # b came back unticked
+
+
+async def test_another_users_routine_is_never_read(db: Factory, client: AsyncClient) -> None:
+    owner = await new_user(db)
+    other = await new_user(db)
+    await save(client, owner, raw("a", "09:00"))
+
+    read = await client.get(ROUTINE, headers=auth(other))
+    ticked = await tick(client, other, "a")
+
+    assert read.json() == EMPTY
+    assert ticked.status_code == 404
+    assert (await client.get(ROUTINE, headers=auth(owner))).json()["done_today"] == []
+    assert await profile_of(db, other) is None
+
+
+async def test_get_reports_onboarding_and_the_tour(db: Factory, client: AsyncClient) -> None:
+    user = await new_user(db)
+    async with db() as session:
+        session.add(Profile(user_id=user.id, onboarding_completed=True, tour_seen_at=NOW))
+        await session.commit()
+
+    body = (await client.get(ROUTINE, headers=auth(user))).json()
+
+    assert (body["onboarding_completed"], body["tour_seen"], body["has_routine"]) == (
+        True,
+        True,
+        False,
+    )
+
+
+async def test_saving_leaves_the_rest_of_the_profile_alone(
+    db: Factory, client: AsyncClient
+) -> None:
+    user = await new_user(db)
+    async with db() as session:
+        session.add(Profile(user_id=user.id, full_name="Asha Rao", onboarding_completed=True))
+        await session.commit()
+
+    saved = await save(client, user, raw("a", "09:00"))
+
+    assert saved.json()["onboarding_completed"] is True
+    profile = await profile_of(db, user)
+    assert profile is not None and profile.full_name == "Asha Rao"
+    assert await count_profiles(db) == 1
+
+
+async def test_tour_seen_is_idempotent(
+    db: Factory, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user = await new_user(db)
+
+    first = await client.post(f"{ROUTINE}/tour-seen", headers=auth(user))
+
+    assert first.status_code == 200
+    assert first.json() == {**EMPTY, "tour_seen": True}
+    stamped = await profile_of(db, user)
+    assert stamped is not None and stamped.tour_seen_at is not None
+    assert stamped.tour_seen_at.replace(tzinfo=UTC) == NOW
+
+    monkeypatch.setattr(routine_service, "_now", lambda: NOW + timedelta(hours=3))
+    second = await client.post(f"{ROUTINE}/tour-seen", headers=auth(user))
+
+    assert second.json()["tour_seen"] is True
+    unchanged = await profile_of(db, user)
+    assert unchanged is not None and unchanged.tour_seen_at is not None
+    assert unchanged.tour_seen_at.replace(tzinfo=UTC) == NOW
+    assert await count_profiles(db) == 1
+
+
+async def test_the_tour_stamp_survives_saving_the_routine(db: Factory, client: AsyncClient) -> None:
+    user = await new_user(db)
+    await client.post(f"{ROUTINE}/tour-seen", headers=auth(user))
+
+    saved = await save(client, user, raw("a", "09:00"))
+
+    assert saved.json()["tour_seen"] is True
+    assert saved.json()["has_routine"] is True
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("GET", ROUTINE, None),
+        ("PUT", ROUTINE, {"blocks": []}),
+        ("PUT", f"{ROUTINE}/blocks/a/done", {"done": True}),
+        ("POST", f"{ROUTINE}/tour-seen", None),
+    ],
+)
+async def test_unauthenticated_is_401(
+    client: AsyncClient, method: str, path: str, body: dict[str, Any] | None
+) -> None:
+    response = await client.request(method, path, json=body)
+    assert response.status_code == 401
