@@ -74,6 +74,23 @@ export function blockMinutes(at: string): number {
   return Number(at.slice(0, 2)) * 60 + Number(at.slice(3))
 }
 
+/** Minutes since midnight as "HH:MM", the inverse of `blockMinutes`. */
+const clock = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
+
+/**
+ * Where a new block starts: the next free half hour after the latest block (nine, with none),
+ * wherever that block is in the list. A time still being typed counts for nothing. With no
+ * half hour left in the day after the latest block, the earliest free one: eight blocks can
+ * never fill all forty-eight, so there is always one.
+ */
+export function nextBlockTime(blocks: readonly { at: string }[]): string {
+  const taken = blocks.map(block => blockMinutes(block.at)).filter(minutes => !Number.isNaN(minutes))
+  const start = taken.length === 0 ? 9 * 60 : (Math.floor(Math.max(...taken) / 30) + 1) * 30
+  for (let minutes = start; minutes < 24 * 60; minutes += 30) if (!taken.includes(minutes)) return clock(minutes)
+  for (let minutes = 0; minutes < start; minutes += 30) if (!taken.includes(minutes)) return clock(minutes)
+  return clock(9 * 60)
+}
+
 const CANNOT_SAVE = 'A block could not be saved. Reload the page and try again.'
 
 /** What the server stores as the name: trimmed, runs of whitespace one space. */

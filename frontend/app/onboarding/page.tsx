@@ -9,6 +9,7 @@ import Segmented from '@/components/Segmented'
 import { api } from '@/lib/api'
 import { INDIAN_CITIES } from '@/lib/filters'
 import { usePersistentState } from '@/lib/persistent-state'
+import { starterRoutine } from '@/lib/routine'
 
 type Stage = 'student' | 'working' | 'between'
 type Goal = 'apply' | 'prepare' | 'both'
@@ -98,6 +99,8 @@ export default function OnboardingPage() {
         years_experience: yearsValue,
         skills: skills.split(',').map(s => s.trim()).filter(Boolean),
       })
+      // The day starts with a routine for what they came to do. A failure here is not worth keeping them on this page: the Overview offers one.
+      await api.routine.save(starterRoutine(goal || 'both')).catch(() => {})
       setStep(0)
       router.push(chosen.href)
     } catch (err) {

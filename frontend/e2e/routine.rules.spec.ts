@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import {
-  KINDS, LABEL_MAX, MAX_BLOCKS, blockMinutes, currentBlock, istDayKey, newBlockId, routineMarks, routineProblem, starterRoutine,
+  KINDS, LABEL_MAX, MAX_BLOCKS, blockMinutes, currentBlock, istDayKey, newBlockId, nextBlockTime, routineMarks, routineProblem, starterRoutine,
   type Routine, type RoutineBlock,
 } from '../lib/routine'
 import {
@@ -251,4 +251,24 @@ test('a block ticked off ahead of time is not what comes next', () => {
   const marks = [mark('a', 600, { routine: true, done: true }), mark('b', 900, { routine: true })]
   expect(nextMark(marks, 500)?.id).toBe('b')
   expect(nextMark([mark('a', 600, { routine: true, done: true })], 500)).toBeNull()
+})
+
+test('a new block goes at the next free half hour after the latest one, wherever it is in the list', () => {
+  expect(nextBlockTime([])).toBe('09:00')
+  expect(nextBlockTime([block('a', '09:00')])).toBe('09:30')
+  expect(nextBlockTime([block('a', '09:00'), block('b', '09:45', 'connect')])).toBe('10:00')
+  expect(nextBlockTime([block('b', '22:00', 'practice'), block('a', '09:00')])).toBe('22:30')
+  expect(nextBlockTime([block('a', '23:00')])).toBe('23:30')
+  // A time still being typed is not a time: it counts for nothing, and with nothing else the day starts at nine.
+  expect(nextBlockTime([block('a', '')])).toBe('09:00')
+  expect(nextBlockTime([block('a', ''), block('b', '14:10')])).toBe('14:30')
+})
+
+test('with no half hour left after the latest block, the earliest free one of the day is offered', () => {
+  expect(nextBlockTime([block('a', '23:30')])).toBe('00:00')
+  expect(nextBlockTime([block('a', '23:45'), block('b', '00:00')])).toBe('00:30')
+  // A full routine at the end of the day still has somewhere to go: eight blocks cannot fill forty-eight half hours.
+  const evening = Array.from({ length: MAX_BLOCKS }, (_, i) => block(`id${i}`, `${20 + Math.floor(i / 2)}:${i % 2 ? '30' : '00'}`))
+  expect(evening.map(b => b.at)).toEqual(['20:00', '20:30', '21:00', '21:30', '22:00', '22:30', '23:00', '23:30'])
+  expect(nextBlockTime(evening)).toBe('00:00')
 })

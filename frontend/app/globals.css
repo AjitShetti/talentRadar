@@ -1116,9 +1116,10 @@ details.voice-transcript>summary::-webkit-details-marker{display:none}
 @media(max-width:800px){.insight-split{grid-template-columns:1fr;gap:22px}.trend-bars{display:none}}
 
 /* Resume upload in Profile & Goals / onboarding + the dashboard's skill-focus panel */
-.resume-goals-card{max-width:600px;border-top:1px solid var(--line-soft);padding-top:30px}
-.resume-goals-card h2{font:600 18px var(--font-display);margin:8px 0 8px;letter-spacing:-.4px}
-.resume-goals-card .muted-copy{margin:0 0 16px}
+.resume-goals-card,.routine-card{max-width:600px;border-top:1px solid var(--line-soft);padding-top:30px}
+.routine-card{margin-bottom:44px}
+.resume-goals-card h2,.routine-card h2{font:600 18px var(--font-display);margin:8px 0 8px;letter-spacing:-.4px}
+.resume-goals-card .muted-copy,.routine-card .muted-copy{margin:0 0 16px}
 .onboarding-resume{border-top:1px solid var(--line-soft);padding:17px 0;margin-bottom:0}
 .field-label{display:block;font:600 11.5px var(--font-display);letter-spacing:-.005em;color:var(--faint);margin-bottom:9px}
 .field-label small{display:block;font:400 11px var(--font-text);letter-spacing:0;text-transform:none;color:var(--muted);margin-top:5px}
@@ -2584,6 +2585,44 @@ code,pre,kbd,.latex-editor,.editor-code,textarea.code{font-family:var(--font-mon
 @media(max-width:900px){.ov2-split{grid-template-columns:1fr;gap:32px}}
 @media(max-width:640px){.ov2{gap:44px}.day-title{display:flex;flex-direction:column}.day-head{display:contents}.ov2-date{display:block;margin-top:8px}.day-head>.outline-button,.day-head>.pr-ghost{order:1;align-self:flex-start;margin-top:14px}.ov2-lead{font-size:17px}.ov2-next li{grid-template-columns:36px minmax(0,1fr);padding:22px 0}.ov2-next li>a{grid-column:2;justify-self:start;margin-top:12px}.ov2-next h3{font-size:19px}.ov2-next li[data-lead="true"] h3{font-size:24px}.ov2-num{font-size:19px}}
 
+/* ── Your day (components/overview/YourDay.tsx, components/RoutineEditor.tsx): the routine as a quiet list, and the form that edits it.
+   Rows are lines like Up next's, with no number and nothing arriving. The current block is azure; a ticked one is faint and struck through. ── */
+.ov2-head .text-button{font:500 13px var(--font-text)}
+.yd-list{list-style:none;margin:0;padding:0;border-bottom:1px solid var(--line)}
+.yd-list li{position:relative;display:flex;align-items:center;justify-content:space-between;gap:12px;font:500 15px var(--font-text);color:var(--ink)}
+.yd-list li::before,.yd-list li::after{content:'';position:absolute;inset:0 0 auto;height:1px}
+.yd-list li::before{background:var(--line)}
+.yd-list li::after{background:var(--ink);transform:scaleX(0);transform-origin:left;transition:transform .4s var(--ease-day)}
+.yd-list:not([data-plain]) li:hover::after,.yd-list:not([data-plain]) li:focus-within::after,.yd-list li[data-lit]::after{transform:scaleX(1)}
+.yd-list[data-plain] li{justify-content:flex-start;padding:12px 0}
+/* The label is the row, so the whole row ticks it. */
+.yd-list .toggle-row{display:flex;flex:1;min-width:0;margin:0;padding:16px 0;cursor:pointer;font:inherit;color:inherit}
+.yd-time{flex:none;color:var(--faint);font-variant-numeric:tabular-nums}
+.yd-label{min-width:0;overflow-wrap:anywhere}
+.yd-list li[data-current],.yd-list li[data-current] .yd-time{color:var(--accent)}
+.yd-list li[data-done] .yd-time,.yd-list li[data-done] .yd-label{color:var(--faint)}
+.yd-list li[data-done] .yd-label{text-decoration:line-through}
+.yd-list .text-button{flex:none;font:500 13px var(--font-text)}
+.yd-edit,.yd-fields{display:flex;flex-direction:column;gap:14px}
+.yd-rows{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.yd-row{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto;gap:6px 12px;align-items:center}
+.yd-edit .yd-row input,.yd-edit .yd-row select{width:auto;min-width:0;border:1px solid var(--field-border);border-radius:var(--r-md);padding:6px 8px;background:var(--field);color:var(--ink);font:400 13px var(--font-text);outline:none}
+.yd-edit .yd-row .yd-name{width:100%}
+.yd-edit .yd-row input:focus,.yd-edit .yd-row select:focus{border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-ring)}
+.yd-edit .text-button{font:500 13px var(--font-text)}
+.yd-add{align-self:flex-start}
+.yd-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+.yd-actions .primary-button{margin-top:0;width:auto}
+.yd-edit .form-error{margin:0}
+@media(max-width:560px){
+  .yd-row{grid-template-columns:auto minmax(0,1fr) auto}
+  .yd-row .yd-at{grid-column:1;grid-row:1}
+  .yd-row .yd-kind{grid-column:2;grid-row:1}
+  .yd-row .yd-remove{grid-column:3;grid-row:1}
+  .yd-edit .yd-row .yd-name{grid-column:1/-1;grid-row:2}
+  .yd-list .text-button,.yd-edit .text-button,.ov2-head .text-button{min-height:44px}
+}
+
 /* ── Charts (components/overview/Charts.tsx) ──────────────────────────────── */
 .ch-stack{display:flex;flex-direction:column;gap:14px}
 .ch-stack-bar{display:flex;gap:3px;height:12px;border-radius:var(--r-pill);overflow:hidden}
@@ -2640,7 +2679,7 @@ code,pre,kbd,.latex-editor,.editor-code,textarea.code{font-family:var(--font-mon
 /* Motion off: everything above is already in its final state, so only the movement goes. */
 @media (prefers-reduced-motion: reduce){
   .day-digit,.day-mark i,.day-mark span,.ov2-skeleton i,.ov2-hero h1,.ov2-lead,.ov2-date,.ov2-next li::before,.ov2-next h3,.ov2-next p,.ov2-tags,.ov2-next .primary-button,.ov2-next .outline-button,.ov2-ledger a::before,.application-row::before,.stage i{animation:none!important}
-  .ov2-next-body,.ov2-next li::after,.ov2-ledger a::after,.application-row::after,.application-role,.ov2-role strong,.stage i,.day-mark i{transition:none}
+  .ov2-next-body,.ov2-next li::after,.yd-list li::after,.ov2-ledger a::after,.application-row::after,.application-role,.ov2-role strong,.stage i,.day-mark i{transition:none}
   .ov2-next li:hover .ov2-next-body,.ov2-next li[data-lit] .ov2-next-body,.application-row:hover .application-role,.ov2-role:hover strong{transform:none}
 }
 
