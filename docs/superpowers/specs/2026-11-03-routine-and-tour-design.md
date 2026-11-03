@@ -128,7 +128,7 @@ The user picked B and the in-house tour.
 
 ## Server
 
-- **Migration `023_profile_routine`** (after `022_application_interview_at`)
+- **Migration `025_profile_routine`** (after `024_profile_digest_email`; first built as 023 after 022)
   adds to `profiles`:
   - and stamps `tour_seen_at = now()` on rows with `onboarding_completed` true;
   - `routine` JSONB, nullable: `{"blocks": [{"id", "at", "kind", "label"}], "done": {"day": "YYYY-MM-DD", "ids": [...]}}`;

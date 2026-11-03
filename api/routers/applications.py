@@ -4,7 +4,7 @@ api/routers/applications.py
 Job application tracking endpoints (auth required).
 
 GET    /applications           - list user's applications
-POST   /applications           - create/save an application
+POST   /applications           - save a posting, or a role found elsewhere
 PATCH  /applications/{id}      - update status, notes or the interview's time
 DELETE /applications/{id}      - remove an application
 """
@@ -85,6 +85,9 @@ def _app_to_response(app: JobApplication, job: Job | None) -> ApplicationRespons
         created_at=app.created_at,
         updated_at=app.updated_at,
         job=_job_to_schema(job),
+        role_title=app.role_title,
+        company_name=app.company_name,
+        posting_url=app.posting_url,
     )
 
 
@@ -122,12 +125,38 @@ async def list_applications(
     return ApplicationListResponseSchema(applications=responses, total=total)
 
 
+async def _create_typed_role(
+    user_id: str, db: AsyncSession, body: ApplicationCreateSchema
+) -> ApplicationResponseSchema:
+    """Track a role found somewhere we never indexed: what the user typed, and no job."""
+    try:
+        app_status = ApplicationStatus(body.status)
+    except ValueError:
+        app_status = ApplicationStatus.SAVED
+    app = JobApplication(
+        user_id=uuid.UUID(user_id),
+        job_id=None,
+        status=app_status,
+        notes=body.notes,
+        role_title=body.role_title,
+        company_name=body.company_name,
+        posting_url=body.posting_url,
+    )
+    db.add(app)
+    await db.flush()
+    await db.refresh(app)
+    logger.info("Application created for a typed role: id=%s user=%s", app.id, user_id)
+    return _app_to_response(app, None)
+
+
 @router.post("/", response_model=ApplicationResponseSchema, status_code=status.HTTP_201_CREATED)
 async def create_application(
     user_id: CurrentUserId,
     db: DBSession,
     body: ApplicationCreateSchema,
 ) -> ApplicationResponseSchema:
+    if body.job_id is None:
+        return await _create_typed_role(user_id, db, body)
     try:
         job_uuid = uuid.UUID(body.job_id)
     except ValueError:

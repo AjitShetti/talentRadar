@@ -1,7 +1,7 @@
 """profiles: the daily routine and whether the first-run tour has been seen
 
-Revision ID: 023_profile_routine
-Revises: 022_application_interview_at
+Revision ID: 025_profile_routine
+Revises: 024_profile_digest_email
 Create Date: 2026-11-03 00:00:00.000000
 
 Why this exists
@@ -19,6 +19,10 @@ when this migration does; a user who onboards afterwards has no stamp and gets t
 The statements are IF NOT EXISTS / IF EXISTS, so the migration is safe on a database
 created from ``models.py`` metadata directly, and the backfill only touches rows with no
 stamp, so running it again changes nothing.
+
+It was first numbered 023, after 022, and merged beside another 023 and 024 built on the
+same 022; it now follows 024 so the chain has one head. On production its columns were
+added by hand before it ran, which the IF NOT EXISTS statements are for.
 """
 
 from __future__ import annotations
@@ -30,8 +34,8 @@ from alembic import op
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-revision: str = "023_profile_routine"
-down_revision: str | None = "022_application_interview_at"
+revision: str = "025_profile_routine"
+down_revision: str | None = "024_profile_digest_email"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

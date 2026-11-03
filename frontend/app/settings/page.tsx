@@ -1,12 +1,15 @@
 'use client'
 
 import { ChangeEvent, FormEvent, useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import AppShell from '@/components/AppShell'
 import RequireAuth from '@/components/RequireAuth'
 import RoutineEditor from '@/components/RoutineEditor'
+import Segmented from '@/components/Segmented'
 import { api, currentEmail } from '@/lib/api'
 import { publishRoutine } from '@/lib/day-line'
 import { INDIAN_CITIES } from '@/lib/filters'
+import { Goal, goalFromSentence, GOALS } from '@/lib/goals'
 import { readPersisted, usePersistentState } from '@/lib/persistent-state'
 import type { Routine } from '@/lib/routine'
 
@@ -30,6 +33,11 @@ export default function SettingsPage() {
   const [years, setYears] = usePersistentState('settings.years', '')
   const [skills, setSkills] = usePersistentState('settings.skills', '')
   const [remote, setRemote] = usePersistentState('settings.remote', false)
+  const [digest, setDigest] = usePersistentState('settings.digest', false)
+  // Offered only when this server can send mail; without it the box would promise nothing.
+  const [mailEnabled, setMailEnabled] = useState(false)
+  // A goal sentence written some other way is left as it is until the user picks one here.
+  const [goal, setGoal] = usePersistentState<Goal | ''>('settings.goal', '')
   const [dirty, setDirty] = usePersistentState('settings.dirty', false)
   const edit = <T,>(setter: (value: T) => void) => (value: T) => { setter(value); setDirty(true) }
   const [saving, setSaving] = useState(false)
@@ -55,6 +63,7 @@ export default function SettingsPage() {
     }).catch(() => {})
 
     api.profile.get().then(result => {
+      setMailEnabled(Boolean(result.mail_enabled))
       if (readPersisted<boolean>('settings.dirty')) return
       const profile = result.profile || {}
       setName(String(profile.full_name || ''))
@@ -64,6 +73,8 @@ export default function SettingsPage() {
       setYears(profile.years_experience == null ? '' : String(profile.years_experience))
       setSkills(Array.isArray(profile.skills) ? profile.skills.map((item: unknown) => typeof item === 'string' ? item : (item as { name?: string }).name || '').join(', ') : '')
       setRemote(Boolean(profile.is_remote_preferred))
+      setDigest(Boolean(profile.digest_email))
+      setGoal(goalFromSentence(profile.career_goals) ?? '')
     }).catch(err => setError(err instanceof Error ? err.message : 'Could not load profile.'))
   }, [])
 
@@ -105,6 +116,8 @@ export default function SettingsPage() {
         years_experience: parsedYears,
         skills: list(skills),
         is_remote_preferred: remote,
+        ...(mailEnabled ? { digest_email: digest } : {}),
+        ...(goal ? { career_goals: GOALS.find(g => g.value === goal)?.sentence } : {}),
       })
       setDirty(false)
       setMessage('Profile saved. Your job search filters now start from these defaults.')
@@ -123,10 +136,14 @@ export default function SettingsPage() {
       <p className="ov2-lead">These pre-fill your search. Add a resume and the Overview shows what&apos;s missing.</p>
     </header>
     <form className="card-form settings-form" onSubmit={save}>
+      <div className="field-group">
+        <span>What brings you here</span>
+        <Segmented label="What brings you here" options={GOALS.map(g => ({ value: g.value, label: g.title }))} value={goal || 'both'} onChange={edit(setGoal)} />
+      </div>
       <label>Full name<input value={name} onChange={e => edit(setName)(e.target.value)} /></label>
       <label>Professional headline<input value={headline} onChange={e => edit(setHeadline)(e.target.value)} placeholder="e.g. Product designer focused on fintech" /></label>
       <label>Target roles <small>Separate with commas</small><input value={roles} onChange={e => edit(setRoles)(e.target.value)} placeholder="Product Designer, UX Researcher" /></label>
-      <label>Preferred locations <small>Separate with commas — the first one pre-fills your search</small>
+      <label>Preferred locations <small>Separate with commas — the first one pre-fills your search. Jobs cover all of India; Companies and Events are Bengaluru only for now.</small>
         <input list="settings-cities" value={locations} onChange={e => edit(setLocations)(e.target.value)} placeholder="Bengaluru, Remote" />
         <datalist id="settings-cities">{INDIAN_CITIES.map(city => <option key={city} value={city} />)}</datalist>
       </label>
@@ -135,6 +152,7 @@ export default function SettingsPage() {
       </label>
       <label>Skills <small>Separate with commas</small><input value={skills} onChange={e => edit(setSkills)(e.target.value)} placeholder="Figma, User research, Systems thinking" /></label>
       <label className="toggle-row"><input type="checkbox" checked={remote} onChange={e => edit(setRemote)(e.target.checked)} /> Prefer remote opportunities</label>
+      {mailEnabled && <label className="toggle-row"><input type="checkbox" checked={digest} onChange={e => edit(setDigest)(e.target.checked)} /> Email me my day plan each morning <small>Around 07:00 IST, only on days there is something to do</small></label>}
       {dirty && !saving && <p className="muted-copy">You have unsaved changes.</p>}
       {error && <p className="form-error">{error}</p>}
       {message && <p className="success-message">{message}</p>}
@@ -165,5 +183,71 @@ export default function SettingsPage() {
       </div>
       {resumeError && <p className="form-error">{resumeError}</p>}
     </section>
+
+    <AccountSection />
   </AppShell></RequireAuth>
+}
+
+/** The account itself: a new password, and deleting the account with everything in it. */
+function AccountSection() {
+  const router = useRouter()
+  const [current, setCurrent] = useState(''); const [next, setNext] = useState(''); const [repeat, setRepeat] = useState('')
+  const [pwBusy, setPwBusy] = useState(false); const [pwMessage, setPwMessage] = useState(''); const [pwError, setPwError] = useState('')
+  const [deleting, setDeleting] = useState(false); const [confirmPassword, setConfirmPassword] = useState('')
+  const [delBusy, setDelBusy] = useState(false); const [delError, setDelError] = useState('')
+
+  async function changePassword(e: FormEvent) {
+    e.preventDefault()
+    setPwMessage(''); setPwError('')
+    if (next !== repeat) { setPwError('The new passwords do not match.'); return }
+    setPwBusy(true)
+    try {
+      await api.auth.changePassword(current, next)
+      setCurrent(''); setNext(''); setRepeat('')
+      setPwMessage('Password changed.')
+    } catch (err) {
+      setPwError(err instanceof Error ? err.message : 'Could not change your password.')
+    } finally {
+      setPwBusy(false)
+    }
+  }
+
+  async function deleteAccount(e: FormEvent) {
+    e.preventDefault()
+    if (!window.confirm('Delete your account and everything in it? This cannot be undone.')) return
+    setDelError(''); setDelBusy(true)
+    try {
+      await api.auth.deleteAccount(confirmPassword)
+      router.push('/')
+    } catch (err) {
+      setDelError(err instanceof Error ? err.message : 'Could not delete your account.')
+      setDelBusy(false)
+    }
+  }
+
+  return <section className="card-form resume-goals-card">
+    <p className="eyebrow">Your account</p>
+    <h2>Change your password.</h2>
+    <form onSubmit={changePassword}>
+      <label>Current password<input type="password" autoComplete="current-password" required value={current} onChange={e => setCurrent(e.target.value)} /></label>
+      <label>New password<input type="password" autoComplete="new-password" minLength={8} required value={next} onChange={e => setNext(e.target.value)} placeholder="At least 8 characters" /></label>
+      <label>Repeat the new password<input type="password" autoComplete="new-password" required value={repeat} onChange={e => setRepeat(e.target.value)} /></label>
+      {pwError && <p className="form-error" role="alert">{pwError}</p>}
+      {pwMessage && <p className="success-message">{pwMessage}</p>}
+      <button type="submit" className="outline-button" disabled={pwBusy}>{pwBusy ? 'Changing…' : 'Change password'}</button>
+    </form>
+
+    <h2 className="account-delete-title">Delete your account.</h2>
+    <p className="muted-copy">Removes your profile, resume, tracker, interviews, outreach, saved events and practice. This cannot be undone.</p>
+    {!deleting
+      ? <button type="button" className="outline-button danger-outline" onClick={() => setDeleting(true)}>Delete account</button>
+      : <form onSubmit={deleteAccount}>
+          <label>Your password, to confirm<input type="password" autoComplete="current-password" required autoFocus value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} /></label>
+          {delError && <p className="form-error" role="alert">{delError}</p>}
+          <div className="account-delete-actions">
+            <button type="button" className="text-button" onClick={() => { setDeleting(false); setConfirmPassword(''); setDelError('') }}>Cancel</button>
+            <button type="submit" className="outline-button danger-outline" disabled={delBusy}>{delBusy ? 'Deleting…' : 'Delete everything'}</button>
+          </div>
+        </form>}
+  </section>
 }

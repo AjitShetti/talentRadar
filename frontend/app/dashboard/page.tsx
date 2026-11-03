@@ -12,6 +12,7 @@ import { ScoreBars } from '@/components/overview/Charts'
 import YourDay from '@/components/overview/YourDay'
 import { AgendaItem, api, Briefing, BriefingCard, currentEmail, JobMatch, OutreachHome, SkillsFocus } from '@/lib/api'
 import { arrivalPending, markForAction, nextMark, publishBriefing, setDayLit, untilLabel } from '@/lib/day-line'
+import { interviewPrepHref } from '@/lib/interview-prep'
 import { clock as istClock } from '@/lib/practice-time'
 import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 
@@ -132,7 +133,7 @@ function buildActions(
       why: `Your ${next.role} interview is today${at ? ` at ${at} IST` : ''}. Everything below can wait until it is done.`,
       tags: [{ label: at ? `Today ${at}` : 'Today', hot: true }, ...(today.length > 1 ? [{ label: `${today.length} interviews today` }] : [])],
       cta: 'Open prep',
-      href: '/interview',
+      href: interviewPrepHref(next.job_id, next.role, next.company),
     })
   }
 
@@ -237,7 +238,7 @@ function buildActions(
 
   // When the briefing already sends the user to the Interview Lab, a second
   // interview row would spend one of three slots repeating it.
-  const interviewLed = out.some(action => action.href === '/interview')
+  const interviewLed = out.some(action => action.href.startsWith('/interview'))
   const sessions = interviews?.sessions_analyzed ?? 0
   if (!interviewLed && sessions === 0 && out.length < 3) {
     out.push({

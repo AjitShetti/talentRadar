@@ -362,4 +362,4 @@ def test_the_migrations_have_one_head() -> None:
         down = re.search(r'^down_revision(?:: [^=]+)? = ["\']([^"\']+)', source, re.M)
         if revision:
             revisions[revision.group(1)] = down.group(1) if down else None
-    assert set(revisions) - set(revisions.values()) == {"023_profile_routine"}
+    assert set(revisions) - set(revisions.values()) == {"025_profile_routine"}

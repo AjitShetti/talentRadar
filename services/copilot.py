@@ -32,8 +32,9 @@ import re
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlencode
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from domain.event_time import IST, as_utc, effective_end, ist_date
@@ -212,7 +213,7 @@ async def _application_cards(user_id: str) -> list[dict[str, Any]]:
             return []
 
         result = await session.execute(
-            select(JobApplication, Job.title, Company.name, Job.closed_at)
+            select(JobApplication, func.coalesce(Job.title, JobApplication.role_title), func.coalesce(Company.name, JobApplication.company_name), Job.closed_at)
             .outerjoin(Job, Job.id == JobApplication.job_id)
             .outerjoin(Company, Company.id == Job.company_id)
             .where(JobApplication.user_id == user_uuid)
@@ -313,6 +314,18 @@ async def _application_cards(user_id: str) -> list[dict[str, Any]]:
         await session.close()
 
 
+def interview_prep_href(item: dict[str, Any]) -> str:
+    """The mock interview for this application's posting, or a plain one when it has none.
+
+    The Interview Lab reads ``job``, ``role`` and ``company`` from its URL and anchors the
+    session to that posting, as "Prepare for this role" on the role page does.
+    """
+    if not item.get("job_id"):
+        return "/interview"
+    query = {"job": item["job_id"], "role": item.get("role") or "", "company": item.get("company") or ""}
+    return f"/interview?{urlencode(query)}"
+
+
 async def _scheduled_interview_cards(user_id: str) -> list[dict[str, Any]]:
     """
     Interviews the user entered a time for.
@@ -344,11 +357,12 @@ async def _scheduled_interview_cards(user_id: str) -> list[dict[str, Any]]:
             ),
             tone="warning" if days <= 1 else "action",
             actions=[
-                {"label": "Prep with a mock", "href": "/interview", "style": "primary"},
+                {"label": "Prep with a mock", "href": interview_prep_href(item), "style": "primary"},
                 {"label": "Research the company", "href": "/company-intel", "style": "ghost"},
             ],
             meta={
                 "application_id": item["application_id"],
+                "job_id": item["job_id"],
                 "days_away": days,
                 "scheduled_at": item["scheduled_at"],
                 "company": item["company"],

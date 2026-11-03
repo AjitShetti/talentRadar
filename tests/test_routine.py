@@ -342,15 +342,15 @@ def test_clearing_every_block_leaves_an_empty_routine() -> None:
 # --- the migration ----------------------------------------------------------------
 
 
-def test_023_follows_022_and_backfills_tour_for_the_onboarded() -> None:
-    path = VERSIONS / "023_profile_routine.py"
-    spec = importlib.util.spec_from_file_location("migration_023", path)
+def test_025_follows_024_and_backfills_tour_for_the_onboarded() -> None:
+    path = VERSIONS / "025_profile_routine.py"
+    spec = importlib.util.spec_from_file_location("migration_025", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
-    assert module.revision == "023_profile_routine"
-    assert module.down_revision == "022_application_interview_at"
+    assert module.revision == "025_profile_routine"
+    assert module.down_revision == "024_profile_digest_email"
     text = path.read_text(encoding="utf-8")
     assert "ADD COLUMN IF NOT EXISTS routine JSONB" in text
     assert "ADD COLUMN IF NOT EXISTS tour_seen_at TIMESTAMPTZ" in text

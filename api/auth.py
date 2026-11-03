@@ -125,6 +125,46 @@ def decode_access_token(token: str) -> dict[str, Any]:
         ) from None
 
 
+#: How long a password-reset link works.
+RESET_TOKEN_MINUTES = 30
+
+
+def _reset_key() -> str:
+    """The key reset tokens are signed with: derived from, never equal to, the session key.
+
+    A reset token names its user in ``sub`` exactly as a session does, so signed with the
+    session key it would pass ``get_current_user`` and sign the holder in. Signed with this
+    key it is only ever a reset token.
+    """
+    return hmac.new(
+        settings.jwt_secret_key.encode(), b"password-reset", hashlib.sha256
+    ).hexdigest()
+
+
+def password_fingerprint(hashed_password: str) -> str:
+    """Changes whenever the password does, so a reset link works once and dies with the old password."""
+    return hashlib.sha256(hashed_password.encode()).hexdigest()[:16]
+
+
+def create_reset_token(user_id: str, hashed_password: str) -> str:
+    """A signed, 30-minute, single-use link token for resetting this user's password."""
+    expire = datetime.now(tz=UTC) + timedelta(minutes=RESET_TOKEN_MINUTES)
+    payload = {"sub": user_id, "pfp": password_fingerprint(hashed_password), "exp": expire}
+    return jwt.encode(payload, _reset_key(), algorithm=settings.jwt_algorithm)
+
+
+def read_reset_token(token: str) -> tuple[str, str] | None:
+    """``(user_id, fingerprint)`` from a reset token, or ``None`` for an invalid or expired one."""
+    try:
+        payload = jwt.decode(token, _reset_key(), algorithms=[settings.jwt_algorithm])
+    except jwt.PyJWTError:
+        return None
+    user_id, fingerprint = payload.get("sub"), payload.get("pfp")
+    if not isinstance(user_id, str) or not isinstance(fingerprint, str):
+        return None
+    return user_id, fingerprint
+
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> dict[str, Any]:

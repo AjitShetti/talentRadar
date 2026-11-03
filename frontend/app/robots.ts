@@ -7,7 +7,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: [{
       userAgent: '*',
       allow: ['/', '/check', '/r/', '/hiring/'],
-      disallow: ['/dashboard', '/search', '/applications', '/interview', '/resume-studio', '/company-intel', '/agent', '/settings', '/onboarding', '/roles/'],
+      disallow: ['/dashboard', '/search', '/applications', '/interview', '/resume-studio', '/company-intel', '/agent', '/settings', '/onboarding', '/forgot-password', '/reset-password', '/unsubscribe', '/roles/'],
     }],
     sitemap: `${SITE_URL}/sitemap.xml`,
   }
