@@ -2492,6 +2492,8 @@ code,pre,kbd,.latex-editor,.editor-code,textarea.code{font-family:var(--font-mon
   .day-list li[data-routine] a{color:var(--ink)}
   .day-list li[data-past] a{color:var(--faint)}
   .day-list li[data-done] a{text-decoration:line-through}
+  /* Every page has this list on a phone: the routine shows only what is still ahead. Your day on the Overview has all of it. */
+  .day-list li[data-routine][data-past],.day-list li[data-routine][data-done]{display:none}
 }
 
 /* ── Overview: up next, then the journey. The page is lines on black, no cards ── */

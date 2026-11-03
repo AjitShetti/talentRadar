@@ -37,7 +37,8 @@ export default function Tour() {
   const close = useCallback(() => {
     setOpen(false)
     const owner = currentEmail()
-    if (!owner) return
+    // A replay closes on a tour already seen: nothing to record, and the stored routine keeps its read time.
+    if (!owner || routine?.tour_seen) return
     // Seen at once on the page, so nothing reopens it; the server's own answer settles it if it comes.
     if (routine) publishRoutine({ ...routine, tour_seen: true }, owner)
     api.routine.tourSeen()
@@ -130,7 +131,8 @@ function TourCard({ onClose }: { onClose: () => void }) {
   const cut = spotlight(frame.target) ?? { left: frame.width / 2, top: frame.height / 2, width: 0, height: 0 }
 
   return <>
-    <div className="tour-shield" aria-hidden="true" />
+    {/* A press on the dim does nothing, and must not take focus out of the card either. */}
+    <div className="tour-shield" aria-hidden="true" onMouseDown={e => e.preventDefault()} />
     <div className="tour-cut" data-none={frame.target ? undefined : 'true'} aria-hidden="true" style={cut} />
     <div
       ref={cardRef}
