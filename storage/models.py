@@ -1100,6 +1100,13 @@ class Profile(Base):
         Boolean, nullable=False, default=False, server_default="false"
     )
 
+    # The user's daily routine: {"blocks": [...], "done": {"day", "ids"}}, see domain/routine.py
+    routine: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    # When the first-run tour was finished or skipped; null means it has not been seen yet.
+    tour_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # Active resume reference
     active_resume_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),

@@ -267,6 +267,7 @@ from api.routers import (  # noqa: E402
     recommend,
     resumes,
     roles,
+    routine,
     search,
 )
 
@@ -289,6 +290,7 @@ app.include_router(agent.router, prefix="/api/v1")
 app.include_router(dashboard.router, prefix="/api/v1")
 app.include_router(events.router, prefix="/api/v1")
 app.include_router(practice.router, prefix="/api/v1")
+app.include_router(routine.router, prefix="/api/v1")
 
 
 # API documentation
