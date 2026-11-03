@@ -4,7 +4,7 @@ import {
   type Routine, type RoutineBlock,
 } from '../lib/routine'
 import {
-  clearDay, mergeMarks, onRoutine, publishRoutine, resetArrival, routineFor, routineIsFresh, routineSnapshot, tickLocally, type DayMark,
+  clearDay, mergeMarks, nextMark, onRoutine, publishRoutine, resetArrival, routineFor, routineIsFresh, routineSnapshot, tickLocally, type DayMark,
 } from '../lib/day-line'
 
 /**
@@ -245,4 +245,10 @@ test('clearing the day tells whoever is listening to the routine', () => {
   clearDay()
   stop()
   expect(told).toBe(1)
+})
+
+test('a block ticked off ahead of time is not what comes next', () => {
+  const marks = [mark('a', 600, { routine: true, done: true }), mark('b', 900, { routine: true })]
+  expect(nextMark(marks, 500)?.id).toBe('b')
+  expect(nextMark([mark('a', 600, { routine: true, done: true })], 500)).toBeNull()
 })

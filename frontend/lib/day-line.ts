@@ -55,8 +55,8 @@ export function marksFromCards(cards: BriefingCard[], nowMs: number): DayMark[] 
   return marks.sort((a, b) => a.at - b.at)
 }
 
-/** The next thing today, or null when nothing is left. */
-export const nextMark = (marks: DayMark[], now: number) => marks.find(mark => mark.at > now) ?? null
+/** The next thing today, or null when nothing is left. A routine block already ticked off is not next. */
+export const nextMark = (marks: DayMark[], now: number) => marks.find(mark => mark.at > now && !mark.done) ?? null
 
 export function untilLabel(minutes: number) {
   const hours = Math.floor(minutes / 60)
