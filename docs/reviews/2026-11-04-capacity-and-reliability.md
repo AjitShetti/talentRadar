@@ -29,7 +29,7 @@ While the loop is held, every other user waits, including on `/health`.
 
 ¹ Measured locally under a 0.1-CPU / 512 MB cgroup (§4.2). The emulation is calibrated by cold start: 36 s locally against the documented ~40 s.
 ² An "active" user makes about one API call every 20 s.
-³ Assumes 20% of DAU fall in the peak hour, a 10-minute session of about 15 API calls (one Overview, two searches, a few page reads), the loop kept at or below 50% busy, and no more than one login per user per week (JWTs last 7 days, `config/settings.py:182`).
+³ Assumes 20% of DAU fall in the peak hour, a 10-minute session of about 15 API calls (one Overview, two searches, a few page reads), the loop kept at or below 50% busy, and no more than one login per user per week (JWTs last 7 days, `config/settings.py:183`).
 
 **The live load test did not run.** This sandbox's network policy denies `talentradar-api.onrender.com`, so no request reached production (§4.1). Every number above comes from local measurements under emulated Render limits and from code reading. I ran nothing against the live API, and no number here stands in for one. §4.1 has the commands to run the polite live test yourself.
 
