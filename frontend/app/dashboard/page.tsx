@@ -8,35 +8,20 @@ import CopilotWorkspace from '@/components/CopilotWorkspace'
 import { useDay, useDayLit, useIstMinute } from '@/components/DayLine'
 import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
-import { ScoreBars } from '@/components/overview/Charts'
+import ApplyToday, { type SweepSummary } from '@/components/overview/ApplyToday'
+import type { InterviewInsights } from '@/components/overview/StrengthsAndGaps'
 import YourDay from '@/components/overview/YourDay'
-import { AgendaItem, api, Briefing, BriefingCard, currentEmail, JobMatch, OutreachHome, SkillsFocus } from '@/lib/api'
+import { AgendaItem, api, Briefing, BriefingCard, currentEmail, JobMatch, SkillsFocus } from '@/lib/api'
 import { arrivalPending, markForAction, nextMark, publishBriefing, setDayLit, untilLabel } from '@/lib/day-line'
 import { interviewPrepHref } from '@/lib/interview-prep'
 import { clock as istClock } from '@/lib/practice-time'
 import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
 
-type Dimension = { key: string; label: string; score: number; weakest: boolean }
-type TrackStat = { track: string; label: string; score: number; sessions: number }
-type TrendPoint = { label: string; score: number; date: string | null; completed: boolean }
-type InterviewInsights = { sessions_analyzed: number; questions_analyzed: number; average_score: number; delta: number; abandoned: number; trend: TrendPoint[]; dimensions: Dimension[]; weakest_dimension: { key: string; label: string; score: number; hint: string } | null; tracks: TrackStat[]; weakest_track: TrackStat | null; focus: string[] }
-
-/** What the last overnight sweep did — services/sweep.py::get_last_sweep(). */
-type Sweep = { finished_at: string | null; sources: string[]; boards: number; postings_read: number; postings_added: number }
-
-/** One ranked action. `why` is evidence, never encouragement. */
 /** What the Overview reads of today's outreach pack: companies still to review and messages ready. */
 type PackCounts = { companies: number; messages_ready: number }
 
+/** One ranked action. `why` is evidence, never encouragement. */
 type Action = { key: string; title: string; why: string; tags: { label: string; hot?: boolean }[]; cta: string; href: string }
-
-const clock = (iso: string | null) => {
-  if (!iso) return null
-  const at = new Date(iso)
-  return Number.isNaN(at.getTime()) ? null : at.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })
-}
-
-const sweepTime = (iso: string | null) => clock(iso) ?? '—'
 
 /** A number the server put in a briefing card's `meta`, or null when it is missing or not one. */
 const metaNumber = (card: BriefingCard, key: string): number | null => {
@@ -92,7 +77,7 @@ const todayTag = (card: BriefingCard) => card.tone === 'warning'
  *   9. the briefing's own next-best action;
  *  10. the week's event, then who the user met;
  *  11. the one company worth a note (the Outreach suggestion), only without a pack;
- *  12. the cheapest durable win (a first mock), then study, then apply;
+ *  12. the cheapest durable win (a first mock), then study;
  *  13. the one Practice suggestion (the weekly contest, else today's question).
  *
  * The agenda and the interview cards hold only times the user entered, so 1 and 4 can
@@ -108,15 +93,14 @@ const todayTag = (card: BriefingCard) => card.tone === 'warning'
  * it follows the follow-up and takes the suggestion's place. The week's event and the
  * people just met are time-bound, so they go ahead of the suggestion, which is a
  * nudge, not a commitment. Three at most - a fourth would make this a list to read
- * rather than a decision to act on.
+ * rather than a decision to act on. Last night's roles are not here: they have their
+ * own box above, "Apply today".
  */
 function buildActions(
   agenda: AgendaItem[],
   briefing: Briefing | null,
-  matches: JobMatch[] | null | undefined,
   interviews: InterviewInsights | null | undefined,
   focus: SkillsFocus | null | undefined,
-  applied: number,
   onboarded: boolean,
   pack: PackCounts | null = null,
 ): Action[] {
@@ -274,19 +258,6 @@ function buildActions(
     })
   }
 
-  if (matches && matches.length > 0 && out.length < 3) {
-    out.push({
-      key: 'apply',
-      title: "Open one of last night's roles",
-      why: applied === 0
-        ? `No applications yet. ${matches.length} posting${matches.length === 1 ? '' : 's'} came back from the overnight sweep — the tracker starts working the moment you send one.`
-        : `${matches.length} posting${matches.length === 1 ? '' : 's'} came back from the overnight sweep, matched against your target roles.`,
-      tags: [{ label: `${matches.length} waiting` }, { label: 'India · from the sweep' }],
-      cta: 'Read them',
-      href: '#sweep',
-    })
-  }
-
   // The one Practice suggestion (services/copilot.py): the weekly contest, else today's
   // problem, DSA or system design. A suggestion, not a commitment, so it only takes a slot nothing else wanted.
   // A take-home due within hours is a `practice_deadline` card and already led, above.
@@ -316,7 +287,6 @@ export default function Dashboard() {
   const [data, setData] = useState<Record<string, unknown> | null>(null)
   const [briefing, setBriefing] = useState<Briefing | null>(null)
   const [briefingFailed, setBriefingFailed] = useState(false)
-  const [outreach, setOutreach] = useState<OutreachHome | null>(null)
   const [pack, setPack] = useState<PackCounts | null>(null)
   const [error, setError] = useState('')
   const [copilotOpen, setCopilotOpen] = useState(false)
@@ -338,8 +308,6 @@ export default function Dashboard() {
   useEffect(() => {
     api.dashboard().then(setData).catch(err => setError(err instanceof Error ? err.message : 'Dashboard data is unavailable.'))
     loadBriefing()
-    // Who the user is talking to comes from Outreach; without it that tile says so rather than showing zeros.
-    api.outreach.home().then(setOutreach).catch(() => setOutreach(null))
     // The day's first read builds today's pack, so the action is there before the briefing knows of it.
     api.outreach.pack.get()
       .then(p => setPack({ companies: p.companies.filter(c => c.items.some(i => i.status === 'new')).length, messages_ready: p.counts.messages_ready }))
@@ -361,26 +329,21 @@ export default function Dashboard() {
   }
 
   const profile = data?.profile as { full_name?: string; onboarding_completed?: boolean; target_roles?: string[] | null } | undefined
-  const analytics = data?.analytics as Record<string, number> | undefined
   const skillsFocus = data?.skills_focus as SkillsFocus | null | undefined
   const interviews = data?.interviews as InterviewInsights | null | undefined
   const jobMatches = data?.job_matches as JobMatch[] | null | undefined
-  const sweep = data?.sweep as Sweep | null | undefined
+  const sweep = data?.sweep as SweepSummary | null | undefined
   const agenda = (data?.agenda as AgendaItem[] | undefined) || []
-  const stats = briefing?.stats
 
   const onboarded = Boolean(profile?.onboarding_completed)
-  const applied = stats?.applied ?? 0
   const interviewsToday = agenda.filter(item => item.days_away === 0).length
-  const actions = data ? buildActions(agenda, briefing, jobMatches, interviews, skillsFocus, applied, onboarded, pack) : []
+  const actions = data ? buildActions(agenda, briefing, interviews, skillsFocus, onboarded, pack) : []
 
   // Cards already promoted into Up next must not appear again below it.
   const usedCardIds = new Set(actions.map(a => a.key.replace(/^briefing-/, '')).filter(k => k !== ''))
   // Before onboarding, "Finish your profile" in Up next is the same ask as the briefing's setup card.
   const restBriefing = briefing ? { ...briefing, cards: briefing.cards.filter(c => !usedCardIds.has(c.id) && !(!onboarded && c.meta.action === 'complete_onboarding')) } : null
 
-  // With one target role every match was found for it, so a pill per row would repeat it.
-  const matchedRoles = new Set((jobMatches ?? []).map(job => job.matched_role).filter(Boolean))
   const first = profile?.full_name?.split(' ')[0]
   const headline = interviewsToday > 0
     ? `${interviewsToday} interview${interviewsToday === 1 ? '' : 's'} today. That is the whole plan.`
@@ -406,6 +369,9 @@ export default function Dashboard() {
       </header>
 
       {error && <p className="form-error">{error}</p>}
+
+      {/* ── what to apply for today: last night's sweep, as a stack to work through ── */}
+      {jobMatches && jobMatches.length > 0 && <ApplyToday matches={jobMatches} sweep={sweep} />}
 
       {/* ── what to do next: the reason the page exists ─────────────────── */}
       {(data || !error) && <section className="ov2-section" aria-labelledby="ov2-next">
@@ -442,57 +408,6 @@ export default function Dashboard() {
       {/* ── the routine, to tick off: it is not here until the day line has read it ── */}
       <YourDay />
 
-      {/* ── your journey, as a ledger ───────────────────────────────────── */}
-      {data && <section className="ov2-section" aria-labelledby="ov2-journey">
-        <div className="ov2-head"><h2 id="ov2-journey">Your journey so far</h2></div>
-        <div className="ov2-ledger">
-          <Link href="/applications">
-            <span>Applications</span>
-            <b><FlapText value={analytics?.total_applications ?? 0} /></b>
-            <small>tracked</small>
-          </Link>
-          <Link href="/outreach">
-            <span>People</span>
-            {outreach ? <OutreachLedger home={outreach} /> : <><b>—</b><small>Start a conversation with someone at a company you like.</small></>}
-          </Link>
-          <Link href="/applications">
-            <span>Interviews</span>
-            <b><FlapText value={(analytics?.interview ?? 0) + (analytics?.offers ?? 0)} /></b>
-            <small>{analytics?.interview ?? 0} in progress · {analytics?.offers ?? 0} cracked · {agenda.length} coming up</small>
-          </Link>
-          <Link href="/interview">
-            <span>Mock interviews</span>
-            {interviews && interviews.sessions_analyzed > 0
-              ? <>
-                <b><FlapText value={Math.round(interviews.average_score)} />{interviews.delta !== 0 && <em data-up={interviews.delta > 0 ? 'true' : undefined}>{interviews.delta > 0 ? '+' : ''}{Math.round(interviews.delta)}</em>}</b>
-                <small>avg score · {interviews.sessions_analyzed} session{interviews.sessions_analyzed === 1 ? '' : 's'} · {interviews.questions_analyzed} answers</small>
-              </>
-              : <><b>—</b><small>No sessions yet. One mock sets your baseline.</small></>}
-          </Link>
-        </div>
-      </section>}
-
-      {/* ── strengths, gaps and what the mocks said ─────────────────────── */}
-      {data && <StrengthsAndGaps interviews={interviews} focus={skillsFocus} />}
-
-      {/* ── what the sweep brought back ────────────────────────────────── */}
-      {data && jobMatches && jobMatches.length > 0 && <section className="ov2-section" id="sweep" aria-labelledby="ov2-sweep">
-        <div className="ov2-head"><h2 id="ov2-sweep">Found while you were away</h2><span>Read against your resume{sweep?.finished_at ? ` · ${sweepTime(sweep.finished_at)}` : ''}</span></div>
-        <div className="ov2-card">
-          {jobMatches.map(job => <Link className="ov2-role" key={job.id} href={`/roles/${encodeURIComponent(job.id)}`}>
-            <div>
-              <strong>{job.title}</strong>
-              <p>{job.company || 'Company not listed'} · {job.location || (job.is_remote ? 'Remote' : 'Location not listed')}{job.salary_raw ? ` · ${job.salary_raw}` : ''}</p>
-            </div>
-            {matchedRoles.size > 1 && <span className="ov2-pill" title="The target role this was found for">{job.matched_role}</span>}
-          </Link>)}
-          <div className="ov2-list-foot">
-            <span>{sweep ? `${sweep.boards} board${sweep.boards === 1 ? '' : 's'} · ${sweep.postings_read} postings read · ${jobMatches.length} kept` : `${jobMatches.length} kept for your target roles`}</span>
-            <Link className="ov-link" href="/search">Search for more</Link>
-          </div>
-        </div>
-      </section>}
-
       {/* Anything the briefing flagged that did not make Up next. */}
       {(restBriefing?.cards.length || briefingFailed) ? <section className="ov2-section">
         <div className="ov2-head"><h2>Also on your radar</h2></div>
@@ -511,55 +426,6 @@ function NextOnTheLine() {
   const next = now === null ? null : nextMark(marks, now)
   if (now === null || !next) return null
   return <p className="ov2-quiet"><Link className="ov2-when" href={next.href}>{next.label} in <b>{untilLabel(next.at - now)}</b></Link></p>
-}
-
-/** The people cell: who is talking, and the referrals and conversations behind it. */
-function OutreachLedger({ home }: { home: OutreachHome }) {
-  const talking = home.threads.filter(thread => thread.stage === 'replied').length
-  const referrals = home.threads.filter(thread => thread.outcome === 'referred').length
-  return <>
-    <b><FlapText value={talking} /></b>
-    <small>talking to you · {referrals} referral{referrals === 1 ? '' : 's'} · {home.conversations_started} started</small>
-  </>
-}
-
-/** Where the mocks say the user is strong, where they are weak, and what to do about it. */
-function StrengthsAndGaps({ interviews, focus }: { interviews: InterviewInsights | null | undefined; focus: SkillsFocus | null | undefined }) {
-  const dims = [...(interviews?.dimensions ?? [])].sort((a, b) => b.score - a.score)
-  const strong = dims.slice(0, 2).filter(d => d.score >= 60)
-  const weak = dims.length > 2 ? dims.slice(-2).reverse() : dims.filter(d => d.weakest)
-  const tips = [
-    ...(interviews?.weakest_dimension?.hint ? [interviews.weakest_dimension.hint] : []),
-    ...(interviews?.focus ?? []),
-  ].slice(0, 3)
-  const gaps = focus?.items?.slice(0, 3) ?? []
-  if (dims.length === 0 && gaps.length === 0) return null
-
-  return <section className="ov2-section" aria-labelledby="ov2-strengths">
-    <div className="ov2-head"><h2 id="ov2-strengths">Strengths and gaps</h2>{interviews && interviews.sessions_analyzed > 0 && <span>From {interviews.questions_analyzed} mock answers</span>}</div>
-    <div className="ov2-split">
-      {dims.length > 0 && <div className="ov2-card ov2-pad">
-        <h3 className="ov2-sub">How your answers score</h3>
-        <ScoreBars rows={dims.map(d => ({ key: d.key, label: d.label, score: d.score, tone: strong.some(s => s.key === d.key) ? 'good' : weak.some(w => w.key === d.key) ? 'weak' : 'plain' }))} />
-        <div className="ov2-chips">
-          {strong.map(d => <span key={d.key} data-tone="good">Strong: {d.label.toLowerCase()}</span>)}
-          {weak.map(d => <span key={d.key} data-tone="weak">Work on: {d.label.toLowerCase()}</span>)}
-        </div>
-      </div>}
-      <div className="ov2-card ov2-pad">
-        <h3 className="ov2-sub">How to improve</h3>
-        <ul className="ov2-tips">
-          {tips.map(tip => <li key={tip}>{tip}</li>)}
-          {gaps.map(gap => <li key={gap.title}><b>{focus?.kind === 'resume_improvements' ? gap.title : `Learn ${gap.title}`}.</b> {gap.detail}</li>)}
-          {tips.length === 0 && gaps.length === 0 && <li>Run a mock interview and we&apos;ll tell you exactly what to work on.</li>}
-        </ul>
-        <div className="ov2-tip-actions">
-          <Link className="outline-button" href="/interview">Practise an answer</Link>
-          {gaps.length > 0 && <Link className="text-button" href={focus?.kind === 'resume_improvements' ? '/resume-studio' : '/agent'}>{focus?.kind === 'resume_improvements' ? 'Fix it in Resume studio' : 'Build a study plan'}</Link>}
-        </div>
-      </div>
-    </div>
-  </section>
 }
 
 /** An absolute http(s) URL opens in a new tab with the safe link props; an in-app path stays a Link. */

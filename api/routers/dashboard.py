@@ -33,7 +33,11 @@ from api.auth import get_current_user
 from services.applications import day_agenda, recent_activity, tracker_analytics
 from services.career import target_role_readiness
 from services.interviews import interview_insights
-from services.job_matching import compute_daily_matches_for_user, get_daily_matches_for_user
+from services.job_matching import (
+    compute_daily_matches_for_user,
+    get_daily_matches_for_user,
+    with_tracker_state,
+)
 from services.profiles import get_profile
 from services.sweep import get_last_sweep
 
@@ -110,6 +114,9 @@ async def overview(user_id: CurrentUserId) -> dict[str, Any]:
             # every single dashboard load.
             _mark_matches_attempted(user_id)
             job_matches = await compute_daily_matches_for_user(user_id=user_id)
+        if job_matches:
+            # The "Apply today" stack counts what is applied and stacks the rest.
+            job_matches = await with_tracker_state(user_id=user_id, matches=job_matches)
     except Exception:
         logger.warning("Daily job matches unavailable for user %s", user_id, exc_info=True)
         job_matches = None

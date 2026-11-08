@@ -2,10 +2,13 @@
 services/job_matching.py
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 Daily job matches: search the user's target roles (Profile.target_roles)
-against already-ingested postings and cache up to 3 picks per day.
+against already-ingested postings and cache up to 5 picks per day. They are
+the Overview's "Apply today" stack, so a role already in the user's tracker is
+never picked again.
 
-    compute_daily_matches_for_user()   — search + persist today's top 3 for one user
-    get_daily_matches_for_user()       — read today's cached top 3 (None if not run yet)
+    compute_daily_matches_for_user()   — search + persist today's top 5 for one user
+    get_daily_matches_for_user()       — read today's cached top 5 (None if not run yet)
+    with_tracker_state()               — say which of them the user has applied to
     run_daily_matching_for_all_users() — batch entry point for the daily scheduler
 """
 
@@ -23,14 +26,15 @@ from services.base import parse_uuid
 from services.jobs import search_jobs
 from services.profiles import get_profile
 from storage.database import AsyncSessionLocal
-from storage.models import DailyJobMatch, Job, Profile
+from storage.models import ApplicationStatus, DailyJobMatch, Job, JobApplication, Profile
 
 logger = logging.getLogger(__name__)
 
-#: How many candidates to pull per target role before ranking/deduping.
-_SEARCH_LIMIT_PER_ROLE = 5
-#: How many matches surface on the dashboard.
-_TOP_N = 3
+#: How many candidates to pull per target role before ranking/deduping. Above
+#: _TOP_N so that dropping roles already in the tracker still leaves enough.
+_SEARCH_LIMIT_PER_ROLE = 8
+#: How many matches surface on the dashboard's "Apply today" stack.
+_TOP_N = 5
 #: Cap on how many of a user's target roles get searched — keeps the daily
 #: batch bounded even if someone lists many roles.
 _MAX_ROLES_SEARCHED = 3
@@ -69,6 +73,9 @@ async def compute_daily_matches_for_user(
     if not user_uuid:
         return []
 
+    # A role the user already tracks, saved or applied, is not today's news.
+    tracked = await _tracked_job_ids(user_uuid, session)
+
     pooled: dict[str, dict[str, Any]] = {}
     for role in target_roles[:_MAX_ROLES_SEARCHED]:
         try:
@@ -80,7 +87,7 @@ async def compute_daily_matches_for_user(
             continue
         for job in result.get("jobs", []):
             job_id = job.get("id")
-            if job_id and job_id not in pooled:
+            if job_id and job_id not in pooled and job_id not in tracked:
                 pooled[job_id] = {**job, "matched_role": role}
 
     ranked = sorted(pooled.values(), key=lambda j: j.get("posted_at") or "", reverse=True)[:_TOP_N]
@@ -152,6 +159,56 @@ async def get_daily_matches_for_user(
     finally:
         if own_session:
             await session.close()
+
+
+async def _tracker_rows(
+    user_uuid: Any, session: AsyncSession | None
+) -> list[tuple[Any, Any, ApplicationStatus]]:
+    """(job_id, application id, status) for every tracker row of the user's that has a posting."""
+    own_session = session is None
+    session = session or AsyncSessionLocal()
+    try:
+        result = await session.execute(
+            select(JobApplication.job_id, JobApplication.id, JobApplication.status).where(
+                JobApplication.user_id == user_uuid, JobApplication.job_id.is_not(None)
+            )
+        )
+        return [(row[0], row[1], row[2]) for row in result.all()]
+    finally:
+        if own_session:
+            await session.close()
+
+
+async def _tracked_job_ids(user_uuid: Any, session: AsyncSession | None) -> set[str]:
+    return {str(job_id) for job_id, _, _ in await _tracker_rows(user_uuid, session)}
+
+
+async def with_tracker_state(
+    *, user_id: str, matches: list[dict[str, Any]], session: AsyncSession | None = None
+) -> list[dict[str, Any]]:
+    """
+    Today's matches, each with ``application_id`` (its tracker row, or None) and
+    ``applied`` (the row has moved past "saved"). The Overview counts the applied
+    ones and stacks the rest; once all are applied it shows nothing.
+    """
+    user_uuid = parse_uuid(user_id)
+    if not user_uuid or not matches:
+        return matches
+    rows = {
+        str(job_id): (app_id, status)
+        for job_id, app_id, status in await _tracker_rows(user_uuid, session)
+    }
+    out: list[dict[str, Any]] = []
+    for match in matches:
+        row = rows.get(str(match.get("id")))
+        out.append(
+            {
+                **match,
+                "application_id": str(row[0]) if row else None,
+                "applied": row is not None and row[1] != ApplicationStatus.SAVED,
+            }
+        )
+    return out
 
 
 async def run_daily_matching_for_all_users() -> None:

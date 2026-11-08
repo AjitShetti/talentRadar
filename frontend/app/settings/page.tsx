@@ -3,6 +3,7 @@
 import { ChangeEvent, FormEvent, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import AppShell from '@/components/AppShell'
+import Journey from '@/components/overview/Journey'
 import RequireAuth from '@/components/RequireAuth'
 import RoutineEditor from '@/components/RoutineEditor'
 import Segmented from '@/components/Segmented'
@@ -135,6 +136,8 @@ export default function SettingsPage() {
       </div>
       <p className="ov2-lead">These pre-fill your search. Add a resume and the Overview shows what&apos;s missing.</p>
     </header>
+
+    <div className="settings-journey"><Journey /></div>
     <form className="card-form settings-form" onSubmit={save}>
       <div className="field-group">
         <span>What brings you here</span>

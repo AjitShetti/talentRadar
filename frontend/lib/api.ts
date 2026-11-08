@@ -23,7 +23,8 @@ export type DossierReadiness = { sessions: number; last_score: number | null; la
 export type Dossier = { role: DossierRole; liveness: Liveness | null; fit: DossierFit | null; way_in: DossierWayIn | null; readiness: DossierReadiness | null }
 // One of the dashboard's daily top-3 picks for a Profile.target_roles entry —
 // computed by the APScheduler job in api/main.py (services/job_matching.py).
-export type JobMatch = { id: string; title: string; company: string; location: string; is_remote: boolean; skills: string[]; salary_raw?: string | null; source_url?: string | null; posted_at?: string | null; matched_role: string }
+/** One of today's matches. `application_id` is its tracker row, if any; `applied` says that row is past "saved". */
+export type JobMatch = { id: string; title: string; company: string; location: string; is_remote: boolean; skills: string[]; salary_raw?: string | null; source_url?: string | null; posted_at?: string | null; matched_role: string; application_id?: string | null; applied?: boolean }
 export type Application = { id: string; job_id?: string | null; status: string; notes?: string | null; applied_at?: string | null; interview_at?: string | null; created_at: string; job?: Job | null; role_title?: string | null; company_name?: string | null; posting_url?: string | null }
 // What a semantic search did about going out to the job boards. Present so a
 // thinner-than-usual result set is explainable in the UI rather than silent:

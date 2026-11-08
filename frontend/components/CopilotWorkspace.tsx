@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { FormEvent, useEffect, useRef, useState } from 'react'
+import CopilotStrengths from '@/components/overview/StrengthsAndGaps'
 import { AgentMemory, api, ChatJob, LearningPlan, LearningTask } from '@/lib/api'
 import { isTaskRunning, runTask, usePersistentState, useTaskRunning } from '@/lib/persistent-state'
 import { EXTERNAL_LINK_PROPS, externalHref } from '@/lib/safe-url'
@@ -276,5 +277,8 @@ export default function CopilotWorkspace({ acceptUrlQuestion = false }: { accept
         </section>
       </aside>
     </div>
+
+    {/* What the mocks say, for the copilot to talk through: it moved here from the Overview. */}
+    <div className="cp-strengths"><CopilotStrengths /></div>
   </>
 }
