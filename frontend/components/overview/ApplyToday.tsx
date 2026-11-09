@@ -101,7 +101,6 @@ export default function ApplyToday({ matches, sweep }: { matches: JobMatch[]; sw
     <div className="at-brief">
       <span className="at-eyebrow">Apply today</span>
       <h2 id="at-title">Apply for these jobs</h2>
-      <p>Last night&apos;s sweep, read against your resume. Open a posting, send your application, then mark it applied and the next one comes up.</p>
       <div className="at-progress">
         <div className="at-segs" style={{ '--n': total } as React.CSSProperties} aria-hidden="true">
           {matches.map((m, i) => <i key={m.id} data-on={i < done ? 'true' : undefined} />)}

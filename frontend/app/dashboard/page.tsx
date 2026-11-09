@@ -336,7 +336,6 @@ export default function Dashboard() {
   const agenda = (data?.agenda as AgendaItem[] | undefined) || []
 
   const onboarded = Boolean(profile?.onboarding_completed)
-  const interviewsToday = agenda.filter(item => item.days_away === 0).length
   const actions = data ? buildActions(agenda, briefing, interviews, skillsFocus, onboarded, pack) : []
 
   // Cards already promoted into Up next must not appear again below it.
@@ -345,9 +344,6 @@ export default function Dashboard() {
   const restBriefing = briefing ? { ...briefing, cards: briefing.cards.filter(c => !usedCardIds.has(c.id) && !(!onboarded && c.meta.action === 'complete_onboarding')) } : null
 
   const first = profile?.full_name?.split(' ')[0]
-  const headline = interviewsToday > 0
-    ? `${interviewsToday} interview${interviewsToday === 1 ? '' : 's'} today. That is the whole plan.`
-    : briefing?.headline || 'Here is where things stand, and what to do next.'
 
   return <RequireAuth><AppShell>
     <div className="ov2">
@@ -356,16 +352,7 @@ export default function Dashboard() {
           <h1>{greeting()}{first ? `, ${first}` : ''}.</h1>
           <span className="ov2-date">{new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</span>
         </div>
-        <p className="ov2-lead">{headline}</p>
         <NextOnTheLine />
-        <button
-          ref={fabRef}
-          className="outline-button ov2-copilot"
-          type="button"
-          aria-expanded={copilotOpen}
-          aria-controls="ov-copilot"
-          onClick={() => setCopilotOpen(open => !open)}
-        >Ask copilot</button>
       </header>
 
       {error && <p className="form-error">{error}</p>}
@@ -414,6 +401,15 @@ export default function Dashboard() {
         <BriefingFeed briefing={restBriefing} failed={briefingFailed} onDismiss={dismiss} />
       </section> : null}
     </div>
+
+    <button
+      ref={fabRef}
+      className="outline-button ov2-copilot"
+      type="button"
+      aria-expanded={copilotOpen}
+      aria-controls="ov-copilot"
+      onClick={() => setCopilotOpen(open => !open)}
+    >Ask copilot</button>
 
     <CopilotDrawer open={copilotOpen} onClose={() => { setCopilotOpen(false); fabRef.current?.focus() }} />
   </AppShell></RequireAuth>

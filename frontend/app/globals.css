@@ -2456,7 +2456,9 @@ code,pre,kbd,.latex-editor,.editor-code,textarea.code{font-family:var(--font-mon
 .day-head>.outline-button,.day-head>.pr-ghost{flex:none}
 .day-note{margin:12px 0 0;font:500 14px var(--font-text);color:var(--faint);font-variant-numeric:tabular-nums}
 .ov2-lead a{color:var(--accent-dark)}
-.ov2-copilot{margin-top:24px}
+/* Ask copilot: a pill fixed at the bottom right, under the drawer's scrim (65) and the nav (60). */
+.ov2-copilot{position:fixed;right:24px;bottom:24px;z-index:55;padding:12px 20px;box-shadow:0 10px 28px rgb(0 0 0 / calc(.45 * var(--shade)))}
+@media(max-width:640px){.ov2-copilot{right:16px;bottom:16px}}
 .ov2-date{flex:none;font:500 14px var(--font-text);color:var(--faint);font-variant-numeric:tabular-nums}
 .ov2-lead{margin:14px 0 0;max-width:640px;font-size:19px;line-height:1.42;color:var(--muted)}
 .ov2-when{margin-top:16px;font:500 14px var(--font-text);font-variant-numeric:tabular-nums}
@@ -2533,7 +2535,6 @@ code,pre,kbd,.latex-editor,.editor-code,textarea.code{font-family:var(--font-mon
 .at-brief{display:flex;flex-direction:column;gap:14px;padding:26px;border-radius:18px;background:var(--surface-2);border:1px solid var(--line-soft);min-width:0}
 .at-eyebrow{font:600 11.5px var(--font-text);letter-spacing:.08em;text-transform:uppercase;color:var(--warm-ink)}
 .at-brief h2{margin:0;font:700 30px/1.08 var(--font-display);letter-spacing:-.03em;text-wrap:balance}
-.at-brief p{margin:0;max-width:42ch;font-size:14.5px;line-height:1.5;color:var(--ink-2)}
 .at-progress{display:flex;flex-direction:column;gap:8px;margin-top:auto;padding-top:8px}
 .at-segs{display:grid;grid-template-columns:repeat(var(--n),1fr);gap:4px}
 .at-segs i{height:4px;border-radius:4px;background:var(--surface-3);transition:background .4s var(--ease-day)}
