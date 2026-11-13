@@ -2456,7 +2456,9 @@ code,pre,kbd,.latex-editor,.editor-code,textarea.code{font-family:var(--font-mon
 .day-head>.outline-button,.day-head>.pr-ghost{flex:none}
 .day-note{margin:12px 0 0;font:500 14px var(--font-text);color:var(--faint);font-variant-numeric:tabular-nums}
 .ov2-lead a{color:var(--accent-dark)}
-.ov2-copilot{margin-top:24px}
+/* Ask copilot: a pill fixed at the bottom right, under the drawer's scrim (65) and the nav (60). */
+.ov2-copilot{position:fixed;right:24px;bottom:24px;z-index:55;padding:12px 20px;box-shadow:0 10px 28px rgb(0 0 0 / calc(.45 * var(--shade)))}
+@media(max-width:640px){.ov2-copilot{right:16px;bottom:16px}}
 .ov2-date{flex:none;font:500 14px var(--font-text);color:var(--faint);font-variant-numeric:tabular-nums}
 .ov2-lead{margin:14px 0 0;max-width:640px;font-size:19px;line-height:1.42;color:var(--muted)}
 .ov2-when{margin-top:16px;font:500 14px var(--font-text);font-variant-numeric:tabular-nums}
@@ -2525,6 +2527,51 @@ code,pre,kbd,.latex-editor,.editor-code,textarea.code{font-family:var(--font-mon
 .ov2-role>div{min-width:0}
 .ov2-pill{font-size:13px;color:var(--faint);white-space:nowrap}
 .ov2-list-foot{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px 0 0;font-size:13px;color:var(--faint)}
+
+/* ── Apply today (components/overview/ApplyToday.tsx): the brief on the left, today's roles as a stack on the right.
+   The top card is the one to apply to; the two behind it show only as plates. "Show all" fans them into a list. ── */
+.at{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);align-items:start;gap:28px;padding:28px;border-radius:24px;background:var(--surface);border:1px solid var(--line);transition:opacity .38s var(--ease-day),transform .38s var(--ease-day)}
+.at[data-closing]{opacity:0;transform:translateY(-12px) scale(.985)}
+.at-brief{display:flex;flex-direction:column;gap:14px;padding:26px;border-radius:18px;background:var(--surface-2);border:1px solid var(--line-soft);min-width:0}
+.at-eyebrow{font:600 11.5px var(--font-text);letter-spacing:.08em;text-transform:uppercase;color:var(--warm-ink)}
+.at-brief h2{margin:0;font:700 30px/1.08 var(--font-display);letter-spacing:-.03em;text-wrap:balance}
+.at-progress{display:flex;flex-direction:column;gap:8px;margin-top:auto;padding-top:8px}
+.at-segs{display:grid;grid-template-columns:repeat(var(--n),1fr);gap:4px}
+.at-segs i{height:4px;border-radius:4px;background:var(--surface-3);transition:background .4s var(--ease-day)}
+.at-segs i[data-on]{background:var(--accent)}
+.at-progress small{font-size:12.5px;color:var(--faint);font-variant-numeric:tabular-nums}
+.at-progress b{color:var(--ink);font-weight:600}
+.at-sweep{padding-top:12px;border-top:1px solid var(--line-soft);font-size:12px;color:var(--faint);font-variant-numeric:tabular-nums}
+.at-col{display:flex;flex-direction:column;align-items:center;gap:14px;min-width:0}
+.at-stack{position:relative;width:100%;transition:height .5s var(--ease-day)}
+.at-stack:not([data-open]){cursor:pointer}
+.at-job{position:absolute;inset:0 0 auto;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:16px;min-height:88px;padding:14px 16px 14px 14px;border-radius:20px;background:var(--surface-2);border:1px solid var(--line);box-shadow:0 calc(14px * var(--shade)) calc(30px * var(--shade)) rgb(0 0 0 / calc(.4 * var(--shade)));transform-origin:50% 0;transition:transform .55s var(--ease-day),opacity .38s var(--ease-day),background .38s var(--ease-day);cursor:default}
+.at-job>*{transition:opacity .25s var(--ease-day)}
+.at-job[data-depth]{background:var(--surface-3);box-shadow:none;pointer-events:none}
+.at-job[data-depth]>*{opacity:0}
+.at-job[data-hidden]{opacity:0;pointer-events:none}
+.at-job[data-leaving]{opacity:0;transform:translateY(-16px) scale(.97);pointer-events:none}
+.at-mono{display:grid;place-items:center;width:56px;height:56px;border-radius:15px;background:var(--surface-3);font:600 15px var(--font-display);color:var(--ink-2);text-transform:capitalize}
+.at-body{min-width:0}
+.at-body h3{margin:0;font:600 16px/1.25 var(--font-display);letter-spacing:-.015em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.at-body h3 a{color:var(--ink)}
+.at-body h3 a:hover{color:var(--accent-dark)}
+.at-body p{margin:3px 0 0;font-size:13px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.at-acts{display:flex;align-items:center;gap:14px}
+.at-acts .text-button{font-size:13px;white-space:nowrap}
+.at-acts .primary-button,.at-acts .outline-button{padding:9px 14px;border-radius:999px;font-size:13px;white-space:nowrap}
+.at-toggle{display:inline-flex;align-items:center;gap:8px;padding:9px 20px;border-radius:999px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink-2);font:500 13.5px var(--font-text)}
+.at-toggle .caret{transition:transform .35s var(--ease-day)}
+.at-toggle[aria-expanded="true"] .caret{transform:rotate(180deg)}
+.at-col .form-error{align-self:stretch;margin:0}
+@media(max-width:900px){.at{grid-template-columns:1fr}}
+@media(max-width:560px){.at{padding:16px;gap:18px}.at-brief{padding:20px}.at-job{grid-template-columns:auto minmax(0,1fr)}.at-acts{grid-column:1/-1;justify-content:flex-end}.at-mono{width:44px;height:44px;border-radius:12px;font-size:13px}}
+@media(prefers-reduced-motion:reduce){.at,.at-stack,.at-job,.at-job>*,.at-segs i,.at-toggle .caret{transition:none}}
+/* The journey on Profile & goals, and strengths and gaps under the copilot (both moved off the Overview). */
+.settings-journey{margin:8px 0 32px}
+.settings-journey .ov2-ledger{grid-template-columns:repeat(2,minmax(0,1fr))}
+.cp-strengths:not(:empty){margin-top:40px}
+.ov-drawer-body .ov2-split{grid-template-columns:1fr;gap:28px}
 
 /* the floating copilot button */
 /* The drawer is titled "Ask your copilot" already; the workspace heading stays for screen readers only. */
@@ -2693,6 +2740,32 @@ code,pre,kbd,.latex-editor,.editor-code,textarea.code{font-family:var(--font-mon
 .pr-tile span[data-tone="design"]{color:var(--muted)}
 .pr-tile b{display:block;margin-top:3px;font:600 14px var(--font-text);font-variant-numeric:tabular-nums}
 .pr-tile b small{color:var(--faint);font-weight:400}
+/* Mock interview bands: state colours, as a score is a state. */
+.pr-ring-arc[data-tone="strong"]{stroke:var(--success)}
+.pr-ring-arc[data-tone="fair"]{stroke:var(--warning)}
+.pr-ring-arc[data-tone="weak"]{stroke:var(--danger)}
+.pr-tile span[data-tone="strong"]{color:var(--success)}
+.pr-tile span[data-tone="fair"]{color:var(--warning)}
+.pr-tile span[data-tone="weak"]{color:var(--danger)}
+
+/* ── Your year (components/overview/YourYear.tsx): Practice's graph, counting problems, applications and mock interviews.
+   Pointing at a lens shows that kind alone and a press keeps it; pointing at a day reads all three under the graph. ── */
+.ya-lenses{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px}
+.ya-lens{display:flex;align-items:baseline;gap:8px;padding:8px 14px;border:1px solid transparent;border-radius:var(--r-pill);background:rgb(var(--hi) / .05);color:var(--muted);font:500 13px var(--font-text);cursor:pointer;transition:background .2s var(--ease-day),color .2s var(--ease-day),border-color .2s var(--ease-day)}
+.ya-lens b{font:700 16px var(--font-label);color:var(--ink);font-variant-numeric:tabular-nums}
+.ya-lens:hover,.ya-lens[data-peek]{background:rgb(var(--hi) / .09);color:var(--ink)}
+.ya-lens[aria-pressed="true"]{border-color:var(--accent);color:var(--ink)}
+.ya-lens:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.ya .pr-heat i{transition:background .25s var(--ease-day)}
+.ya .pr-heat i[data-on]{box-shadow:inset 0 0 0 1.5px var(--ink)}
+.ya-foot{display:flex;justify-content:space-between;align-items:center;gap:12px 16px;flex-wrap:wrap;margin-top:4px}
+.ya-foot .pr-heat-legend{margin-top:0}
+.ya-day{display:flex;flex-wrap:wrap;gap:4px 16px;margin:0;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.ya-day b{color:var(--ink);font-weight:600}
+.ya-day span{transition:opacity .2s var(--ease-day)}
+.ya-day span[data-dim]{opacity:.4}
+.ya-meters{margin-top:14px}
+.ya-meters>div{display:grid;min-width:0}
 .pr-topics{display:grid;gap:9px;margin-top:12px}
 .pr-topic{display:grid;grid-template-columns:128px minmax(0,1fr) 30px;gap:10px;align-items:center;font-size:13px}
 .pr-topic span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink-2)}

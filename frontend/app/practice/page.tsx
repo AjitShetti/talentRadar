@@ -3,7 +3,6 @@
 import { FormEvent, useEffect, useState } from 'react'
 import AppShell from '@/components/AppShell'
 import PrepTabs from '@/components/PrepTabs'
-import ActivityGraph from '@/components/practice/ActivityGraph'
 import ContestSection from '@/components/practice/ContestSection'
 import SolvedSummary from '@/components/practice/SolvedSummary'
 import StandingCard from '@/components/practice/StandingCard'
@@ -140,7 +139,6 @@ export default function PracticePage() {
         <section className="pr-section pr-stack" aria-label="Your progress">
           {errors.history && <p className="form-error" role="alert">{errors.history}</p>}
           {history && <>
-            <ActivityGraph history={history} />
             <div className="pr-duo">
               <SolvedSummary history={history} />
               <TopicBars history={history} />

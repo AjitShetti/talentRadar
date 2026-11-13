@@ -8,7 +8,7 @@ import type { ChallengesOverview, PracticeDayCell, PracticeHistory } from './api
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 /** A week of the graph, Monday first. `null` pads a week the window starts or ends inside. */
-export type HeatColumn = Array<PracticeDayCell | null>
+export type HeatColumn<T extends { day: string } = PracticeDayCell> = Array<T | null>
 
 /** Easy lightest; medium and system design middle; hard and a contest entry darkest. */
 export function heatLevel(day: PracticeDayCell): 0 | 1 | 2 | 3 {
@@ -20,18 +20,18 @@ export function heatLevel(day: PracticeDayCell): 0 | 1 | 2 | 3 {
 }
 
 /** The days as Monday-first weeks of seven, padded with `null` at both ends. */
-export function heatColumns(days: PracticeDayCell[]): HeatColumn[] {
+export function heatColumns<T extends { day: string }>(days: T[]): HeatColumn<T>[] {
   if (!days.length) return []
   const lead = (new Date(`${days[0].day}T00:00:00Z`).getUTCDay() + 6) % 7
-  const cells: HeatColumn = [...Array.from({ length: lead }, () => null), ...days]
+  const cells: HeatColumn<T> = [...Array.from({ length: lead }, () => null), ...days]
   while (cells.length % 7) cells.push(null)
-  const columns: HeatColumn[] = []
+  const columns: HeatColumn<T>[] = []
   for (let i = 0; i < cells.length; i += 7) columns.push(cells.slice(i, i + 7))
   return columns
 }
 
 /** A label over the first column that holds the first of a month. */
-export function monthMarks(days: PracticeDayCell[]): Array<{ label: string; leftPercent: number }> {
+export function monthMarks(days: Array<{ day: string }>): Array<{ label: string; leftPercent: number }> {
   const columns = heatColumns(days)
   const marks: Array<{ label: string; leftPercent: number }> = []
   columns.forEach((column, index) => {

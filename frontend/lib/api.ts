@@ -23,7 +23,8 @@ export type DossierReadiness = { sessions: number; last_score: number | null; la
 export type Dossier = { role: DossierRole; liveness: Liveness | null; fit: DossierFit | null; way_in: DossierWayIn | null; readiness: DossierReadiness | null }
 // One of the dashboard's daily top-3 picks for a Profile.target_roles entry —
 // computed by the APScheduler job in api/main.py (services/job_matching.py).
-export type JobMatch = { id: string; title: string; company: string; location: string; is_remote: boolean; skills: string[]; salary_raw?: string | null; source_url?: string | null; posted_at?: string | null; matched_role: string }
+/** One of today's matches. `application_id` is its tracker row, if any; `applied` says that row is past "saved". */
+export type JobMatch = { id: string; title: string; company: string; location: string; is_remote: boolean; skills: string[]; salary_raw?: string | null; source_url?: string | null; posted_at?: string | null; matched_role: string; application_id?: string | null; applied?: boolean }
 export type Application = { id: string; job_id?: string | null; status: string; notes?: string | null; applied_at?: string | null; interview_at?: string | null; created_at: string; job?: Job | null; role_title?: string | null; company_name?: string | null; posting_url?: string | null }
 // What a semantic search did about going out to the job boards. Present so a
 // thinner-than-usual result set is explainable in the UI rather than silent:
@@ -206,6 +207,10 @@ export type OverallBoard = { window_challenges: number; rows: Array<{ rank: numb
 export type DesignFeedback = { scores: Record<string, number>; notes: Record<string, string>; work_on_next: string; total: number; at: string }
 // A system design problem and the one answer its URL means. feedback_problem says why no result was made: busy (try again soon) or limit (today's are used up).
 export type DesignPage = { problem: { slug: string; title: string; minutes: number; topics: string[]; summary: string; context: string[]; must_handle: string[]; show_in_answer: string[] }; day: string | null; answer: { elements: unknown[] | null; reasoning: string; saved_at: string } | null; editable: boolean; done: boolean; last_answer_day: string | null; feedback: DesignFeedback | null; feedback_problem: 'busy' | 'limit' | null }
+// The Overview's year: per IST day, problems solved, applications sent and mock interviews finished; the two meters read everything.
+export type ActivityKind = 'problems' | 'applications' | 'interviews'
+export type ActivityDay = { day: string } & Record<ActivityKind, number>
+export type YearActivity = { days: ActivityDay[]; totals: Record<ActivityKind, number>; streak: { current: number; longest: number }; solved: PracticeHistory['solved']; available: PracticeHistory['available']; interviews: { completed: number; strong: number; fair: number; weak: number; average: number | null } }
 export type PracticeSettings = { display_name: string | null; show_repo: boolean; contest_reminder: boolean; handle: string }
 
 /** A refusal from the API. `status` lets a caller tell "not found" or "conflict" from a failure; `message` is the server's own words. */
@@ -355,6 +360,7 @@ export const api = {
     resetPassword: (token: string, new_password: string) => request<void>('/api/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, new_password }) }),
   },
   dashboard: () => request<Record<string, unknown>>('/api/v1/dashboard/overview', {}, true),
+  activity: (weeks = 53) => request<YearActivity>(`/api/v1/dashboard/activity?weeks=${weeks}`, {}, true),
   search: {
     semantic: (query: string, platforms: string[] = [], includeClosed = false) => request<{ results: Job[]; total_found: number; summary?: string; sourcing?: Sourcing; closed_hidden?: number }>('/api/v1/search/semantic', { method: 'POST', body: JSON.stringify({ query, platforms: platforms.length ? platforms : undefined, include_closed: includeClosed || undefined, limit: 30 }) }),
     structured: (query: string, filters: { location?: string; remote?: boolean; experience?: string; platforms?: string[] } = {}) => request<{ jobs: Job[]; total: number }>('/api/v1/search/structured', { method: 'POST', body: JSON.stringify({ query, location: filters.location || undefined, is_remote: filters.remote || undefined, experience: filters.experience || undefined, platforms: filters.platforms?.length ? filters.platforms : undefined, india_only: true, limit: 30 }) }),
