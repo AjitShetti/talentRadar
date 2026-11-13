@@ -9,6 +9,7 @@ import { useDay, useDayLit, useIstMinute } from '@/components/DayLine'
 import FlapText from '@/components/FlapText'
 import RequireAuth from '@/components/RequireAuth'
 import ApplyToday, { type SweepSummary } from '@/components/overview/ApplyToday'
+import YourYear from '@/components/overview/YourYear'
 import type { InterviewInsights } from '@/components/overview/StrengthsAndGaps'
 import YourDay from '@/components/overview/YourDay'
 import { AgendaItem, api, Briefing, BriefingCard, currentEmail, JobMatch, SkillsFocus } from '@/lib/api'
@@ -391,6 +392,9 @@ export default function Dashboard() {
             </ol>
             : <div className="ov2-card ov2-clear">All clear. Nothing scheduled and nothing going stale.</div>}
       </section>}
+
+      {/* ── the year: problems, applications and mock interviews, with the two meters ── */}
+      <YourYear />
 
       {/* ── the routine, to tick off: it is not here until the day line has read it ── */}
       <YourDay />

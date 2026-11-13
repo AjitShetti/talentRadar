@@ -2740,6 +2740,32 @@ code,pre,kbd,.latex-editor,.editor-code,textarea.code{font-family:var(--font-mon
 .pr-tile span[data-tone="design"]{color:var(--muted)}
 .pr-tile b{display:block;margin-top:3px;font:600 14px var(--font-text);font-variant-numeric:tabular-nums}
 .pr-tile b small{color:var(--faint);font-weight:400}
+/* Mock interview bands: state colours, as a score is a state. */
+.pr-ring-arc[data-tone="strong"]{stroke:var(--success)}
+.pr-ring-arc[data-tone="fair"]{stroke:var(--warning)}
+.pr-ring-arc[data-tone="weak"]{stroke:var(--danger)}
+.pr-tile span[data-tone="strong"]{color:var(--success)}
+.pr-tile span[data-tone="fair"]{color:var(--warning)}
+.pr-tile span[data-tone="weak"]{color:var(--danger)}
+
+/* ── Your year (components/overview/YourYear.tsx): Practice's graph, counting problems, applications and mock interviews.
+   Pointing at a lens shows that kind alone and a press keeps it; pointing at a day reads all three under the graph. ── */
+.ya-lenses{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px}
+.ya-lens{display:flex;align-items:baseline;gap:8px;padding:8px 14px;border:1px solid transparent;border-radius:var(--r-pill);background:rgb(var(--hi) / .05);color:var(--muted);font:500 13px var(--font-text);cursor:pointer;transition:background .2s var(--ease-day),color .2s var(--ease-day),border-color .2s var(--ease-day)}
+.ya-lens b{font:700 16px var(--font-label);color:var(--ink);font-variant-numeric:tabular-nums}
+.ya-lens:hover,.ya-lens[data-peek]{background:rgb(var(--hi) / .09);color:var(--ink)}
+.ya-lens[aria-pressed="true"]{border-color:var(--accent);color:var(--ink)}
+.ya-lens:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.ya .pr-heat i{transition:background .25s var(--ease-day)}
+.ya .pr-heat i[data-on]{box-shadow:inset 0 0 0 1.5px var(--ink)}
+.ya-foot{display:flex;justify-content:space-between;align-items:center;gap:12px 16px;flex-wrap:wrap;margin-top:4px}
+.ya-foot .pr-heat-legend{margin-top:0}
+.ya-day{display:flex;flex-wrap:wrap;gap:4px 16px;margin:0;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.ya-day b{color:var(--ink);font-weight:600}
+.ya-day span{transition:opacity .2s var(--ease-day)}
+.ya-day span[data-dim]{opacity:.4}
+.ya-meters{margin-top:14px}
+.ya-meters>div{display:grid;min-width:0}
 .pr-topics{display:grid;gap:9px;margin-top:12px}
 .pr-topic{display:grid;grid-template-columns:128px minmax(0,1fr) 30px;gap:10px;align-items:center;font-size:13px}
 .pr-topic span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink-2)}

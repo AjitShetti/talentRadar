@@ -3,6 +3,8 @@ api/routers/dashboard.py
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Dashboard aggregator endpoints (auth required).
 
+GET /dashboard/activity - the Overview's year: problems, applications and mock
+                          interviews per IST day, and the two meters.
 GET /dashboard/overview - one-shot summary of the job-seeker journey:
                           today's agenda (scheduled interviews), what moved on
                           the tracker lately, profile status, funnel metrics,
@@ -27,9 +29,10 @@ import logging
 from datetime import date
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from api.auth import get_current_user
+from services.activity import MAX_WEEKS, year_activity
 from services.applications import day_agenda, recent_activity, tracker_analytics
 from services.career import target_role_readiness
 from services.interviews import interview_insights
@@ -70,6 +73,18 @@ def _mark_matches_attempted(user_id: str) -> None:
     if len(_MATCH_ATTEMPTS) > 5000:      # bound the map on a busy day
         _MATCH_ATTEMPTS.clear()
     _MATCH_ATTEMPTS[user_id] = date.today()
+
+
+@router.get("/activity")
+async def activity(
+    user_id: CurrentUserId,
+    weeks: Annotated[int, Query(ge=1, le=MAX_WEEKS)] = MAX_WEEKS,
+) -> dict[str, Any]:
+    """The year graph and its meters. Read only."""
+    result = await year_activity(user_id, weeks=weeks)
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No such account.")
+    return result
 
 
 @router.get("/overview")
