@@ -41,6 +41,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from domain.entities import Job
+from domain.job_boards import ATS
 from ingestion.validation import validate_job_url
 
 if TYPE_CHECKING:
@@ -94,6 +95,21 @@ def _stable_external_id(job: Job) -> str:
     company = (job.extra_metadata or {}).get("company_name", "")
     basis = job.source_url or f"{job.title}{company}"
     return hashlib.md5(basis.encode("utf-8")).hexdigest()
+
+
+def _external_id_for(job: Job, source: str) -> str:
+    """
+    The ``external_id`` a live posting is stored under.
+
+    A role from one of the nine ATS boards (``source`` is ``ats:board``) is keyed by its URL's
+    MD5, exactly as the sweep keys it (``services/job_boards/write.py``): the reader's own id is
+    the ATS's, and a row keyed by it would be a second row for the same posting. Any other
+    source keeps the id the job carries.
+    """
+    ats, separator, board = source.partition(":")
+    if separator and board and ats in ATS:
+        return _stable_external_id(job)
+    return job.external_id or _stable_external_id(job)
 
 
 def _company_domain(company_name: str) -> str:
@@ -261,13 +277,14 @@ async def persist_live_jobs(
                     company_name = (job.extra_metadata or {}).get("company_name") or "Company"
                     company = await posting_company(uow, company_name)
 
-                    external_id = job.external_id or _stable_external_id(job)
+                    source = job.source or source_label
+                    external_id = _external_id_for(job, source)
                     kwargs = build_job_kwargs(job)
                     kwargs["company_id"] = company.id
 
                     stored, created = await uow.jobs.upsert_by_external_id(
                         external_id=external_id,
-                        source=job.source or source_label,
+                        source=source,
                         defaults=kwargs,
                     )
                     if created:
@@ -303,7 +320,7 @@ async def persist_live_jobs(
                                 ),
                                 "skills_str": ", ".join(job.skills or []),
                                 "source_url": job.source_url or "",
-                                "source": job.source or source_label,
+                                "source": source,
                             },
                             "internal_job_id": stored.id,
                         }

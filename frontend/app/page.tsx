@@ -68,7 +68,7 @@ const STEPS = [
 
 const FAQS = [
   { q: 'Is it only for jobs in India?', a: 'Yes. Roles known to be outside India are dropped.' },
-  { q: 'Where do the jobs come from?', a: 'Employers’ own job boards on Greenhouse, Lever and Ashby, plus other job boards and search. The same role shows up once.' },
+  { q: 'Where do the jobs come from?', a: 'Employers’ own job boards on Greenhouse, Lever, Ashby, Workable and six more ATSes, plus other job boards and search. The same role shows up once.' },
   { q: 'Does it message people for me?', a: 'No. It writes the draft, and you copy it and send it yourself. “I sent it” only records that you did.' },
   { q: 'Will it guess email addresses?', a: 'It shows addresses that were published. If it works one out from a company’s format, it says “likely, unverified” and never stores it.' },
   { q: 'How are take-homes judged?', a: 'An AI reads your GitHub repo and write-up, and weighs your process (70%) above the finished product (30%). You appear under a pseudonym unless you choose a name.' },

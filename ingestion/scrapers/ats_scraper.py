@@ -1,13 +1,14 @@
 """
 ingestion/scrapers/ats_scraper.py
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Direct high-speed scraper for modern ATS platforms:
+Direct high-speed scraper for modern ATS platforms, for live search:
 - Greenhouse (boards-api.greenhouse.io)
 - Ashby (api.ashbyhq.com)
-- Lever (api.lever.co)
 
 These APIs return structured JSON in 200-500ms with zero anti-bot challenges.
-Provides real openings from top tech startups & global companies hiring in India / Remote.
+The boards read are the roster's busiest (``services/job_boards``); the constants
+below are what a search reads when the roster cannot answer. Lever, Workable and the
+other ATSes are read only by the paced sweep: they are too slow for a live search.
 
 Reading a board is ``ingestion/boards``' job, the same reader the scheduled sweep
 uses, so a search and the sweep parse a posting identically. This module only
@@ -17,6 +18,7 @@ decides which of a board's roles match a search.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections.abc import Awaitable
 from enum import Enum
@@ -25,29 +27,39 @@ from typing import Any
 import httpx
 
 from domain.entities import Job
-from domain.job_boards import AtsName, BoardRef, board_for_posting
+from domain.job_boards import LIVE_SEARCH_ATS, AtsName, BoardRef, board_for_posting, board_ref
 from domain.posting_urls import parse_posting_url, posting_url_key
 from ingestion.boards import READERS
 from ingestion.boards.base import BoardRead, failed
 from ingestion.scrapling_manager import ScraplingManager
+from services.cache_backend import CacheBackend
 
 logger = logging.getLogger(__name__)
 
-# Curated list of companies on Greenhouse, Ashby, Lever with active remote/India hiring
+# The fallback boards live search reads when the roster cannot answer (no database,
+# or an empty table). Postman and Vercel are gone: their boards are no longer served.
 GREENHOUSE_COMPANIES = [
-    "stripe", "figma", "gitlab", "postman", "inmobi",
+    "stripe", "figma", "gitlab", "inmobi",
     "cloudflare", "cockroachlabs", "elastic",
     "mongodb", "affirm", "airtable", "reddit"
 ]
 
 ASHBY_COMPANIES = [
-    "openai", "replit", "linear", "vercel", "supabase",
+    "openai", "replit", "linear", "supabase",
     "cursor", "modal", "resend", "dust", "perplexity"
 ]
 
-LEVER_COMPANIES = [
-    "spotify"
-]
+#: Where the roster's live-search boards are cached, and for how long.
+LIVE_BOARDS_CACHE_KEY = "tr:boards:live-top"
+LIVE_BOARDS_TTL_SECONDS = 3600
+
+#: How many roster boards one search reads.
+LIVE_BOARD_COUNT = 25
+
+#: The most a search waits for the roster before it reads the constants instead. The
+#: whole fan-out is capped at 5 s by the source registry, and each board at 2 s, so this
+#: leaves the boards their time.
+_ROSTER_LOOKUP_SECONDS = 1.5
 
 INDIAN_CITY_SYNONYMS = {
     "bangalore": "Bengaluru",
@@ -149,6 +161,95 @@ _BOARD_TIMEOUT_SECONDS = 2.0
 def _board_client() -> httpx.AsyncClient:
     """The client live search reads boards with. Tests replace it with a replaying one."""
     return httpx.AsyncClient(timeout=_BOARD_TIMEOUT_SECONDS, follow_redirects=False)
+
+
+# ── which boards a search reads ──────────────────────────────────────────────
+
+
+def _fallback_boards() -> list[BoardRef]:
+    """The constants as boards: what a search reads when the roster cannot answer."""
+    return [BoardRef("greenhouse", slug) for slug in GREENHOUSE_COMPANIES] + [
+        BoardRef("ashby", slug) for slug in ASHBY_COMPANIES
+    ]
+
+
+def _encode_boards(boards: list[BoardRef]) -> str:
+    return json.dumps([[board.ats, board.board] for board in boards], separators=(",", ":"))
+
+
+def _decode_boards(raw: str | None) -> list[BoardRef]:
+    """
+    The boards a cached value holds. Anything that is not a list of ``[ats, board]`` pairs
+    names none, and a pair that is not a valid live-search board is dropped.
+    """
+    if not raw:
+        return []
+    try:
+        pairs = json.loads(raw)
+    except (ValueError, RecursionError):
+        return []
+    if not isinstance(pairs, list):
+        return []
+    boards: list[BoardRef] = []
+    for pair in pairs:
+        if not (
+            isinstance(pair, list) and len(pair) == 2 and all(isinstance(p, str) for p in pair)
+        ):
+            continue
+        ref = board_ref(pair[0], pair[1])
+        if ref is not None and ref.ats in LIVE_SEARCH_ATS:
+            boards.append(ref)
+    return boards
+
+
+async def _cached_roster() -> list[BoardRef]:
+    try:
+        return _decode_boards(await CacheBackend.get(LIVE_BOARDS_CACHE_KEY))
+    except Exception as exc:
+        logger.debug("Live roster cache read failed: %s", exc)
+        return []
+
+
+async def _read_roster() -> list[BoardRef]:
+    """The top live boards from the table, in a short session that closes before any request."""
+    from services.job_boards.store import top_live_boards
+    from storage.database import AsyncSessionLocal
+
+    try:
+        async with AsyncSessionLocal() as session:
+            return await top_live_boards(session, LIVE_BOARD_COUNT)
+    except Exception as exc:
+        logger.debug("Live roster could not be read: %s", exc)
+        return []
+
+
+async def _roster_boards() -> list[BoardRef]:
+    cached = await _cached_roster()
+    if cached:
+        return cached
+    boards = [board for board in await _read_roster() if board.ats in LIVE_SEARCH_ATS]
+    if boards:
+        try:
+            await CacheBackend.set(
+                LIVE_BOARDS_CACHE_KEY, _encode_boards(boards), LIVE_BOARDS_TTL_SECONDS
+            )
+        except Exception as exc:
+            logger.debug("Live roster cache write failed: %s", exc)
+    return boards
+
+
+async def live_boards() -> list[BoardRef]:
+    """
+    The boards a live search reads: the roster's top active Greenhouse and Ashby boards, cached
+    for an hour, else the constants. Never raises, and never waits longer than
+    ``_ROSTER_LOOKUP_SECONDS`` for the roster. An empty or failed roster is not cached.
+    """
+    try:
+        boards = await asyncio.wait_for(_roster_boards(), timeout=_ROSTER_LOOKUP_SECONDS)
+    except Exception as exc:
+        logger.debug("Live roster lookup gave up: %s", exc)
+        boards = []
+    return boards or _fallback_boards()
 
 
 RECHECK_TIMEOUT_SECONDS = 5.0
@@ -317,8 +418,15 @@ class ATSScraper:
     async def _read_board(
         cls, ats: AtsName, company_slug: str, client: httpx.AsyncClient | None
     ) -> list[Job]:
-        """Every role on one board, from the same reader the scheduled sweep uses."""
-        ref = BoardRef(ats, company_slug)
+        """
+        Every role on one board, from the same reader the scheduled sweep uses.
+
+        The board id is canonicalised the way the sweep's rows are (``board_ref``), so a role's
+        ``source`` is the one the sweep stores for it. A board id that is not valid makes no request.
+        """
+        ref = board_ref(ats, company_slug)
+        if ref is None:
+            return []
         if client is not None:
             return (await READERS[ats](client, ref)).roles
         async with _board_client() as own:
@@ -406,7 +514,9 @@ class ATSScraper:
     @classmethod
     async def search_all_ats(cls, query: str, location: str | None = None, is_remote: bool | None = None) -> list[Job]:
         """
-        Queries all configured Greenhouse, Ashby, and Lever companies concurrently with individual timeouts.
+        Queries the live search's boards (``live_boards``: the roster's busiest Greenhouse and
+        Ashby boards) concurrently, each with its own timeout. Only Greenhouse and Ashby are
+        ever read here.
         """
         async def _safe_fetch(coro: Awaitable[list[Job]]) -> list[Job]:
             try:
@@ -414,15 +524,18 @@ class ATSScraper:
             except Exception:
                 return []
 
-        # One client for the whole fan-out: three hosts, one connection pool each.
+        boards = [board for board in await live_boards() if board.ats in LIVE_SEARCH_ATS]
+
+        # One client for the whole fan-out: one connection pool per host.
         async with _board_client() as client:
-            tasks = []
-            for c in GREENHOUSE_COMPANIES:
-                tasks.append(_safe_fetch(cls.fetch_greenhouse_company(c, query, location, is_remote, client=client)))
-            for c in ASHBY_COMPANIES:
-                tasks.append(_safe_fetch(cls.fetch_ashby_company(c, query, location, is_remote, client=client)))
-            for c in LEVER_COMPANIES:
-                tasks.append(_safe_fetch(cls.fetch_lever_company(c, query, location, is_remote, client=client)))
+            tasks: list[Awaitable[list[Job]]] = []
+            for board in boards:
+                fetch_board = (
+                    cls.fetch_ashby_company if board.ats == "ashby" else cls.fetch_greenhouse_company
+                )
+                tasks.append(
+                    _safe_fetch(fetch_board(board.board, query, location, is_remote, client=client))
+                )
 
             results = await asyncio.gather(*tasks, return_exceptions=True)
         all_jobs: list[Job] = []

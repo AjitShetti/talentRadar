@@ -63,7 +63,7 @@ export default function PostingCheck({ compact = false }: { compact?: boolean })
           onChange={event => setUrl(event.target.value)} placeholder="https://boards.greenhouse.io/company/jobs/…" />
         <button type="submit" disabled={busy}>{busy ? 'Checking…' : 'Is it still open?'}</button>
       </div>
-      <p className="posting-check-hint">Works for roles hosted on Greenhouse, Lever and Ashby. The first check can take up to a minute while the server wakes.</p>
+      <p className="posting-check-hint">Works for roles hosted on Greenhouse, Lever, Ashby, Workable, Recruitee, Keka, Rippling, Personio and Breezy. The first check can take up to a minute while the server wakes.</p>
     </form>
 
     <div aria-live="polite">
