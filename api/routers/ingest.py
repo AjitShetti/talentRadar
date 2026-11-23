@@ -149,6 +149,35 @@ async def get_ingestion_run_detail(
     }
 
 
+async def _job_board_counts() -> dict[str, Any]:
+    """
+    Job boards by status and by ATS, from two GROUP BYs on ``job_boards``.
+
+    A failure answers ``{}`` and is logged by class name: the rest of the health report must
+    stand without it.
+    """
+    from sqlalchemy import func, select
+
+    from storage.database import AsyncSessionLocal
+    from storage.models import JobBoard
+
+    try:
+        async with AsyncSessionLocal() as session:
+            by_status = await session.execute(
+                select(JobBoard.status, func.count()).group_by(JobBoard.status)
+            )
+            by_ats = await session.execute(
+                select(JobBoard.ats, func.count()).group_by(JobBoard.ats)
+            )
+            return {
+                "by_status": {str(status): int(count) for status, count in by_status.all()},
+                "by_ats": {str(ats): int(count) for ats, count in by_ats.all()},
+            }
+    except Exception as exc:
+        logger.warning("Job board counts unavailable (%s)", type(exc).__name__)
+        return {}
+
+
 @router.get("/sources/health", dependencies=[Depends(require_role("admin"))])
 async def get_source_health() -> dict[str, Any]:
     """
@@ -196,6 +225,7 @@ async def get_source_health() -> dict[str, Any]:
         "degraded": degraded,
         "failing": failing,
         "healthy": not degraded and not failing,
+        "job_boards": await _job_board_counts(),
     }
 
 
@@ -338,5 +368,25 @@ async def run_practice_step(
     ``{"error": ...}`` and whatever the step finished stays committed.
     """
     from services.practice import steps
+
+    return await steps.run_step(step, limit)
+
+
+JobBoardStep = Literal["open_list", "yc", "probe", "sweep", "prune"]
+
+
+@router.post("/job-boards", dependencies=[Depends(require_cron_or_admin)])
+async def run_job_board_step(
+    step: JobBoardStep, limit: int = Query(default=300, ge=1, le=20000)
+) -> dict[str, int | str]:
+    """
+    Run one job-board roster step: ``open_list``, ``yc``, ``probe``, ``sweep`` or ``prune``.
+
+    Called by ``.github/workflows/job-boards.yml`` - there is no worker. ``limit`` is how many
+    boards or rows the step may take; ``run_step`` clamps it to the step's own ceiling (the sweep
+    to 600, the probe to 60, and so on) and never raises: a failure comes back as
+    ``{"step": ..., "error": ...}`` and the rows the step finished stay committed.
+    """
+    from services.job_boards import steps
 
     return await steps.run_step(step, limit)
