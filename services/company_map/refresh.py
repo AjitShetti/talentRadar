@@ -110,6 +110,9 @@ GITHUB_ORG_REFRESH = timedelta(days=30)
 _MAX_LOOKUP_FAILURES = 5
 
 SITE_CONCURRENCY = 4
+#: A company's own pages name at most this many distinct ATS boards. A page naming more is a
+#: directory (a VC's "jobs at our portfolio", a job aggregator), not one employer's careers page.
+MAX_OWN_BOARDS_PER_SITE = 3
 _SITE_TEXT_KEEP = 1500
 _COMMIT_EVERY = 50
 
@@ -349,18 +352,28 @@ async def _add_boards(session: AsyncSession, company: Company, site: SiteFacts |
 
     The homepage's and careers page's boards come from ``site`` (``None`` when the site could
     not be read), and ``company.careers_url`` is read as a string: when it is itself a board
-    URL that is a board, with no request. Each board is a ``candidate`` the sweep checks, so a
-    link to somebody else's board costs one read, not a wrong claim; a board already on the
-    roster only gains this company. Does not commit.
+    URL that is a board, with no request. Each board is a ``candidate`` the sweep checks; a
+    board already on the roster only gains this company. Does not commit.
+
+    A company's roles are filed under the company the board names, so a board is only the
+    company's when the site is its own careers page. One that names more than
+    :data:`MAX_OWN_BOARDS_PER_SITE` distinct boards (the ``careers_url`` one counted) is a
+    directory: its boards are still added, with no company and no name, so their roles go to
+    placeholder companies instead of being filed under the page's owner.
     """
     refs: list[BoardRef] = list(site.boards) if site is not None else []
     named = board_from_url(company.careers_url or "")
     if named is not None and named not in refs:
         refs.append(named)
+    own = len(refs) <= MAX_OWN_BOARDS_PER_SITE
     added = 0
     for ref in refs:
         if await upsert_board(
-            session, ref, via="careers_link", company_id=company.id, company_name=company.name
+            session,
+            ref,
+            via="careers_link",
+            company_id=company.id if own else None,
+            company_name=company.name if own else None,
         ):
             added += 1
     return added

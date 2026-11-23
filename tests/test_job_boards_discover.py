@@ -1094,6 +1094,90 @@ async def test_careers_url_and_site_name_the_same_board_once(
     }
 
 
+def many_boards(count: int) -> tuple[BoardRef, ...]:
+    return tuple(BoardRef("greenhouse", f"portfolio{n}") for n in range(count))
+
+
+async def test_site_with_many_boards_is_a_directory(
+    session: AsyncSession,
+    factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await add_site_company(factory, "Fund")
+    assert refresh.MAX_OWN_BOARDS_PER_SITE == 3
+
+    async def read(_client: httpx.AsyncClient, _url: str) -> SiteFacts | None:
+        return site_with(*many_boards(5))
+
+    monkeypatch.setattr(refresh, "read_site", read)
+    result = await refresh._step_sites(session, 10)
+
+    # Still discovered, but nobody's own: their roles go to placeholder companies.
+    assert result["boards"] == 5
+    rows = await boards_of(factory)
+    assert len(rows) == 5
+    for row in rows:
+        assert (row.company_id, row.company_name) == (None, None)
+        assert (row.discovered_via, row.status) == ("careers_link", "candidate")
+
+
+async def test_site_with_three_boards_is_still_linked(
+    session: AsyncSession,
+    factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    acme = await add_site_company(factory, "Acme")
+
+    async def read(_client: httpx.AsyncClient, _url: str) -> SiteFacts | None:
+        return site_with(*many_boards(3))
+
+    monkeypatch.setattr(refresh, "read_site", read)
+    result = await refresh._step_sites(session, 10)
+
+    assert result["boards"] == 3
+    rows = await boards_of(factory)
+    assert {(row.company_id, row.company_name) for row in rows} == {(acme, "Acme")}
+
+
+async def test_careers_url_board_counts_toward_the_directory_limit(
+    session: AsyncSession,
+    factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await add_site_company(factory, "Acme", careers_url="https://boards.greenhouse.io/acme")
+
+    async def read(_client: httpx.AsyncClient, _url: str) -> SiteFacts | None:
+        return site_with(*many_boards(3))
+
+    monkeypatch.setattr(refresh, "read_site", read)
+    result = await refresh._step_sites(session, 10)
+
+    # Three site boards and a fourth, distinct one from the careers URL: a directory.
+    assert result["boards"] == 4
+    rows = {row.board: row for row in await boards_of(factory)}
+    assert set(rows) == {"acme", "portfolio0", "portfolio1", "portfolio2"}
+    assert {(row.company_id, row.company_name) for row in rows.values()} == {(None, None)}
+
+
+async def test_careers_url_naming_a_board_the_site_names_is_not_counted_twice(
+    session: AsyncSession,
+    factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    beta = await add_site_company(
+        factory, "Beta", careers_url="https://boards.greenhouse.io/portfolio0"
+    )
+
+    async def read(_client: httpx.AsyncClient, _url: str) -> SiteFacts | None:
+        return site_with(*many_boards(3))
+
+    monkeypatch.setattr(refresh, "read_site", read)
+    result = await refresh._step_sites(session, 10)
+
+    assert result["boards"] == 3
+    assert {row.company_id for row in await boards_of(factory)} == {beta}
+
+
 # -- discovery from YC's hiring list ------------------------------------------------------------
 
 YC_SAMPLE = Path(__file__).resolve().parent / "fixtures" / "boards" / "yc_hiring_sample.json"
@@ -1371,6 +1455,41 @@ async def test_yc_a_board_already_on_the_roster_is_left_as_it_is(
         "careers_link",
         "active",
     )
+
+
+@pytest.mark.parametrize("site_names_a_board", [True, False], ids=["site-board", "probe-hit"])
+async def test_yc_a_failed_write_sets_neither_key(
+    session: AsyncSession,
+    factory: async_sessionmaker[AsyncSession],
+    sites: Sites,
+    monkeypatch: pytest.MonkeyPatch,
+    site_names_a_board: bool,
+) -> None:
+    if site_names_a_board:
+        sites.boards = {"https://razorpay.com": (BoardRef("lever", "razorpay"),)}
+    real_commit = session.commit
+    calls = 0
+
+    async def commit() -> None:
+        nonlocal calls
+        calls += 1
+        if calls > 1:  # the first one only ends the caller's transaction, before the list
+            raise RuntimeError("the database went away")
+        await real_commit()
+
+    monkeypatch.setattr(session, "commit", commit)
+    web = YcWeb(ats=FakeWeb(greenhouse={"razorpay": ("Razorpay", [INDIA])}))
+
+    async with client_for(web) as client:
+        with pytest.raises(RuntimeError, match="went away"):
+            await discover_yc(session, client, limit=1, sleep=Sleeper())
+
+    # The company was read (and probed when its site named nothing), but its boards were never
+    # committed, so neither key may say it was done: the next run takes it again.
+    assert sites.asked == ["https://razorpay.com"]
+    assert any("razorpay" in str(r.url) for r in web.ats.requests) is not site_names_a_board
+    assert await CacheBackend.get(yc_site_key("razorpay.com")) is None
+    assert await CacheBackend.get(probed_key("razorpay.com")) is None
 
 
 async def test_yc_holds_no_transaction_during_a_request(

@@ -672,15 +672,17 @@ async def discover_yc(
     site was read in the last 30 days) is skipped and does not count against ``limit``. For each
     of the others:
 
-    1. its site is read with ``read_site`` and the key is set, whatever came of it, so a site that
-       disallows us or is down is not asked again for 30 days;
+    1. its site is read with ``read_site``;
     2. the boards its pages link to are added, with the YC name as ``company_name`` and no
        ``company_id``: the board's roles go to the placeholder company, and no ``companies`` row
        is ever created;
     3. when the site named none, the company is probed (:func:`_probe`, with the YC name and the
        site's domain) unless ``tr:boards:probed:<domain>`` says it was in the last 90 days, and a
        board that passes the probe's checks is added the same way. Pacing is shared by every
-       company in the run, as in :func:`discover_probe`.
+       company in the run, as in :func:`discover_probe`;
+    4. only then, with the boards committed, the keys are set, whatever came of the site (so one
+       that disallows us or is down is not asked again for 30 days) and of the probe (90 days).
+       A write that fails sets neither, so the company is still due on the next run.
 
     A board already on the roster is left as it is. Every request carries the project User-Agent
     and none follows a redirect. The caller's transaction is ended before the list is fetched, and
@@ -707,26 +709,29 @@ async def discover_yc(
             continue
         attempted += 1
         site = await read_site(client, company.website)
-        await CacheBackend.set(
-            yc_site_key(company.domain), "read" if site is not None else "miss", YC_SITE_TTL_SECONDS
-        )
         refs: list[BoardRef] = []
         if site is not None:
             read += 1
             refs = list(site.boards)
+        probe_outcome: str | None = None
         if not refs and await CacheBackend.get(probed_key(company.domain)) is None:
             hit = await _probe(client, name=company.name, domain=company.domain, run=run)
             probed += 1
-            await CacheBackend.set(
-                probed_key(company.domain), "hit" if hit is not None else "miss", PROBED_TTL_SECONDS
-            )
+            probe_outcome = "hit" if hit is not None else "miss"
             if hit is not None:
                 refs = [hit]
+        for ref in refs:
+            if await upsert_board(session, ref, via="yc", company_name=company.name):
+                inserted += 1
         if refs:
-            for ref in refs:
-                if await upsert_board(session, ref, via="yc", company_name=company.name):
-                    inserted += 1
             await session.commit()
+        # The keys come last: a write that failed (the commit above raised) must not hide the
+        # company for 30 to 90 days, so it is still due the next time.
+        await CacheBackend.set(
+            yc_site_key(company.domain), "read" if site is not None else "miss", YC_SITE_TTL_SECONDS
+        )
+        if probe_outcome is not None:
+            await CacheBackend.set(probed_key(company.domain), probe_outcome, PROBED_TTL_SECONDS)
     logger.info(
         "YC: %d India companies, %d sites read, %d boards new, %d probed",
         len(companies),
