@@ -2,7 +2,8 @@
 tests/test_board_adapters.py
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The board readers (``ingestion/boards``) for Greenhouse, Ashby, Lever, Workable,
-Recruitee and Keka, replayed from recorded responses through ``httpx.MockTransport``.
+Recruitee, Keka, Rippling, Personio and Breezy, replayed from recorded responses
+through ``httpx.MockTransport``.
 Nothing here touches the network.
 
 What each test pins is something the sweep depends on:
@@ -32,6 +33,7 @@ from domain.entities import Job
 from domain.geo import INDIA_COUNTRY_CODE
 from domain.job_boards import AtsName, BoardRef, is_india_role
 from domain.liveness import parse_source_timestamp
+from domain.posting_urls import parse_posting_url
 from ingestion.boards import READERS
 from ingestion.boards.base import (
     MAX_BODY_BYTES,
@@ -60,14 +62,26 @@ RECORDED: list[tuple[AtsName, str]] = [
     ("workable", "apna"),
     ("recruitee", "lenskartcareers"),
     ("keka", "spyneai"),
+    ("rippling", "rippling"),
+    ("personio", "personio"),
+    ("breezy", "breezy"),
 ]
 ATSES: list[AtsName] = [ats for ats, _ in RECORDED]
 
 #: The three ATSes live search also reads on demand (the rest are only swept).
 LIVE_ATSES: list[AtsName] = ["greenhouse", "ashby", "lever"]
 
-#: Requests one read of the recorded board makes: Keka asks for the company's name too.
-REQUESTS_PER_READ: dict[str, int] = {"keka": 2}
+#: Requests one read of the recorded board makes: Keka asks for the company's name too,
+#: and Rippling reads its first ten pages (its board has 38).
+REQUESTS_PER_READ: dict[str, int] = {"keka": 2, "rippling": 10}
+RIPPLING_PAGE_CAP = 10
+
+#: Recorded boards with no role in India: Personio's two are in Berlin and Munich, and
+#: Breezy's is the company's own demo account with US placeholder positions.
+RECORDED_WITHOUT_INDIA: frozenset[AtsName] = frozenset({"personio", "breezy"})
+
+#: Lists that state no posting date. A date is never invented for their roles.
+NO_DATE_STATED: frozenset[AtsName] = frozenset({"rippling"})
 
 Handler = Callable[[httpx.Request], httpx.Response]
 
@@ -143,7 +157,7 @@ async def test_recorded_board_reads_whole(ats: AtsName, board: str) -> None:
     result = await read(ats, fixture_handler(ats, seen), board)
 
     assert result.outcome == "ok"
-    assert result.complete is True
+    assert result.complete is (ats != "rippling"), "Rippling's board is 38 pages; ten are read"
     assert result.total == len(result.roles) > 0
     assert len(seen) == REQUESTS_PER_READ.get(ats, 1), "never one request per posting"
 
@@ -157,7 +171,8 @@ async def test_recorded_board_reads_whole(ats: AtsName, board: str) -> None:
         assert valid, f"{role.source_url}: {reason}"
         assert (role.extra_metadata or {}).get("company_name")
 
-    assert any(is_india_role(role.location_raw) for role in result.roles)
+    if ats not in RECORDED_WITHOUT_INDIA:
+        assert any(is_india_role(role.location_raw) for role in result.roles)
     assert (
         any(not is_india_role(role.location_raw) for role in result.roles) or ats != "greenhouse"
     ), "the reader returns every role; India filtering is the caller's"
@@ -208,6 +223,10 @@ async def test_every_request_is_identified_and_not_redirected(ats: AtsName, boar
 async def test_roles_carry_the_employers_dates_and_none_of_ours(ats: AtsName, board: str) -> None:
     result = await read(ats, fixture_handler(ats), board)
     now = datetime.now(UTC)
+    if ats in NO_DATE_STATED:
+        assert result.roles
+        assert all(role.posted_at is None for role in result.roles), "no date is invented"
+        return
     for role in result.roles:
         assert role.posted_at is not None
         assert role.posted_at == role.source_posted_at
@@ -404,7 +423,7 @@ def test_board_scrubbers_keep_nothing_of_a_shape_they_do_not_know() -> None:
         assert scrub_keka_jobs(junk) == []
 
 
-@pytest.mark.parametrize("ats", ["workable", "recruitee", "keka"])
+@pytest.mark.parametrize("ats", ["workable", "recruitee", "keka", "rippling", "breezy"])
 def test_the_recorded_board_names_no_people(ats: str) -> None:
     """No address but a role inbox or the placeholder, and no field the scrubbers do not keep."""
     from scripts.fixture_privacy import PLACEHOLDER_BOARD_EMAIL, ROLE_INBOXES, emails_in
@@ -639,6 +658,9 @@ async def test_an_empty_board_is_ok_not_error() -> None:
         "workable": '{"name": "Acme", "description": "", "jobs": []}',
         "recruitee": '{"offers": []}',
         "keka": "[]",
+        "rippling": '{"items": [], "page": 1, "pageSize": 20, "totalItems": 0, "totalPages": 0}',
+        "personio": "<?xml version='1.0' encoding='UTF-8'?><workzag-jobs></workzag-jobs>",
+        "breezy": "[]",
     }
     for ats, body in bodies.items():
         result = await read(ats, answering(200, text=body))
@@ -673,6 +695,18 @@ async def test_a_posting_that_cannot_be_read_makes_the_read_incomplete(ats: AtsN
         "workable": {"title": "Engineer", "shortcode": "ABC123DEF4", "city": "Bengaluru"},
         "recruitee": {"id": 7, "title": "Engineer", "slug": "engineer", "location": "Bengaluru"},
         "keka": {"id": 7, "title": "Engineer", "jobLocations": [{"name": "Bengaluru"}]},
+        "rippling": {
+            "id": "5ce67816-df4b-414d-98c2-58484a285af4",
+            "name": "Engineer",
+            "locations": [{"name": "Bangalore, India"}],
+        },
+        "breezy": {
+            "id": "7",
+            "friendly_id": "000000000007-engineer",
+            "name": "Engineer",
+            "location": {"name": "Bengaluru, India"},
+        },
+        "personio": {"id": "1", "name": "Engineer", "office": "Bengaluru"},
     }[ats]
     bad: dict[str, Any] = {"id": "broken"}  # no title, no URL
     boards: dict[AtsName, Any] = {
@@ -682,8 +716,14 @@ async def test_a_posting_that_cannot_be_read_makes_the_read_incomplete(ats: AtsN
         "workable": {"name": "Acme", "jobs": [good, bad]},
         "recruitee": {"offers": [good, bad]},
         "keka": [good, bad],
+        "rippling": {"items": [good, bad], "totalPages": 1},
+        "breezy": [good, bad],
     }
-    result = await read(ats, answering(200, json=boards[ats]))
+    if ats == "personio":
+        xml = personio_board(personio_position(1), personio_position(2, name=""))
+        result = await read(ats, xml_answering(xml), "acme")
+    else:
+        result = await read(ats, answering(200, json=boards[ats]))
     assert result.outcome == "ok"
     assert result.total == 2
     assert len(result.roles) == 1
@@ -1747,7 +1787,7 @@ async def test_keka_asks_for_the_name_only_when_there_are_jobs_to_name() -> None
 # ── a board id becomes part of a host ────────────────────────────────────────
 
 
-@pytest.mark.parametrize("ats", ["recruitee", "keka"])
+@pytest.mark.parametrize("ats", ["recruitee", "keka", "breezy", "personio"])
 @pytest.mark.parametrize(
     "board",
     [
@@ -1792,7 +1832,7 @@ async def test_an_empty_board_id_is_never_requested() -> None:
         seen.append(request)
         return httpx.Response(200, json=[])
 
-    for ats in ("recruitee", "keka"):
+    for ats in ("recruitee", "keka", "breezy", "personio", "rippling"):
         async with client_for(handler) as client:
             result = await READERS[ats](client, BoardRef(ats, ""))
         assert result.outcome == "not_found"
@@ -1808,6 +1848,8 @@ async def test_an_empty_board_id_is_never_requested() -> None:
         ("recruitee", "x" * 63, f"{'x' * 63}.recruitee.com"),
         ("keka", "SpyneAI", "spyneai.keka.com"),
         ("keka", "9lives", "9lives.keka.com"),
+        ("breezy", "Acme-Co", "acme-co.breezy.hr"),
+        ("personio", "acme", "acme.jobs.personio.de"),
     ],
 )
 async def test_a_board_that_is_a_host_label_is_asked_for_on_its_own_host(
@@ -1885,6 +1927,8 @@ async def test_the_capture_script_records_nothing_when_the_second_request_fails(
         ("recruitee", {"jobs": [{"title": "wrong key"}]}),
         ("keka", []),
         ("keka", {"jobs": [keka_job()]}),
+        ("rippling", {"items": [], "totalPages": 0}),
+        ("breezy", []),
     ],
 )
 async def test_the_capture_script_records_nothing_that_proves_nothing(
@@ -1897,6 +1941,686 @@ async def test_the_capture_script_records_nothing_that_proves_nothing(
 
     async with client_for(answering(200, json=payload)) as client:
         assert await record(ats, CAPTURES[ats], client, pause=pause) is None
+
+
+# ── Rippling, Personio and Breezy: the three readers added with the roster ───
+
+
+def recording(seen: list[httpx.Request], handler: Handler) -> Handler:
+    """``handler``, with every request it is asked about added to ``seen``."""
+
+    def record_and_answer(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return handler(request)
+
+    return record_and_answer
+
+
+async def read_ref(ref: BoardRef, handler: Handler) -> BoardRead:
+    async with client_for(handler) as client:
+        return await READERS[ref.ats](client, ref)
+
+
+def rippling_row(
+    number: int, place: str = "Pune, India", workplace: str = "ON_SITE"
+) -> dict[str, Any]:
+    """One row of Rippling's list: posting ``number`` in one place."""
+    posting = f"00000000-0000-4000-8000-{number:012d}"
+    return {
+        "id": posting,
+        "name": f"Role {number}",
+        "url": f"https://ats.rippling.com/acme/jobs/{posting}",
+        "department": {"name": "Engineering"},
+        "locations": [{"name": place, "country": "India", "workplaceType": workplace}],
+        "language": "en-US",
+    }
+
+
+def rippling_pages(total_pages: int, rows: int, seen: list[httpx.Request]) -> Handler:
+    """A Rippling board of ``total_pages`` pages of ``rows`` rows, answering ``?page=N`` as Rippling does."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        page = int(request.url.params["page"])
+        items = (
+            [rippling_row((page - 1) * rows + n) for n in range(rows)]
+            if page <= total_pages
+            else []
+        )
+        return httpx.Response(
+            200,
+            json={
+                "items": items,
+                "page": page,
+                "pageSize": rows,
+                "totalItems": total_pages * rows,
+                "totalPages": total_pages,
+            },
+        )
+
+    return handler
+
+
+async def test_rippling_reads_each_page_until_the_last() -> None:
+    seen: list[httpx.Request] = []
+    result = await read("rippling", rippling_pages(3, 20, seen), "acme")
+
+    assert result.outcome == "ok"
+    assert result.complete is True
+    assert result.total == len(result.roles) == 60
+    assert [request.url.params["page"] for request in seen] == ["1", "2", "3"]
+
+
+async def test_rippling_page_cap_is_incomplete() -> None:
+    seen: list[httpx.Request] = []
+    result = await read("rippling", rippling_pages(38, 20, seen), "acme")
+
+    assert result.outcome == "ok"
+    assert result.complete is False, "page 10 was not the last: there may be more"
+    assert [request.url.params["page"] for request in seen] == [
+        str(number) for number in range(1, RIPPLING_PAGE_CAP + 1)
+    ]
+    assert result.total == len(result.roles) == 20 * RIPPLING_PAGE_CAP
+
+
+async def test_rippling_a_board_of_exactly_the_cap_is_complete() -> None:
+    seen: list[httpx.Request] = []
+    result = await read("rippling", rippling_pages(RIPPLING_PAGE_CAP, 20, seen), "acme")
+
+    assert result.complete is True
+    assert len(seen) == RIPPLING_PAGE_CAP
+
+
+def test_rippling_reads_at_most_the_capped_pages() -> None:
+    from ingestion.boards.rippling import MAX_PAGES
+
+    assert MAX_PAGES == RIPPLING_PAGE_CAP
+
+
+async def test_rippling_a_page_that_fails_fails_the_whole_read() -> None:
+    for status, outcome in ((429, "rate_limited"), (500, "error"), (404, "not_found")):
+        seen: list[httpx.Request] = []
+        pages = rippling_pages(5, 20, seen)
+
+        def handler(
+            request: httpx.Request, status: int = status, pages: Handler = pages
+        ) -> httpx.Response:
+            if request.url.params["page"] == "2":
+                return httpx.Response(status, text="no")
+            return pages(request)
+
+        result = await read("rippling", handler, "acme")
+        assert result.outcome == outcome
+        assert result.roles == []
+        assert result.complete is False
+        assert len(seen) == 1, "the page after the failure is never asked for"
+
+
+async def test_rippling_a_page_that_is_not_the_list_is_error() -> None:
+    bodies: list[Any] = [
+        {"items": "none", "totalPages": 2},
+        {"items": []},
+        {"items": [], "totalPages": "2"},
+        {"totalPages": 1},
+        [],
+    ]
+    for body in bodies:
+        result = await read("rippling", answering(200, json=body), "acme")
+        assert result.outcome == "error", body
+        assert result.roles == []
+        assert result.complete is False
+
+
+async def test_rippling_a_later_page_that_is_not_the_list_is_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.params["page"] == "2":
+            return httpx.Response(200, json={"ok": False})
+        return httpx.Response(200, json={"items": [rippling_row(1)], "totalPages": 5})
+
+    result = await read("rippling", handler, "acme")
+    assert result.outcome == "error"
+    assert result.roles == []
+    assert result.complete is False
+
+
+async def test_rippling_rows_of_one_posting_are_one_role_in_every_place() -> None:
+    pages = {
+        "1": {
+            "items": [
+                rippling_row(1, "Bangalore, India"),
+                rippling_row(2, "London, United Kingdom"),
+            ],
+            "totalPages": 2,
+        },
+        "2": {
+            "items": [rippling_row(1, "New York, NY"), rippling_row(1, "Bangalore, India")],
+            "totalPages": 2,
+        },
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=pages[request.url.params["page"]])
+
+    result = await read("rippling", handler, "acme")
+
+    assert result.outcome == "ok"
+    assert result.complete is True
+    assert result.total == len(result.roles) == 2
+    by_id = {role.external_id: role for role in result.roles}
+    first = by_id[rippling_row(1)["id"]]
+    assert first.location_raw == "Bangalore, India; New York, NY"
+    assert first.country == INDIA_COUNTRY_CODE
+    assert by_id[rippling_row(2)["id"]].location_raw == "London, United Kingdom"
+
+
+async def test_rippling_a_remote_place_makes_the_role_remote() -> None:
+    items = [rippling_row(1, "Remote", "REMOTE"), rippling_row(2, "Pune, India", "ON_SITE")]
+    result = await read("rippling", answering(200, json={"items": items, "totalPages": 1}), "acme")
+
+    assert result.roles[0].is_remote is True
+    assert result.roles[1].is_remote is False
+
+
+async def test_rippling_states_no_date_and_no_description() -> None:
+    items = [rippling_row(1)]
+    result = await read("rippling", answering(200, json={"items": items, "totalPages": 1}), "acme")
+
+    (role,) = result.roles
+    assert role.posted_at is None
+    assert role.source_posted_at is None
+    assert role.description_clean is None
+    assert role.extra_metadata == {"company_name": "Acme", "ats": "rippling"}
+
+
+async def test_rippling_urls_name_the_board_and_the_posting() -> None:
+    items = [rippling_row(7)]
+    result = await read("rippling", answering(200, json={"items": items, "totalPages": 1}), "acme")
+
+    (role,) = result.roles
+    posting = rippling_row(7)["id"]
+    assert role.source_url == f"https://ats.rippling.com/acme/jobs/{posting}"
+    valid, reason = validate_job_url(role.source_url)
+    assert valid, reason
+    ref = parse_posting_url(role.source_url)
+    assert ref is not None
+    assert (ref.ats, ref.company_slug, ref.external_id) == ("rippling", "acme", posting)
+
+
+async def test_rippling_a_row_with_no_usable_id_or_name_makes_the_read_incomplete() -> None:
+    items = [rippling_row(1), {"id": "broken"}, {**rippling_row(2), "name": ""}]
+    result = await read("rippling", answering(200, json={"items": items, "totalPages": 1}), "acme")
+
+    assert result.outcome == "ok"
+    assert result.total == 3
+    assert len(result.roles) == 1
+    assert result.complete is False
+
+
+@pytest.mark.parametrize(
+    "board",
+    ["evil.example/x", "evil.example", "a/b", "a b", "a?b", "a#b", "-lead", "x" * 81, ""],
+)
+async def test_a_rippling_board_that_is_not_a_slug_is_never_requested(board: str) -> None:
+    seen: list[httpx.Request] = []
+
+    async with client_for(
+        recording(seen, answering(200, json={"items": [], "totalPages": 0}))
+    ) as client:
+        result = await READERS["rippling"](client, BoardRef("rippling", board))
+
+    assert seen == []
+    assert result.outcome == "not_found"
+    assert result.roles == []
+    assert result.complete is False
+
+
+def personio_position(
+    number: int,
+    office: str = "Bengaluru",
+    *,
+    name: str | None = None,
+    created: str | None = "2026-11-11T17:43:42+00:00",
+) -> str:
+    """One ``<position>`` of a Personio XML board."""
+    title = f"Engineer {number}" if name is None else name
+    stated = f"<createdAt>{created}</createdAt>" if created is not None else ""
+    return (
+        f"<position><id>{number}</id><office>{office}</office><name>{title}</name>{stated}"
+        "<jobDescriptions><jobDescription><name>The Role</name>"
+        "<value><![CDATA[<p>Write code.</p>]]></value></jobDescription></jobDescriptions></position>"
+    )
+
+
+def personio_board(*positions: str) -> str:
+    return (
+        "<?xml version='1.0' encoding='UTF-8'?>\n<workzag-jobs>"
+        + "".join(positions)
+        + "</workzag-jobs>"
+    )
+
+
+def xml_answering(body: str) -> Handler:
+    return answering(200, text=body, headers={"content-type": "text/xml"})
+
+
+async def test_personio_each_position_is_a_role_at_its_own_url() -> None:
+    body = personio_board(personio_position(1), personio_position(2, "Munich", created=None))
+    result = await read("personio", xml_answering(body), "acme")
+
+    assert result.outcome == "ok"
+    assert result.complete is True
+    assert result.total == len(result.roles) == 2
+    first, second = result.roles
+    assert first.title == "Engineer 1"
+    assert first.external_id == "1"
+    assert first.source == "personio:acme"
+    assert first.source_url == "https://acme.jobs.personio.de/job/1"
+    assert first.location_raw == "Bengaluru"
+    assert first.country == INDIA_COUNTRY_CODE
+    assert first.posted_at == datetime(2026, 11, 11, 17, 43, 42, tzinfo=UTC)
+    assert "Write code." in (first.description_clean or "")
+    assert "The Role" in (first.description_clean or "")
+    assert second.posted_at is None, "a position with no createdAt has no date"
+    assert second.location_raw == "Munich"
+
+
+async def test_personio_is_asked_for_its_english_xml_on_its_own_host_in_its_region() -> None:
+    body = personio_board(personio_position(1))
+    for region, host in (
+        (None, "acme.jobs.personio.de"),
+        ("de", "acme.jobs.personio.de"),
+        ("com", "acme.jobs.personio.com"),
+    ):
+        seen: list[httpx.Request] = []
+        result = await read_ref(
+            BoardRef("personio", "acme", region), recording(seen, xml_answering(body))
+        )
+
+        assert [request.url.host for request in seen] == [host]
+        assert seen[0].url.scheme == "https"
+        assert seen[0].url.path == "/xml"
+        assert seen[0].url.params["language"] == "en"
+        assert result.roles[0].source_url == f"https://{host}/job/1"
+
+
+async def test_personio_an_unknown_region_makes_no_request() -> None:
+    body = personio_board(personio_position(1))
+    for region in ("fr", "", "de.evil.example", "DE"):
+        seen: list[httpx.Request] = []
+        result = await read_ref(
+            BoardRef("personio", "acme", region), recording(seen, xml_answering(body))
+        )
+
+        assert seen == [], region
+        assert result.outcome == "not_found"
+        assert result.roles == []
+        assert result.complete is False
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        "<!DOCTYPE workzag-jobs>",
+        "<!doctype workzag-jobs>",
+        "<!ENTITY x 'y'>",
+        "<!DOCTYPE workzag-jobs [<!ENTITY lol 'lol'>]>",
+    ],
+)
+async def test_personio_a_body_that_declares_a_doctype_or_an_entity_is_error(prefix: str) -> None:
+    body = f"<?xml version='1.0'?>{prefix}<workzag-jobs>{personio_position(1)}</workzag-jobs>"
+    result = await read("personio", xml_answering(body), "acme")
+
+    assert result.outcome == "error"
+    assert result.roles == []
+    assert result.complete is False
+
+
+async def test_personio_an_entity_bomb_is_error() -> None:
+    body = (
+        "<?xml version='1.0'?><!DOCTYPE workzag-jobs [<!ENTITY a 'aaaaaaaaaa'>"
+        "<!ENTITY b '&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;'>]>"
+        "<workzag-jobs><position><id>1</id><name>&b;</name></position></workzag-jobs>"
+    )
+    result = await read("personio", xml_answering(body), "acme")
+
+    assert result.outcome == "error"
+    assert result.roles == []
+
+
+async def test_personio_a_valid_xml_root_that_is_not_the_board_is_error() -> None:
+    for body in (
+        "<error><message>Too many requests</message></error>",
+        "<html><body>Too many requests</body></html>",
+        "<workzag-jobs-page></workzag-jobs-page>",
+    ):
+        result = await read("personio", xml_answering(body), "acme")
+        assert result.outcome == "error", body
+        assert result.roles == []
+
+
+async def test_personio_a_position_with_no_id_or_name_makes_the_read_incomplete() -> None:
+    body = personio_board(
+        personio_position(1),
+        personio_position(2, name=""),
+        "<position><name>No id</name></position>",
+    )
+    result = await read("personio", xml_answering(body), "acme")
+
+    assert result.outcome == "ok"
+    assert result.total == 3
+    assert len(result.roles) == 1
+    assert result.complete is False
+
+
+async def test_personio_a_remote_office_is_a_remote_role() -> None:
+    body = personio_board(personio_position(1, "Remote"))
+    result = await read("personio", xml_answering(body), "acme")
+
+    (role,) = result.roles
+    assert role.is_remote is True
+    assert role.location_raw == "Remote"
+    assert role.country is None
+
+
+async def test_personio_a_created_date_that_is_not_a_date_is_none() -> None:
+    body = personio_board(personio_position(1, created="next Tuesday"))
+    result = await read("personio", xml_answering(body), "acme")
+
+    (role,) = result.roles
+    assert role.posted_at is None
+
+
+def breezy_position(number: int, **more: Any) -> dict[str, Any]:
+    """One position as Breezy's ``/json`` lists it, with ``more`` overriding its fields."""
+    slug = f"{number:012x}-role-{number}"
+    position: dict[str, Any] = {
+        "id": f"{number:012x}",
+        "friendly_id": slug,
+        "name": f"Role {number}",
+        "url": f"https://acme.breezy.hr/p/{slug}",
+        "published_date": "2026-11-10T09:30:00.000Z",
+        "location": {
+            "name": "Bengaluru, India",
+            "city": "Bengaluru",
+            "country": {"name": "India", "id": "IN"},
+            "is_remote": False,
+        },
+        "locations": [],
+        "company": {"name": "Acme Labs"},
+    }
+    return {**position, **more}
+
+
+async def test_breezy_a_position_is_a_role_at_its_own_url() -> None:
+    result = await read("breezy", answering(200, json=[breezy_position(1)]), "acme")
+
+    (role,) = result.roles
+    assert result.complete is True
+    assert role.external_id == "000000000001"
+    assert role.source_url == "https://acme.breezy.hr/p/000000000001-role-1"
+    assert role.posted_at == datetime(2026, 11, 10, 9, 30, tzinfo=UTC)
+    assert role.country == INDIA_COUNTRY_CODE
+    valid, reason = validate_job_url(role.source_url)
+    assert valid, reason
+    ref = parse_posting_url(role.source_url)
+    assert ref is not None
+    assert (ref.ats, ref.company_slug, ref.external_id) == (
+        "breezy",
+        "acme",
+        "000000000001-role-1",
+    )
+
+
+async def test_breezy_is_asked_for_its_json_on_its_own_host() -> None:
+    seen: list[httpx.Request] = []
+    await read("breezy", recording(seen, answering(200, json=[])), "acme")
+
+    assert [str(request.url) for request in seen] == ["https://acme.breezy.hr/json"]
+
+
+async def test_breezy_the_published_date_is_the_only_date() -> None:
+    items = [
+        breezy_position(1),
+        breezy_position(2, published_date=None),
+        breezy_position(3, published_date="soon"),
+    ]
+    result = await read("breezy", answering(200, json=items), "acme")
+
+    assert [role.posted_at for role in result.roles] == [
+        datetime(2026, 11, 10, 9, 30, tzinfo=UTC),
+        None,
+        None,
+    ]
+    assert result.complete is True
+
+
+async def test_breezy_places_are_joined_and_one_remote_place_makes_the_role_remote() -> None:
+    places = [
+        {"name": "Bengaluru, India", "is_remote": False},
+        {"name": "London, United Kingdom", "is_remote": True},
+    ]
+    result = await read(
+        "breezy", answering(200, json=[breezy_position(1, locations=places)]), "acme"
+    )
+
+    (role,) = result.roles
+    assert role.location_raw == "Bengaluru, India; London, United Kingdom"
+    assert role.is_remote is True
+    assert role.country == INDIA_COUNTRY_CODE
+
+
+async def test_breezy_a_position_with_no_place_has_no_location() -> None:
+    result = await read(
+        "breezy",
+        answering(200, json=[breezy_position(1, location=None, locations=[])]),
+        "acme",
+    )
+
+    (role,) = result.roles
+    assert role.location_raw is None
+    assert role.country is None
+    assert role.is_remote is False
+
+
+async def test_breezy_company_name_is_the_one_the_positions_state() -> None:
+    named = await read(
+        "breezy",
+        answering(200, json=[breezy_position(1, company={"name": "Acme Labs Pvt"})]),
+        "acme",
+    )
+    assert named.company_name == "Acme Labs Pvt"
+    assert named.roles[0].extra_metadata == {"company_name": "Acme Labs Pvt", "ats": "breezy"}
+
+    unnamed = await read("breezy", answering(200, json=[breezy_position(1, company=None)]), "acme")
+    assert unnamed.company_name is None
+
+
+async def test_breezy_a_position_with_no_slug_or_no_name_makes_the_read_incomplete() -> None:
+    items = [
+        breezy_position(1),
+        breezy_position(2, friendly_id="Not A Slug"),
+        breezy_position(3, friendly_id="abc"),
+        breezy_position(4, name=""),
+    ]
+    result = await read("breezy", answering(200, json=items), "acme")
+
+    assert result.outcome == "ok"
+    assert result.total == 4
+    assert len(result.roles) == 1
+    assert result.complete is False
+
+
+async def test_get_bytes_returns_the_body_with_the_project_user_agent() -> None:
+    from ingestion.boards.base import get_bytes
+
+    seen: list[httpx.Request] = []
+    async with client_for(recording(seen, answering(200, content=b"<workzag-jobs/>"))) as client:
+        outcome, body = await get_bytes(
+            client, "https://example.test/xml", params={"language": "en"}
+        )
+
+    assert (outcome, body) == ("ok", b"<workzag-jobs/>")
+    assert seen[0].headers["user-agent"] == USER_AGENT
+    assert seen[0].url.params["language"] == "en"
+
+
+async def test_get_bytes_is_none_unless_the_answer_is_ok() -> None:
+    from ingestion.boards.base import get_bytes
+
+    cases: list[tuple[Handler, str]] = [
+        (answering(404), "not_found"),
+        (answering(429), "rate_limited"),
+        (answering(500, text="boom"), "error"),
+        (answering(301, headers={"location": "https://example.test/x"}), "error"),
+        (answering(200, content=b"x" * (MAX_BODY_BYTES + 1)), "error"),
+    ]
+    for handler, outcome in cases:
+        async with client_for(handler) as client:
+            assert await get_bytes(client, "https://example.test/xml") == (outcome, None)
+
+
+async def test_get_bytes_does_not_parse_the_body() -> None:
+    from ingestion.boards.base import get_bytes
+
+    async with client_for(answering(200, text=HTML_PAGE)) as client:
+        assert await get_bytes(client, "https://example.test/xml") == (
+            "ok",
+            HTML_PAGE.encode("utf-8"),
+        )
+
+
+@pytest.mark.parametrize("ats", ["rippling", "personio", "breezy"])
+async def test_recorded_postings_on_the_roster_ats_parse_back_as_postings(ats: AtsName) -> None:
+    """A posting the reader emits names the board it came from, so the sweep can re-verify it."""
+    board = dict(RECORDED)[ats]
+    result = await read(ats, fixture_handler(ats), board)
+
+    assert result.roles
+    for role in result.roles:
+        assert role.source_url is not None
+        ref = parse_posting_url(role.source_url)
+        assert ref is not None, role.source_url
+        assert (ref.ats, ref.company_slug) == (ats, board)
+
+
+def test_the_capture_script_records_every_page_the_rippling_reader_reads() -> None:
+    from scripts.capture_board_fixtures import CAPTURES
+
+    assert len(CAPTURES["rippling"].also) + 1 == RIPPLING_PAGE_CAP
+    assert len(load_fixture("rippling")["requests"]) == RIPPLING_PAGE_CAP
+
+
+async def test_the_capture_script_records_a_personio_board_only_with_postings() -> None:
+    from scripts.capture_board_fixtures import CAPTURES, record
+
+    async def pause(_seconds: float) -> None:
+        return None
+
+    body = personio_board(personio_position(1), personio_position(2, "Munich"))
+    async with client_for(xml_answering(body)) as client:
+        fixture = await record("personio", CAPTURES["personio"], client, pause=pause)
+
+    assert fixture is not None
+    assert list(fixture["requests"]) == ["https://personio.jobs.personio.de/xml?language=en"]
+    (entry,) = fixture["requests"].values()
+    assert entry["body"].count("<position>") == 2
+
+    for empty in (personio_board(), "<html/>", "<!DOCTYPE workzag-jobs><workzag-jobs/>"):
+        async with client_for(xml_answering(empty)) as client:
+            assert await record("personio", CAPTURES["personio"], client, pause=pause) is None
+
+
+@pytest.mark.parametrize("ats", ["rippling", "breezy", "personio"])
+def test_the_recorded_bodies_hold_no_address_the_scrubber_would_change(ats: str) -> None:
+    from scripts.fixture_privacy import scrub_board_emails
+
+    for entry in load_fixture(ats)["requests"].values():
+        assert scrub_board_emails(entry["body"]) == entry["body"]
+
+
+def test_the_recorded_personio_board_keeps_only_the_fields_the_reader_reads() -> None:
+    import xml.etree.ElementTree as ET
+
+    from scripts.fixture_privacy import PERSONIO_POSITION_KEEP
+
+    (entry,) = load_fixture("personio")["requests"].values()
+    root = ET.fromstring(entry["body"].encode("utf-8"))
+    positions = root.findall("position")
+
+    assert root.tag == "workzag-jobs"
+    assert positions
+    for position in positions:
+        assert {child.tag for child in position} <= PERSONIO_POSITION_KEEP
+
+
+def test_the_rippling_breezy_and_personio_scrubbers_keep_what_the_reader_reads() -> None:
+    import xml.etree.ElementTree as ET
+
+    from scripts.fixture_privacy import (
+        scrub_breezy_board,
+        scrub_personio_board,
+        scrub_rippling_page,
+    )
+
+    page = scrub_rippling_page(
+        {
+            "items": [
+                {
+                    "id": "x",
+                    "name": "Role",
+                    "url": "https://ats.rippling.com/a/jobs/x",
+                    "department": {"name": "Eng"},
+                    "hiringManager": {"name": "Ravi K"},
+                    "locations": [
+                        {"name": "Pune, India", "city": "Pune", "recruiter": "jane@acme.in"}
+                    ],
+                }
+            ],
+            "totalPages": 3,
+            "page": 1,
+            "pageSize": 20,
+            "totalItems": 41,
+            "owner": "Ravi K",
+        }
+    )
+    (item,) = page["items"]
+    assert set(item) == {"id", "name", "locations"}
+    assert set(item["locations"][0]) == {"name", "city"}
+    assert page["totalPages"] == 3
+    assert "owner" not in page
+
+    (position,) = scrub_breezy_board(
+        [
+            {
+                "id": "1",
+                "friendly_id": "1-x",
+                "name": "Role",
+                "salary": "$1",
+                "hiring_manager": {"name": "Ravi K"},
+                "type": {"id": "fullTime"},
+                "location": {"name": "Pune, India", "city": "Pune", "creator": "x"},
+                "company": {"name": "Acme", "logo_url": None},
+            }
+        ]
+    )
+    assert set(position) == {"id", "friendly_id", "name", "location", "company"}
+    assert position["company"] == {"name": "Acme"}
+    assert set(position["location"]) == {"name", "city"}
+
+    body = (
+        b"<?xml version='1.0'?><workzag-jobs><position><id>1</id><name>Role</name>"
+        b"<office>Pune</office><department>Sales</department>"
+        b"<hiringManager>Ravi K</hiringManager><jobDescriptions><jobDescription>"
+        b"<name>Role</name><value>&lt;p&gt;Mail jane@acme.in or careers@acme.in&lt;/p&gt;"
+        b"</value></jobDescription></jobDescriptions></position></workzag-jobs>"
+    )
+    kept = scrub_personio_board(body)
+    (kept_position,) = ET.fromstring(kept).findall("position")
+    assert [child.tag for child in kept_position] == ["id", "name", "office", "jobDescriptions"]
+    assert b"jane@acme.in" not in kept
+    assert b"careers@acme.in" in kept
+    assert scrub_personio_board(b"<!DOCTYPE x><workzag-jobs><position/></workzag-jobs>") == b""
+    assert scrub_personio_board(b"<workzag-jobs/>") == b""
 
 
 # ── live search still filters as it did ──────────────────────────────────────

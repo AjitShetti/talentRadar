@@ -12,7 +12,17 @@ reader up in; a module is added to it when its reader exists.
 from __future__ import annotations
 
 from domain.job_boards import AtsName
-from ingestion.boards import ashby, greenhouse, keka, lever, recruitee, workable
+from ingestion.boards import (
+    ashby,
+    breezy,
+    greenhouse,
+    keka,
+    lever,
+    personio,
+    recruitee,
+    rippling,
+    workable,
+)
 from ingestion.boards.base import BoardRead, Reader, get_json
 
 READERS: dict[AtsName, Reader] = {
@@ -22,6 +32,9 @@ READERS: dict[AtsName, Reader] = {
     "workable": workable.read_board,
     "recruitee": recruitee.read_board,
     "keka": keka.read_board,
+    "rippling": rippling.read_board,
+    "personio": personio.read_board,
+    "breezy": breezy.read_board,
 }
 
 __all__ = ["READERS", "BoardRead", "Reader", "get_json"]

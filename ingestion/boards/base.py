@@ -91,25 +91,20 @@ def failed(outcome: ReadOutcome) -> BoardRead:
     return BoardRead(outcome=outcome, roles=[], total=0, complete=False)
 
 
-async def get_json(
+async def _fetch(
     client: httpx.AsyncClient,
     url: str,
     *,
     params: dict[str, str] | None = None,
     method: str = "GET",
     json_body: dict[str, Any] | None = None,
-) -> tuple[ReadOutcome, Any]:
+) -> tuple[ReadOutcome, bytes | _OverCap | None]:
     """
-    One request, answered as ``(outcome, parsed JSON)``; the data is ``None`` unless ``ok``.
+    One capped request, answered as ``(outcome, body bytes)``; the data is ``None`` unless ``ok``.
 
-    The project's User-Agent is sent, redirects are not followed whatever the client
-    is set to, and the body is streamed and abandoned the moment it passes
-    :data:`MAX_BODY_BYTES` (the count is of decoded bytes, so a compressed body that
-    inflates past the cap is caught too). 404 and 410 are ``not_found``, 429 is
-    ``rate_limited``; any other status, a timeout, a transport error, a body over
-    the cap and a body that is not JSON (an HTML page at 200 included) are ``error``.
-    A body over the cap is the one ``error`` whose data is :data:`OVER_CAP` rather than
-    ``None``. Never raises, other than cancellation.
+    The one place a board's response is fetched: the body is streamed and abandoned the
+    moment it passes :data:`MAX_BODY_BYTES`, and a body over the cap is the one non-``ok``
+    answer whose data is :data:`OVER_CAP`. The parsing is the caller's.
     """
     body = bytearray()
     try:
@@ -137,12 +132,51 @@ async def get_json(
                     return "error", OVER_CAP
     except (httpx.HTTPError, httpx.InvalidURL):
         return "error", None
+    return "ok", bytes(body)
 
+
+async def get_json(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    params: dict[str, str] | None = None,
+    method: str = "GET",
+    json_body: dict[str, Any] | None = None,
+) -> tuple[ReadOutcome, Any]:
+    """
+    One request, answered as ``(outcome, parsed JSON)``; the data is ``None`` unless ``ok``.
+
+    The project's User-Agent is sent, redirects are not followed whatever the client
+    is set to, and the body is streamed and abandoned the moment it passes
+    :data:`MAX_BODY_BYTES` (the count is of decoded bytes, so a compressed body that
+    inflates past the cap is caught too). 404 and 410 are ``not_found``, 429 is
+    ``rate_limited``; any other status, a timeout, a transport error, a body over
+    the cap and a body that is not JSON (an HTML page at 200 included) are ``error``.
+    A body over the cap is the one ``error`` whose data is :data:`OVER_CAP` rather than
+    ``None``. Never raises, other than cancellation.
+    """
+    outcome, body = await _fetch(client, url, params=params, method=method, json_body=json_body)
+    if not isinstance(body, bytes):
+        return outcome, body
     try:
         # A body near the cap takes tens of milliseconds to parse: not on the loop.
-        return "ok", await asyncio.to_thread(json.loads, bytes(body))
+        return "ok", await asyncio.to_thread(json.loads, body)
     except (ValueError, RecursionError):
         return "error", None
+
+
+async def get_bytes(
+    client: httpx.AsyncClient, url: str, *, params: dict[str, str] | None = None
+) -> tuple[ReadOutcome, bytes | None]:
+    """
+    One request, answered as ``(outcome, body bytes)``; the body is ``None`` unless ``ok``.
+
+    For a board that is not JSON (Personio's XML). The same request as :func:`get_json`,
+    with the same statuses, cap and never-raises rules; the body is returned as it came,
+    so a caller parses it and decides what a 200 that is not its board means.
+    """
+    outcome, body = await _fetch(client, url, params=params)
+    return outcome, (body if isinstance(body, bytes) else None)
 
 
 async def read_items(

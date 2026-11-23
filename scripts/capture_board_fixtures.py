@@ -5,10 +5,11 @@ Record one real board per ATS so the board-reader tests can replay it offline.
 
     python scripts/capture_board_fixtures.py --ats greenhouse,ashby,lever
     python scripts/capture_board_fixtures.py --ats workable,recruitee,keka
+    python scripts/capture_board_fixtures.py --ats rippling,personio,breezy
 
 Each ATS is asked for exactly what ``ingestion/boards/<ats>.py`` asks for: one
-request (Keka's reader makes a second, for the company's name), with the project's
-User-Agent, no redirects followed, and at least the ATS's pace
+request (Keka's reader makes a second, for the company's name; Rippling's makes one per
+page, up to ten), with the project's User-Agent, no redirects followed, and at least the ATS's pace
 (``domain.job_boards.PACE_SECONDS``) between two requests to it. The response is
 stored as it came back, in
 ``tests/fixtures/boards/<ats>.json.gz``::
@@ -56,10 +57,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from domain.job_boards import PACE_SECONDS
 from scripts.fixture_privacy import (
+    scrub_breezy_board,
     scrub_greenhouse_metadata,
     scrub_keka_jobs,
     scrub_keka_portal,
+    scrub_personio_board,
     scrub_recruitee_board,
+    scrub_rippling_page,
     scrub_workable_board,
 )
 
@@ -95,7 +99,18 @@ SCRUBBERS: dict[str, Scrubber] = {
     "workable": scrub_workable_board,
     "recruitee": scrub_recruitee_board,
     "keka": scrub_keka_jobs,
+    "rippling": scrub_rippling_page,
+    "breezy": scrub_breezy_board,
 }
+
+#: The ATSes whose board is XML, not JSON: their body is scrubbed as bytes and stored as text.
+XML_SCRUBBERS: dict[str, Callable[[bytes], bytes]] = {"personio": scrub_personio_board}
+
+#: The board API of Rippling; the first page is the capture's URL, the rest are its ``also``.
+RIPPLING_API = "https://ats.rippling.com/api/v2/board/rippling/jobs"
+#: Pages the reader asks for in one read (its ``MAX_PAGES``). Recording fewer would make
+#: the replay answer 404 for a page the reader reaches.
+RIPPLING_PAGES = 10
 
 #: One real Indian employer per ATS (2026-11-23: Sigmoid 47 roles, Sarvam 42,
 #: Meesho 47, Apna 156, Lenskart 88, Spyne 9, almost all in India).
@@ -126,6 +141,26 @@ CAPTURES: dict[str, Capture] = {
             ),
         ),
     ),
+    # Rippling's own board: 750 postings in 38 pages, so the reader's ten pages are
+    # recorded and the read is incomplete. The list is one row per (posting, place).
+    "rippling": Capture(
+        "rippling",
+        RIPPLING_API,
+        {"page": "1"},
+        also=tuple(
+            (f"{RIPPLING_API}?page={page}", scrub_rippling_page)
+            for page in range(2, RIPPLING_PAGES + 1)
+        ),
+    ),
+    # Personio's own careers board (Berlin and Munich; no Indian role at the time of recording).
+    "personio": Capture(
+        "personio",
+        "https://personio.jobs.personio.de/xml",
+        {"language": "en"},
+    ),
+    # Breezy's own demo account ("MS Breezy Trial", US placeholder positions). No Indian
+    # Breezy board has been found yet, so this recording has no role in India.
+    "breezy": Capture("breezy", "https://breezy.breezy.hr/json"),
 }
 
 
@@ -147,9 +182,9 @@ Pause = Callable[[float], Awaitable[None]]
 
 
 def _postings(payload: Any) -> object:
-    """The list of postings in a board's response: Workable's and Greenhouse's ``jobs``, Recruitee's ``offers``, or a bare list."""
+    """The list of postings in a board's response: Workable's and Greenhouse's ``jobs``, Recruitee's ``offers``, Rippling's ``items``, or a bare list."""
     if isinstance(payload, dict):
-        return payload.get("jobs", payload.get("offers"))
+        return payload.get("jobs", payload.get("offers", payload.get("items")))
     return payload
 
 
@@ -179,6 +214,20 @@ def _entry(response: httpx.Response, body: str) -> dict[str, Any]:
     }
 
 
+def _record_xml(ats: str, capture: Capture, response: httpx.Response) -> dict[str, Any] | None:
+    """An XML board (Personio's): scrubbed as bytes, and recorded only when it holds a posting."""
+    kept = XML_SCRUBBERS[ats](response.content)
+    if not kept:
+        print(
+            f"  {ats:12} is not a board with postings, not recording a fixture that proves nothing"
+        )
+        return None
+    print(f"  {ats:12} {kept.count(b'<position>'):>3} postings, {len(response.content) // 1024} KB")
+    body = kept.decode("utf-8")
+    requests = {request_key(capture.url, capture.params): _entry(response, body)}
+    return {"ats": ats, "board": capture.board, "requests": requests}
+
+
 async def record(
     ats: str, capture: Capture, client: httpx.AsyncClient, *, pause: Pause = asyncio.sleep
 ) -> dict[str, Any] | None:
@@ -190,6 +239,8 @@ async def record(
     response = await _get(ats, capture.url, capture.params, client)
     if response is None:
         return None
+    if ats in XML_SCRUBBERS:
+        return _record_xml(ats, capture, response)
     try:
         payload = response.json()
     except ValueError:

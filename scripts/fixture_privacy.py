@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import re
+import xml.etree.ElementTree as ET
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
@@ -1032,3 +1033,94 @@ def scrub_keka_jobs(payload: object) -> list[dict[str, Any]]:
 def scrub_keka_portal(payload: object) -> dict[str, Any]:
     """A Keka ``careerportalinfo`` response cut to the company's name and portal; ``{}`` if it is not one."""
     return _keep_fields(payload, KEKA_PORTAL_KEEP)
+
+
+RIPPLING_PAGE_KEEP = frozenset({"items", "page", "pageSize", "totalItems", "totalPages"})
+RIPPLING_POSTING_KEEP = frozenset({"id", "name", "locations"})
+RIPPLING_LOCATION_KEEP = frozenset(
+    {"name", "city", "state", "country", "countryCode", "workplaceType"}
+)
+
+BREEZY_POSITION_KEEP = frozenset(
+    {
+        "id",
+        "friendly_id",
+        "name",
+        "published_date",
+        "description",
+        "location",
+        "locations",
+        "company",
+    }
+)
+BREEZY_PLACE_KEEP = frozenset({"name", "city", "state", "country", "is_remote"})
+BREEZY_COMPANY_KEEP = frozenset({"name"})
+
+#: The fields of a Personio ``<position>`` the reader reads; every other element is dropped.
+PERSONIO_POSITION_KEEP = frozenset({"id", "name", "office", "createdAt", "jobDescriptions"})
+_XML_UNSAFE = re.compile(rb"<!(?:DOCTYPE|ENTITY)", re.IGNORECASE)
+
+
+def scrub_rippling_page(payload: object) -> dict[str, Any]:
+    """A Rippling board page with its paging and only the fields about each posting; ``{}`` if it is not one."""
+    items = payload.get("items") if isinstance(payload, dict) else None
+    if not isinstance(items, list):
+        return {}
+    kept = _keep_fields(payload, RIPPLING_PAGE_KEEP - {"items"})
+    kept["items"] = [
+        _keep_posting(item, RIPPLING_POSTING_KEEP, "locations", RIPPLING_LOCATION_KEEP)
+        for item in items
+        if isinstance(item, dict)
+    ]
+    return kept
+
+
+def _breezy_position(job: dict[str, Any]) -> dict[str, Any]:
+    kept = _keep_posting(job, BREEZY_POSITION_KEEP, "locations", BREEZY_PLACE_KEEP)
+    if isinstance(job.get("location"), dict):
+        kept["location"] = _keep_fields(job["location"], BREEZY_PLACE_KEEP)
+    if isinstance(job.get("company"), dict):
+        kept["company"] = _keep_fields(job["company"], BREEZY_COMPANY_KEEP)
+    return kept
+
+
+def scrub_breezy_board(payload: object) -> list[dict[str, Any]]:
+    """A Breezy ``/json`` response with only the fields about each position; ``[]`` if it is not a list."""
+    if not isinstance(payload, list):
+        return []
+    return [_breezy_position(job) for job in payload if isinstance(job, dict)]
+
+
+def scrub_personio_board(body: bytes) -> bytes:
+    """
+    A Personio XML board with only each position's fields the reader reads, and emails
+    scrubbed; ``b""`` when the body is not a Personio board or holds no position.
+
+    A body that declares a DOCTYPE or an ENTITY is refused before it is parsed, as the
+    reader refuses it.
+    """
+    if _XML_UNSAFE.search(body) is not None:
+        return b""
+    try:
+        root = ET.fromstring(body)
+    except ET.ParseError:
+        return b""
+    if root.tag != "workzag-jobs":
+        return b""
+    positions = [child for child in root if child.tag == "position"]
+    if not positions:
+        return b""
+    for child in list(root):
+        if child.tag != "position":
+            root.remove(child)
+    for position in positions:
+        for field in list(position):
+            if field.tag not in PERSONIO_POSITION_KEEP:
+                position.remove(field)
+    for element in root.iter():
+        if element.text:
+            element.text = scrub_board_emails(element.text)
+        if element.tail:
+            element.tail = scrub_board_emails(element.tail)
+    serialised: bytes = ET.tostring(root, encoding="utf-8")
+    return serialised
