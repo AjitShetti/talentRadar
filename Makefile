@@ -5,7 +5,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 SHELL := /bin/bash
-.PHONY: help up down logs migrate seed seed-companies test lint format typecheck clean verify-deploy build-image verify-sources capture-fixtures capture-fixtures-events
+.PHONY: help up down logs migrate seed seed-companies test lint format typecheck clean verify-deploy build-image verify-sources capture-fixtures capture-fixtures-events capture-board-fixtures job-boards
 
 # ── Docker Compose ──────────────────────────────────────────────────────────
 
@@ -115,6 +115,14 @@ capture-fixtures:
 ## Eventbrite is recorded only when EVENTBRITE_TOKEN is set.
 capture-fixtures-events:
 	python scripts/capture_fixtures.py --events
+
+## Re-record one real board per job-board ATS (the fixtures the board-reader tests replay).
+capture-board-fixtures:
+	python scripts/capture_board_fixtures.py
+
+## Run one job-board roster step locally (usage: make job-boards step=sweep)
+job-boards:
+	python scripts/run_job_boards.py --step $(step)
 
 # ── Cleanup ─────────────────────────────────────────────────────────────────
 

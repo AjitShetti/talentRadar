@@ -29,6 +29,8 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
+from domain.job_boards import ATS
+
 #: How much each signal can contribute. They sum to 1.0.
 WEIGHT_RELEVANCE = 0.50
 WEIGHT_RECENCY = 0.25
@@ -37,10 +39,8 @@ WEIGHT_COMPLETENESS = 0.10
 
 #: First-party postings are more trustworthy and more complete than aggregated
 #: ones: an ATS row comes from the employer, a board row from a scraper.
-SOURCE_TRUST = {
-    "greenhouse": 1.0,
-    "lever": 1.0,
-    "ashby": 1.0,
+SOURCE_TRUST: dict[str, float] = {
+    **dict.fromkeys(ATS, 1.0),
     "ats_platforms": 1.0,
     "linkedin": 0.8,
     "instahyre": 0.75,
@@ -165,7 +165,20 @@ def recency_score(job: dict[str, Any], now: datetime | None = None) -> float:
 
 
 def source_score(job: dict[str, Any]) -> float:
-    return SOURCE_TRUST.get((job.get("source") or "").lower(), DEFAULT_SOURCE_TRUST)
+    """
+    How much the posting's source is trusted.
+
+    A stored board row's source is ``<ats>:<board>`` (``workable:apna``,
+    ``greenhouse:groww``), not the bare ATS name; it earns its ATS's trust. A
+    prefix that is not one of the nine ATSes (``foo:bar``) gets no such credit.
+    """
+    source = (job.get("source") or "").lower()
+    if source in SOURCE_TRUST:
+        return SOURCE_TRUST[source]
+    prefix, sep, _ = source.partition(":")
+    if sep and prefix in ATS:
+        return SOURCE_TRUST[prefix]
+    return DEFAULT_SOURCE_TRUST
 
 
 def completeness_score(job: dict[str, Any]) -> float:

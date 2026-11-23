@@ -143,6 +143,29 @@ async def test_an_unknown_ats_posting_is_checked_live(no_index, outcome, status)
     assert result["liveness"] is None
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://apply.workable.com/acme/j/ABC123/",
+        "https://acme.recruitee.com/o/backend-engineer",
+        "https://acme.keka.com/careers/jobdetails/12",
+        "https://ats.rippling.com/acme/jobs/0f1e2d3c-4b5a-6978-8695-a4b3c2d1e0f9",
+        "https://acme.jobs.personio.de/job/12",
+        "https://acme.breezy.hr/p/0123456789abcdef-backend",
+    ],
+)
+async def test_a_sweep_only_posting_we_do_not_hold_is_not_checked_live(no_index, url):
+    """Reading its whole board for an anonymous visitor is what the check must never do."""
+    with patch(
+        "ingestion.scrapers.ats_scraper.ATSScraper.check_posting", AsyncMock(return_value=PostingCheck.OPEN)
+    ) as check:
+        result = await public_roles.check_url(url)
+    assert check.await_count == 0
+    assert result["status"] == "unreachable"
+    assert result["liveness"] is None
+    assert "schedule" in result["message"]
+
+
 async def test_the_check_never_raises(monkeypatch):
     async def broken(*args: Any, **kwargs: Any) -> None:
         raise RuntimeError("database is down")

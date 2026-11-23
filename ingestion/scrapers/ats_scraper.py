@@ -1,47 +1,65 @@
 """
 ingestion/scrapers/ats_scraper.py
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Direct high-speed scraper for modern ATS platforms:
+Direct high-speed scraper for modern ATS platforms, for live search:
 - Greenhouse (boards-api.greenhouse.io)
 - Ashby (api.ashbyhq.com)
-- Lever (api.lever.co)
 
 These APIs return structured JSON in 200-500ms with zero anti-bot challenges.
-Provides real openings from top tech startups & global companies hiring in India / Remote.
+The boards read are the roster's busiest (``services/job_boards``); the constants
+below are what a search reads when the roster cannot answer. Lever, Workable and the
+other ATSes are read only by the paced sweep: they are too slow for a live search.
+
+Reading a board is ``ingestion/boards``' job, the same reader the scheduled sweep
+uses, so a search and the sweep parse a posting identically. This module only
+decides which of a board's roles match a search.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
-import uuid
 from collections.abc import Awaitable
-from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
+import httpx
+
 from domain.entities import Job
-from domain.enums import EmploymentType, JobStatus, SeniorityLevel
-from domain.liveness import parse_source_timestamp
+from domain.job_boards import LIVE_SEARCH_ATS, AtsName, BoardRef, board_for_posting, board_ref
+from domain.posting_urls import parse_posting_url, posting_url_key
+from ingestion.boards import READERS, greenhouse
+from ingestion.boards.base import BoardRead, failed
 from ingestion.scrapling_manager import ScraplingManager
+from services.cache_backend import CacheBackend
 
 logger = logging.getLogger(__name__)
 
-# Curated list of companies on Greenhouse, Ashby, Lever with active remote/India hiring
+# The fallback boards live search reads when the roster cannot answer (no database,
+# or an empty table). Postman and Vercel are gone: their boards are no longer served.
 GREENHOUSE_COMPANIES = [
-    "stripe", "figma", "gitlab", "postman", "inmobi",
+    "stripe", "figma", "gitlab", "inmobi",
     "cloudflare", "cockroachlabs", "elastic",
     "mongodb", "affirm", "airtable", "reddit"
 ]
 
 ASHBY_COMPANIES = [
-    "openai", "replit", "linear", "vercel", "supabase",
+    "openai", "replit", "linear", "supabase",
     "cursor", "modal", "resend", "dust", "perplexity"
 ]
 
-LEVER_COMPANIES = [
-    "spotify"
-]
+#: Where the roster's live-search boards are cached, and for how long.
+LIVE_BOARDS_CACHE_KEY = "tr:boards:live-top"
+LIVE_BOARDS_TTL_SECONDS = 3600
+
+#: How many roster boards one search reads.
+LIVE_BOARD_COUNT = 25
+
+#: The most a search waits for the roster before it reads the constants instead. The
+#: whole fan-out is capped at 5 s by the source registry, and each board at 2 s, so this
+#: leaves the boards their time.
+_ROSTER_LOOKUP_SECONDS = 1.5
 
 INDIAN_CITY_SYNONYMS = {
     "bangalore": "Bengaluru",
@@ -136,9 +154,112 @@ class PostingCheck(str, Enum):
     ERROR = "error"
 
 
+#: A live search waits at most this long for one board.
+_BOARD_TIMEOUT_SECONDS = 2.0
+
+
+def _board_client() -> httpx.AsyncClient:
+    """The client live search reads boards with. Tests replace it with a replaying one."""
+    return httpx.AsyncClient(timeout=_BOARD_TIMEOUT_SECONDS, follow_redirects=False)
+
+
+# ── which boards a search reads ──────────────────────────────────────────────
+
+
+def _fallback_boards() -> list[BoardRef]:
+    """The constants as boards: what a search reads when the roster cannot answer."""
+    return [BoardRef("greenhouse", slug) for slug in GREENHOUSE_COMPANIES] + [
+        BoardRef("ashby", slug) for slug in ASHBY_COMPANIES
+    ]
+
+
+def _encode_boards(boards: list[BoardRef]) -> str:
+    return json.dumps([[board.ats, board.board] for board in boards], separators=(",", ":"))
+
+
+def _decode_boards(raw: str | None) -> list[BoardRef]:
+    """
+    The boards a cached value holds. Anything that is not a list of ``[ats, board]`` pairs
+    names none, and a pair that is not a valid live-search board is dropped.
+    """
+    if not raw:
+        return []
+    try:
+        pairs = json.loads(raw)
+    except (ValueError, RecursionError):
+        return []
+    if not isinstance(pairs, list):
+        return []
+    boards: list[BoardRef] = []
+    for pair in pairs:
+        if not (
+            isinstance(pair, list) and len(pair) == 2 and all(isinstance(p, str) for p in pair)
+        ):
+            continue
+        ref = board_ref(pair[0], pair[1])
+        if ref is not None and ref.ats in LIVE_SEARCH_ATS:
+            boards.append(ref)
+    return boards
+
+
+async def _cached_roster() -> list[BoardRef]:
+    try:
+        return _decode_boards(await CacheBackend.get(LIVE_BOARDS_CACHE_KEY))
+    except Exception as exc:
+        logger.debug("Live roster cache read failed: %s", exc)
+        return []
+
+
+async def _read_roster() -> list[BoardRef]:
+    """The top live boards from the table, in a short session that closes before any request."""
+    from services.job_boards.store import top_live_boards
+    from storage.database import AsyncSessionLocal
+
+    try:
+        async with AsyncSessionLocal() as session:
+            return await top_live_boards(session, LIVE_BOARD_COUNT)
+    except Exception as exc:
+        logger.debug("Live roster could not be read: %s", exc)
+        return []
+
+
+async def _roster_boards() -> list[BoardRef]:
+    cached = await _cached_roster()
+    if cached:
+        return cached
+    boards = [board for board in await _read_roster() if board.ats in LIVE_SEARCH_ATS]
+    if boards:
+        try:
+            await CacheBackend.set(
+                LIVE_BOARDS_CACHE_KEY, _encode_boards(boards), LIVE_BOARDS_TTL_SECONDS
+            )
+        except Exception as exc:
+            logger.debug("Live roster cache write failed: %s", exc)
+    return boards
+
+
+async def live_boards() -> list[BoardRef]:
+    """
+    The boards a live search reads: the roster's top active Greenhouse and Ashby boards, cached
+    for an hour, else the constants. Never raises, and never waits longer than
+    ``_ROSTER_LOOKUP_SECONDS`` for the roster. An empty or failed roster is not cached.
+    """
+    try:
+        boards = await asyncio.wait_for(_roster_boards(), timeout=_ROSTER_LOOKUP_SECONDS)
+    except Exception as exc:
+        logger.debug("Live roster lookup gave up: %s", exc)
+        boards = []
+    return boards or _fallback_boards()
+
+
 RECHECK_TIMEOUT_SECONDS = 5.0
 _RETRY_PAUSE_SECONDS = 0.2
 _GONE_STATUSES = frozenset({404, 410})
+
+#: The ATSes whose postings are asked about one at a time. Every other ATS is checked by
+#: membership: its board is read once through ``READERS`` and the posting's URL is looked
+#: for among the board's roles.
+PER_POSTING_ATS: frozenset[str] = frozenset({"greenhouse", "lever"})
 
 
 class ATSScraper:
@@ -167,19 +288,92 @@ class ATSScraper:
                 await asyncio.sleep(_RETRY_PAUSE_SECONDS)
         return status, data
 
-    @classmethod
-    async def fetch_ashby_open_ids(cls, company_slug: str) -> set[str] | None:
+    @staticmethod
+    def recheck_client() -> httpx.AsyncClient:
+        """The client a re-check reads boards with: the re-check's own timeout, and no redirect is followed."""
+        return httpx.AsyncClient(timeout=RECHECK_TIMEOUT_SECONDS, follow_redirects=False)
+
+    @staticmethod
+    def board_for(source: str, source_url: str | None) -> BoardRef | None:
         """
-        Ids currently on an Ashby board, or ``None`` when the board could not
-        be read. Ashby has no per-posting endpoint, so membership of the board
-        is the only check available.
+        The board a stored posting is checked on, or ``None`` when it is asked about one at a
+        time (Greenhouse, Lever), its source names no known board, or its URL names another board.
         """
-        status, data = await cls._fetch_for_recheck(
-            f"https://api.ashbyhq.com/posting-api/job-board/{company_slug}"
-        )
-        if status != 200 or not isinstance(data, dict) or not isinstance(data.get("jobs"), list):
+        ats, _, slug = (source or "").partition(":")
+        ats, slug = ats.strip().lower(), slug.strip()
+        if not slug or ats in PER_POSTING_ATS or ats not in READERS:
             return None
-        return {str(item.get("id")) for item in data["jobs"] if isinstance(item, dict)}
+        return board_for_posting(ats, slug, source_url)
+
+    @classmethod
+    async def read_board_once(
+        cls,
+        board: BoardRef,
+        *,
+        boards: dict[BoardRef, BoardRead],
+        client: httpx.AsyncClient | None = None,
+    ) -> BoardRead:
+        """
+        ``board``'s read: from ``boards`` when this batch has read it already, else read now
+        through ``READERS`` and remembered there. A reader that raises is a failed read, and is
+        remembered as one, never raised.
+        """
+        cached = boards.get(board)
+        if cached is not None:
+            return cached
+        try:
+            if client is not None:
+                read = await READERS[board.ats](client, board)
+            else:
+                async with cls.recheck_client() as own:
+                    read = await READERS[board.ats](own, board)
+        except Exception as exc:
+            logger.debug("Board %s could not be read: %s", board.source, exc)
+            read = failed("error")
+        boards[board] = read
+        return read
+
+    @classmethod
+    async def _check_on_board(
+        cls,
+        source: str,
+        source_url: str | None,
+        *,
+        boards: dict[BoardRef, BoardRead] | None,
+        client: httpx.AsyncClient | None,
+    ) -> PostingCheck:
+        """
+        Membership: is this posting among the roles of its board?
+
+        This reads a whole board, so it is only for a caller that owns the pace: no request path
+        and no re-check batch calls it for a ``SWEEP_ONLY_ATS`` (``services.liveness`` and
+        ``services.public_roles`` answer those from the stored row), and Ashby's board is one request.
+
+        A role is the same posting when it has the same posting id, each read from its URL by
+        ``parse_posting_url`` (so a query string, a trailing slash or the case of an id does not
+        matter). A URL that does not parse is compared by its normalised form instead. Only a
+        board read whole (``ok`` and ``complete``) can show that a posting is absent: a failed or
+        rate-limited read, a 404 for the board (which is not proof that one posting closed) and
+        an incomplete read all answer ``ERROR``.
+        """
+        board = cls.board_for(source, source_url)
+        held = parse_posting_url(source_url or "")
+        wanted = posting_url_key(source_url)
+        if board is None or (held is None and wanted is None):
+            return PostingCheck.ERROR
+        read = await cls.read_board_once(
+            board, boards=boards if boards is not None else {}, client=client
+        )
+        if read.outcome != "ok" or not read.complete:
+            return PostingCheck.ERROR
+        for role in read.roles:
+            if held is not None:
+                listed = parse_posting_url(role.source_url or "")
+                if listed is not None and listed.external_id == held.external_id:
+                    return PostingCheck.OPEN
+            if wanted is not None and posting_url_key(role.source_url) == wanted:
+                return PostingCheck.OPEN
+        return PostingCheck.CLOSED
 
     @classmethod
     async def check_posting(
@@ -187,36 +381,31 @@ class ATSScraper:
         source: str,
         external_id: str,
         *,
-        ashby_boards: dict[str, set[str] | None] | None = None,
+        source_url: str | None = None,
+        boards: dict[BoardRef, BoardRead] | None = None,
+        client: httpx.AsyncClient | None = None,
     ) -> PostingCheck:
         """
         Ask the employer's ATS whether it still serves this posting.
 
-        ``ashby_boards`` lets a batch read each Ashby board once instead of
-        once per posting.
+        Greenhouse and Lever are asked about the posting by its id. Every other ATS is
+        checked by membership of its board (``_check_on_board``), which needs the posting's
+        own ``source_url``. ``boards`` is a batch's cache of board reads, so each board is read
+        once, and ``client`` is the batch's one HTTP client.
         """
         ats, _, slug = (source or "").partition(":")
         ats, slug = ats.strip().lower(), slug.strip()
         if not slug or not external_id:
             return PostingCheck.ERROR
 
-        if ats == "ashby":
-            if ashby_boards is not None and slug in ashby_boards:
-                open_ids = ashby_boards[slug]
-            else:
-                open_ids = await cls.fetch_ashby_open_ids(slug)
-                if ashby_boards is not None:
-                    ashby_boards[slug] = open_ids
-            if open_ids is None:
-                return PostingCheck.ERROR
-            return PostingCheck.OPEN if external_id in open_ids else PostingCheck.CLOSED
-
         if ats == "greenhouse":
             url = f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs/{external_id}"
         elif ats == "lever":
             url = f"https://api.lever.co/v0/postings/{slug}/{external_id}"
         else:
-            return PostingCheck.ERROR
+            return await cls._check_on_board(
+                source, source_url, boards=boards, client=client
+            )
 
         status, data = await cls._fetch_for_recheck(url)
         if status in _GONE_STATUSES:
@@ -230,166 +419,120 @@ class ATSScraper:
     # ── searching boards ─────────────────────────────────────────────────────
 
     @classmethod
-    async def fetch_greenhouse_company(cls, company_slug: str, query: str, location: str | None, is_remote: bool | None) -> list[Job]:
+    async def _read_board(
+        cls, ats: AtsName, company_slug: str, client: httpx.AsyncClient | None
+    ) -> list[Job]:
+        """
+        Every role on one board, from the same reader the scheduled sweep uses.
+
+        The board id is canonicalised the way the sweep's rows are (``board_ref``), so a role's
+        ``source`` is the one the sweep stores for it. A board id that is not valid makes no request.
+        """
+        ref = board_ref(ats, company_slug)
+        if ref is None:
+            return []
+        if client is not None:
+            return (await cls._read_for_search(ats, client, ref)).roles
+        async with _board_client() as own:
+            return (await cls._read_for_search(ats, own, ref)).roles
+
+    @staticmethod
+    async def _read_for_search(ats: AtsName, client: httpx.AsyncClient, ref: BoardRef) -> BoardRead:
+        """
+        One board for a live search: the sweep's reader, except that Greenhouse is read without its
+        descriptions (``content=true`` is ~2 MB a busy board, parsed on threads that outlive the
+        search's timeout). The sweep, which owns the pace and the memory, reads them and the
+        rows it stores take them from there.
+        """
+        if ats == "greenhouse":
+            return await greenhouse.read_board(client, ref, descriptions=False)
+        return await READERS[ats](client, ref)
+
+    @staticmethod
+    def _select(
+        roles: list[Job],
+        query: str,
+        location: str | None,
+        is_remote: bool | None,
+        *,
+        trust_remote_flag: bool,
+    ) -> list[Job]:
+        """
+        The roles matching a search's query and location.
+
+        ``trust_remote_flag`` keeps a role the ATS itself flags remote even when its
+        location text does not match (Ashby's ``isRemote``, Lever's ``workplaceType``);
+        Greenhouse states no such flag and goes by the text alone.
+        """
+        kept: list[Job] = []
+        for role in roles:
+            if not matches_query(role.title, query):
+                continue
+            matched, job_remote, country, city = matches_location(
+                role.location_raw or "", location, is_remote
+            )
+            flagged = trust_remote_flag and role.is_remote
+            if not matched and not flagged:
+                continue
+            kept.append(
+                role.model_copy(
+                    update={
+                        "country": country or "India",
+                        "city": city or None,
+                        "is_remote": job_remote or flagged,
+                    }
+                )
+            )
+        return kept
+
+    @classmethod
+    async def fetch_greenhouse_company(
+        cls,
+        company_slug: str,
+        query: str,
+        location: str | None,
+        is_remote: bool | None,
+        *,
+        client: httpx.AsyncClient | None = None,
+    ) -> list[Job]:
         """Fetch and filter jobs from a Greenhouse public board."""
-        url = f"https://boards-api.greenhouse.io/v1/boards/{company_slug}/jobs"
-        status, data = await ScraplingManager.fetch_html_or_json(url, timeout=2.0)
-        if status != 200 or not isinstance(data, dict):
-            return []
-
-        jobs_data = data.get("jobs", [])
-        matched_jobs: list[Job] = []
-
-        for item in jobs_data:
-            title = item.get("title", "")
-            loc_name = item.get("location", {}).get("name", "")
-
-            if not matches_query(title, query):
-                continue
-
-            matched, job_remote, country, city = matches_location(loc_name, location, is_remote)
-            if not matched:
-                continue
-
-            job = Job(
-                id=uuid.uuid4(),
-                company_id=uuid.uuid4(),
-                external_id=str(item.get("id", "")),
-                source=f"greenhouse:{company_slug}",
-                source_url=item.get("absolute_url", f"https://boards.greenhouse.io/{company_slug}/jobs/{item.get('id')}"),
-                title=title,
-                description_raw=None,
-                description_clean=None,
-                status=JobStatus.ACTIVE,
-                employment_type=EmploymentType.FULL_TIME,
-                seniority=SeniorityLevel.MID,
-                location_raw=loc_name or "Remote / India",
-                country=country or "India",
-                city=city or None,
-                is_remote=job_remote,
-                skills=[],
-                tags=["ats", "greenhouse", company_slug],
-                # The employer's publish time, or nothing - never the clock.
-                posted_at=parse_source_timestamp(item.get("first_published")),
-                source_posted_at=parse_source_timestamp(item.get("first_published")),
-                source_updated_at=parse_source_timestamp(item.get("updated_at")),
-                created_at=datetime.now(UTC),
-                extra_metadata={"company_name": company_slug.capitalize(), "ats": "greenhouse"}
-            )
-            matched_jobs.append(job)
-
-        return matched_jobs
+        roles = await cls._read_board("greenhouse", company_slug, client)
+        return cls._select(roles, query, location, is_remote, trust_remote_flag=False)
 
     @classmethod
-    async def fetch_ashby_company(cls, company_slug: str, query: str, location: str | None, is_remote: bool | None) -> list[Job]:
+    async def fetch_ashby_company(
+        cls,
+        company_slug: str,
+        query: str,
+        location: str | None,
+        is_remote: bool | None,
+        *,
+        client: httpx.AsyncClient | None = None,
+    ) -> list[Job]:
         """Fetch and filter jobs from an Ashby public board."""
-        url = f"https://api.ashbyhq.com/posting-api/job-board/{company_slug}"
-        status, data = await ScraplingManager.fetch_html_or_json(url, timeout=2.0)
-        if status != 200 or not isinstance(data, dict):
-            return []
-
-        jobs_data = data.get("jobs", [])
-        matched_jobs: list[Job] = []
-
-        for item in jobs_data:
-            title = item.get("title", "")
-            loc_name = item.get("location", "")
-            if not loc_name and item.get("isRemote"):
-                loc_name = "Remote"
-
-            if not matches_query(title, query):
-                continue
-
-            matched, job_remote, country, city = matches_location(loc_name, location, is_remote)
-            if not matched and not item.get("isRemote"):
-                continue
-
-            job = Job(
-                id=uuid.uuid4(),
-                company_id=uuid.uuid4(),
-                external_id=str(item.get("id", "")),
-                source=f"ashby:{company_slug}",
-                source_url=item.get("jobUrl", f"https://jobs.ashbyhq.com/{company_slug}/{item.get('id')}"),
-                title=title,
-                description_raw=None,
-                description_clean=None,
-                status=JobStatus.ACTIVE,
-                employment_type=EmploymentType.FULL_TIME,
-                seniority=SeniorityLevel.MID,
-                location_raw=loc_name or "Remote",
-                country=country or "India",
-                city=city or None,
-                is_remote=job_remote or bool(item.get("isRemote")),
-                skills=[],
-                tags=["ats", "ashby", company_slug],
-                # The employer's publish time, or nothing - never the clock.
-                posted_at=parse_source_timestamp(item.get("publishedAt")),
-                source_posted_at=parse_source_timestamp(item.get("publishedAt")),
-                source_updated_at=parse_source_timestamp(item.get("updatedAt")),
-                created_at=datetime.now(UTC),
-                extra_metadata={"company_name": company_slug.capitalize(), "ats": "ashby"}
-            )
-            matched_jobs.append(job)
-
-        return matched_jobs
+        roles = await cls._read_board("ashby", company_slug, client)
+        return cls._select(roles, query, location, is_remote, trust_remote_flag=True)
 
     @classmethod
-    async def fetch_lever_company(cls, company_slug: str, query: str, location: str | None, is_remote: bool | None) -> list[Job]:
+    async def fetch_lever_company(
+        cls,
+        company_slug: str,
+        query: str,
+        location: str | None,
+        is_remote: bool | None,
+        *,
+        client: httpx.AsyncClient | None = None,
+    ) -> list[Job]:
         """Fetch and filter jobs from a Lever public board."""
-        url = f"https://api.lever.co/v0/postings/{company_slug}?mode=json"
-        status, data = await ScraplingManager.fetch_html_or_json(url, timeout=2.0)
-        if status != 200 or not isinstance(data, list):
-            return []
-
-        matched_jobs: list[Job] = []
-
-        for item in data:
-            title = item.get("text", "")
-            cats = item.get("categories", {})
-            loc_name = cats.get("location", "") or cats.get("allLocations", [""])[0]
-            workplace_type = item.get("workplaceType", "").lower()
-            is_lever_remote = workplace_type == "remote"
-
-            if not matches_query(title, query):
-                continue
-
-            matched, job_remote, country, city = matches_location(loc_name, location, is_remote)
-            if not matched and not is_lever_remote:
-                continue
-
-            job = Job(
-                id=uuid.uuid4(),
-                company_id=uuid.uuid4(),
-                external_id=str(item.get("id", "")),
-                source=f"lever:{company_slug}",
-                source_url=item.get("hostedUrl", f"https://jobs.lever.co/{company_slug}/{item.get('id')}"),
-                title=title,
-                description_raw=None,
-                description_clean=item.get("descriptionPlain", None),
-                status=JobStatus.ACTIVE,
-                employment_type=EmploymentType.FULL_TIME,
-                seniority=SeniorityLevel.MID,
-                location_raw=loc_name or "Remote",
-                country=country or "India",
-                city=city or None,
-                is_remote=job_remote or is_lever_remote,
-                skills=[],
-                tags=["ats", "lever", company_slug],
-                # The employer's publish time, or nothing - never the clock.
-                posted_at=parse_source_timestamp(item.get("createdAt")),
-                source_posted_at=parse_source_timestamp(item.get("createdAt")),
-                source_updated_at=parse_source_timestamp(item.get("updatedAt")),
-                created_at=datetime.now(UTC),
-                extra_metadata={"company_name": company_slug.capitalize(), "ats": "lever"}
-            )
-            matched_jobs.append(job)
-
-        return matched_jobs
+        roles = await cls._read_board("lever", company_slug, client)
+        return cls._select(roles, query, location, is_remote, trust_remote_flag=True)
 
     @classmethod
     async def search_all_ats(cls, query: str, location: str | None = None, is_remote: bool | None = None) -> list[Job]:
         """
-        Queries all configured Greenhouse, Ashby, and Lever companies concurrently with individual timeouts.
+        Queries the live search's boards (``live_boards``: the roster's busiest Greenhouse and
+        Ashby boards) concurrently, each with its own timeout. Only Greenhouse and Ashby are
+        ever read here.
         """
         async def _safe_fetch(coro: Awaitable[list[Job]]) -> list[Job]:
             try:
@@ -397,15 +540,20 @@ class ATSScraper:
             except Exception:
                 return []
 
-        tasks = []
-        for c in GREENHOUSE_COMPANIES:
-            tasks.append(_safe_fetch(cls.fetch_greenhouse_company(c, query, location, is_remote)))
-        for c in ASHBY_COMPANIES:
-            tasks.append(_safe_fetch(cls.fetch_ashby_company(c, query, location, is_remote)))
-        for c in LEVER_COMPANIES:
-            tasks.append(_safe_fetch(cls.fetch_lever_company(c, query, location, is_remote)))
+        boards = [board for board in await live_boards() if board.ats in LIVE_SEARCH_ATS]
 
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # One client for the whole fan-out: one connection pool per host.
+        async with _board_client() as client:
+            tasks: list[Awaitable[list[Job]]] = []
+            for board in boards:
+                fetch_board = (
+                    cls.fetch_ashby_company if board.ats == "ashby" else cls.fetch_greenhouse_company
+                )
+                tasks.append(
+                    _safe_fetch(fetch_board(board.board, query, location, is_remote, client=client))
+                )
+
+            results = await asyncio.gather(*tasks, return_exceptions=True)
         all_jobs: list[Job] = []
         for res in results:
             if isinstance(res, list):

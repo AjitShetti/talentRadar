@@ -264,6 +264,21 @@ scopes is enough) on Render. Without it GitHub allows 60 lookups an hour per
 IP, which a shared Render IP has usually spent already; the step then stops
 with `"stopped": "rate_limited"` and moves nothing.
 
+## Data sources
+
+The job-board roster (`job_boards`, migration 026) takes its boards from:
+
+- **[storesignalhq/ats-job-boards](https://github.com/storesignalhq/ats-job-boards)**,
+  the open list of public ATS boards (`boards.csv`), used under CC BY 4.0 as
+  stated by its publisher. Only the ATS, slug and company name are read, and
+  every board is re-checked against its own ATS before it is trusted.
+- **YC's hiring list** (`yc-oss`, `yc-oss.github.io/api/companies/hiring.json`),
+  which also gives the company websites the probe and the careers-page reader
+  look at.
+
+The `job-boards` workflow runs these steps on a schedule; `make job-boards
+step=sweep` runs one of them locally.
+
 ## What is still worth doing later
 
 Deliberately not done here, because none of it blocks a free launch:

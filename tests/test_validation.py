@@ -89,6 +89,66 @@ class TestJobURLValidator:
         assert is_valid_job_url(url) is True
 
 
+class TestNewAtsPostingUrls:
+    """The six ATSes the board roster added are allowlisted, one posting at a time."""
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://apply.workable.com/apna/j/1A2B3C4D5E/",
+            "https://lenskartcareers.recruitee.com/o/store-manager-bengaluru",
+            "https://spyneai.keka.com/careers/jobdetails/12345",
+            "https://ats.rippling.com/rippling/jobs/0b6c1f3e-1a2b-4c5d-8e9f-001122334455",
+            "https://acme.breezy.hr/p/0123abcd4567-backend-engineer",
+            "https://acme.jobs.personio.de/job/998877",
+            "https://acme.jobs.personio.com/job/998877",
+        ],
+    )
+    def test_new_ats_posting_urls_pass_validation(self, url: str):
+        is_valid, reason = validate_job_url(url)
+        assert is_valid is True, f"Failed for {url}: {reason}"
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            # An ATS's own marketing site is not a job board.
+            "https://www.workable.com/",
+            "https://www.recruitee.com/",
+            "https://www.breezy.hr/",
+            # A board index and a root are not an individual posting.
+            "https://lenskartcareers.recruitee.com/",
+            "https://acme.breezy.hr/",
+            # A look-alike host.
+            "https://recruitee.com.evil.example/o/store-manager",
+            "https://apply.workable.com.evil.example/apna/j/1A2B3C4D5E",
+            # Recruitee, Keka and Breezy are allowlisted by suffix, so every
+            # page of their own sites, and every host that is not a single
+            # customer board, must still be refused.
+            "https://www.keka.com/blog/hiring-guide-2024",
+            "https://www.recruitee.com/blog/how-to-hire",
+            "https://www.breezy.hr/pricing/plans",
+            "https://help.breezy.hr/en/articles/123",
+            "https://app.keka.com/careers/jobdetails/1",
+            "https://a.b.recruitee.com/o/x",
+            "https://recruitee.com/o/x",
+            "https://keka.com/careers/jobdetails/1",
+            "https://breezy.hr/p/0123abcd4567",
+            # A customer's board, but not one of its postings.
+            "https://lenskartcareers.recruitee.com/o/",
+            "https://lenskartcareers.recruitee.com/blog/post",
+            "https://spyneai.keka.com/careers",
+            "https://spyneai.keka.com/careers/jobdetails/abc",
+            "https://spyneai.keka.com/pricing",
+            "https://acme.breezy.hr/p/NOT-HEX",
+            "https://acme.breezy.hr/pricing",
+        ],
+    )
+    def test_other_pages_are_still_rejected(self, url: str):
+        is_valid, reason = validate_job_url(url)
+        assert is_valid is False, f"Accepted {url}: {reason}"
+        assert not is_valid_job_url(url)
+
+
 class TestRegressionContaminatedSeedCorp:
     """Ensure contaminated fixtures never get parsed or inserted into the DB."""
 

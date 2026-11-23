@@ -15,7 +15,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum as PyEnum
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import (
     CHAR,
@@ -45,6 +45,7 @@ from sqlalchemy.sql.functions import Function
 from sqlalchemy.types import UserDefinedType
 
 from config.settings import get_settings
+from domain.job_boards import AtsName, BoardRef
 from storage.database import Base
 
 
@@ -316,6 +317,98 @@ class Company(Base):
 
     def __repr__(self) -> str:
         return f"<Company id={self.id} name={self.name!r}>"
+
+
+# ---------------------------------------------------------------------------
+# job_boards - the roster of public ATS boards (migration 026)
+# ---------------------------------------------------------------------------
+
+class JobBoard(Base):
+    """One public applicant-tracking-system board: an ATS and the id it gives a company.
+
+    Design: docs/superpowers/specs/2026-11-23-job-board-roster-design.md. A row is a board,
+    not a role: a role read from it is a ``jobs`` row whose ``source`` is ``ats:board``.
+    ``status`` and the schedule are moved only by ``domain.job_boards.next_read``.
+    """
+    __tablename__ = "job_boards"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=func.gen_random_uuid(),
+    )
+    ats: Mapped[str] = mapped_column(Text, nullable=False, comment="One of domain.job_boards.ATS")
+    board: Mapped[str] = mapped_column(
+        Text, nullable=False, comment="The ATS's id for the board (a slug or a subdomain)"
+    )
+    region: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Personio only: de | com (the host)"
+    )
+    company_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    company_name: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="As the source names the company"
+    )
+    discovered_via: Mapped[str] = mapped_column(
+        Text, nullable=False, comment="open_list | yc | careers_link | name_probe | manual"
+    )
+    status: Mapped[str] = mapped_column(
+        Text, nullable=False, default="candidate", server_default="candidate",
+        comment="candidate | active | no_india | gone | blocked",
+    )
+    india_jobs: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="India roles at the last full read"
+    )
+    total_jobs: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="All roles at the last full read"
+    )
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    last_read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_india_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failures: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+        comment="Consecutive failed reads",
+    )
+    zero_india_reads: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+        comment="Consecutive reads with no India role",
+    )
+    not_found_reads: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+        comment="Consecutive 404 or 410 reads",
+    )
+
+    __table_args__ = (
+        Index(
+            "uq_job_boards_ats_board_region",
+            "ats",
+            "board",
+            text("coalesce(region, '')"),
+            unique=True,
+        ),
+        Index("ix_job_boards_status_next_read", "status", "next_read_at"),
+        Index("ix_job_boards_company_id", "company_id"),
+    )
+
+    @property
+    def source(self) -> str:
+        """The ``jobs.source`` value for a role read from this board."""
+        return f"{self.ats}:{self.board}"
+
+    @property
+    def ref(self) -> BoardRef:
+        """The board as the pure rules in ``domain.job_boards`` name it."""
+        return BoardRef(ats=cast("AtsName", self.ats), board=self.board, region=self.region)
+
+    def __repr__(self) -> str:
+        return f"<JobBoard {self.source!r} status={self.status!r}>"
 
 
 # ---------------------------------------------------------------------------

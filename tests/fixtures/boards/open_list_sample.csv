@@ -1,0 +1,21 @@
+ats,slug,company_name,open_jobs,board_url,api_url
+greenhouse,northwindlabs,Northwind Labs,42,https://boards.greenhouse.io/northwindlabs,https://boards-api.greenhouse.io/v1/boards/northwindlabs/jobs
+greenhouse,Contoso-Systems,"Contoso Systems, Inc.",17,https://boards.greenhouse.io/Contoso-Systems,https://boards-api.greenhouse.io/v1/boards/Contoso-Systems/jobs
+greenhouse,fabrikam,Fabrikam,9,https://boards.greenhouse.io/fabrikam,https://boards-api.greenhouse.io/v1/boards/fabrikam/jobs
+greenhouse,tailspin.toys,Tailspin Toys,5,https://boards.greenhouse.io/tailspin.toys,https://boards-api.greenhouse.io/v1/boards/tailspin.toys/jobs
+ashby,AdventureWorks,,120,https://jobs.ashbyhq.com/AdventureWorks,https://api.ashbyhq.com/posting-api/job-board/AdventureWorks
+ashby,wingtip,Wingtip,33,https://jobs.ashbyhq.com/wingtip,https://api.ashbyhq.com/posting-api/job-board/wingtip
+ashby,litware,,8,https://jobs.ashbyhq.com/litware,https://api.ashbyhq.com/posting-api/job-board/litware
+lever,Proseware,,56,https://jobs.lever.co/Proseware,https://api.lever.co/v0/postings/Proseware?mode=json
+lever,woodgrove,,12,https://jobs.lever.co/woodgrove,https://api.lever.co/v0/postings/woodgrove?mode=json
+workable,coho-winery,Coho Winery,31,https://apply.workable.com/coho-winery/,https://apply.workable.com/api/v1/widget/accounts/coho-winery
+workable,Lucerne-Publishing,Lucerne Publishing,4,https://apply.workable.com/Lucerne-Publishing/,https://apply.workable.com/api/v1/widget/accounts/Lucerne-Publishing
+recruitee,fourthcoffee,Fourth Coffee,64,https://fourthcoffee.recruitee.com/,https://fourthcoffee.recruitee.com/api/offers/
+recruitee,margiestravel,Margie's Travel,7,https://margiestravel.recruitee.com/,https://margiestravel.recruitee.com/api/offers/
+keka,Bellows-College,Bellows College,3,https://bellows-college.keka.com/careers,https://bellows-college.keka.com/careers/api/jobs/default/active
+personio,alpineski,Alpine Ski House,11,https://alpineski.jobs.personio.com/,https://alpineski.jobs.personio.com/xml
+personio,munichbakery,Munich Bakery,2,https://munichbakery.jobs.personio.de/,https://munichbakery.jobs.personio.de/xml
+personio,graphicdesign,Graphic Design Institute,6,,
+smartrecruiters,humongousinsurance,Humongous Insurance,300,https://jobs.smartrecruiters.com/humongousinsurance,https://api.smartrecruiters.com/v1/companies/humongousinsurance/postings
+smartrecruiters,trey-research,Trey Research,25,https://jobs.smartrecruiters.com/trey-research,https://api.smartrecruiters.com/v1/companies/trey-research/postings
+taleo,relecloud,Relecloud,14,https://relecloud.taleo.net/,

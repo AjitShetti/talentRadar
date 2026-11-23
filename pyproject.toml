@@ -402,7 +402,7 @@ skip = [".git", ".venv", "__pycache__", "migrations"]
 known_first_party = ["agents", "api", "config", "ingestion", "ml", "storage"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["agents", "api", "config", "ingestion", "ml", "storage"]
+packages = ["agents", "api", "config", "core", "domain", "ingestion", "ml", "services", "storage"]
 
 # ===========================================================================
 # Entry points / CLI commands

@@ -22,6 +22,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 
+from domain.job_boards import ATS, SWEEP_ONLY_ATS
+
 # A role open longer than this is called out. Most filled roles close well
 # inside six weeks; one that has not is either hard to fill or not being filled.
 AGEING_AFTER_DAYS = 45
@@ -42,8 +44,9 @@ REPOST_GAP = timedelta(days=14)
 
 TITLE_KEY_MAX_LENGTH = 200
 
-# Sources whose postings can be re-fetched from a public, documented JSON API.
-_VERIFIABLE_PREFIXES = ("greenhouse", "lever", "ashby")
+# Sources whose postings can be re-fetched from a public, documented JSON API:
+# every ATS on the board roster.
+_VERIFIABLE_PREFIXES: tuple[str, ...] = ATS
 
 # "R-12345", "REQ 9981", "Job ID: 4471" - noise that differs between two
 # listings of the same role and must not make them look like different roles.
@@ -130,6 +133,14 @@ def _day(value: datetime) -> str:
 def is_verifiable_source(source: str) -> bool:
     """True for sources whose postings can be re-checked against the employer's ATS."""
     return (source or "").split(":", 1)[0].strip().lower() in _VERIFIABLE_PREFIXES
+
+
+def is_sweep_only_source(source: str) -> bool:
+    """
+    True for a source whose postings only the board sweep confirms: re-checking one means reading
+    its whole board, which no request and no re-check batch may do (``SWEEP_ONLY_ATS``).
+    """
+    return (source or "").split(":", 1)[0].strip().lower() in SWEEP_ONLY_ATS
 
 
 def title_key(title: str) -> str:

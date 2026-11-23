@@ -14,6 +14,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from domain.job_boards import BoardRef
 from services.company_map import website
 from services.company_map.types import SiteFacts
 from services.company_map.website import (
@@ -147,6 +148,44 @@ def test_text_drops_script_style_and_nav_and_flattens_meta() -> None:
 def test_links_keep_same_site_about_and_contact_without_fragments() -> None:
     facts = extract_site_facts(_FOOTER, "https://www.acme.in/")
     assert facts.links == ("https://www.acme.in/contact-us", "https://acme.in/about")
+
+
+def test_extract_site_facts_finds_cross_host_board() -> None:
+    # A "Careers" link in the menu leaves the company's own host; the menu is not part of
+    # the text, but a board it links to is still the company's.
+    html = (
+        "<html><body><nav><a href='https://jobs.lever.co/cred'>Careers</a></nav>"
+        "<p>We build things.</p></body></html>"
+    )
+    facts = extract_site_facts(html, "https://cred.club/")
+    assert facts.boards == (BoardRef("lever", "cred"),)
+    assert "Careers" not in facts.text
+
+
+def test_extract_site_facts_reads_boards_from_scripts_and_embeds_once_each() -> None:
+    html = (
+        "<html><body>"
+        "<a href='https://boards.greenhouse.io/acme'>Jobs</a>"
+        "<footer><a href='https://boards.greenhouse.io/acme/jobs/1'>Jobs</a></footer>"
+        '<script>var s = "https://acme.recruitee.com/";</script>'
+        "<iframe src='https://boards.greenhouse.io/embed/job_board?for=acmeembed'></iframe>"
+        "</body></html>"
+    )
+    facts = extract_site_facts(html, "https://acme.in/")
+    assert facts.boards == (
+        BoardRef("greenhouse", "acme"),
+        BoardRef("recruitee", "acme"),
+        BoardRef("greenhouse", "acmeembed"),
+    )
+
+
+def test_extract_site_facts_ignores_a_look_alike_board_host_and_a_page_without_one() -> None:
+    html = (
+        "<html><body><a href='https://boards.greenhouse.io.evil.example/acme'>Jobs</a>"
+        "<a href='https://acme.in/careers'>Careers</a></body></html>"
+    )
+    assert extract_site_facts(html, "https://acme.in/").boards == ()
+    assert extract_site_facts("<html><body>Hello</body></html>", "https://acme.in/").boards == ()
 
 
 def test_og_description_is_the_fallback() -> None:
@@ -716,3 +755,74 @@ async def test_robots_is_fetched_once_per_host() -> None:
 
     assert facts is not None and facts.pincode == "560025"
     assert seen == ["/robots.txt", "/", "/home", "/contact"]
+
+
+# ── board links ─────────────────────────────────────────────────────────────
+
+_BOARD_HOME = (
+    "<html><body><p>Payroll.</p>"
+    "<a href='/careers'>Careers</a>"
+    "<a href='https://jobs.lever.co/acme'>Open roles</a></body></html>"
+)
+_BOARD_CAREERS = (
+    "<html><body><h1>Join us</h1>"
+    "<a href='https://jobs.lever.co/acme'>Engineering</a>"
+    "<a href='https://boards.greenhouse.io/acme'>Design</a>"
+    "<a href='https://acme.recruitee.com/'>Sales</a></body></html>"
+)
+
+
+async def test_careers_page_boards_merged() -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.path)
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        if request.url.path == "/":
+            return _html(_BOARD_HOME)
+        if request.url.path == "/careers":
+            return _html(_BOARD_CAREERS)
+        return httpx.Response(500)
+
+    async with _client(handler) as client:
+        facts = await read_site(client, "https://acme.in/")
+
+    assert facts is not None
+    # The homepage's board first, then the careers page's new ones; the one both link is once.
+    assert facts.boards == (
+        BoardRef("lever", "acme"),
+        BoardRef("greenhouse", "acme"),
+        BoardRef("recruitee", "acme"),
+    )
+    assert "/careers" in seen
+
+
+async def test_a_careers_page_that_fails_leaves_the_homepage_boards() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        if request.url.path == "/":
+            return _html(_BOARD_HOME)
+        return httpx.Response(500)
+
+    async with _client(handler) as client:
+        facts = await read_site(client, "https://acme.in/")
+
+    assert facts is not None and facts.boards == (BoardRef("lever", "acme"),)
+
+
+async def test_a_board_on_a_careers_page_robots_txt_disallows_is_not_read() -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.path)
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text="User-agent: *\nDisallow: /careers\n")
+        return _html(_BOARD_HOME)
+
+    async with _client(handler) as client:
+        facts = await read_site(client, "https://acme.in/")
+
+    assert facts is not None and facts.boards == (BoardRef("lever", "acme"),)
+    assert "/careers" not in seen

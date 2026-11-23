@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import re
+import xml.etree.ElementTree as ET
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
@@ -793,3 +794,333 @@ def reduce_eventbrite_list(
         "pagination": kept,
         "events": [_reduce_eventbrite_event(event, people) for event in chosen],
     }
+
+
+# ── Job boards ───────────────────────────────────────────────────────────────
+
+#: Greenhouse job ``metadata`` fields that name nobody. The list is whatever custom
+#: fields the employer defined, and some hold employees' names (a recorded Indian
+#: board had "Hiring Manager" and "Business Head"), so a field is kept only when it is
+#: known to be about the role. Compared case-folded.
+GREENHOUSE_PUBLIC_METADATA: frozenset[str] = frozenset(
+    {
+        "employment type",
+        "department category",
+        "department",
+        "min work experience",
+        "max work experience",
+        "work experience",
+        "experience",
+        "seniority",
+        "job level",
+    }
+)
+
+REDACTED_VALUE = "[redacted]"
+
+
+def scrub_greenhouse_metadata(payload: object) -> object:
+    """``payload`` with the value of every non-public ``metadata`` field replaced, in place.
+
+    The board readers never read ``metadata``, so no test depends on what it held.
+    """
+    jobs = payload.get("jobs") if isinstance(payload, dict) else None
+    for job in jobs if isinstance(jobs, list) else []:
+        entries = job.get("metadata") if isinstance(job, dict) else None
+        for entry in entries if isinstance(entries, list) else []:
+            if not isinstance(entry, dict) or entry.get("value") is None:
+                continue
+            if str(entry.get("name", "")).casefold() not in GREENHOUSE_PUBLIC_METADATA:
+                entry["value"] = REDACTED_VALUE
+    return payload
+
+
+# Workable, Recruitee and Keka answer with a fixed set of fields per posting, so a
+# recording keeps a field only when it is listed here as being about the role. Anything
+# else the board adds (a recruiter, a hiring manager, an owner, a per-job mailbox, an
+# answer to a question) is dropped, which is the default-deny the Greenhouse scrub above
+# cannot be: its custom fields are whatever the employer defined.
+
+#: Local parts of an address that belong to a team, not a person: published on purpose.
+ROLE_INBOXES: frozenset[str] = frozenset(
+    {
+        "careers",
+        "career",
+        "jobs",
+        "job",
+        "hr",
+        "talent",
+        "recruitment",
+        "recruiting",
+        "hiring",
+        "people",
+        "apply",
+        "join",
+    }
+)
+
+#: What any other address in a recording becomes.
+PLACEHOLDER_BOARD_EMAIL = "recruiter@example.com"
+
+WORKABLE_ACCOUNT_KEEP = frozenset({"name", "description", "jobs"})
+WORKABLE_POSTING_KEEP = frozenset(
+    {
+        "title",
+        "shortcode",
+        "code",
+        "employment_type",
+        "telecommuting",
+        "department",
+        "url",
+        "shortlink",
+        "application_url",
+        "published_on",
+        "created_at",
+        "country",
+        "city",
+        "state",
+        "education",
+        "experience",
+        "function",
+        "industry",
+        "locations",
+    }
+)
+WORKABLE_LOCATION_KEEP = frozenset({"country", "countryCode", "city", "region", "hidden"})
+
+RECRUITEE_OFFER_KEEP = frozenset(
+    {
+        "id",
+        "guid",
+        "slug",
+        "status",
+        "title",
+        "description",
+        "requirements",
+        "location",
+        "locations",
+        "city",
+        "state_name",
+        "state_code",
+        "country",
+        "country_code",
+        "remote",
+        "hybrid",
+        "on_site",
+        "department",
+        "employment_type_code",
+        "experience_code",
+        "education_code",
+        "category_code",
+        "published_at",
+        "updated_at",
+        "created_at",
+        "close_at",
+        "careers_url",
+        "careers_apply_url",
+        "company_name",
+        "salary",
+        "tags",
+    }
+)
+RECRUITEE_LOCATION_KEEP = frozenset(
+    {"id", "name", "city", "state", "country", "country_code", "state_code"}
+)
+
+KEKA_JOB_KEEP = frozenset(
+    {
+        "id",
+        "title",
+        "description",
+        "excerpt",
+        "departmentName",
+        "jobLocations",
+        "jobType",
+        "experience",
+        "jobNumber",
+        "salaryRange",
+        "salaryRangeFormat",
+        "publishedOn",
+        "publishedSinceDays",
+        "skillNames",
+    }
+)
+KEKA_LOCATION_KEEP = frozenset({"id", "name", "city", "state", "countryCode", "countryName"})
+KEKA_PORTAL_KEEP = frozenset({"name", "shortName", "careersPortalDomain"})
+
+
+def scrub_board_emails(text: str) -> str:
+    """``text`` with every address replaced by :data:`PLACEHOLDER_BOARD_EMAIL`, a role inbox excepted."""
+
+    def replace(match: re.Match[str]) -> str:
+        address = match.group(0)
+        local = address.split("@", 1)[0].casefold()
+        return address if local in ROLE_INBOXES else PLACEHOLDER_BOARD_EMAIL
+
+    return _BARE_EMAIL.sub(replace, text)
+
+
+def _scrub_strings(node: Any) -> Any:
+    """``node`` copied, with :func:`scrub_board_emails` applied to every string in it."""
+    if isinstance(node, str):
+        return scrub_board_emails(node)
+    if isinstance(node, dict):
+        return {key: _scrub_strings(child) for key, child in node.items()}
+    if isinstance(node, list):
+        return [_scrub_strings(child) for child in node]
+    return node
+
+
+def _keep_fields(node: object, allowed: frozenset[str]) -> dict[str, Any]:
+    """The ``allowed`` fields of one object, copied; ``{}`` when it is not an object."""
+    if not isinstance(node, dict):
+        return {}
+    return {key: _scrub_strings(value) for key, value in node.items() if key in allowed}
+
+
+def _keep_posting(
+    node: object, allowed: frozenset[str], locations_key: str, location_keep: frozenset[str]
+) -> dict[str, Any]:
+    kept = _keep_fields(node, allowed)
+    places = kept.get(locations_key)
+    if isinstance(places, list):
+        kept[locations_key] = [
+            _keep_fields(place, location_keep) for place in places if isinstance(place, dict)
+        ]
+    return kept
+
+
+def scrub_workable_board(payload: object) -> dict[str, Any]:
+    """A Workable widget response with only the fields about the account and its roles; ``{}`` if it is not one."""
+    if not isinstance(payload, dict):
+        return {}
+    kept = _keep_fields(payload, WORKABLE_ACCOUNT_KEEP - {"jobs"})
+    jobs = payload.get("jobs")
+    if isinstance(jobs, list):
+        kept["jobs"] = [
+            _keep_posting(job, WORKABLE_POSTING_KEEP, "locations", WORKABLE_LOCATION_KEEP)
+            for job in jobs
+            if isinstance(job, dict)
+        ]
+    return kept
+
+
+def scrub_recruitee_board(payload: object) -> dict[str, Any]:
+    """A Recruitee ``/api/offers/`` response with only the fields about each offer; ``{}`` if it is not one."""
+    offers = payload.get("offers") if isinstance(payload, dict) else None
+    if not isinstance(offers, list):
+        return {}
+    return {
+        "offers": [
+            _keep_posting(offer, RECRUITEE_OFFER_KEEP, "locations", RECRUITEE_LOCATION_KEEP)
+            for offer in offers
+            if isinstance(offer, dict)
+        ]
+    }
+
+
+def scrub_keka_jobs(payload: object) -> list[dict[str, Any]]:
+    """A Keka active-jobs response with only the fields about each job; ``[]`` if it is not a list."""
+    if not isinstance(payload, list):
+        return []
+    return [
+        _keep_posting(job, KEKA_JOB_KEEP, "jobLocations", KEKA_LOCATION_KEEP)
+        for job in payload
+        if isinstance(job, dict)
+    ]
+
+
+def scrub_keka_portal(payload: object) -> dict[str, Any]:
+    """A Keka ``careerportalinfo`` response cut to the company's name and portal; ``{}`` if it is not one."""
+    return _keep_fields(payload, KEKA_PORTAL_KEEP)
+
+
+RIPPLING_PAGE_KEEP = frozenset({"items", "page", "pageSize", "totalItems", "totalPages"})
+RIPPLING_POSTING_KEEP = frozenset({"id", "name", "locations"})
+RIPPLING_LOCATION_KEEP = frozenset(
+    {"name", "city", "state", "country", "countryCode", "workplaceType"}
+)
+
+BREEZY_POSITION_KEEP = frozenset(
+    {
+        "id",
+        "friendly_id",
+        "name",
+        "published_date",
+        "description",
+        "location",
+        "locations",
+        "company",
+    }
+)
+BREEZY_PLACE_KEEP = frozenset({"name", "city", "state", "country", "is_remote"})
+BREEZY_COMPANY_KEEP = frozenset({"name"})
+
+#: The fields of a Personio ``<position>`` the reader reads; every other element is dropped.
+PERSONIO_POSITION_KEEP = frozenset({"id", "name", "office", "createdAt", "jobDescriptions"})
+_XML_UNSAFE = re.compile(rb"<!(?:DOCTYPE|ENTITY)", re.IGNORECASE)
+
+
+def scrub_rippling_page(payload: object) -> dict[str, Any]:
+    """A Rippling board page with its paging and only the fields about each posting; ``{}`` if it is not one."""
+    items = payload.get("items") if isinstance(payload, dict) else None
+    if not isinstance(items, list):
+        return {}
+    kept = _keep_fields(payload, RIPPLING_PAGE_KEEP - {"items"})
+    kept["items"] = [
+        _keep_posting(item, RIPPLING_POSTING_KEEP, "locations", RIPPLING_LOCATION_KEEP)
+        for item in items
+        if isinstance(item, dict)
+    ]
+    return kept
+
+
+def _breezy_position(job: dict[str, Any]) -> dict[str, Any]:
+    kept = _keep_posting(job, BREEZY_POSITION_KEEP, "locations", BREEZY_PLACE_KEEP)
+    if isinstance(job.get("location"), dict):
+        kept["location"] = _keep_fields(job["location"], BREEZY_PLACE_KEEP)
+    if isinstance(job.get("company"), dict):
+        kept["company"] = _keep_fields(job["company"], BREEZY_COMPANY_KEEP)
+    return kept
+
+
+def scrub_breezy_board(payload: object) -> list[dict[str, Any]]:
+    """A Breezy ``/json`` response with only the fields about each position; ``[]`` if it is not a list."""
+    if not isinstance(payload, list):
+        return []
+    return [_breezy_position(job) for job in payload if isinstance(job, dict)]
+
+
+def scrub_personio_board(body: bytes) -> bytes:
+    """
+    A Personio XML board with only each position's fields the reader reads, and emails
+    scrubbed; ``b""`` when the body is not a Personio board or holds no position.
+
+    A body that declares a DOCTYPE or an ENTITY is refused before it is parsed, as the
+    reader refuses it.
+    """
+    if _XML_UNSAFE.search(body) is not None:
+        return b""
+    try:
+        root = ET.fromstring(body)
+    except ET.ParseError:
+        return b""
+    if root.tag != "workzag-jobs":
+        return b""
+    positions = [child for child in root if child.tag == "position"]
+    if not positions:
+        return b""
+    for child in list(root):
+        if child.tag != "position":
+            root.remove(child)
+    for position in positions:
+        for field in list(position):
+            if field.tag not in PERSONIO_POSITION_KEEP:
+                position.remove(field)
+    for element in root.iter():
+        if element.text:
+            element.text = scrub_board_emails(element.text)
+        if element.tail:
+            element.tail = scrub_board_emails(element.tail)
+    serialised: bytes = ET.tostring(root, encoding="utf-8")
+    return serialised

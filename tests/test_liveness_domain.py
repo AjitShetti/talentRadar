@@ -13,6 +13,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from domain.job_boards import ATS
 from domain.liveness import (
     LivenessEvidence,
     LivenessState,
@@ -199,6 +200,12 @@ def test_naive_datetimes_are_treated_as_utc():
         ("greenhouse:stripe", True),
         ("lever:spotify", True),
         ("ashby:openai", True),
+        ("workable:apna", True),
+        ("recruitee:lenskartcareers", True),
+        ("keka:spyneai", True),
+        ("rippling:rippling", True),
+        ("personio:acme", True),
+        ("breezy:acme", True),
         ("greenhouse", True),
         ("linkedin", False),
         ("foundit", False),
@@ -208,6 +215,12 @@ def test_naive_datetimes_are_treated_as_utc():
 )
 def test_only_ats_sources_are_verifiable(source: str, expected: bool):
     assert is_verifiable_source(source) is expected
+
+
+@pytest.mark.parametrize("ats", ATS)
+def test_every_ats_is_verifiable(ats: str):
+    assert is_verifiable_source(f"{ats}:acme") is True
+    assert is_verifiable_source(ats) is True
 
 
 @pytest.mark.parametrize(

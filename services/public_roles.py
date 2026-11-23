@@ -11,8 +11,9 @@ frontend - nothing here is called on a visitor's page load.
 Two rules hold for everything in this module:
 
 * **Only republishable rows.** A public page is built only from postings that
-  came from an employer's own ATS API (Greenhouse, Lever, Ashby), which those
-  employers publish for exactly this purpose. Rows scraped from job boards
+  came from an employer's own ATS API (any of the nine in
+  ``domain.job_boards.ATS``), which those employers publish for exactly this
+  purpose. Rows scraped from job boards
   stay inside the signed-in product.
 * **India only.** The product is an India-only board, so a public page needs a
   location that positively resolves to India. Search keeps rows with no stated
@@ -30,7 +31,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 from domain.geo import is_india
-from domain.liveness import is_verifiable_source, title_key
+from domain.job_boards import ATS
+from domain.liveness import is_sweep_only_source, is_verifiable_source, title_key
 from domain.posting_urls import (
     PostingRef,
     company_slug,
@@ -47,8 +49,10 @@ logger = logging.getLogger(__name__)
 MAX_LISTED_ROLES = 2000
 MAX_COMPANY_ROLES = 60
 
+_ATS_NAMES = ", ".join(name.capitalize() for name in ATS[:-1]) + f" or {ATS[-1].capitalize()}"
+
 _UNSUPPORTED_MESSAGE = (
-    "We can only confirm postings hosted on Greenhouse, Lever or Ashby, where the "
+    f"We can only confirm postings hosted on {_ATS_NAMES}, where the "
     "employer publishes a feed we can ask. For any other site, check the posting "
     "date, whether the company's own careers page lists the role, and whether the "
     "same role keeps reappearing."
@@ -164,11 +168,7 @@ async def list_roles(limit: int = 500) -> list[dict[str, Any]]:
                 select(Job)
                 .where(
                     Job.closed_at.is_(None),
-                    or_(
-                        Job.source.like("greenhouse:%"),
-                        Job.source.like("lever:%"),
-                        Job.source.like("ashby:%"),
-                    ),
+                    or_(*(Job.source.like(f"{ats}:%") for ats in ATS)),
                 )
                 .options(selectinload(Job.company))
                 .order_by(Job.last_seen_at.desc().nulls_last())
@@ -213,11 +213,7 @@ async def company_roles(slug: str) -> dict[str, Any] | None:
                     select(Job)
                     .where(
                         Job.company_id == company_id,
-                        or_(
-                            Job.source.like("greenhouse:%"),
-                            Job.source.like("lever:%"),
-                            Job.source.like("ashby:%"),
-                        ),
+                        or_(*(Job.source.like(f"{ats}:%") for ats in ATS)),
                     )
                     .options(selectinload(Job.company))
                     .order_by(Job.closed_at.asc().nulls_first(), Job.source_posted_at.desc().nulls_last())
@@ -336,7 +332,9 @@ async def check_url(url: str) -> dict[str, Any]:
       indexed      we already track this role; ``liveness`` is its verdict
       open_now     the employer's ATS serves it right now; we have no history
       closed_now   the employer's ATS no longer serves it
-      unreachable  a supported ATS, but it could not be asked just now
+      unreachable  a supported ATS, but it could not be asked just now (or, for the six
+                   whose only check is a whole-board read, it is the sweep's to make and we
+                   do not hold this posting yet)
       unsupported  not a source we can verify
     """
     text = (url or "").strip()
@@ -353,8 +351,18 @@ async def check_url(url: str) -> dict[str, Any]:
     if ref is None:
         return _answer("unsupported", _UNSUPPORTED_MESSAGE)
 
+    if is_sweep_only_source(ref.source):
+        # Confirming one of these means reading the employer's whole board, which only the
+        # paced sweep does: an anonymous request must not be able to trigger it. A posting
+        # the sweep has read is answered above, from the index.
+        return _answer(
+            "unreachable",
+            "We read this employer's careers site on a daily schedule, not when asked, and "
+            "this posting is not one we hold yet. Check back after the next read.",
+        )
+
     try:
-        outcome = await ATSScraper.check_posting(ref.source, ref.external_id)
+        outcome = await ATSScraper.check_posting(ref.source, ref.external_id, source_url=text)
     except Exception as exc:
         logger.debug("Public check could not reach the ATS: %s", exc)
         outcome = PostingCheck.ERROR

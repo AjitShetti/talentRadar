@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 
 from domain.entities import Job
@@ -102,14 +103,17 @@ async def test_greenhouse_scraper_mock():
         ]
     }
 
-    with patch.object(ScraplingManager, "fetch_html_or_json", new_callable=AsyncMock) as mock_fetch:
-        mock_fetch.return_value = (200, mock_gh_response)
-        jobs = await ATSScraper.fetch_greenhouse_company("test", "python", "Bengaluru", None)
+    # Boards are read over httpx (ingestion/boards), replayed here through a mock transport.
+    transport = httpx.MockTransport(lambda _request: httpx.Response(200, json=mock_gh_response))
+    async with httpx.AsyncClient(transport=transport) as client:
+        jobs = await ATSScraper.fetch_greenhouse_company(
+            "test", "python", "Bengaluru", None, client=client
+        )
 
-        assert len(jobs) == 1
-        assert jobs[0].title == "Senior Python Developer"
-        assert jobs[0].city == "Bengaluru"
-        assert jobs[0].source == "greenhouse:test"
+    assert len(jobs) == 1
+    assert jobs[0].title == "Senior Python Developer"
+    assert jobs[0].city == "Bengaluru"
+    assert jobs[0].source == "greenhouse:test"
 
 
 # ── Indian Boards Scraper Mock Tests ─────────────────────────────────────────

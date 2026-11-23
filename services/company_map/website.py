@@ -9,6 +9,10 @@ people the page itself names next to a founder/CEO/CTO/chief role. A person is
 only ever taken from a profile link on the page with a name printed beside it
 — nothing is guessed, and a card with a role but no readable name is skipped.
 
+It also lists the ATS boards the page links to (``SiteFacts.boards``, on any
+host, never requested here): a "Careers" link that leaves for ``jobs.lever.co``
+names the company's board though the link is not on its own site.
+
 ``read_site`` is the thin I/O around it. It asks robots.txt first (with the
 same client), fetches the homepage with a 5 s budget and a 300 KB body cap,
 accepts only ``text/html``, and reads at most one ``/contact*`` page when the
@@ -43,6 +47,7 @@ from bs4 import BeautifulSoup, Comment, Tag
 
 from domain.company_identity import normalize_domain
 from domain.email_patterns import local_part_kind
+from domain.job_boards import boards_in_html
 from services.company_map.types import PersonCandidate, SiteEmail, SiteFacts
 
 logger = logging.getLogger(__name__)
@@ -486,6 +491,9 @@ def _links(root: Tag, base_url: str) -> tuple[str, ...]:
 
 def extract_site_facts(html: str, base_url: str) -> SiteFacts:
     """Read one page. Pure: no I/O, never raises on odd markup."""
+    # The page's boards come from the markup as served, before the tags that carry no
+    # visible text are dropped below: a menu link and an embed script name one as well.
+    boards = tuple(boards_in_html(html))
     soup = BeautifulSoup(html, "lxml")
     title = _title(soup)
     description = _meta_description(soup)
@@ -516,6 +524,7 @@ def extract_site_facts(html: str, base_url: str) -> SiteFacts:
         people=people,
         links=links,
         emails=emails,
+        boards=boards,
     )
 
 
@@ -743,11 +752,12 @@ def _first_link(links: tuple[str, ...], prefixes: tuple[str, ...]) -> str | None
 
 
 async def _with_address_pages(visit: _Visit, facts: SiteFacts) -> SiteFacts:
-    """``facts`` plus the people and hiring inboxes of one careers page and one team
-    page, when the homepage links them. Same visit, so the same host, robots rules and
-    limits; a page that fails is skipped."""
+    """``facts`` plus the people, hiring inboxes and ATS boards of one careers page and
+    one team page, when the homepage links them. Same visit, so the same host, robots rules
+    and limits; a page that fails is skipped."""
     people = list(facts.people)
     emails = list(facts.emails)
+    boards = list(facts.boards)
     for prefixes in _ADDRESS_PAGES:
         link = _first_link(facts.links, prefixes)
         if link is None:
@@ -763,7 +773,10 @@ async def _with_address_pages(visit: _Visit, facts: SiteFacts) -> SiteFacts:
         people.extend(p for p in extra.people if p.name.casefold() not in names)
         known = {e.address for e in emails}
         emails.extend(e for e in extra.emails if e.address not in known)
-    return dataclasses.replace(facts, people=tuple(people), emails=tuple(emails))
+        boards.extend([b for b in extra.boards if b not in boards])
+    return dataclasses.replace(
+        facts, people=tuple(people), emails=tuple(emails), boards=tuple(boards)
+    )
 
 
 async def _read_site(client: httpx.AsyncClient, url: str) -> SiteFacts | None:

@@ -13,7 +13,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from agents.merge_rank import (
+    DEFAULT_SOURCE_TRUST,
     completeness_score,
     dedup_key,
     merge_and_rank,
@@ -31,6 +34,7 @@ from agents.sourcing_policy import (
     sourced_lock_key,
     wants_fresh_results,
 )
+from domain.job_boards import ATS
 
 NOW = datetime(2026, 9, 11, 12, 0, tzinfo=UTC)
 
@@ -166,6 +170,33 @@ def test_unknown_posting_date_scores_mid_not_zero():
 
 def test_first_party_sources_outrank_aggregators():
     assert source_score(job(source="greenhouse")) > source_score(job(source="freshersworld"))
+
+
+def test_board_source_gets_ats_trust():
+    """A stored row's source is ``<ats>:<board>``; it earns its ATS's trust."""
+    assert source_score(job(source="lever:meesho")) == 1.0
+    assert source_score(job(source="Greenhouse:Groww")) == 1.0
+    assert source_score(job(source="workable:apna")) == 1.0
+
+
+@pytest.mark.parametrize("ats", ATS)
+def test_every_ats_board_source_scores_full_trust(ats: str):
+    assert source_score(job(source=f"{ats}:acme")) == source_score(job(source=ats)) == 1.0
+
+
+def test_unknown_prefixed_source_keeps_the_default_trust():
+    assert source_score(job(source="foo:bar")) == DEFAULT_SOURCE_TRUST
+    assert source_score(job(source="linkedin:acme")) == DEFAULT_SOURCE_TRUST
+    assert source_score(job(source=None)) == DEFAULT_SOURCE_TRUST
+    assert source_score(job(source=":acme")) == DEFAULT_SOURCE_TRUST
+
+
+def test_a_whole_source_match_wins_over_its_prefix():
+    assert source_score(job(source="indeed_india")) == 0.7
+
+
+def test_board_rows_outrank_aggregators():
+    assert source_score(job(source="breezy:acme")) > source_score(job(source="freshersworld"))
 
 
 def test_completeness_rewards_actionable_rows():

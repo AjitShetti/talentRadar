@@ -41,10 +41,12 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from domain.entities import Job
+from domain.job_boards import ATS
 from ingestion.validation import validate_job_url
 
 if TYPE_CHECKING:
     from storage.models import Company
+    from storage.models import Job as JobRow
     from storage.repository import UnitOfWork
 
 logger = logging.getLogger(__name__)
@@ -94,6 +96,28 @@ def _stable_external_id(job: Job) -> str:
     company = (job.extra_metadata or {}).get("company_name", "")
     basis = job.source_url or f"{job.title}{company}"
     return hashlib.md5(basis.encode("utf-8")).hexdigest()
+
+
+def _board_source(source: str) -> tuple[str, str] | None:
+    """``(ats, board)`` when ``source`` is one of the nine ATS boards (``ats:board``), else None."""
+    ats, separator, board = source.partition(":")
+    if separator and board and ats in ATS:
+        return ats, board
+    return None
+
+
+def _external_id_for(job: Job, source: str) -> str:
+    """
+    The ``external_id`` a live posting is stored under.
+
+    A role from one of the nine ATS boards (``source`` is ``ats:board``) is keyed by its URL's
+    MD5, exactly as the sweep keys it (``services/job_boards/write.py``): the reader's own id is
+    the ATS's, and a row keyed by it would be a second row for the same posting. Any other
+    source keeps the id the job carries.
+    """
+    if _board_source(source) is not None:
+        return _stable_external_id(job)
+    return job.external_id or _stable_external_id(job)
 
 
 def _company_domain(company_name: str) -> str:
@@ -156,6 +180,43 @@ def build_job_kwargs(job: Job) -> dict[str, Any]:
     # re-check concluded.
     kwargs["closed_at"] = None
     return kwargs
+
+
+#: What a board's own listing states about a posting, and so what a re-read of that board may
+#: refresh on a row it already holds. Everything else on the row (the status, skills, seniority,
+#: employment type, tags and salary the enrichment pass derived) is not the board's to restate:
+#: a listing carries none of them, only this module's structural defaults for them.
+_BOARD_STATED_COLUMNS: tuple[str, ...] = (
+    "source_url",
+    "title",
+    "location_raw",
+    "country",
+    "city",
+    "is_remote",
+    "posted_at",
+    "source_posted_at",
+    "source_updated_at",
+    "last_seen_at",
+    "closed_at",
+)
+
+
+def board_refresh_values(kwargs: dict[str, Any]) -> dict[str, Any]:
+    """
+    The part of :func:`build_job_kwargs` a re-read of a board may write onto a row it holds.
+
+    A role read from an ATS board arrives as structural defaults (``enrichment_status='raw'``,
+    no skills, a mid seniority, a full-time type, the board's own tags): right for a new row, and
+    destructive for one the enrichment pass has since parsed. So a stored row takes only what the
+    board states: the title, the place, the link, the dates it supplied (``build_job_kwargs``
+    leaves out one it did not, so a stored date is never cleared), ``last_seen_at`` and a reopen
+    (``closed_at=None``), and a description only when the read has one: a Greenhouse board that
+    was too big to read with its content states none, and must not blank the stored text.
+    """
+    values = {column: kwargs[column] for column in _BOARD_STATED_COLUMNS if column in kwargs}
+    if kwargs.get("description_clean"):
+        values["description_clean"] = kwargs["description_clean"]
+    return values
 
 
 def _structural_kwargs(job: Job, description: str) -> dict[str, Any]:
@@ -251,6 +312,7 @@ async def persist_live_jobs(
     # 3. Write. One session, one commit.
     embedding_items: list[dict[str, Any]] = []
     try:
+        from services.job_boards.write import live_board_company_id
         from services.liveness import record_sighting
         from storage.database import AsyncSessionLocal
         from storage.repository import UnitOfWork
@@ -259,17 +321,37 @@ async def persist_live_jobs(
             for job in fresh:
                 try:
                     company_name = (job.extra_metadata or {}).get("company_name") or "Company"
-                    company = await posting_company(uow, company_name)
-
-                    external_id = job.external_id or _stable_external_id(job)
+                    source = job.source or source_label
+                    external_id = _external_id_for(job, source)
                     kwargs = build_job_kwargs(job)
-                    kwargs["company_id"] = company.id
 
-                    stored, created = await uow.jobs.upsert_by_external_id(
-                        external_id=external_id,
-                        source=job.source or source_label,
-                        defaults=kwargs,
-                    )
+                    board = _board_source(source)
+                    held: JobRow | None = None
+                    if board is None:
+                        company = await posting_company(uow, company_name)
+                        kwargs["company_id"] = company.id
+                    else:
+                        held = await uow.jobs.get_by_external_id(external_id, source)
+                        if held is None:
+                            # A board's role is filed where the sweep files its board, never
+                            # by name.
+                            kwargs["company_id"] = await live_board_company_id(
+                                uow.companies.session, board[0], board[1]
+                            )
+
+                    if held is not None:
+                        # A board row we already hold keeps its company and whatever the
+                        # enrichment pass derived: only what the board states is refreshed.
+                        for column, value in board_refresh_values(kwargs).items():
+                            setattr(held, column, value)
+                        await session.flush()
+                        stored, created = held, False
+                    else:
+                        stored, created = await uow.jobs.upsert_by_external_id(
+                            external_id=external_id,
+                            source=source,
+                            defaults=kwargs,
+                        )
                     if created:
                         summary.inserted += 1
                     else:
@@ -280,12 +362,16 @@ async def persist_live_jobs(
                     # a re-listing. It cannot fail the write above.
                     await record_sighting(
                         session,
-                        company_id=company.id,
+                        company_id=stored.company_id,
                         title=job.title or "",
                         external_id=external_id,
                         seen_at=kwargs["last_seen_at"],
                     )
 
+                    if held is not None and held.embedding_id is not None:
+                        # A held board row already has the sweep's vector, built from its
+                        # description; live search may have read the board without one.
+                        continue
                     embedding_items.append(
                         {
                             "job_id": external_id,
@@ -303,7 +389,7 @@ async def persist_live_jobs(
                                 ),
                                 "skills_str": ", ".join(job.skills or []),
                                 "source_url": job.source_url or "",
-                                "source": job.source or source_label,
+                                "source": source,
                             },
                             "internal_job_id": stored.id,
                         }

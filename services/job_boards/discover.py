@@ -1,0 +1,742 @@
+"""
+services/job_boards/discover.py
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Finding boards for the job-board roster. Design:
+docs/superpowers/specs/2026-11-23-job-board-roster-design.md, "Discovery steps".
+
+Three ways in live here; the fourth, the careers-page links, is the company map's own ``sites``
+step (``services/company_map/refresh.py``), which files each board a company's pages link under
+that company.
+
+``discover_open_list``
+    Seeds the roster from the open list of public ATS boards: **storesignalhq/ats-job-boards**
+    (``boards.csv``, https://github.com/storesignalhq/ats-job-boards), built from the Common
+    Crawl URL index and published under CC BY 4.0 (its announcement says so; the repository
+    carries no licence file). The credit the licence asks for is this paragraph and the
+    data-sources notes in ``DEPLOY.md``. Only the ``ats``, ``slug`` and ``company_name`` columns
+    are read, plus the ``board_url`` of a Personio row (for its ``de`` or ``com`` host, never
+    requested). Every row lands as a ``candidate``: the sweep re-checks each board against its
+    own ATS before it is trusted, so a stale or wrong row costs one request.
+
+``probe_company`` / ``discover_probe``
+    Guesses a listed tech company's board id from its name and site (``slug_candidates``) on the
+    ATSes whose unknown ids answer 404 (``PROBE_ATS``). A guess is kept only when the board
+    has at least one India role **and** it is shown to be the company's, because a hit sets the
+    board's ``company_id`` and its roles are then filed under that company (``slice`` on any ATS
+    is not necessarily Slice, the Bengaluru payments company):
+
+    * Greenhouse, Workable and Keka state a company name: it must be read and match the company's.
+    * Ashby, Lever and Recruitee state none on the board, so the guess must be the company's own
+      domain label (``slice.in`` -> ``slice``): an id the company's own site names, not one
+      guessed from its name alone. Recruitee's offers do carry a ``company_name``; one that
+      matches the company's name is accepted for any guess.
+
+``discover_yc``
+    Reads Y Combinator's list of companies that are hiring (the community mirror ``yc-oss``, one
+    static JSON file) and keeps the ones with an India location or region. Such a company is a
+    plain value, never a ``companies`` row: the company map stays Bengaluru, and a board found
+    for a YC company is filed under a placeholder company named for it (no ``company_id``). Each
+    company's site is read through the company map's own reader (``website.read_site``, so its
+    robots.txt, size and time rules apply as they do there), at most once per 30 days
+    (``tr:boards:yc-site:<domain>``); when the site names no board, the company is probed
+    (:func:`probe_company`'s rules, shared pacing) at most once per 90 days
+    (``tr:boards:probed:<domain>``). Everything found is added with ``via='yc'``.
+
+Rules every step here follows
+-----------------------------
+* The list is data from outside. A row is bounded and validated (``domain.job_boards.board_ref``)
+  before it can reach a table or a request; one it cannot use is skipped, and one bad row never
+  stops the run.
+* No database connection is held across a request. ``session`` belongs to the caller, so this
+  module cannot close it, but it ends its transaction (``commit``) before each stretch of
+  network work and opens the next only to write: the open list commits every
+  :data:`BATCH_SIZE` rows, the probe once per hit.
+* Requests carry the project User-Agent and never follow a redirect.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import csv
+import json
+import logging
+import time
+import uuid
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
+from contextlib import aclosing, asynccontextmanager
+from dataclasses import dataclass, field
+from typing import Any, cast
+
+import httpx
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from config.settings import get_settings
+from domain.job_boards import (
+    PACE_SECONDS,
+    PROBE_ATS,
+    AtsName,
+    BoardRef,
+    board_from_url,
+    board_ref,
+    domain_label,
+    is_india_role,
+    names_match,
+    slug_candidates,
+)
+from ingestion.boards import READERS
+from ingestion.boards.base import USER_AGENT, BoardRead, one_line
+from ingestion.boards.greenhouse import read_board_name
+from services.cache_backend import CacheBackend
+from services.company_map.sourced import clean_website
+from services.company_map.website import read_site
+from services.job_boards.store import upsert_board
+from storage.models import Company, JobBoard
+
+logger = logging.getLogger(__name__)
+
+Sleep = Callable[[float], Awaitable[None]]
+
+# -- the open list ------------------------------------------------------------------------
+
+#: The list is about 3 MB; one over this is refused rather than read to the end.
+MAX_LIST_BYTES = 20 * 1024 * 1024
+
+#: A single line over this is not a row of this list.
+_MAX_LINE_BYTES = 64 * 1024
+
+#: A quoted field that spans lines is joined up to this many characters, then given up on.
+_MAX_RECORD_CHARS = 8 * 1024
+
+#: Rows upserted, then committed, together.
+BATCH_SIZE = 500
+
+#: A company name longer than this is cut: a list we did not write fills a ``Text`` column.
+_MAX_NAME_CHARS = 200
+
+_LIST_TIMEOUT_SECONDS = 60.0
+
+
+class OpenListError(RuntimeError):
+    """The open list could not be read (a bad status, a redirect, over the cap, an unknown layout)."""
+
+
+@dataclass(frozen=True)
+class _Columns:
+    """Where the three columns this step reads, and the Personio host, sit in a row."""
+
+    ats: int
+    slug: int
+    name: int | None
+    board_url: int | None
+
+
+def _columns(header: list[str]) -> _Columns:
+    names = [cell.strip().lstrip("﻿").lower() for cell in header]
+    if "ats" not in names or "slug" not in names:
+        raise OpenListError("the open list has no ats and slug columns")
+
+    def where(column: str) -> int | None:
+        return names.index(column) if column in names else None
+
+    return _Columns(
+        ats=names.index("ats"),
+        slug=names.index("slug"),
+        name=where("company_name"),
+        board_url=where("board_url"),
+    )
+
+
+def _cell(fields: list[str], index: int | None) -> str:
+    return fields[index].strip() if index is not None and index < len(fields) else ""
+
+
+def _board_from_row(fields: list[str], columns: _Columns) -> tuple[BoardRef, str | None] | None:
+    """
+    The board a row names and the company name it gives, or ``None`` for a row to skip.
+
+    A row is skipped when its ATS is not one of the nine or its slug is not a valid board id
+    (a few real Ashby ids hold a dot, which no other reader of a board id accepts). The slug's
+    case follows the ATS (``board_ref``). A Personio row's region comes from the host of its
+    ``board_url`` (``.de`` or ``.com``) and is ``de`` when the row has none.
+    """
+    ats = _cell(fields, columns.ats).lower()
+    region = None
+    if ats == "personio":
+        named = board_from_url(_cell(fields, columns.board_url))
+        region = named.region if named is not None and named.ats == "personio" else None
+    ref = board_ref(ats, _cell(fields, columns.slug), region)
+    if ref is None:
+        return None
+    name = one_line(_cell(fields, columns.name))[:_MAX_NAME_CHARS].strip()
+    return ref, name or None
+
+
+def _feed(open_record: str, raw: bytes) -> tuple[list[str] | None, str]:
+    """
+    One more line of the file: ``(the row it completes or None, the record still open)``.
+
+    A quoted field may hold a line break, so a line with an odd number of quotes starts a
+    record that the following lines finish. A record that grows past :data:`_MAX_RECORD_CHARS`
+    (a stray quote) or that the CSV reader rejects is dropped.
+    """
+    line = raw.decode("utf-8", errors="replace").rstrip("\r")
+    text = f"{open_record}\n{line}" if open_record else line
+    if text.count('"') % 2:
+        return None, (text if len(text) <= _MAX_RECORD_CHARS else "")
+    if not text.strip():
+        return None, ""
+    try:
+        return next(csv.reader([text]), []), ""
+    except csv.Error:
+        return None, ""
+
+
+async def _records(response: httpx.Response) -> AsyncGenerator[list[str], None]:
+    """The rows of a streamed CSV one at a time, never holding more than the line being read."""
+    total = 0
+    pending = b""
+    open_record = ""
+    async for chunk in response.aiter_bytes():
+        total += len(chunk)
+        if total > MAX_LIST_BYTES:
+            raise OpenListError("the open list is over the size cap")
+        pending += chunk
+        *lines, pending = pending.split(b"\n")
+        if len(pending) > _MAX_LINE_BYTES:
+            raise OpenListError("the open list has a line over the length cap")
+        for raw in lines:
+            row, open_record = _feed(open_record, raw)
+            if row is not None:
+                yield row
+    row, _ = _feed(open_record, pending) if (pending or open_record) else (None, "")
+    if row is not None:
+        yield row
+
+
+async def discover_open_list(
+    session: AsyncSession, client: httpx.AsyncClient, *, limit: int
+) -> dict[str, int]:
+    """
+    Add the open list's boards to the roster as ``candidate`` rows (``discovered_via='open_list'``).
+
+    The CSV (``settings.job_boards_open_list_url``, see the module docstring for its source and
+    licence) is streamed and read a row at a time: at most ``limit`` data rows, at most
+    :data:`MAX_LIST_BYTES` bytes, no redirect. Rows whose ATS is one of the nine and whose slug
+    is valid are upserted through :func:`~services.job_boards.store.upsert_board` and committed
+    :data:`BATCH_SIZE` at a time, so a board already on the roster is left exactly as it is and
+    a second run inserts nothing.
+
+    Any transaction the caller left open on ``session`` is committed before the download starts, so
+    none is held while the list is fetched.
+
+    Returns ``{"rows": data rows read, "kept": rows that named a usable board, "inserted": new
+    rows}``. Raises :class:`OpenListError` when the list cannot be read; the rows read before
+    that are kept, which is safe because every row is independent.
+    """
+    url = get_settings().job_boards_open_list_url
+    await session.commit()
+    rows = kept = inserted = 0
+    batch: list[tuple[BoardRef, str | None]] = []
+
+    async def flush() -> None:
+        nonlocal inserted
+        for ref, name in batch:
+            if await upsert_board(session, ref, via="open_list", company_name=name):
+                inserted += 1
+        batch.clear()
+        await session.commit()
+
+    failure: OpenListError | None = None
+    try:
+        async with client.stream(
+            "GET",
+            url,
+            headers={"User-Agent": USER_AGENT, "Accept": "text/csv, text/plain"},
+            follow_redirects=False,
+            timeout=_LIST_TIMEOUT_SECONDS,
+        ) as response:
+            if response.status_code != 200:
+                raise OpenListError(f"the open list answered {response.status_code}")
+            declared = response.headers.get("content-length", "").strip()
+            if declared.isdigit() and int(declared) > MAX_LIST_BYTES:
+                raise OpenListError("the open list is over the size cap")
+            columns: _Columns | None = None
+            async with aclosing(_records(response)) as records:
+                async for fields in records:
+                    if columns is None:
+                        columns = _columns(fields)
+                        continue
+                    if rows >= limit:
+                        break
+                    rows += 1
+                    found = _board_from_row(fields, columns)
+                    if found is None:
+                        continue
+                    kept += 1
+                    batch.append(found)
+                    if len(batch) >= BATCH_SIZE:
+                        await flush()
+            if columns is None:
+                raise OpenListError("the open list is empty")
+    except OpenListError as exc:
+        failure = exc
+    except (httpx.HTTPError, httpx.InvalidURL) as exc:
+        failure = OpenListError(f"the open list could not be read: {type(exc).__name__}")
+    await flush()
+    if failure is not None:
+        logger.warning("Open list stopped after %d rows: %s", rows, failure)
+        raise failure
+    logger.info("Open list: %d rows, %d usable, %d new", rows, kept, inserted)
+    return {"rows": rows, "kept": kept, "inserted": inserted}
+
+
+# -- the name probe -----------------------------------------------------------------------
+
+#: One company is probed with at most this many requests, a hit's name check included.
+MAX_PROBE_REQUESTS = 24
+
+#: A company is probed at most once per this long (hit or miss).
+PROBED_TTL_SECONDS = 90 * 24 * 60 * 60
+
+#: No company is started after this many seconds. Workable's pace alone is 10 s a request.
+PROBE_BUDGET_SECONDS = 480.0
+
+#: The ATSes that state a company name a probe can check: Greenhouse's ``/v1/boards/{board}``,
+#: Workable's account name and Keka's ``careerportalinfo``. A hit on one of them is kept only
+#: when that name was read and is the company's. The others (Ashby, Lever, Recruitee) state none
+#: on the board, so a hit on them needs the company's own domain label or, for Recruitee, a
+#: name its offers state (see :func:`_is_the_company`).
+_NAMED_ATS: frozenset[AtsName] = frozenset({"greenhouse", "workable", "keka"})
+
+
+def probed_key(subject: str) -> str:
+    """The cache key that says a company (its id, or a YC company's domain) was probed lately."""
+    return f"tr:boards:probed:{subject}"
+
+
+class _OutOfRequests(httpx.TransportError):
+    """Raised inside a company's probe once its budget is spent; a reader reads it as an ``error``."""
+
+
+@dataclass
+class _Budget:
+    """One company's requests."""
+
+    limit: int
+    spent: int = 0
+
+
+@dataclass
+class _ProbeRun:
+    """What every company probed in one run shares: the pacing, and the ATSes that said stop."""
+
+    sleep: Sleep
+    #: Hosts already asked in this run: a second request to one waits its ``PACE_SECONDS``.
+    touched: set[AtsName] = field(default_factory=set)
+    #: ATSes that answered 429: not asked again for the rest of the run.
+    rate_limited: set[AtsName] = field(default_factory=set)
+
+    async def wait_turn(self, ats: AtsName) -> None:
+        if ats in self.touched:
+            await self.sleep(PACE_SECONDS[ats])
+        self.touched.add(ats)
+
+
+class _Metered:
+    """
+    The client as a board reader sees it, with one company's budget and the run's pacing in front.
+
+    Every reader makes its requests through ``client.stream`` (``ingestion.boards.base._fetch``),
+    so this is the one place the probe counts, paces and stops them, whatever a reader asks for
+    (Keka makes two, Greenhouse's name check is a second). Past the budget the request is not
+    sent: it fails with a transport error, which the reader reports as ``error``.
+    """
+
+    def __init__(
+        self, client: httpx.AsyncClient, ats: AtsName, run: _ProbeRun, budget: _Budget
+    ) -> None:
+        self._client = client
+        self._ats = ats
+        self._run = run
+        self._budget = budget
+
+    @asynccontextmanager
+    async def stream(self, method: str, url: str, **kwargs: Any) -> AsyncIterator[httpx.Response]:
+        if self._budget.spent >= self._budget.limit:
+            raise _OutOfRequests("the probe's request budget is spent")
+        self._budget.spent += 1
+        await self._run.wait_turn(self._ats)
+        async with self._client.stream(method, url, **kwargs) as response:
+            yield response
+
+
+async def _read(ats: AtsName, client: httpx.AsyncClient, ref: BoardRef) -> BoardRead | None:
+    try:
+        return await READERS[ats](client, ref)
+    except Exception as exc:  # a reader never raises; one that does is a miss, not a crash
+        logger.warning("Probe read of %s raised %s", ref.source, type(exc).__name__)
+        return None
+
+
+def _recruitee_stated_names(read: BoardRead, ref: BoardRef) -> set[str]:
+    """
+    The company names a Recruitee board's offers state.
+
+    The reader files an offer under ``board.capitalize()`` when it states none, so a name equal
+    to that is the reader's own default, not evidence, and is left out.
+    """
+    default = ref.board.capitalize()
+    names: set[str] = set()
+    for role in read.roles:
+        stated = (role.extra_metadata or {}).get("company_name")
+        if isinstance(stated, str) and stated.strip() and stated != default:
+            names.add(stated)
+    return names
+
+
+async def _is_the_company(
+    client: httpx.AsyncClient, ref: BoardRef, read: BoardRead, name: str, domain: str | None
+) -> bool:
+    """
+    Whether a board that has India roles is ``name``'s (site ``domain``).
+
+    A wrong match files another company's roles under this one, so a hit needs evidence:
+
+    * On an ATS that states a name (:data:`_NAMED_ATS`) the name must have been read and must
+      match under ``domain.company_identity.normalize_name``; one that could not be read is no
+      confirmation.
+    * On the others the board id must be the company's own domain label
+      (``domain.job_boards.domain_label``): ``slice`` for ``slice.in`` is an id the company's
+      site names, where ``slicepay`` guessed from a name could be anyone's. A Recruitee board
+      also passes when the company name its offers state matches.
+
+    Anything else is a miss.
+    """
+    if ref.ats in _NAMED_ATS:
+        stated = (
+            await read_board_name(client, ref) if ref.ats == "greenhouse" else read.company_name
+        )
+        return stated is not None and names_match(name, stated)
+    label = domain_label(domain)
+    if label is not None and ref.board.lower() == label:
+        return True
+    if ref.ats == "recruitee":
+        return any(names_match(name, stated) for stated in _recruitee_stated_names(read, ref))
+    return False
+
+
+async def _probe(
+    client: httpx.AsyncClient, *, name: str, domain: str | None, run: _ProbeRun
+) -> BoardRef | None:
+    budget = _Budget(MAX_PROBE_REQUESTS)
+    # Slug-major: the likeliest guess is tried on every ATS before the next guess is.
+    for slug in slug_candidates(name, domain):
+        for ats in PROBE_ATS:
+            if budget.spent >= budget.limit:
+                return None
+            ref = board_ref(ats, slug)
+            if ref is None or ats in run.rate_limited:
+                continue
+            metered = cast("httpx.AsyncClient", _Metered(client, ats, run, budget))
+            read = await _read(ats, metered, ref)
+            if read is None:
+                continue
+            if read.outcome == "rate_limited":
+                run.rate_limited.add(ats)
+                continue
+            if read.outcome != "ok" or not any(is_india_role(r.location_raw) for r in read.roles):
+                continue
+            if await _is_the_company(metered, ref, read, name, domain):
+                return ref
+    return None
+
+
+async def probe_company(
+    client: httpx.AsyncClient,
+    *,
+    name: str,
+    domain: str | None,
+    sleep: Sleep = asyncio.sleep,
+) -> BoardRef | None:
+    """
+    The board of the company ``name`` (site ``domain``) on one of the :data:`PROBE_ATS`, or ``None``.
+
+    Tries each of ``slug_candidates(name, domain)`` on each ATS, likeliest guess first, and
+    returns the first board that has at least one India role and is shown to be the company's: on
+    an ATS that states a company name (Greenhouse, Workable, Keka) by a name that matches ``name``;
+    on the others (Ashby, Lever, Recruitee) by being the domain's own label, or for Recruitee by
+    a matching name its offers state (:func:`_is_the_company`). At most
+    :data:`MAX_PROBE_REQUESTS` requests are made, the name check's included. A second request to
+    one ATS host waits its ``PACE_SECONDS`` through ``sleep`` (injectable, so a test does not
+    wait); an ATS that answers 429 is not asked again by this call.
+    """
+    return await _probe(client, name=name, domain=domain, run=_ProbeRun(sleep))
+
+
+@dataclass(frozen=True)
+class _Target:
+    """A company to probe, as plain values: the query's transaction is over before the probe starts."""
+
+    id: uuid.UUID
+    name: str
+    domain: str | None
+
+
+async def _unprobed_companies(session: AsyncSession, limit: int) -> list[_Target]:
+    """
+    Up to ``limit`` listed tech companies with no board and no probe in the last 90 days.
+
+    Taken in a random order each run. With a cache that remembers (Redis) the order does not
+    matter; without one (the in-process fallback forgets on every restart) a fixed order would
+    probe the same first companies every run and never reach the rest.
+    """
+    has_board = select(JobBoard.id).where(JobBoard.company_id == Company.id).exists()
+    rows = (
+        await session.execute(
+            select(Company.id, Company.name, Company.domain)
+            .where(Company.is_tech.is_(True), ~has_board)
+            .order_by(func.random())
+        )
+    ).all()
+    chosen: list[_Target] = []
+    for company_id, name, domain in rows:
+        if len(chosen) >= limit:
+            break
+        if await CacheBackend.get(probed_key(str(company_id))) is None:
+            chosen.append(_Target(company_id, name, domain))
+    return chosen
+
+
+async def discover_probe(
+    session: AsyncSession,
+    client: httpx.AsyncClient,
+    *,
+    limit: int,
+    sleep: Sleep = asyncio.sleep,
+    clock: Callable[[], float] = time.monotonic,
+    budget_seconds: float = PROBE_BUDGET_SECONDS,
+) -> dict[str, int]:
+    """
+    Probe up to ``limit`` listed tech companies that have no board yet, and add the boards found.
+
+    The companies are chosen first and the transaction that read them is ended before any
+    request. Each is probed with :func:`probe_company`'s rules (pacing shared across the whole
+    run, so the next company's first request to a host waits too); a hit is upserted as a
+    ``candidate`` with ``via='name_probe'`` and the company's id, and committed at once, so a run
+    that is cut short keeps what it found. A hit on a board already on the roster (the open
+    list got there first) adds the company to it and inserts nothing. Every company probed,
+    hit or miss, gets the ``tr:boards:probed:<company_id>`` key for 90 days, so it is not
+    probed again soon. No company is started after ``budget_seconds``; those left are picked up
+    by the next run.
+
+    Returns ``{"probed": companies probed, "found": boards found, "inserted": new rows}``.
+    """
+    started = clock()
+    targets = await _unprobed_companies(session, limit) if limit > 0 else []
+    await session.commit()  # the read is over: no connection is held while requests are made
+
+    run = _ProbeRun(sleep)
+    probed = found = inserted = 0
+    for target in targets:
+        if clock() - started >= budget_seconds:
+            break
+        ref = await _probe(client, name=target.name, domain=target.domain, run=run)
+        probed += 1
+        if ref is not None:
+            found += 1
+            if await upsert_board(
+                session, ref, via="name_probe", company_id=target.id, company_name=target.name
+            ):
+                inserted += 1
+            await session.commit()
+        await CacheBackend.set(
+            probed_key(str(target.id)), "hit" if ref is not None else "miss", PROBED_TTL_SECONDS
+        )
+    logger.info("Name probe: %d companies, %d boards found, %d new", probed, found, inserted)
+    return {"probed": probed, "found": found, "inserted": inserted}
+
+
+# -- YC's hiring list -----------------------------------------------------------------------
+
+YC_HIRING_URL = "https://yc-oss.github.io/api/companies/hiring.json"
+
+#: The list is about 2.5 MB (1,500 companies); one over this is refused rather than read to the end.
+MAX_YC_BYTES = 20 * 1024 * 1024
+
+_YC_TIMEOUT_SECONDS = 60.0
+
+#: A YC company's site is read at most once per this long, whatever it showed.
+YC_SITE_TTL_SECONDS = 30 * 24 * 60 * 60
+
+
+class YcListError(RuntimeError):
+    """YC's list could not be read (a bad status, a redirect, over the cap, not a JSON list)."""
+
+
+def yc_site_key(domain: str) -> str:
+    """The cache key that says a YC company's site (by its registrable domain) was read lately."""
+    return f"tr:boards:yc-site:{domain}"
+
+
+@dataclass(frozen=True)
+class _YcCompany:
+    """An India company of YC's list that can be read: a name, and a site of its own."""
+
+    name: str
+    website: str
+    domain: str
+
+
+def _yc_text(entry: dict[str, Any], key: str) -> str | None:
+    value = entry.get(key)
+    return value.strip() or None if isinstance(value, str) else None
+
+
+def _yc_is_india(entry: dict[str, Any]) -> bool:
+    """
+    Whether the company has an India location or region.
+
+    ``all_locations`` lists every office (``"New York City, NY, USA; New Delhi, DL, India"``) and
+    is read one place at a time (:func:`~domain.job_boards.is_india_role`), so Indianapolis is not
+    India; ``regions`` is YC's own list of market regions, and ``India`` is one of its values.
+    """
+    regions = entry.get("regions")
+    if isinstance(regions, list) and any(
+        isinstance(region, str) and region.strip().lower() == "india" for region in regions
+    ):
+        return True
+    return is_india_role(_yc_text(entry, "all_locations"))
+
+
+def _yc_companies(payload: list[Any]) -> list[_YcCompany]:
+    """The list's India companies that have a name and a site of their own, in the list's order."""
+    kept: list[_YcCompany] = []
+    for entry in payload:
+        if not isinstance(entry, dict) or not _yc_is_india(entry):
+            continue
+        name = one_line(_yc_text(entry, "name") or "")[:_MAX_NAME_CHARS].strip()
+        site = clean_website(entry.get("website"), allow_hosted=False)
+        if not name or site is None:
+            continue
+        kept.append(_YcCompany(name=name, website=site[0], domain=site[1]))
+    return kept
+
+
+async def _fetch_yc(client: httpx.AsyncClient) -> list[Any]:
+    """YC's hiring list, streamed under :data:`MAX_YC_BYTES`, no redirect. Raises :class:`YcListError`."""
+    body = bytearray()
+    try:
+        async with client.stream(
+            "GET",
+            YC_HIRING_URL,
+            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+            follow_redirects=False,
+            timeout=_YC_TIMEOUT_SECONDS,
+        ) as response:
+            if response.status_code != 200:
+                raise YcListError(f"YC's list answered {response.status_code}")
+            declared = response.headers.get("content-length", "").strip()
+            if declared.isdigit() and int(declared) > MAX_YC_BYTES:
+                raise YcListError("YC's list is over the size cap")
+            async for chunk in response.aiter_bytes():
+                body.extend(chunk)
+                if len(body) > MAX_YC_BYTES:
+                    raise YcListError("YC's list is over the size cap")
+    except (httpx.HTTPError, httpx.InvalidURL) as exc:
+        raise YcListError(f"YC's list could not be read: {type(exc).__name__}") from exc
+    try:
+        payload = json.loads(bytes(body))
+    except (ValueError, RecursionError) as exc:  # bad UTF-8 and bad JSON are ValueErrors
+        raise YcListError("YC's list is not JSON") from exc
+    if not isinstance(payload, list):
+        raise YcListError("YC's list is not a list")
+    return payload
+
+
+async def discover_yc(
+    session: AsyncSession,
+    client: httpx.AsyncClient,
+    *,
+    limit: int,
+    sleep: Sleep = asyncio.sleep,
+    clock: Callable[[], float] = time.monotonic,
+    budget_seconds: float = PROBE_BUDGET_SECONDS,
+) -> dict[str, int]:
+    """
+    Add the boards of YC's India companies to the roster as ``candidate`` rows (``via='yc'``).
+
+    The list (:data:`YC_HIRING_URL`) is read once, then its India companies (a location or a
+    region naming India; see the module docstring) are taken in the list's order, up to ``limit``
+    of them that are not skipped. A company whose ``tr:boards:yc-site:<domain>`` key is set (its
+    site was read in the last 30 days) is skipped and does not count against ``limit``. For each
+    of the others:
+
+    1. its site is read with ``read_site``;
+    2. the boards its pages link to are added, with the YC name as ``company_name`` and no
+       ``company_id``: the board's roles go to the placeholder company, and no ``companies`` row
+       is ever created;
+    3. when the site named none, the company is probed (:func:`_probe`, with the YC name and the
+       site's domain) unless ``tr:boards:probed:<domain>`` says it was in the last 90 days, and a
+       board that passes the probe's checks is added the same way. Pacing is shared by every
+       company in the run, as in :func:`discover_probe`;
+    4. only then, with the boards committed, the keys are set, whatever came of the site (so one
+       that disallows us or is down is not asked again for 30 days) and of the probe (90 days).
+       A write that fails sets neither, so the company is still due on the next run.
+
+    A board already on the roster is left as it is. Every request carries the project User-Agent
+    and none follows a redirect. The caller's transaction is ended before the list is fetched, and
+    each company's boards are committed as soon as they are written, so no connection is held
+    across a request and a run that is cut short keeps what it found. No company is started after
+    ``budget_seconds``; the ones left are picked up by the next run (their keys are not set).
+
+    Returns ``{"india": the India companies with a name and a site of their own, "read": sites
+    that could be read, "boards": new rows, "probed": companies probed}``. Raises
+    :class:`YcListError` when the list cannot be read (nothing has been written by then).
+    """
+    started = clock()
+    await session.commit()  # the caller's transaction is over: none is held across a request
+    companies = _yc_companies(await _fetch_yc(client))
+
+    run = _ProbeRun(sleep)
+    attempted = read = inserted = probed = 0
+    for company in companies:
+        if attempted >= limit:
+            break
+        if clock() - started >= budget_seconds:
+            break
+        if await CacheBackend.get(yc_site_key(company.domain)) is not None:
+            continue
+        attempted += 1
+        site = await read_site(client, company.website)
+        refs: list[BoardRef] = []
+        if site is not None:
+            read += 1
+            refs = list(site.boards)
+        probe_outcome: str | None = None
+        if not refs and await CacheBackend.get(probed_key(company.domain)) is None:
+            hit = await _probe(client, name=company.name, domain=company.domain, run=run)
+            probed += 1
+            probe_outcome = "hit" if hit is not None else "miss"
+            if hit is not None:
+                refs = [hit]
+        for ref in refs:
+            if await upsert_board(session, ref, via="yc", company_name=company.name):
+                inserted += 1
+        if refs:
+            await session.commit()
+        # The keys come last: a write that failed (the commit above raised) must not hide the
+        # company for 30 to 90 days, so it is still due the next time.
+        await CacheBackend.set(
+            yc_site_key(company.domain), "read" if site is not None else "miss", YC_SITE_TTL_SECONDS
+        )
+        if probe_outcome is not None:
+            await CacheBackend.set(probed_key(company.domain), probe_outcome, PROBED_TTL_SECONDS)
+    logger.info(
+        "YC: %d India companies, %d sites read, %d boards new, %d probed",
+        len(companies),
+        read,
+        inserted,
+        probed,
+    )
+    return {"india": len(companies), "read": read, "boards": inserted, "probed": probed}

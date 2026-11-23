@@ -1,0 +1,261 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Keep the job-board roster current: find boards, then read the due ones
+# ─────────────────────────────────────────────────────────────────────────────
+# Each call is one POST to /api/v1/ingest/job-boards?step=…&limit=…, which never
+# raises: a part that failed comes back as a 200 with an "error" key, which this
+# workflow turns into a ::warning:: naming the step. There is no worker, so this
+# workflow is the scheduler. Each cron has its own job, so a late or failed run of
+# one does not hold up another.
+#
+#   every 2 hours (17 */2)   sweep (300 boards, paced per ATS)
+#   daily 03:41 UTC          probe (40 companies), then prune (gone boards past 90 days)
+#   Monday 04:05 UTC         yc (60 YC companies with an India location)
+#   the 2nd, 04:25 UTC       open_list (up to 20,000 rows of the open list of ATS boards)
+#
+# A manual run (workflow_dispatch) takes one step. Its limit is optional; blank means
+# the limit the schedule uses for that step.
+#
+# A sweep or probe can run for several minutes (multi-page reads, and Workable's 10 s
+# pace), so every call is allowed fifteen minutes (--max-time 900).
+#
+# Needs the CRON_TOKEN secret, like reverify.yml. Without it the run exits cleanly
+# and does nothing.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: job-boards
+
+on:
+  schedule:
+    - cron: "17 */2 * * *"
+    - cron: "41 3 * * *"
+    - cron: "5 4 * * 1"
+    - cron: "25 4 2 * *"
+  workflow_dispatch:
+    inputs:
+      step:
+        description: "The step to run"
+        type: choice
+        options: [open_list, yc, probe, sweep, prune]
+        default: sweep
+        required: true
+      limit:
+        description: "Boards or rows to take (blank: the schedule's own limit for the step)"
+        required: false
+        default: ""
+
+concurrency:
+  group: job-boards
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.gate.outputs.run }}
+    steps:
+      - name: Skip when no token is configured
+        id: gate
+        env:
+          CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
+        run: |
+          if [ -z "$CRON_TOKEN" ]; then
+            echo "::notice::CRON_TOKEN secret is not set; skipping the job-board steps."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  sweep:
+    needs: gate
+    if: needs.gate.outputs.run == 'true' && github.event.schedule == '17 */2 * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      API_BASE: ${{ vars.API_BASE_URL || 'https://talentradar-api.onrender.com' }}
+      CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/keepalive.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Wake the API
+        env:
+          URL: ${{ env.API_BASE }}/health
+          DEADLINE_SECONDS: "480"
+        run: bash scripts/keepalive.sh
+
+      - name: Read the due boards
+        run: |
+          call() {
+            echo "::group::$1 (limit $2)"
+            # The body is kept, not streamed: a workflow command only counts at the start of a
+            # line, and a body has no newline of its own.
+            body=$(curl --fail-with-body --silent --show-error --max-time 900 \
+              -X POST "$API_BASE/api/v1/ingest/job-boards?step=$1&limit=$2" \
+              -H "X-Cron-Token: $CRON_TOKEN") || echo "::warning::job-boards step $1 failed"
+            echo "$body"
+            if grep -Eq '"error"[[:space:]]*:' <<<"$body"; then
+              detail=$(sed -n 's/.*"error"[[:space:]]*:[[:space:]]*"\([A-Za-z0-9_, .-]*\)".*/\1/p' <<<"$body")
+              echo "::warning::job-boards step $1 reported an error: ${detail:-see the response above}"
+            fi
+            echo "::endgroup::"
+          }
+          call sweep 300
+
+  probe:
+    needs: gate
+    if: needs.gate.outputs.run == 'true' && github.event.schedule == '41 3 * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      API_BASE: ${{ vars.API_BASE_URL || 'https://talentradar-api.onrender.com' }}
+      CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/keepalive.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Wake the API
+        env:
+          URL: ${{ env.API_BASE }}/health
+          DEADLINE_SECONDS: "480"
+        run: bash scripts/keepalive.sh
+
+      - name: Probe for boards, then prune
+        run: |
+          call() {
+            echo "::group::$1 (limit $2)"
+            body=$(curl --fail-with-body --silent --show-error --max-time 900 \
+              -X POST "$API_BASE/api/v1/ingest/job-boards?step=$1&limit=$2" \
+              -H "X-Cron-Token: $CRON_TOKEN") || echo "::warning::job-boards step $1 failed"
+            echo "$body"
+            if grep -Eq '"error"[[:space:]]*:' <<<"$body"; then
+              detail=$(sed -n 's/.*"error"[[:space:]]*:[[:space:]]*"\([A-Za-z0-9_, .-]*\)".*/\1/p' <<<"$body")
+              echo "::warning::job-boards step $1 reported an error: ${detail:-see the response above}"
+            fi
+            echo "::endgroup::"
+          }
+          call probe 40
+          # Once a day, after the probe: the sweep marks a board gone, and this removes the old ones.
+          call prune 5000
+
+  yc:
+    needs: gate
+    if: needs.gate.outputs.run == 'true' && github.event.schedule == '5 4 * * 1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      API_BASE: ${{ vars.API_BASE_URL || 'https://talentradar-api.onrender.com' }}
+      CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/keepalive.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Wake the API
+        env:
+          URL: ${{ env.API_BASE }}/health
+          DEADLINE_SECONDS: "480"
+        run: bash scripts/keepalive.sh
+
+      - name: Read YC's India companies
+        run: |
+          call() {
+            echo "::group::$1 (limit $2)"
+            body=$(curl --fail-with-body --silent --show-error --max-time 900 \
+              -X POST "$API_BASE/api/v1/ingest/job-boards?step=$1&limit=$2" \
+              -H "X-Cron-Token: $CRON_TOKEN") || echo "::warning::job-boards step $1 failed"
+            echo "$body"
+            if grep -Eq '"error"[[:space:]]*:' <<<"$body"; then
+              detail=$(sed -n 's/.*"error"[[:space:]]*:[[:space:]]*"\([A-Za-z0-9_, .-]*\)".*/\1/p' <<<"$body")
+              echo "::warning::job-boards step $1 reported an error: ${detail:-see the response above}"
+            fi
+            echo "::endgroup::"
+          }
+          call yc 60
+
+  open_list:
+    needs: gate
+    if: needs.gate.outputs.run == 'true' && github.event.schedule == '25 4 2 * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      API_BASE: ${{ vars.API_BASE_URL || 'https://talentradar-api.onrender.com' }}
+      CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/keepalive.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Wake the API
+        env:
+          URL: ${{ env.API_BASE }}/health
+          DEADLINE_SECONDS: "480"
+        run: bash scripts/keepalive.sh
+
+      - name: Seed the roster from the open list
+        run: |
+          call() {
+            echo "::group::$1 (limit $2)"
+            body=$(curl --fail-with-body --silent --show-error --max-time 900 \
+              -X POST "$API_BASE/api/v1/ingest/job-boards?step=$1&limit=$2" \
+              -H "X-Cron-Token: $CRON_TOKEN") || echo "::warning::job-boards step $1 failed"
+            echo "$body"
+            if grep -Eq '"error"[[:space:]]*:' <<<"$body"; then
+              detail=$(sed -n 's/.*"error"[[:space:]]*:[[:space:]]*"\([A-Za-z0-9_, .-]*\)".*/\1/p' <<<"$body")
+              echo "::warning::job-boards step $1 reported an error: ${detail:-see the response above}"
+            fi
+            echo "::endgroup::"
+          }
+          call open_list 20000
+
+  manual:
+    needs: gate
+    if: needs.gate.outputs.run == 'true' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      API_BASE: ${{ vars.API_BASE_URL || 'https://talentradar-api.onrender.com' }}
+      CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
+      STEP_INPUT: ${{ github.event.inputs.step }}
+      LIMIT_INPUT: ${{ github.event.inputs.limit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/keepalive.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Wake the API
+        env:
+          URL: ${{ env.API_BASE }}/health
+          DEADLINE_SECONDS: "480"
+        run: bash scripts/keepalive.sh
+
+      - name: Run the chosen step
+        run: |
+          # The schedule's own limit for each step, used when the input is blank.
+          case "$STEP_INPUT" in
+            open_list) default_limit=20000 ;;
+            yc)        default_limit=60 ;;
+            probe)     default_limit=40 ;;
+            sweep)     default_limit=300 ;;
+            prune)     default_limit=5000 ;;
+            *) echo "::error::unknown job-boards step '$STEP_INPUT'"; exit 1 ;;
+          esac
+          call() {
+            echo "::group::$1 (limit $2)"
+            body=$(curl --fail-with-body --silent --show-error --max-time 900 \
+              -X POST "$API_BASE/api/v1/ingest/job-boards?step=$1&limit=$2" \
+              -H "X-Cron-Token: $CRON_TOKEN") || echo "::warning::job-boards step $1 failed"
+            echo "$body"
+            if grep -Eq '"error"[[:space:]]*:' <<<"$body"; then
+              detail=$(sed -n 's/.*"error"[[:space:]]*:[[:space:]]*"\([A-Za-z0-9_, .-]*\)".*/\1/p' <<<"$body")
+              echo "::warning::job-boards step $1 reported an error: ${detail:-see the response above}"
+            fi
+            echo "::endgroup::"
+          }
+          call "$STEP_INPUT" "${LIMIT_INPUT:-$default_limit}"
