@@ -163,6 +163,28 @@ def _board(ats: AtsName, slug: str | None, region: str | None = None) -> BoardRe
     return BoardRef(ats=ats, board=slug if ats in _CASE_KEPT else slug.lower(), region=region)
 
 
+#: The two hosts a Personio board lives on: ``{board}.jobs.personio.de`` and ``.com``.
+PERSONIO_REGIONS: tuple[str, ...] = ("de", "com")
+
+
+def board_ref(ats: str, board: str, region: str | None = None) -> BoardRef | None:
+    """
+    A :class:`BoardRef` for an ATS name and board id taken from a list, or ``None``.
+
+    The same rules a board found in a link follows: ``ats`` must be one of the nine, ``board``
+    must be a valid id (it can come from a list we did not write, and it ends up in a request),
+    and the case is the one :func:`board_from_url` would keep (Lever's and Ashby's as written,
+    the rest lower-cased). ``region`` is kept only for Personio, where it must be ``de`` or
+    ``com`` (anything else is ``de``, the reader's own default); every other ATS has none.
+    """
+    if ats not in ATS:
+        return None
+    chosen = None
+    if ats == "personio":
+        chosen = region if region in PERSONIO_REGIONS else "de"
+    return _board(ats, (board or "").strip(), chosen)
+
+
 def board_from_url(url: str) -> BoardRef | None:
     """
     The ATS board a URL names, or ``None``.

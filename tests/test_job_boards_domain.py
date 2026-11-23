@@ -15,6 +15,7 @@ from domain.job_boards import (
     BoardRef,
     Schedule,
     board_from_url,
+    board_ref,
     boards_in_html,
     is_india_role,
     names_match,
@@ -221,6 +222,59 @@ def test_board_from_url_rejects_overlong_slug_and_url():
     assert board_from_url("https://jobs.lever.co/" + "a" * 81) is None
     assert board_from_url("https://jobs.lever.co/" + "a" * 80) is not None
     assert board_from_url("https://jobs.lever.co/cred?x=" + "a" * 3000) is None
+
+
+# ---------------------------------------------------------------------------
+# board_ref: a board read from a list
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("ats", "board", "region", "expected"),
+    [
+        # Lever's and Ashby's ids keep the case they are written in; every other ATS is lower-cased,
+        # exactly as board_from_url does for the same board found in a link.
+        ("lever", "Proseware", None, ("lever", "Proseware", None)),
+        ("ashby", "AdventureWorks", None, ("ashby", "AdventureWorks", None)),
+        ("greenhouse", "Contoso-Systems", None, ("greenhouse", "contoso-systems", None)),
+        ("workable", "Coho_Winery", None, ("workable", "coho_winery", None)),
+        ("keka", " Bellows ", None, ("keka", "bellows", None)),
+        # Only Personio has a region; it is de or com, and de when it is anything else.
+        ("personio", "alpine", "com", ("personio", "alpine", "com")),
+        ("personio", "alpine", "de", ("personio", "alpine", "de")),
+        ("personio", "alpine", None, ("personio", "alpine", "de")),
+        ("personio", "alpine", "org", ("personio", "alpine", "de")),
+        ("greenhouse", "northwind", "com", ("greenhouse", "northwind", None)),
+    ],
+)
+def test_board_ref_follows_the_rules_of_board_from_url(ats, board, region, expected):
+    ref = board_ref(ats, board, region)
+    assert ref is not None
+    assert (ref.ats, ref.board, ref.region) == expected
+
+
+@pytest.mark.parametrize(
+    ("ats", "board"),
+    [
+        ("smartrecruiters", "humongous"),
+        ("taleo", "relecloud"),
+        ("", "northwind"),
+        ("Greenhouse", "northwind"),  # the caller lower-cases a name it read; this is not guessed
+        ("greenhouse", ""),
+        ("greenhouse", "   "),
+        ("greenhouse", "tailspin.toys"),  # a dot: not a board id on any of the nine
+        ("greenhouse", "a/b"),
+        ("greenhouse", "-leading"),
+        ("greenhouse", "x" * 81),
+        ("keka", "evil.example/x"),
+    ],
+)
+def test_board_ref_rejects(ats, board):
+    assert board_ref(ats, board) is None
+
+
+def test_board_ref_accepts_the_longest_board_id():
+    assert board_ref("lever", "a" * 80) is not None
 
 
 # ---------------------------------------------------------------------------

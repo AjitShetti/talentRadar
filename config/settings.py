@@ -213,6 +213,14 @@ class Settings(BaseSettings):
     # left out of repr() so printing the settings cannot leak it.
     eventbrite_token: str | None = Field(default=None, repr=False)
 
+    # The open list of public ATS boards the job-board roster is seeded from: a CSV with the
+    # columns ats, slug, company_name, ... (storesignalhq/ats-job-boards, CC BY 4.0). Read only
+    # by the monthly ``open_list`` step (services/job_boards/discover.py); a different mirror
+    # of the same file can be named here.
+    job_boards_open_list_url: str = Field(
+        default="https://raw.githubusercontent.com/storesignalhq/ats-job-boards/main/boards.csv"
+    )
+
     # Mail sent to a user: the password-reset link and the opt-in daily digest. Sent through
     # Resend's HTTP API (free tier: 3,000 a month, 100 a day). Without a key no mail is sent:
     # "Forgot password" says reset by email is not set up and the digest never runs. Blank
