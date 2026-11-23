@@ -19,7 +19,10 @@ both call :func:`run_step`. A step:
   walk, which costs requests but loses nothing.
 * ``sites`` — read up to ``limit`` company homepages (robots.txt respected,
   each site at most once per 30 days): address, PIN, people, and a summary
-  when the site or Wikidata already says what the company does.
+  when the site or Wikidata already says what the company does. The ATS
+  boards the homepage and its careers page link to, and a ``careers_url`` that
+  is itself a board (read as a string, never requested), join the job-board
+  roster as ``careers_link`` candidates filed under the company.
 * ``geocode`` — place up to ``limit`` companies through Nominatim (1 req/s),
   falling back to the centroid of a known area.
 * ``summaries`` — the budgeted LLM line for companies whose sources had text
@@ -47,6 +50,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from domain.areas import area_for_text, jitter
 from domain.company_identity import merge_fields
+from domain.job_boards import BoardRef, board_from_url
 from services.cache_backend import CacheBackend
 from services.company_map import github_orgs, hiring_list, osm, wikidata, yc
 from services.company_map.geocode import geocode, resolve_location
@@ -63,6 +67,7 @@ from services.company_map.summary import choose_summary, has_source_text, llm_su
 from services.company_map.tech import apply_tech, reclassify_tech
 from services.company_map.types import GeoHit, ImportedCompany, SiteFacts
 from services.company_map.website import read_site
+from services.job_boards.store import upsert_board
 from storage.database import AsyncSessionLocal
 from storage.models import Company
 
@@ -338,6 +343,29 @@ def _apply_site(company: Company, facts: SiteFacts | None) -> None:
     apply_tech(company)
 
 
+async def _add_boards(session: AsyncSession, company: Company, site: SiteFacts | None) -> int:
+    """
+    File the ATS boards a company's own pages name under the company; how many rows are new.
+
+    The homepage's and careers page's boards come from ``site`` (``None`` when the site could
+    not be read), and ``company.careers_url`` is read as a string: when it is itself a board
+    URL that is a board, with no request. Each board is a ``candidate`` the sweep checks, so a
+    link to somebody else's board costs one read, not a wrong claim; a board already on the
+    roster only gains this company. Does not commit.
+    """
+    refs: list[BoardRef] = list(site.boards) if site is not None else []
+    named = board_from_url(company.careers_url or "")
+    if named is not None and named not in refs:
+        refs.append(named)
+    added = 0
+    for ref in refs:
+        if await upsert_board(
+            session, ref, via="careers_link", company_id=company.id, company_name=company.name
+        ):
+            added += 1
+    return added
+
+
 async def _step_sites(session: AsyncSession, limit: int) -> dict[str, int]:
     companies = await due(session, "sites", limit)
     gate = asyncio.Semaphore(SITE_CONCURRENCY)
@@ -350,7 +378,7 @@ async def _step_sites(session: AsyncSession, limit: int) -> dict[str, int]:
         facts = await asyncio.gather(
             *(read(client, c.website_url or "") for c in companies), return_exceptions=True
         )
-    read_ok = people = inboxes = 0
+    read_ok = people = inboxes = boards = 0
     for company, result in zip(companies, facts, strict=True):
         site = result if isinstance(result, SiteFacts) else None
         _apply_site(company, site)
@@ -362,8 +390,15 @@ async def _step_sites(session: AsyncSession, limit: int) -> dict[str, int]:
                 )
             if site.emails:
                 inboxes += await upsert_site_emails(session, company, site.emails)
+        boards += await _add_boards(session, company, site)
     await session.commit()
-    return {"due": len(companies), "read": read_ok, "people": people, "inboxes": inboxes}
+    return {
+        "due": len(companies),
+        "read": read_ok,
+        "people": people,
+        "inboxes": inboxes,
+        "boards": boards,
+    }
 
 
 async def _locate(client: httpx.AsyncClient, company: Company) -> GeoHit | None:

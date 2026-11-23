@@ -4,8 +4,9 @@ services/job_boards/discover.py
 Finding boards for the job-board roster. Design:
 docs/superpowers/specs/2026-11-23-job-board-roster-design.md, "Discovery steps".
 
-Two ways in live here; the YC list and the careers-page links are added to this module by
-their own steps.
+Three ways in live here; the fourth, the careers-page links, is the company map's own ``sites``
+step (``services/company_map/refresh.py``), which files each board a company's pages link under
+that company.
 
 ``discover_open_list``
     Seeds the roster from the open list of public ATS boards: **storesignalhq/ats-job-boards**
@@ -30,6 +31,17 @@ their own steps.
       guessed from its name alone. Recruitee's offers do carry a ``company_name``; one that
       matches the company's name is accepted for any guess.
 
+``discover_yc``
+    Reads Y Combinator's list of companies that are hiring (the community mirror ``yc-oss``, one
+    static JSON file) and keeps the ones with an India location or region. Such a company is a
+    plain value, never a ``companies`` row: the company map stays Bengaluru, and a board found
+    for a YC company is filed under a placeholder company named for it (no ``company_id``). Each
+    company's site is read through the company map's own reader (``website.read_site``, so its
+    robots.txt, size and time rules apply as they do there), at most once per 30 days
+    (``tr:boards:yc-site:<domain>``); when the site names no board, the company is probed
+    (:func:`probe_company`'s rules, shared pacing) at most once per 90 days
+    (``tr:boards:probed:<domain>``). Everything found is added with ``via='yc'``.
+
 Rules every step here follows
 -----------------------------
 * The list is data from outside. A row is bounded and validated (``domain.job_boards.board_ref``)
@@ -46,6 +58,7 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import json
 import logging
 import time
 import uuid
@@ -75,6 +88,8 @@ from ingestion.boards import READERS
 from ingestion.boards.base import USER_AGENT, BoardRead, one_line
 from ingestion.boards.greenhouse import read_board_name
 from services.cache_backend import CacheBackend
+from services.company_map.sourced import clean_website
+from services.company_map.website import read_site
 from services.job_boards.store import upsert_board
 from storage.models import Company, JobBoard
 
@@ -540,3 +555,183 @@ async def discover_probe(
         )
     logger.info("Name probe: %d companies, %d boards found, %d new", probed, found, inserted)
     return {"probed": probed, "found": found, "inserted": inserted}
+
+
+# -- YC's hiring list -----------------------------------------------------------------------
+
+YC_HIRING_URL = "https://yc-oss.github.io/api/companies/hiring.json"
+
+#: The list is about 2.5 MB (1,500 companies); one over this is refused rather than read to the end.
+MAX_YC_BYTES = 20 * 1024 * 1024
+
+_YC_TIMEOUT_SECONDS = 60.0
+
+#: A YC company's site is read at most once per this long, whatever it showed.
+YC_SITE_TTL_SECONDS = 30 * 24 * 60 * 60
+
+
+class YcListError(RuntimeError):
+    """YC's list could not be read (a bad status, a redirect, over the cap, not a JSON list)."""
+
+
+def yc_site_key(domain: str) -> str:
+    """The cache key that says a YC company's site (by its registrable domain) was read lately."""
+    return f"tr:boards:yc-site:{domain}"
+
+
+@dataclass(frozen=True)
+class _YcCompany:
+    """An India company of YC's list that can be read: a name, and a site of its own."""
+
+    name: str
+    website: str
+    domain: str
+
+
+def _yc_text(entry: dict[str, Any], key: str) -> str | None:
+    value = entry.get(key)
+    return value.strip() or None if isinstance(value, str) else None
+
+
+def _yc_is_india(entry: dict[str, Any]) -> bool:
+    """
+    Whether the company has an India location or region.
+
+    ``all_locations`` lists every office (``"New York City, NY, USA; New Delhi, DL, India"``) and
+    is read one place at a time (:func:`~domain.job_boards.is_india_role`), so Indianapolis is not
+    India; ``regions`` is YC's own list of market regions, and ``India`` is one of its values.
+    """
+    regions = entry.get("regions")
+    if isinstance(regions, list) and any(
+        isinstance(region, str) and region.strip().lower() == "india" for region in regions
+    ):
+        return True
+    return is_india_role(_yc_text(entry, "all_locations"))
+
+
+def _yc_companies(payload: list[Any]) -> list[_YcCompany]:
+    """The list's India companies that have a name and a site of their own, in the list's order."""
+    kept: list[_YcCompany] = []
+    for entry in payload:
+        if not isinstance(entry, dict) or not _yc_is_india(entry):
+            continue
+        name = one_line(_yc_text(entry, "name") or "")[:_MAX_NAME_CHARS].strip()
+        site = clean_website(entry.get("website"), allow_hosted=False)
+        if not name or site is None:
+            continue
+        kept.append(_YcCompany(name=name, website=site[0], domain=site[1]))
+    return kept
+
+
+async def _fetch_yc(client: httpx.AsyncClient) -> list[Any]:
+    """YC's hiring list, streamed under :data:`MAX_YC_BYTES`, no redirect. Raises :class:`YcListError`."""
+    body = bytearray()
+    try:
+        async with client.stream(
+            "GET",
+            YC_HIRING_URL,
+            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+            follow_redirects=False,
+            timeout=_YC_TIMEOUT_SECONDS,
+        ) as response:
+            if response.status_code != 200:
+                raise YcListError(f"YC's list answered {response.status_code}")
+            declared = response.headers.get("content-length", "").strip()
+            if declared.isdigit() and int(declared) > MAX_YC_BYTES:
+                raise YcListError("YC's list is over the size cap")
+            async for chunk in response.aiter_bytes():
+                body.extend(chunk)
+                if len(body) > MAX_YC_BYTES:
+                    raise YcListError("YC's list is over the size cap")
+    except (httpx.HTTPError, httpx.InvalidURL) as exc:
+        raise YcListError(f"YC's list could not be read: {type(exc).__name__}") from exc
+    try:
+        payload = json.loads(bytes(body))
+    except (ValueError, RecursionError) as exc:  # bad UTF-8 and bad JSON are ValueErrors
+        raise YcListError("YC's list is not JSON") from exc
+    if not isinstance(payload, list):
+        raise YcListError("YC's list is not a list")
+    return payload
+
+
+async def discover_yc(
+    session: AsyncSession,
+    client: httpx.AsyncClient,
+    *,
+    limit: int,
+    sleep: Sleep = asyncio.sleep,
+    clock: Callable[[], float] = time.monotonic,
+    budget_seconds: float = PROBE_BUDGET_SECONDS,
+) -> dict[str, int]:
+    """
+    Add the boards of YC's India companies to the roster as ``candidate`` rows (``via='yc'``).
+
+    The list (:data:`YC_HIRING_URL`) is read once, then its India companies (a location or a
+    region naming India; see the module docstring) are taken in the list's order, up to ``limit``
+    of them that are not skipped. A company whose ``tr:boards:yc-site:<domain>`` key is set (its
+    site was read in the last 30 days) is skipped and does not count against ``limit``. For each
+    of the others:
+
+    1. its site is read with ``read_site`` and the key is set, whatever came of it, so a site that
+       disallows us or is down is not asked again for 30 days;
+    2. the boards its pages link to are added, with the YC name as ``company_name`` and no
+       ``company_id``: the board's roles go to the placeholder company, and no ``companies`` row
+       is ever created;
+    3. when the site named none, the company is probed (:func:`_probe`, with the YC name and the
+       site's domain) unless ``tr:boards:probed:<domain>`` says it was in the last 90 days, and a
+       board that passes the probe's checks is added the same way. Pacing is shared by every
+       company in the run, as in :func:`discover_probe`.
+
+    A board already on the roster is left as it is. Every request carries the project User-Agent
+    and none follows a redirect. The caller's transaction is ended before the list is fetched, and
+    each company's boards are committed as soon as they are written, so no connection is held
+    across a request and a run that is cut short keeps what it found. No company is started after
+    ``budget_seconds``; the ones left are picked up by the next run (their keys are not set).
+
+    Returns ``{"india": the India companies with a name and a site of their own, "read": sites
+    that could be read, "boards": new rows, "probed": companies probed}``. Raises
+    :class:`YcListError` when the list cannot be read (nothing has been written by then).
+    """
+    started = clock()
+    await session.commit()  # the caller's transaction is over: none is held across a request
+    companies = _yc_companies(await _fetch_yc(client))
+
+    run = _ProbeRun(sleep)
+    attempted = read = inserted = probed = 0
+    for company in companies:
+        if attempted >= limit:
+            break
+        if clock() - started >= budget_seconds:
+            break
+        if await CacheBackend.get(yc_site_key(company.domain)) is not None:
+            continue
+        attempted += 1
+        site = await read_site(client, company.website)
+        await CacheBackend.set(
+            yc_site_key(company.domain), "read" if site is not None else "miss", YC_SITE_TTL_SECONDS
+        )
+        refs: list[BoardRef] = []
+        if site is not None:
+            read += 1
+            refs = list(site.boards)
+        if not refs and await CacheBackend.get(probed_key(company.domain)) is None:
+            hit = await _probe(client, name=company.name, domain=company.domain, run=run)
+            probed += 1
+            await CacheBackend.set(
+                probed_key(company.domain), "hit" if hit is not None else "miss", PROBED_TTL_SECONDS
+            )
+            if hit is not None:
+                refs = [hit]
+        if refs:
+            for ref in refs:
+                if await upsert_board(session, ref, via="yc", company_name=company.name):
+                    inserted += 1
+            await session.commit()
+    logger.info(
+        "YC: %d India companies, %d sites read, %d boards new, %d probed",
+        len(companies),
+        read,
+        inserted,
+        probed,
+    )
+    return {"india": len(companies), "read": read, "boards": inserted, "probed": probed}

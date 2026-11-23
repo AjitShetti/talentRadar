@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from domain.job_boards import BoardRef
+
 
 @dataclass(frozen=True, kw_only=True)
 class PersonCandidate:
@@ -77,6 +79,9 @@ class SiteFacts:
     people: tuple[PersonCandidate, ...] = ()
     links: tuple[str, ...] = ()
     emails: tuple[SiteEmail, ...] = ()
+    #: ATS boards the page links to, on any host (a "Careers" link that leaves for
+    #: ``jobs.lever.co/<id>``), in the order first seen. Never requested from here.
+    boards: tuple[BoardRef, ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)

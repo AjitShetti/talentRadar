@@ -1,0 +1,108 @@
+[
+ {
+  "name": "Razorpay",
+  "website": "https://razorpay.com",
+  "all_locations": "Bengaluru, KA, India",
+  "regions": [
+   "India",
+   "South Asia",
+   "Remote",
+   "Partly Remote"
+  ]
+ },
+ {
+  "name": "Groww",
+  "website": "https://groww.in",
+  "all_locations": "Bengaluru, KA, India",
+  "regions": [
+   "India",
+   "South Asia"
+  ]
+ },
+ {
+  "name": "Leena AI",
+  "website": "https://www.leena.ai",
+  "all_locations": "New York City, NY, USA; New Delhi, DL, India",
+  "regions": [
+   "United States of America",
+   "India",
+   "America / Canada",
+   "South Asia",
+   "Remote",
+   "Partly Remote"
+  ]
+ },
+ {
+  "name": "Cityfurnish",
+  "website": "https://cityfurnish.com/",
+  "all_locations": "New Delhi, DL, India",
+  "regions": [
+   "India",
+   "South Asia",
+   "Remote",
+   "Partly Remote"
+  ]
+ },
+ {
+  "name": "Meesho",
+  "website": "http://www.meesho.com",
+  "all_locations": "Bengaluru, KA, India",
+  "regions": [
+   "India",
+   "South Asia",
+   "Remote",
+   "Partly Remote"
+  ]
+ },
+ {
+  "name": "Aravolta",
+  "website": "https://www.aravolta.com/",
+  "all_locations": "Indianapolis, IN, USA",
+  "regions": [
+   "United States of America",
+   "America / Canada"
+  ]
+ },
+ {
+  "name": "Gusto",
+  "website": "https://gusto.com",
+  "all_locations": "San Francisco, CA, USA",
+  "regions": [
+   "United States of America",
+   "America / Canada",
+   "Remote",
+   "Partly Remote"
+  ]
+ },
+ {
+  "name": "CircuitHub",
+  "website": "https://circuithub.com",
+  "all_locations": "London, England, United Kingdom",
+  "regions": [
+   "United Kingdom",
+   "Europe",
+   "Remote",
+   "Partly Remote"
+  ]
+ },
+ {
+  "name": "Y Combinator",
+  "website": "https://www.ycombinator.com",
+  "all_locations": "",
+  "regions": [
+   "Remote",
+   "Partly Remote"
+  ]
+ },
+ {
+  "name": "Rescale",
+  "website": "https://rescale.com",
+  "all_locations": "San Francisco, CA, USA",
+  "regions": [
+   "United States of America",
+   "America / Canada",
+   "Remote",
+   "Partly Remote"
+  ]
+ }
+]
