@@ -11,8 +11,9 @@ frontend - nothing here is called on a visitor's page load.
 Two rules hold for everything in this module:
 
 * **Only republishable rows.** A public page is built only from postings that
-  came from an employer's own ATS API (Greenhouse, Lever, Ashby), which those
-  employers publish for exactly this purpose. Rows scraped from job boards
+  came from an employer's own ATS API (any of the nine in
+  ``domain.job_boards.ATS``), which those employers publish for exactly this
+  purpose. Rows scraped from job boards
   stay inside the signed-in product.
 * **India only.** The product is an India-only board, so a public page needs a
   location that positively resolves to India. Search keeps rows with no stated
@@ -30,6 +31,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from domain.geo import is_india
+from domain.job_boards import ATS
 from domain.liveness import is_verifiable_source, title_key
 from domain.posting_urls import (
     PostingRef,
@@ -47,8 +49,10 @@ logger = logging.getLogger(__name__)
 MAX_LISTED_ROLES = 2000
 MAX_COMPANY_ROLES = 60
 
+_ATS_NAMES = ", ".join(name.capitalize() for name in ATS[:-1]) + f" or {ATS[-1].capitalize()}"
+
 _UNSUPPORTED_MESSAGE = (
-    "We can only confirm postings hosted on Greenhouse, Lever or Ashby, where the "
+    f"We can only confirm postings hosted on {_ATS_NAMES}, where the "
     "employer publishes a feed we can ask. For any other site, check the posting "
     "date, whether the company's own careers page lists the role, and whether the "
     "same role keeps reappearing."
@@ -164,11 +168,7 @@ async def list_roles(limit: int = 500) -> list[dict[str, Any]]:
                 select(Job)
                 .where(
                     Job.closed_at.is_(None),
-                    or_(
-                        Job.source.like("greenhouse:%"),
-                        Job.source.like("lever:%"),
-                        Job.source.like("ashby:%"),
-                    ),
+                    or_(*(Job.source.like(f"{ats}:%") for ats in ATS)),
                 )
                 .options(selectinload(Job.company))
                 .order_by(Job.last_seen_at.desc().nulls_last())
@@ -213,11 +213,7 @@ async def company_roles(slug: str) -> dict[str, Any] | None:
                     select(Job)
                     .where(
                         Job.company_id == company_id,
-                        or_(
-                            Job.source.like("greenhouse:%"),
-                            Job.source.like("lever:%"),
-                            Job.source.like("ashby:%"),
-                        ),
+                        or_(*(Job.source.like(f"{ats}:%") for ats in ATS)),
                     )
                     .options(selectinload(Job.company))
                     .order_by(Job.closed_at.asc().nulls_first(), Job.source_posted_at.desc().nulls_last())

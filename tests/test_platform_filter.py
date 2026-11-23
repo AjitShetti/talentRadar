@@ -22,6 +22,7 @@ from agents.state import AgentResponse, IntentType, RetrievalResult
 from api.dependencies import get_unit_of_work
 from api.main import app
 from api.schemas.job_schemas import JobFilterSchema, SearchRequestSchema
+from domain.job_boards import ATS
 from domain.platforms import JOB_PLATFORMS, get_platform, platform_of
 from storage.database import Base
 from storage.database import engine as app_engine
@@ -42,6 +43,16 @@ class TestPlatformOf:
             ("indeed", None, "indeed"),
             ("greenhouse:razorpay", None, "company_sites"),
             ("lever:cred", "https://jobs.lever.co/cred/abc", "company_sites"),
+            ("workable:apna", "https://apply.workable.com/apna/j/1A2B3C4D5E/", "company_sites"),
+            ("recruitee:lenskart", "https://lenskart.recruitee.com/o/store-manager", "company_sites"),
+            ("keka:spyneai", "https://spyneai.keka.com/careers/jobdetails/1", "company_sites"),
+            ("rippling:acme", "https://ats.rippling.com/acme/jobs/0b6c1f3e-1a2b-4c5d-8e9f-001122334455", "company_sites"),
+            ("breezy:acme", "https://acme.breezy.hr/p/0123abcd4567", "company_sites"),
+            ("personio:acme", "https://acme.jobs.personio.de/job/998877", "company_sites"),
+            ("personio:acme", "https://acme.jobs.personio.com/job/998877", "company_sites"),
+            # The stored source alone is enough when the URL is not an ATS host.
+            ("workable:apna", None, "company_sites"),
+            ("breezy:acme", "https://careers.acme.example/p/1", "company_sites"),
             # Found by Tavily, lives on LinkedIn: the URL wins.
             ("tavily_search", "https://in.linkedin.com/jobs/view/2", "linkedin"),
             ("live_search", "https://in.indeed.com/viewjob?jk=1", "indeed"),
@@ -55,6 +66,18 @@ class TestPlatformOf:
 
     def test_lookalike_host_is_not_matched(self) -> None:
         assert platform_of(None, "https://notlinkedin.com/jobs/1") is None
+
+    def test_every_ats_is_a_company_site(self) -> None:
+        company_sites = get_platform("company_sites")
+        assert company_sites is not None
+        assert all(ats in company_sites.sources for ats in ATS)
+
+    @pytest.mark.parametrize(
+        "url",
+        ["https://www.workable.com/", "https://www.rippling.com/", "https://www.breezy.hr.evil.example/p/1"],
+    )
+    def test_an_ats_marketing_site_or_lookalike_is_not_a_company_career_site(self, url: str) -> None:
+        assert platform_of(None, url) is None
 
     def test_keys_are_unique(self) -> None:
         keys = [p.key for p in JOB_PLATFORMS]
@@ -120,6 +143,74 @@ async def seeded(session: AsyncSession) -> None:
         for i, (source, url) in enumerate(rows)
     )
     await session.commit()
+
+
+class TestCompanySitesCoverEveryAts:
+    @pytest.mark.asyncio
+    async def test_company_sites_filter_finds_a_row_on_each_of_the_nine(self, session: AsyncSession) -> None:
+        company = Company(id=uuid.uuid4(), domain="acme.talentradar.internal", name="Acme")
+        session.add(company)
+        await session.commit()
+        urls = {
+            "greenhouse": "https://boards.greenhouse.io/acme/jobs/1",
+            "ashby": "https://jobs.ashbyhq.com/acme/9f8e7d6c-1111-2222-3333-444455556666",
+            "lever": "https://jobs.lever.co/acme/0a1b2c3d-1111-2222-3333-444455556666",
+            "workable": "https://apply.workable.com/acme/j/1A2B3C4D5E/",
+            "recruitee": "https://acme.recruitee.com/o/store-manager",
+            "keka": "https://acme.keka.com/careers/jobdetails/1",
+            "rippling": "https://ats.rippling.com/acme/jobs/0b6c1f3e-1a2b-4c5d-8e9f-001122334455",
+            "personio": "https://acme.jobs.personio.de/job/998877",
+            "breezy": "https://acme.breezy.hr/p/0123abcd4567",
+        }
+        assert set(urls) == set(ATS)
+        session.add_all(
+            Job(
+                id=uuid.uuid4(),
+                external_id=f"ext-{ats}",
+                # Source and URL both name the ATS; the filter takes either.
+                source=f"{ats}:acme",
+                source_url=url,
+                title="Python Developer",
+                company_id=company.id,
+                skills=["Python"],
+                status=JobStatus.ACTIVE,
+                posted_at=datetime.now(tz=UTC),
+            )
+            for ats, url in urls.items()
+        )
+        # Same URLs, but a source the filter does not know: the host alone must do.
+        session.add_all(
+            Job(
+                id=uuid.uuid4(),
+                external_id=f"host-{ats}",
+                source="tavily_search",
+                source_url=url,
+                title="Python Developer",
+                company_id=company.id,
+                skills=["Python"],
+                status=JobStatus.ACTIVE,
+                posted_at=datetime.now(tz=UTC),
+            )
+            for ats, url in urls.items()
+        )
+        session.add(
+            Job(
+                id=uuid.uuid4(),
+                external_id="other",
+                source="linkedin",
+                source_url="https://www.linkedin.com/jobs/view/1",
+                title="Python Developer",
+                company_id=company.id,
+                skills=["Python"],
+                status=JobStatus.ACTIVE,
+                posted_at=datetime.now(tz=UTC),
+            )
+        )
+        await session.commit()
+
+        jobs, total = await JobRepository(session).search(platforms=["company_sites"])
+        assert total == 2 * len(ATS)
+        assert "linkedin" not in {j.source for j in jobs}
 
 
 class TestRepositoryPlatformFilter:

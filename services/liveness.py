@@ -28,6 +28,7 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
+from domain.job_boards import ATS
 from domain.liveness import (
     VERIFICATION_VALID_FOR,
     LivenessEvidence,
@@ -164,23 +165,26 @@ async def _load_candidates(limit: int) -> list[Candidate]:
 
     from storage.database import AsyncSessionLocal
 
+    # One bound pattern per ATS on the roster (``greenhouse:%``, ``workable:%``
+    # ...), so the list cannot drift from ``domain.job_boards.ATS``.
+    source_params = {f"ats_{i}": f"{ats}:%" for i, ats in enumerate(ATS)}
+    source_clause = " OR ".join(f"j.source LIKE :{name}" for name in source_params)
+
     async with AsyncSessionLocal() as session:
         rows = await session.execute(
             text(
-                """
+                f"""
                 SELECT j.id, j.source, j.external_id, j.source_url
                 FROM jobs j
                 WHERE (j.closed_at IS NULL OR j.closed_at > :reopen_after)
-                  AND (j.source LIKE 'greenhouse:%'
-                       OR j.source LIKE 'lever:%'
-                       OR j.source LIKE 'ashby:%')
+                  AND ({source_clause})
                 ORDER BY
                   EXISTS (SELECT 1 FROM job_applications a WHERE a.job_id = j.id) DESC,
                   j.last_verified_at ASC NULLS FIRST
                 LIMIT :limit
                 """
             ),
-            {"limit": limit, "reopen_after": datetime.now(UTC) - REOPEN_WINDOW},
+            {"limit": limit, "reopen_after": datetime.now(UTC) - REOPEN_WINDOW, **source_params},
         )
         return [
             Candidate(job_id=row[0], source=row[1], external_id=row[2], source_url=row[3])

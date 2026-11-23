@@ -29,6 +29,8 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
+from domain.job_boards import ATS
+
 #: How much each signal can contribute. They sum to 1.0.
 WEIGHT_RELEVANCE = 0.50
 WEIGHT_RECENCY = 0.25
@@ -37,10 +39,8 @@ WEIGHT_COMPLETENESS = 0.10
 
 #: First-party postings are more trustworthy and more complete than aggregated
 #: ones: an ATS row comes from the employer, a board row from a scraper.
-SOURCE_TRUST = {
-    "greenhouse": 1.0,
-    "lever": 1.0,
-    "ashby": 1.0,
+SOURCE_TRUST: dict[str, float] = {
+    **dict.fromkeys(ATS, 1.0),
     "ats_platforms": 1.0,
     "linkedin": 0.8,
     "instahyre": 0.75,

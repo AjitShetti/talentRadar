@@ -48,6 +48,17 @@ ALLOWED_JOB_DOMAINS = [
     "ashbyhq.com",
     "jobs.ashbyhq.com",
     "cutshort.io",
+    # The six ATSes the board roster added (a match covers every subdomain, so
+    # ``recruitee.com`` is each customer's ``<board>.recruitee.com``). Workable
+    # and Rippling are listed by the host a posting lives on, not their
+    # marketing sites.
+    "apply.workable.com",
+    "recruitee.com",
+    "keka.com",
+    "ats.rippling.com",
+    "breezy.hr",
+    "jobs.personio.de",
+    "jobs.personio.com",
     # Indian boards the live fan-out actually reaches. They were missing, so
     # every posting these sources returned failed validation and was dropped
     # before it could be persisted.

@@ -20,6 +20,8 @@ import uuid
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
+from domain.job_boards import ATS, board_from_url
+
 MAX_URL_LENGTH = 2048
 
 _SLUG = r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}"
@@ -34,11 +36,28 @@ _PATTERNS: dict[str, tuple[str, re.Pattern[str]]] = {
     "jobs.ashbyhq.com": ("ashby", re.compile(rf"^/({_SLUG})/({_UUID})(?:/application)?/?$")),
 }
 
+# The six ATSes the board roster added. The host decides which board a link
+# names (``domain.job_boards.board_from_url``: an exact host, or one label in
+# front of a fixed suffix, never ``www`` or ``app``); this is the shape of the
+# path of one posting on that board, with the posting id as group 1.
+_ROSTER_POSTING_PATHS: dict[str, re.Pattern[str]] = {
+    "workable": re.compile(rf"^/{_SLUG}/j/([A-Z0-9]{{6,12}})/?$"),
+    "recruitee": re.compile(r"^/o/([a-z0-9-]{1,120})/?$"),
+    "keka": re.compile(r"^/careers/jobdetails/(\d{1,12})/?$"),
+    "rippling": re.compile(rf"^/{_SLUG}/jobs/({_UUID})/?$"),
+    "breezy": re.compile(r"^/p/([0-9a-f]{8,16}[a-z0-9-]*)/?$"),
+    "personio": re.compile(r"^/job/(\d{1,12})/?$"),
+}
+
+# Workable's shortcode is upper case and is handed back to Workable as written;
+# the other ids are lower-cased like Greenhouse's, Lever's and Ashby's.
+_ID_CASE_KEPT = frozenset({"workable"})
+
 # Stored rows: our own URL hash standing in for a posting id, and the query
 # parameter Greenhouse uses when an employer hosts the posting on its own site.
 _URL_HASH = re.compile(r"^[0-9a-f]{32}$")
 _GH_JID = re.compile(r"(?:^|&)gh_jid=(\d{1,20})(?:&|$)")
-_KNOWN_ATS = frozenset({"greenhouse", "lever", "ashby"})
+_KNOWN_ATS = frozenset(ATS)
 
 _SLUG_TAIL = re.compile(rf"(?:^|-)({_UUID})$")
 _NON_SLUG = re.compile(r"[^a-z0-9]+")
@@ -71,12 +90,29 @@ def parse_posting_url(url: str) -> PostingRef | None:
         return None
     known = _PATTERNS.get((parts.hostname or "").lower())
     if known is None:
-        return None
+        return _roster_posting(text, parts.path)
     ats, pattern = known
     match = pattern.match(parts.path)
     if match is None:
         return None
     return PostingRef(ats=ats, company_slug=match.group(1).lower(), external_id=match.group(2).lower())
+
+
+def _roster_posting(url: str, path: str) -> PostingRef | None:
+    """A posting on one of the six roster ATSes: the board from the host, the id from the path."""
+    board = board_from_url(url)
+    pattern = _ROSTER_POSTING_PATHS.get(board.ats) if board is not None else None
+    if board is None or pattern is None:
+        return None
+    match = pattern.match(path)
+    if match is None:
+        return None
+    posting_id = match.group(1)
+    return PostingRef(
+        ats=board.ats,
+        company_slug=board.board,
+        external_id=posting_id if board.ats in _ID_CASE_KEPT else posting_id.lower(),
+    )
 
 
 def posting_ref(

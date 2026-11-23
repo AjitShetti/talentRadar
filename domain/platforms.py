@@ -17,6 +17,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
+from domain.job_boards import ATS
+
 
 @dataclass(frozen=True)
 class JobPlatform:
@@ -40,13 +42,27 @@ JOB_PLATFORMS: tuple[JobPlatform, ...] = (
     JobPlatform("instahyre", "Instahyre", ("instahyre",), ("instahyre.com",)),
     JobPlatform("cutshort", "Cutshort", ("cutshort",), ("cutshort.io",)),
     JobPlatform("freshersworld", "Freshersworld", ("freshersworld",), ("freshersworld.com",)),
-    # Greenhouse, Lever and Ashby host company career pages; users think of
-    # these as "the company's own site", not as three separate boards.
+    # The nine ATSes (``domain.job_boards.ATS``) host company career pages;
+    # users think of these as "the company's own site", not as nine separate
+    # boards. Hosts are the ones a posting's URL lives on: a customer's board
+    # is a subdomain of recruitee.com, keka.com, breezy.hr or the Personio
+    # jobs hosts, and a path on apply.workable.com and ats.rippling.com.
     JobPlatform(
         "company_sites",
         "Company career sites",
-        ("greenhouse", "lever", "ashby", "ats_platforms"),
-        ("greenhouse.io", "lever.co", "ashbyhq.com"),
+        (*ATS, "ats_platforms"),
+        (
+            "greenhouse.io",
+            "lever.co",
+            "ashbyhq.com",
+            "apply.workable.com",
+            "recruitee.com",
+            "keka.com",
+            "ats.rippling.com",
+            "jobs.personio.de",
+            "jobs.personio.com",
+            "breezy.hr",
+        ),
     ),
 )
 
