@@ -29,9 +29,11 @@ import json
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 
 from ingestion.engine import compute_job_dedup_hash
+from ingestion.scrapers import ats_scraper
 from ingestion.scrapling_manager import ScraplingManager
 from ingestion.sources.registry import LiveSource, default_live_sources
 from ingestion.validation import validate_job_url
@@ -62,9 +64,31 @@ def _request_key(url: str, params: dict[str, Any] | None) -> str:
     return f"{url}?{encoded}"
 
 
+def _board_client_serving(requests: dict[str, Any]) -> httpx.AsyncClient:
+    """
+    The client ``ATSScraper`` reads boards with, answering from a recording.
+
+    A recording is keyed by URL without a query string (it predates the board
+    readers, which ask Greenhouse for ``?content=true`` and Lever for ``?mode=json``),
+    so the query is ignored when looking a request up. An unrecorded URL is a 404,
+    as for ``fake_fetch`` below.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        entry = requests.get(str(request.url).split("?", 1)[0])
+        if entry is None:
+            return httpx.Response(404, text="")
+        payload = entry["payload"]
+        if isinstance(payload, str):
+            return httpx.Response(int(entry["status"]), text=payload)
+        return httpx.Response(int(entry["status"]), json=payload)
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
 @pytest.fixture
 def replay(monkeypatch: pytest.MonkeyPatch):
-    """Serve ``ScraplingManager.fetch_html_or_json`` from a recorded fixture."""
+    """Serve ``ScraplingManager.fetch_html_or_json`` (and the ATS board client) from a recorded fixture."""
 
     def _install(source_name: str) -> dict[str, Any]:
         data = load_fixture(source_name)
@@ -88,6 +112,7 @@ def replay(monkeypatch: pytest.MonkeyPatch):
             return int(entry["status"]), entry["payload"]
 
         monkeypatch.setattr(ScraplingManager, "fetch_html_or_json", fake_fetch)
+        monkeypatch.setattr(ats_scraper, "_board_client", lambda: _board_client_serving(requests))
         return data
 
     return _install
@@ -189,6 +214,11 @@ async def test_source_returns_empty_list_rather_than_raising(source: LiveSource,
         return 503, ""
 
     monkeypatch.setattr(ScraplingManager, "fetch_html_or_json", dead_fetch)
+    monkeypatch.setattr(
+        ats_scraper,
+        "_board_client",
+        lambda: httpx.AsyncClient(transport=httpx.MockTransport(lambda _request: httpx.Response(503))),
+    )
     assert await source.fetch("Python Developer", "Bengaluru", None) == []
 
 

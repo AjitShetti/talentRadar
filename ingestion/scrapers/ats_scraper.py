@@ -8,21 +8,25 @@ Direct high-speed scraper for modern ATS platforms:
 
 These APIs return structured JSON in 200-500ms with zero anti-bot challenges.
 Provides real openings from top tech startups & global companies hiring in India / Remote.
+
+Reading a board is ``ingestion/boards``' job, the same reader the scheduled sweep
+uses, so a search and the sweep parse a posting identically. This module only
+decides which of a board's roles match a search.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import uuid
 from collections.abc import Awaitable
-from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
+import httpx
+
 from domain.entities import Job
-from domain.enums import EmploymentType, JobStatus, SeniorityLevel
-from domain.liveness import parse_source_timestamp
+from domain.job_boards import AtsName, BoardRef
+from ingestion.boards import READERS
 from ingestion.scrapling_manager import ScraplingManager
 
 logger = logging.getLogger(__name__)
@@ -136,6 +140,15 @@ class PostingCheck(str, Enum):
     ERROR = "error"
 
 
+#: A live search waits at most this long for one board.
+_BOARD_TIMEOUT_SECONDS = 2.0
+
+
+def _board_client() -> httpx.AsyncClient:
+    """The client live search reads boards with. Tests replace it with a replaying one."""
+    return httpx.AsyncClient(timeout=_BOARD_TIMEOUT_SECONDS, follow_redirects=False)
+
+
 RECHECK_TIMEOUT_SECONDS = 5.0
 _RETRY_PAUSE_SECONDS = 0.2
 _GONE_STATUSES = frozenset({404, 410})
@@ -230,161 +243,94 @@ class ATSScraper:
     # ── searching boards ─────────────────────────────────────────────────────
 
     @classmethod
-    async def fetch_greenhouse_company(cls, company_slug: str, query: str, location: str | None, is_remote: bool | None) -> list[Job]:
+    async def _read_board(
+        cls, ats: AtsName, company_slug: str, client: httpx.AsyncClient | None
+    ) -> list[Job]:
+        """Every role on one board, from the same reader the scheduled sweep uses."""
+        ref = BoardRef(ats, company_slug)
+        if client is not None:
+            return (await READERS[ats](client, ref)).roles
+        async with _board_client() as own:
+            return (await READERS[ats](own, ref)).roles
+
+    @staticmethod
+    def _select(
+        roles: list[Job],
+        query: str,
+        location: str | None,
+        is_remote: bool | None,
+        *,
+        trust_remote_flag: bool,
+    ) -> list[Job]:
+        """
+        The roles matching a search's query and location.
+
+        ``trust_remote_flag`` keeps a role the ATS itself flags remote even when its
+        location text does not match (Ashby's ``isRemote``, Lever's ``workplaceType``);
+        Greenhouse states no such flag and goes by the text alone.
+        """
+        kept: list[Job] = []
+        for role in roles:
+            if not matches_query(role.title, query):
+                continue
+            matched, job_remote, country, city = matches_location(
+                role.location_raw or "", location, is_remote
+            )
+            flagged = trust_remote_flag and role.is_remote
+            if not matched and not flagged:
+                continue
+            kept.append(
+                role.model_copy(
+                    update={
+                        "country": country or "India",
+                        "city": city or None,
+                        "is_remote": job_remote or flagged,
+                    }
+                )
+            )
+        return kept
+
+    @classmethod
+    async def fetch_greenhouse_company(
+        cls,
+        company_slug: str,
+        query: str,
+        location: str | None,
+        is_remote: bool | None,
+        *,
+        client: httpx.AsyncClient | None = None,
+    ) -> list[Job]:
         """Fetch and filter jobs from a Greenhouse public board."""
-        url = f"https://boards-api.greenhouse.io/v1/boards/{company_slug}/jobs"
-        status, data = await ScraplingManager.fetch_html_or_json(url, timeout=2.0)
-        if status != 200 or not isinstance(data, dict):
-            return []
-
-        jobs_data = data.get("jobs", [])
-        matched_jobs: list[Job] = []
-
-        for item in jobs_data:
-            title = item.get("title", "")
-            loc_name = item.get("location", {}).get("name", "")
-
-            if not matches_query(title, query):
-                continue
-
-            matched, job_remote, country, city = matches_location(loc_name, location, is_remote)
-            if not matched:
-                continue
-
-            job = Job(
-                id=uuid.uuid4(),
-                company_id=uuid.uuid4(),
-                external_id=str(item.get("id", "")),
-                source=f"greenhouse:{company_slug}",
-                source_url=item.get("absolute_url", f"https://boards.greenhouse.io/{company_slug}/jobs/{item.get('id')}"),
-                title=title,
-                description_raw=None,
-                description_clean=None,
-                status=JobStatus.ACTIVE,
-                employment_type=EmploymentType.FULL_TIME,
-                seniority=SeniorityLevel.MID,
-                location_raw=loc_name or "Remote / India",
-                country=country or "India",
-                city=city or None,
-                is_remote=job_remote,
-                skills=[],
-                tags=["ats", "greenhouse", company_slug],
-                # The employer's publish time, or nothing - never the clock.
-                posted_at=parse_source_timestamp(item.get("first_published")),
-                source_posted_at=parse_source_timestamp(item.get("first_published")),
-                source_updated_at=parse_source_timestamp(item.get("updated_at")),
-                created_at=datetime.now(UTC),
-                extra_metadata={"company_name": company_slug.capitalize(), "ats": "greenhouse"}
-            )
-            matched_jobs.append(job)
-
-        return matched_jobs
+        roles = await cls._read_board("greenhouse", company_slug, client)
+        return cls._select(roles, query, location, is_remote, trust_remote_flag=False)
 
     @classmethod
-    async def fetch_ashby_company(cls, company_slug: str, query: str, location: str | None, is_remote: bool | None) -> list[Job]:
+    async def fetch_ashby_company(
+        cls,
+        company_slug: str,
+        query: str,
+        location: str | None,
+        is_remote: bool | None,
+        *,
+        client: httpx.AsyncClient | None = None,
+    ) -> list[Job]:
         """Fetch and filter jobs from an Ashby public board."""
-        url = f"https://api.ashbyhq.com/posting-api/job-board/{company_slug}"
-        status, data = await ScraplingManager.fetch_html_or_json(url, timeout=2.0)
-        if status != 200 or not isinstance(data, dict):
-            return []
-
-        jobs_data = data.get("jobs", [])
-        matched_jobs: list[Job] = []
-
-        for item in jobs_data:
-            title = item.get("title", "")
-            loc_name = item.get("location", "")
-            if not loc_name and item.get("isRemote"):
-                loc_name = "Remote"
-
-            if not matches_query(title, query):
-                continue
-
-            matched, job_remote, country, city = matches_location(loc_name, location, is_remote)
-            if not matched and not item.get("isRemote"):
-                continue
-
-            job = Job(
-                id=uuid.uuid4(),
-                company_id=uuid.uuid4(),
-                external_id=str(item.get("id", "")),
-                source=f"ashby:{company_slug}",
-                source_url=item.get("jobUrl", f"https://jobs.ashbyhq.com/{company_slug}/{item.get('id')}"),
-                title=title,
-                description_raw=None,
-                description_clean=None,
-                status=JobStatus.ACTIVE,
-                employment_type=EmploymentType.FULL_TIME,
-                seniority=SeniorityLevel.MID,
-                location_raw=loc_name or "Remote",
-                country=country or "India",
-                city=city or None,
-                is_remote=job_remote or bool(item.get("isRemote")),
-                skills=[],
-                tags=["ats", "ashby", company_slug],
-                # The employer's publish time, or nothing - never the clock.
-                posted_at=parse_source_timestamp(item.get("publishedAt")),
-                source_posted_at=parse_source_timestamp(item.get("publishedAt")),
-                source_updated_at=parse_source_timestamp(item.get("updatedAt")),
-                created_at=datetime.now(UTC),
-                extra_metadata={"company_name": company_slug.capitalize(), "ats": "ashby"}
-            )
-            matched_jobs.append(job)
-
-        return matched_jobs
+        roles = await cls._read_board("ashby", company_slug, client)
+        return cls._select(roles, query, location, is_remote, trust_remote_flag=True)
 
     @classmethod
-    async def fetch_lever_company(cls, company_slug: str, query: str, location: str | None, is_remote: bool | None) -> list[Job]:
+    async def fetch_lever_company(
+        cls,
+        company_slug: str,
+        query: str,
+        location: str | None,
+        is_remote: bool | None,
+        *,
+        client: httpx.AsyncClient | None = None,
+    ) -> list[Job]:
         """Fetch and filter jobs from a Lever public board."""
-        url = f"https://api.lever.co/v0/postings/{company_slug}?mode=json"
-        status, data = await ScraplingManager.fetch_html_or_json(url, timeout=2.0)
-        if status != 200 or not isinstance(data, list):
-            return []
-
-        matched_jobs: list[Job] = []
-
-        for item in data:
-            title = item.get("text", "")
-            cats = item.get("categories", {})
-            loc_name = cats.get("location", "") or cats.get("allLocations", [""])[0]
-            workplace_type = item.get("workplaceType", "").lower()
-            is_lever_remote = workplace_type == "remote"
-
-            if not matches_query(title, query):
-                continue
-
-            matched, job_remote, country, city = matches_location(loc_name, location, is_remote)
-            if not matched and not is_lever_remote:
-                continue
-
-            job = Job(
-                id=uuid.uuid4(),
-                company_id=uuid.uuid4(),
-                external_id=str(item.get("id", "")),
-                source=f"lever:{company_slug}",
-                source_url=item.get("hostedUrl", f"https://jobs.lever.co/{company_slug}/{item.get('id')}"),
-                title=title,
-                description_raw=None,
-                description_clean=item.get("descriptionPlain", None),
-                status=JobStatus.ACTIVE,
-                employment_type=EmploymentType.FULL_TIME,
-                seniority=SeniorityLevel.MID,
-                location_raw=loc_name or "Remote",
-                country=country or "India",
-                city=city or None,
-                is_remote=job_remote or is_lever_remote,
-                skills=[],
-                tags=["ats", "lever", company_slug],
-                # The employer's publish time, or nothing - never the clock.
-                posted_at=parse_source_timestamp(item.get("createdAt")),
-                source_posted_at=parse_source_timestamp(item.get("createdAt")),
-                source_updated_at=parse_source_timestamp(item.get("updatedAt")),
-                created_at=datetime.now(UTC),
-                extra_metadata={"company_name": company_slug.capitalize(), "ats": "lever"}
-            )
-            matched_jobs.append(job)
-
-        return matched_jobs
+        roles = await cls._read_board("lever", company_slug, client)
+        return cls._select(roles, query, location, is_remote, trust_remote_flag=True)
 
     @classmethod
     async def search_all_ats(cls, query: str, location: str | None = None, is_remote: bool | None = None) -> list[Job]:
@@ -397,15 +343,17 @@ class ATSScraper:
             except Exception:
                 return []
 
-        tasks = []
-        for c in GREENHOUSE_COMPANIES:
-            tasks.append(_safe_fetch(cls.fetch_greenhouse_company(c, query, location, is_remote)))
-        for c in ASHBY_COMPANIES:
-            tasks.append(_safe_fetch(cls.fetch_ashby_company(c, query, location, is_remote)))
-        for c in LEVER_COMPANIES:
-            tasks.append(_safe_fetch(cls.fetch_lever_company(c, query, location, is_remote)))
+        # One client for the whole fan-out: three hosts, one connection pool each.
+        async with _board_client() as client:
+            tasks = []
+            for c in GREENHOUSE_COMPANIES:
+                tasks.append(_safe_fetch(cls.fetch_greenhouse_company(c, query, location, is_remote, client=client)))
+            for c in ASHBY_COMPANIES:
+                tasks.append(_safe_fetch(cls.fetch_ashby_company(c, query, location, is_remote, client=client)))
+            for c in LEVER_COMPANIES:
+                tasks.append(_safe_fetch(cls.fetch_lever_company(c, query, location, is_remote, client=client)))
 
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+            results = await asyncio.gather(*tasks, return_exceptions=True)
         all_jobs: list[Job] = []
         for res in results:
             if isinstance(res, list):

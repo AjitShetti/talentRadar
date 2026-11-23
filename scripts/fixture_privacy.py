@@ -793,3 +793,42 @@ def reduce_eventbrite_list(
         "pagination": kept,
         "events": [_reduce_eventbrite_event(event, people) for event in chosen],
     }
+
+
+# ── Job boards ───────────────────────────────────────────────────────────────
+
+#: Greenhouse job ``metadata`` fields that name nobody. The list is whatever custom
+#: fields the employer defined, and some hold employees' names (a recorded Indian
+#: board had "Hiring Manager" and "Business Head"), so a field is kept only when it is
+#: known to be about the role. Compared case-folded.
+GREENHOUSE_PUBLIC_METADATA: frozenset[str] = frozenset(
+    {
+        "employment type",
+        "department category",
+        "department",
+        "min work experience",
+        "max work experience",
+        "work experience",
+        "experience",
+        "seniority",
+        "job level",
+    }
+)
+
+REDACTED_VALUE = "[redacted]"
+
+
+def scrub_greenhouse_metadata(payload: object) -> object:
+    """``payload`` with the value of every non-public ``metadata`` field replaced, in place.
+
+    The board readers never read ``metadata``, so no test depends on what it held.
+    """
+    jobs = payload.get("jobs") if isinstance(payload, dict) else None
+    for job in jobs if isinstance(jobs, list) else []:
+        entries = job.get("metadata") if isinstance(job, dict) else None
+        for entry in entries if isinstance(entries, list) else []:
+            if not isinstance(entry, dict) or entry.get("value") is None:
+                continue
+            if str(entry.get("name", "")).casefold() not in GREENHOUSE_PUBLIC_METADATA:
+                entry["value"] = REDACTED_VALUE
+    return payload
