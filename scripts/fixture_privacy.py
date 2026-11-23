@@ -832,3 +832,203 @@ def scrub_greenhouse_metadata(payload: object) -> object:
             if str(entry.get("name", "")).casefold() not in GREENHOUSE_PUBLIC_METADATA:
                 entry["value"] = REDACTED_VALUE
     return payload
+
+
+# Workable, Recruitee and Keka answer with a fixed set of fields per posting, so a
+# recording keeps a field only when it is listed here as being about the role. Anything
+# else the board adds (a recruiter, a hiring manager, an owner, a per-job mailbox, an
+# answer to a question) is dropped, which is the default-deny the Greenhouse scrub above
+# cannot be: its custom fields are whatever the employer defined.
+
+#: Local parts of an address that belong to a team, not a person: published on purpose.
+ROLE_INBOXES: frozenset[str] = frozenset(
+    {
+        "careers",
+        "career",
+        "jobs",
+        "job",
+        "hr",
+        "talent",
+        "recruitment",
+        "recruiting",
+        "hiring",
+        "people",
+        "apply",
+        "join",
+    }
+)
+
+#: What any other address in a recording becomes.
+PLACEHOLDER_BOARD_EMAIL = "recruiter@example.com"
+
+WORKABLE_ACCOUNT_KEEP = frozenset({"name", "description", "jobs"})
+WORKABLE_POSTING_KEEP = frozenset(
+    {
+        "title",
+        "shortcode",
+        "code",
+        "employment_type",
+        "telecommuting",
+        "department",
+        "url",
+        "shortlink",
+        "application_url",
+        "published_on",
+        "created_at",
+        "country",
+        "city",
+        "state",
+        "education",
+        "experience",
+        "function",
+        "industry",
+        "locations",
+    }
+)
+WORKABLE_LOCATION_KEEP = frozenset({"country", "countryCode", "city", "region", "hidden"})
+
+RECRUITEE_OFFER_KEEP = frozenset(
+    {
+        "id",
+        "guid",
+        "slug",
+        "status",
+        "title",
+        "description",
+        "requirements",
+        "location",
+        "locations",
+        "city",
+        "state_name",
+        "state_code",
+        "country",
+        "country_code",
+        "remote",
+        "hybrid",
+        "on_site",
+        "department",
+        "employment_type_code",
+        "experience_code",
+        "education_code",
+        "category_code",
+        "published_at",
+        "updated_at",
+        "created_at",
+        "close_at",
+        "careers_url",
+        "careers_apply_url",
+        "company_name",
+        "salary",
+        "tags",
+    }
+)
+RECRUITEE_LOCATION_KEEP = frozenset(
+    {"id", "name", "city", "state", "country", "country_code", "state_code"}
+)
+
+KEKA_JOB_KEEP = frozenset(
+    {
+        "id",
+        "title",
+        "description",
+        "excerpt",
+        "departmentName",
+        "jobLocations",
+        "jobType",
+        "experience",
+        "jobNumber",
+        "salaryRange",
+        "salaryRangeFormat",
+        "publishedOn",
+        "publishedSinceDays",
+        "skillNames",
+    }
+)
+KEKA_LOCATION_KEEP = frozenset({"id", "name", "city", "state", "countryCode", "countryName"})
+KEKA_PORTAL_KEEP = frozenset({"name", "shortName", "careersPortalDomain"})
+
+
+def scrub_board_emails(text: str) -> str:
+    """``text`` with every address replaced by :data:`PLACEHOLDER_BOARD_EMAIL`, a role inbox excepted."""
+
+    def replace(match: re.Match[str]) -> str:
+        address = match.group(0)
+        local = address.split("@", 1)[0].casefold()
+        return address if local in ROLE_INBOXES else PLACEHOLDER_BOARD_EMAIL
+
+    return _BARE_EMAIL.sub(replace, text)
+
+
+def _scrub_strings(node: Any) -> Any:
+    """``node`` copied, with :func:`scrub_board_emails` applied to every string in it."""
+    if isinstance(node, str):
+        return scrub_board_emails(node)
+    if isinstance(node, dict):
+        return {key: _scrub_strings(child) for key, child in node.items()}
+    if isinstance(node, list):
+        return [_scrub_strings(child) for child in node]
+    return node
+
+
+def _keep_fields(node: object, allowed: frozenset[str]) -> dict[str, Any]:
+    """The ``allowed`` fields of one object, copied; ``{}`` when it is not an object."""
+    if not isinstance(node, dict):
+        return {}
+    return {key: _scrub_strings(value) for key, value in node.items() if key in allowed}
+
+
+def _keep_posting(
+    node: object, allowed: frozenset[str], locations_key: str, location_keep: frozenset[str]
+) -> dict[str, Any]:
+    kept = _keep_fields(node, allowed)
+    places = kept.get(locations_key)
+    if isinstance(places, list):
+        kept[locations_key] = [
+            _keep_fields(place, location_keep) for place in places if isinstance(place, dict)
+        ]
+    return kept
+
+
+def scrub_workable_board(payload: object) -> dict[str, Any]:
+    """A Workable widget response with only the fields about the account and its roles; ``{}`` if it is not one."""
+    if not isinstance(payload, dict):
+        return {}
+    kept = _keep_fields(payload, WORKABLE_ACCOUNT_KEEP - {"jobs"})
+    jobs = payload.get("jobs")
+    if isinstance(jobs, list):
+        kept["jobs"] = [
+            _keep_posting(job, WORKABLE_POSTING_KEEP, "locations", WORKABLE_LOCATION_KEEP)
+            for job in jobs
+            if isinstance(job, dict)
+        ]
+    return kept
+
+
+def scrub_recruitee_board(payload: object) -> dict[str, Any]:
+    """A Recruitee ``/api/offers/`` response with only the fields about each offer; ``{}`` if it is not one."""
+    offers = payload.get("offers") if isinstance(payload, dict) else None
+    if not isinstance(offers, list):
+        return {}
+    return {
+        "offers": [
+            _keep_posting(offer, RECRUITEE_OFFER_KEEP, "locations", RECRUITEE_LOCATION_KEEP)
+            for offer in offers
+            if isinstance(offer, dict)
+        ]
+    }
+
+
+def scrub_keka_jobs(payload: object) -> list[dict[str, Any]]:
+    """A Keka active-jobs response with only the fields about each job; ``[]`` if it is not a list."""
+    if not isinstance(payload, list):
+        return []
+    return [
+        _keep_posting(job, KEKA_JOB_KEEP, "jobLocations", KEKA_LOCATION_KEEP)
+        for job in payload
+        if isinstance(job, dict)
+    ]
+
+
+def scrub_keka_portal(payload: object) -> dict[str, Any]:
+    """A Keka ``careerportalinfo`` response cut to the company's name and portal; ``{}`` if it is not one."""
+    return _keep_fields(payload, KEKA_PORTAL_KEEP)

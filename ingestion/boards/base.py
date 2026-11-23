@@ -28,7 +28,7 @@ import asyncio
 import json
 import re
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -250,6 +250,55 @@ def describe(*parts: str) -> str | None:
     """The non-empty ``parts`` as one description, cut to ``MAX_DESCRIPTION_CHARS``; ``None`` when empty."""
     text = "\n\n".join(part for part in parts if part)[:MAX_DESCRIPTION_CHARS].rstrip()
     return text or None
+
+
+def place_name(*parts: object) -> str:
+    """
+    One place from its parts, ``", "`` apart: "Pune, Maharashtra, India".
+
+    A part that is empty, not text, or already said by an earlier one (case aside) is
+    left out, so ("Delhi", "Delhi", "India") is "Delhi, India" and ("Gurgaon, Haryana",
+    "Gurgaon", "India") is "Gurgaon, Haryana, India".
+    """
+    kept: list[str] = []
+    for part in parts:
+        text = one_line(part)
+        if text and not any(text.casefold() in earlier.casefold() for earlier in kept):
+            kept.append(text)
+    return ", ".join(kept)
+
+
+def join_locations(places: Iterable[str]) -> str:
+    """
+    A role's several places as the one ``location_raw`` string: ``"; "`` apart.
+
+    An empty place, and one already named (case aside), is left out. The India filter
+    (``domain.job_boards.is_india_role``) reads each ``;`` part on its own.
+    """
+    seen: set[str] = set()
+    kept: list[str] = []
+    for place in places:
+        if place and place.casefold() not in seen:
+            seen.add(place.casefold())
+            kept.append(place)
+    return "; ".join(kept)
+
+
+_HOST_LABEL_RE = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
+
+
+def host_label(board: str) -> str | None:
+    """
+    ``board`` lower-cased when it is a valid DNS label (letters, digits and inner hyphens, at
+    most 63), else ``None``.
+
+    For an ATS whose board is a subdomain (``{board}.recruitee.com``). A board id comes
+    from a page we crawled or a list we read, so it must not be able to choose the host
+    a request goes to: ``evil.example/x`` or ``a.b`` would. A reader whose id is not a
+    label makes no request.
+    """
+    label = board.lower()
+    return label if _HOST_LABEL_RE.fullmatch(label) else None
 
 
 def looks_remote(location: str | None) -> bool:

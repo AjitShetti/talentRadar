@@ -28,6 +28,7 @@ from ingestion.boards.base import (
     failed,
     get_json,
     html_to_text,
+    join_locations,
     one_line,
     plain_text,
     posting_id,
@@ -51,13 +52,7 @@ def _location(item: dict[str, Any], remote: bool) -> str:
     secondary = item.get("secondaryLocations")
     for entry in secondary if isinstance(secondary, list) else []:
         names.append(one_line(entry.get("location")) if isinstance(entry, dict) else "")
-    seen: set[str] = set()
-    kept: list[str] = []
-    for name in names:
-        if name and name.casefold() not in seen:
-            seen.add(name.casefold())
-            kept.append(name)
-    return "; ".join(kept)
+    return join_locations(names)
 
 
 def _parse(item: Any, ref: BoardRef) -> Job | None:

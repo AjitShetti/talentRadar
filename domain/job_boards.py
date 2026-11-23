@@ -348,8 +348,14 @@ def next_read(prev: Schedule, outcome: ReadOutcome, india_roles: int, *, now: da
 
 
 def is_india_role(location_text: str | None) -> bool:
-    """A role is kept only when its own location text says India. The ``country`` column is never trusted."""
-    return is_india(location_text)
+    """
+    A role is kept only when its own location text says India. The ``country`` column is never trusted.
+
+    A reader joins a role's several locations with ``;`` ("United Kingdom; Bengaluru"), and
+    :func:`domain.geo.is_india` lets a foreign country beat a city within one string, so the
+    text is read one location at a time: any one in India is enough.
+    """
+    return any(is_india(part.strip()) for part in (location_text or "").split(";") if part.strip())
 
 
 def names_match(a: str, b: str) -> bool:

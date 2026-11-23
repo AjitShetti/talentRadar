@@ -1,9 +1,9 @@
 """
 tests/test_board_adapters.py
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The board readers (``ingestion/boards``) for Greenhouse, Ashby and Lever, replayed
-from recorded responses through ``httpx.MockTransport``. Nothing here touches the
-network.
+The board readers (``ingestion/boards``) for Greenhouse, Ashby, Lever, Workable,
+Recruitee and Keka, replayed from recorded responses through ``httpx.MockTransport``.
+Nothing here touches the network.
 
 What each test pins is something the sweep depends on:
 
@@ -20,7 +20,7 @@ from __future__ import annotations
 import gzip
 import json
 from collections.abc import AsyncIterator, Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -51,13 +51,22 @@ from ingestion.validation import validate_job_url
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "boards"
 
-#: The ATSes this task covers and the board recorded for each.
+#: The ATSes covered here and the board recorded for each.
 RECORDED: list[tuple[AtsName, str]] = [
     ("greenhouse", "sigmoid"),
     ("ashby", "sarvam"),
     ("lever", "meesho"),
+    ("workable", "apna"),
+    ("recruitee", "lenskartcareers"),
+    ("keka", "spyneai"),
 ]
 ATSES: list[AtsName] = [ats for ats, _ in RECORDED]
+
+#: The three ATSes live search also reads on demand (the rest are only swept).
+LIVE_ATSES: list[AtsName] = ["greenhouse", "ashby", "lever"]
+
+#: Requests one read of the recorded board makes: Keka asks for the company's name too.
+REQUESTS_PER_READ: dict[str, int] = {"keka": 2}
 
 Handler = Callable[[httpx.Request], httpx.Response]
 
@@ -135,7 +144,7 @@ async def test_recorded_board_reads_whole(ats: AtsName, board: str) -> None:
     assert result.outcome == "ok"
     assert result.complete is True
     assert result.total == len(result.roles) > 0
-    assert len(seen) == 1, "a board is one request, never one per posting"
+    assert len(seen) == REQUESTS_PER_READ.get(ats, 1), "never one request per posting"
 
     for role in result.roles:
         assert isinstance(role, Job)
@@ -161,6 +170,8 @@ def test_the_capture_script_records_what_the_committed_fixture_holds(ats: str) -
     capture = CAPTURES[ats]
     committed = {lookup_key(key) for key in load_fixture(ats)["requests"]}
     assert lookup_key(request_key(capture.url, capture.params)) in committed
+    for url, _scrub in capture.also:
+        assert lookup_key(request_key(url, None)) in committed
 
 
 async def test_a_rerecorded_lever_board_replays_like_the_committed_one() -> None:
@@ -266,6 +277,150 @@ async def test_the_recorded_greenhouse_board_names_no_people() -> None:
         for entry in job["metadata"]:
             if entry["name"] in {"Hiring Manager", "Business Head"}:
                 assert entry["value"] in (None, "[redacted]")
+
+
+# ── recordings of Workable, Recruitee and Keka name nobody ───────────────────
+
+
+def test_board_scrubbers_keep_known_fields_only_and_hide_personal_addresses() -> None:
+    """Default-deny: a field the scrubber does not know is dropped; a role inbox is public."""
+    from scripts.fixture_privacy import (
+        PLACEHOLDER_BOARD_EMAIL,
+        scrub_keka_jobs,
+        scrub_keka_portal,
+        scrub_recruitee_board,
+        scrub_workable_board,
+    )
+
+    workable = scrub_workable_board(
+        {
+            "name": "Acme",
+            "description": "<p>Write to careers@acme.in or priya.s@acme.in</p>",
+            "owner": {"name": "Priya S"},
+            "jobs": [
+                {
+                    "title": "Engineer",
+                    "shortcode": "ABC123DEF4",
+                    "hiring_manager": "Priya S",
+                    "recruiter": {"name": "Ravi K", "email": "ravi@acme.in"},
+                    "locations": [{"city": "Pune", "country": "India", "contact": "Ravi K"}],
+                },
+                "not a posting",
+                None,
+            ],
+        }
+    )
+    assert workable == {
+        "name": "Acme",
+        "description": f"<p>Write to careers@acme.in or {PLACEHOLDER_BOARD_EMAIL}</p>",
+        "jobs": [
+            {
+                "title": "Engineer",
+                "shortcode": "ABC123DEF4",
+                "locations": [{"city": "Pune", "country": "India"}],
+            }
+        ],
+    }
+
+    recruitee = scrub_recruitee_board(
+        {
+            "offers": [
+                {
+                    "id": 1,
+                    "slug": "engineer",
+                    "title": "Engineer",
+                    "description": "<p>Apply via jobs@acme.in</p>",
+                    "mailbox_email": "job.abc12@acme.recruitee.com",
+                    "recruiter_id": 9,
+                    "open_questions": [{"body": "Why?"}],
+                    "translations": {"en": {"description": "<p>copy</p>"}},
+                    "locations": [
+                        {"name": "Pune", "country": "India", "translations": {}, "note": "x"}
+                    ],
+                }
+            ],
+            "meta": {"owner": "Priya S"},
+        }
+    )
+    assert recruitee == {
+        "offers": [
+            {
+                "id": 1,
+                "slug": "engineer",
+                "title": "Engineer",
+                "description": "<p>Apply via jobs@acme.in</p>",
+                "locations": [{"name": "Pune", "country": "India"}],
+            }
+        ]
+    }
+
+    keka = scrub_keka_jobs(
+        [
+            {
+                "id": 7,
+                "title": "Engineer",
+                "description": "<p>Mail Ravi at ravi.k@acme.in</p>",
+                "hiringManager": {"name": "Ravi K"},
+                "departmentIdentifier": "5cc6aa4e",
+                "jobLocations": [{"name": "Pune", "countryName": "India", "managerId": 3}],
+            },
+            "junk",
+        ]
+    )
+    assert keka == [
+        {
+            "id": 7,
+            "title": "Engineer",
+            "description": f"<p>Mail Ravi at {PLACEHOLDER_BOARD_EMAIL}</p>",
+            "jobLocations": [{"name": "Pune", "countryName": "India"}],
+        }
+    ]
+    portal = {"name": "ACME", "socialLinks": ["https://x.com/acme"], "careersPortalDomain": "a.b"}
+    assert scrub_keka_portal(portal) == {"name": "ACME", "careersPortalDomain": "a.b"}
+
+    for scrub, again in (
+        (scrub_workable_board, workable),
+        (scrub_recruitee_board, recruitee),
+        (scrub_keka_jobs, keka),
+    ):
+        assert scrub(again) == again, "scrubbing a recording twice changes nothing"
+
+
+def test_board_scrubbers_keep_nothing_of_a_shape_they_do_not_know() -> None:
+    from scripts.fixture_privacy import (
+        scrub_keka_jobs,
+        scrub_keka_portal,
+        scrub_recruitee_board,
+        scrub_workable_board,
+    )
+
+    junk: Any
+    for junk in (None, 5, "text", [], [1]):
+        assert scrub_workable_board(junk) == {}
+        assert scrub_recruitee_board(junk) == {}
+        assert scrub_keka_portal(junk) == {}
+    for junk in (None, 5, "text", {}, {"jobs": []}):
+        assert scrub_keka_jobs(junk) == []
+
+
+@pytest.mark.parametrize("ats", ["workable", "recruitee", "keka"])
+def test_the_recorded_board_names_no_people(ats: str) -> None:
+    """No address but a role inbox or the placeholder, and no field the scrubbers do not keep."""
+    from scripts.fixture_privacy import PLACEHOLDER_BOARD_EMAIL, ROLE_INBOXES, emails_in
+
+    def keys(node: object) -> set[str]:
+        if isinstance(node, dict):
+            return set(node) | {key for child in node.values() for key in keys(child)}
+        if isinstance(node, list):
+            return {key for child in node for key in keys(child)}
+        return set()
+
+    for entry in load_fixture(ats)["requests"].values():
+        body = json.loads(entry["body"])
+        for address in emails_in(body):
+            local = address.split("@", 1)[0].casefold()
+            assert address == PLACEHOLDER_BOARD_EMAIL or local in ROLE_INBOXES, address
+        assert not keys(body) & {"mailbox_email", "recruiter", "hiring_manager", "hiringManager"}
 
 
 # ── what a board can answer instead of its JSON ──────────────────────────────
@@ -413,8 +568,16 @@ async def test_json_that_is_not_a_board_is_error(ats: AtsName, body: str) -> Non
 
 
 async def test_an_empty_board_is_ok_not_error() -> None:
-    for ats, body in (("greenhouse", '{"jobs": []}'), ("ashby", '{"jobs": []}'), ("lever", "[]")):
-        result = await read(ats, answering(200, text=body))  # type: ignore[arg-type]
+    bodies: dict[AtsName, str] = {
+        "greenhouse": '{"jobs": []}',
+        "ashby": '{"jobs": []}',
+        "lever": "[]",
+        "workable": '{"name": "Acme", "description": "", "jobs": []}',
+        "recruitee": '{"offers": []}',
+        "keka": "[]",
+    }
+    for ats, body in bodies.items():
+        result = await read(ats, answering(200, text=body))
         assert result.outcome == "ok"
         assert result.roles == []
         assert result.total == 0
@@ -443,10 +606,20 @@ async def test_a_posting_that_cannot_be_read_makes_the_read_incomplete(ats: AtsN
             "hostedUrl": "https://jobs.lever.co/b/l1",
             "categories": {"location": "Bengaluru"},
         },
+        "workable": {"title": "Engineer", "shortcode": "ABC123DEF4", "city": "Bengaluru"},
+        "recruitee": {"id": 7, "title": "Engineer", "slug": "engineer", "location": "Bengaluru"},
+        "keka": {"id": 7, "title": "Engineer", "jobLocations": [{"name": "Bengaluru"}]},
     }[ats]
     bad: dict[str, Any] = {"id": "broken"}  # no title, no URL
-    items: Any = [good, bad] if ats == "lever" else {"jobs": [good, bad]}
-    result = await read(ats, answering(200, json=items))
+    boards: dict[AtsName, Any] = {
+        "greenhouse": {"jobs": [good, bad]},
+        "ashby": {"jobs": [good, bad]},
+        "lever": [good, bad],
+        "workable": {"name": "Acme", "jobs": [good, bad]},
+        "recruitee": {"offers": [good, bad]},
+        "keka": [good, bad],
+    }
+    result = await read(ats, answering(200, json=boards[ats]))
     assert result.outcome == "ok"
     assert result.total == 2
     assert len(result.roles) == 1
@@ -964,6 +1137,666 @@ async def test_a_board_name_with_a_slash_is_not_a_path() -> None:
     path = seen[0].url.raw_path.split(b"?")[0]
     assert path == b"/v1/boards/..%2Fadmin/jobs", "the board stays one path segment"
 
+    seen.clear()
+    await read("workable", handler, "../admin")
+    path = seen[0].url.raw_path.split(b"?")[0]
+    assert path == b"/api/v1/widget/accounts/..%2Fadmin", "Workable's board stays one segment too"
+
+
+# ── Workable ─────────────────────────────────────────────────────────────────
+
+WORKABLE_LOCATION = {
+    "country": "India",
+    "countryCode": "IN",
+    "city": "Pune",
+    "region": "Maharashtra",
+    "hidden": False,
+}
+
+
+def workable_board(*postings: dict[str, Any], name: str | None = "Acme") -> dict[str, Any]:
+    board: dict[str, Any] = {"description": "<p>About us</p>", "jobs": list(postings)}
+    if name is not None:
+        board["name"] = name
+    return board
+
+
+def workable_posting(shortcode: str = "ABC123DEF4", **more: Any) -> dict[str, Any]:
+    return {
+        "title": "Engineer",
+        "shortcode": shortcode,
+        "url": f"https://apply.workable.com/j/{shortcode}",
+        "telecommuting": False,
+        "published_on": "2026-03-01",
+        "locations": [WORKABLE_LOCATION],
+        **more,
+    }
+
+
+async def test_workable_urls_are_built_from_the_board_and_the_shortcode() -> None:
+    """The widget's own ``url`` is the short ``/j/<code>`` link, which names no board."""
+    from domain.posting_urls import PostingRef, parse_posting_url
+
+    result = await read("workable", fixture_handler("workable"))
+    for role in result.roles:
+        assert role.source_url == f"https://apply.workable.com/apna/j/{role.external_id}/"
+        assert parse_posting_url(role.source_url) == PostingRef(
+            "workable", "apna", role.external_id or ""
+        )
+
+
+async def test_workable_company_name_is_the_accounts_name() -> None:
+    result = await read("workable", fixture_handler("workable"))
+    assert result.company_name == "Apna"
+    assert {(role.extra_metadata or {}).get("company_name") for role in result.roles} == {"Apna"}
+
+
+async def test_workable_without_a_stated_name_has_no_company_name() -> None:
+    for name in (None, "", 7):
+        board = workable_board(workable_posting())
+        board["name"] = name
+        result = await read("workable", answering(200, json=board), "acme")
+        assert result.company_name is None
+        assert (result.roles[0].extra_metadata or {}).get("company_name") == "Acme"
+
+
+async def test_workable_roles_carry_no_description_because_the_list_has_none() -> None:
+    result = await read("workable", fixture_handler("workable"))
+    assert all(role.description_clean is None for role in result.roles)
+
+
+async def test_workable_locations_are_city_region_country_and_hidden_ones_are_left_out() -> None:
+    def place(city: str, region: str | None, country: str, **more: Any) -> dict[str, Any]:
+        return {"city": city, "region": region, "country": country, "hidden": False, **more}
+
+    postings = [
+        workable_posting("AAAAAAAAAA", locations=[place("Bengaluru", "Karnataka", "India")]),
+        workable_posting(
+            "BBBBBBBBBB",
+            locations=[
+                place("London", None, "United Kingdom"),
+                place("Pune", "Maharashtra", "India"),
+            ],
+        ),
+        workable_posting("CCCCCCCCCC", locations=[place("Delhi", "Delhi", "India")]),
+        workable_posting("DDDDDDDDDD", locations=[place("", None, "India")]),
+        workable_posting(
+            "EEEEEEEEEE",
+            locations=[place("Bengaluru", "Karnataka", "India", hidden=True)],
+            city="Bengaluru",
+            country="India",
+        ),
+        workable_posting(
+            "FFFFFFFFFF", locations=[], city="Chennai", state="Tamil Nadu", country="India"
+        ),
+        workable_posting("GGGGGGGGGG", locations=None, city="Noida", country="India"),
+        workable_posting(
+            "HHHHHHHHHH", locations=["junk", None, {"city": "Mumbai", "country": "India"}]
+        ),
+    ]
+    result = await read("workable", answering(200, json=workable_board(*postings)), "acme")
+    assert [role.location_raw for role in result.roles] == [
+        "Bengaluru, Karnataka, India",
+        "London, United Kingdom; Pune, Maharashtra, India",
+        "Delhi, India",
+        "India",
+        None,
+        "Chennai, Tamil Nadu, India",
+        "Noida, India",
+        "Mumbai, India",
+    ]
+    assert [is_india_role(role.location_raw) for role in result.roles] == [
+        True, True, True, True, False, True, True, True,
+    ]  # fmt: skip
+
+
+async def test_workable_telecommuting_is_the_remote_flag_and_stands_in_for_a_hidden_place() -> None:
+    hidden = {**WORKABLE_LOCATION, "hidden": True}
+    postings = [
+        workable_posting("AAAAAAAAAA", telecommuting=True),
+        workable_posting("BBBBBBBBBB", telecommuting=False),
+        workable_posting("CCCCCCCCCC", telecommuting="yes"),
+        workable_posting("DDDDDDDDDD", telecommuting=True, locations=[hidden]),
+    ]
+    result = await read("workable", answering(200, json=workable_board(*postings)), "acme")
+    assert [role.is_remote for role in result.roles] == [True, False, False, True]
+    assert result.roles[3].location_raw == "Remote"
+
+
+async def test_workable_published_on_is_the_stated_day_and_nothing_else_is_a_date() -> None:
+    postings = [
+        workable_posting("AAAAAAAAAA", published_on="2026-03-01", created_at="2020-01-01"),
+        workable_posting("BBBBBBBBBB", published_on=None, created_at="2026-03-02"),
+        workable_posting("CCCCCCCCCC", published_on="not a date"),
+    ]
+    result = await read("workable", answering(200, json=workable_board(*postings)), "acme")
+    first, second, third = result.roles
+    assert first.posted_at == datetime(2026, 3, 1, tzinfo=UTC)
+    assert first.source_posted_at == first.posted_at
+    assert second.posted_at is None, "created_at is when it was drafted, not when it went up"
+    assert third.posted_at is None
+    assert all(role.source_updated_at is None for role in result.roles)
+
+
+@pytest.mark.parametrize("shortcode", ["", "  ", "../x", "AB CD", None, 7, "a/b", "A" * 40])
+async def test_workable_a_shortcode_that_is_not_one_makes_the_posting_unreadable(
+    shortcode: Any,
+) -> None:
+    postings = [
+        workable_posting("AAAAAAAAAA"),
+        {**workable_posting("BBBBBBBBBB"), "shortcode": shortcode},
+    ]
+    result = await read("workable", answering(200, json=workable_board(*postings)), "acme")
+    assert result.outcome == "ok"
+    assert [role.external_id for role in result.roles] == ["AAAAAAAAAA"]
+    assert result.total == 2
+    assert result.complete is False
+
+
+# ── Recruitee ────────────────────────────────────────────────────────────────
+
+
+def recruitee_offer(number: int = 1, **more: Any) -> dict[str, Any]:
+    return {
+        "id": number,
+        "slug": f"role-{number}",
+        "title": f"Role {number}",
+        "description": "<p>Build things.</p>",
+        "locations": [{"name": "Pune", "city": "Pune", "state": "Maharashtra", "country": "India"}],
+        "published_at": "2026-11-12 06:42:00 UTC",
+        "updated_at": "2026-11-13 07:00:00 UTC",
+        "remote": False,
+        **more,
+    }
+
+
+async def test_recruitee_date_parses() -> None:
+    result = await read("recruitee", fixture_handler("recruitee"))
+    body = json.loads(next(iter(load_fixture("recruitee")["requests"].values()))["body"])
+    stated = {str(offer["id"]): offer for offer in body["offers"]}
+    for role in result.roles:
+        assert role.posted_at is not None
+        assert role.posted_at.tzinfo is not None
+        assert role.posted_at.utcoffset() == timedelta(0)
+        offer = stated[role.external_id or ""]
+        assert offer["published_at"].endswith(" UTC")
+        assert role.posted_at == datetime.strptime(
+            offer["published_at"], "%Y-%m-%d %H:%M:%S UTC"
+        ).replace(tzinfo=UTC)
+        assert role.source_updated_at is not None
+        assert role.source_updated_at >= role.posted_at
+
+
+@pytest.mark.parametrize(
+    ("stated", "expected"),
+    [
+        ("2026-11-12 06:42:00 UTC", datetime(2026, 11, 12, 6, 42, tzinfo=UTC)),
+        ("2026-11-12 23:59:59 UTC", datetime(2026, 11, 12, 23, 59, 59, tzinfo=UTC)),
+        ("2026-11-12T06:42:00Z", datetime(2026, 11, 12, 6, 42, tzinfo=UTC)),
+        ("2026-11-12", datetime(2026, 11, 12, tzinfo=UTC)),
+        ("yesterday", None),
+        ("2026-13-45 06:42:00 UTC", None),
+        ("", None),
+        (None, None),
+        (20261112, None),
+    ],
+)
+async def test_recruitee_dates_are_read_as_stated_or_not_at_all(
+    stated: Any, expected: datetime | None
+) -> None:
+    offer = recruitee_offer(published_at=stated, updated_at=stated)
+    result = await read("recruitee", answering(200, json={"offers": [offer]}), "acme")
+    (role,) = result.roles
+    assert role.posted_at == expected
+    assert role.source_posted_at == expected
+    assert role.source_updated_at == expected
+
+
+async def test_recruitee_urls_are_built_from_the_board_and_the_slug() -> None:
+    from domain.posting_urls import PostingRef, parse_posting_url
+
+    result = await read("recruitee", fixture_handler("recruitee"))
+    for role in result.roles:
+        url = role.source_url or ""
+        assert url.startswith("https://lenskartcareers.recruitee.com/o/")
+        assert parse_posting_url(url) == PostingRef(
+            "recruitee", "lenskartcareers", url.rsplit("/", 1)[1]
+        )
+
+
+async def test_recruitee_url_falls_back_to_the_offers_own_link_when_it_has_no_slug() -> None:
+    offers = [
+        recruitee_offer(1, slug=None, careers_url="https://acme.recruitee.com/o/odd-one"),
+        recruitee_offer(2, slug="", careers_url=None),
+        recruitee_offer(3, slug="../x", careers_url="javascript:alert(1)"),
+    ]
+    result = await read("recruitee", answering(200, json={"offers": offers}), "acme")
+    assert [role.source_url for role in result.roles] == ["https://acme.recruitee.com/o/odd-one"]
+    assert result.total == 3
+    assert result.complete is False
+
+
+async def test_recruitee_roles_in_several_places_name_each_of_them() -> None:
+    offers = [
+        recruitee_offer(
+            1,
+            locations=[
+                {"name": "Bengaluru", "city": "Gurugram", "state": "Haryāna", "country": "India"},
+                {"name": "Bangalore/ Gurgaon", "city": "Bangalore", "state": "Karnātaka"},
+            ],
+        ),
+        recruitee_offer(2, locations=[], location="Mumbai, Maharashtra, India"),
+        recruitee_offer(3, locations=None, location="", city="Chennai", country="India"),
+        recruitee_offer(4, locations=[{"city": "Delhi", "name": "Delhi", "country": "India"}] * 2),
+        recruitee_offer(5, locations=[], location=""),
+        recruitee_offer(
+            6, locations=[{"name": "Singapore", "city": "Singapore ", "country": "Singapore"}]
+        ),
+    ]
+    result = await read("recruitee", answering(200, json={"offers": offers}), "acme")
+    assert [role.location_raw for role in result.roles] == [
+        "Bengaluru, Gurugram, Haryāna, India; Bangalore/ Gurgaon, Karnātaka",
+        "Mumbai, Maharashtra, India",
+        "Chennai, India",
+        "Delhi, India",
+        None,
+        "Singapore",
+    ]
+    assert [is_india_role(role.location_raw) for role in result.roles] == [
+        True, True, True, True, False, False,
+    ]  # fmt: skip
+
+
+async def test_recruitee_recorded_roles_open_in_several_places_name_all_of_them() -> None:
+    result = await read("recruitee", fixture_handler("recruitee"))
+    several = [role for role in result.roles if ";" in (role.location_raw or "")]
+    assert several, "the recording has offers with two locations"
+    assert all(is_india_role(role.location_raw) for role in several)
+
+
+async def test_recruitee_description_is_the_text_of_the_description_and_requirements() -> None:
+    offers = [
+        recruitee_offer(
+            1,
+            description="<p>Build <b>things</b>.</p><ul><li>Python</li></ul>",
+            requirements="<p>5 years &amp; a degree</p>",
+        ),
+        recruitee_offer(2, description=None, requirements="<p>Only this</p>"),
+        recruitee_offer(3, description="", requirements=None),
+    ]
+    result = await read("recruitee", answering(200, json={"offers": offers}), "acme")
+    first, second, third = result.roles
+    assert first.description_clean == "Build things.\nPython\n\n5 years & a degree"
+    assert second.description_clean == "Only this"
+    assert third.description_clean is None
+
+
+async def test_recruitee_recorded_descriptions_are_plain_text() -> None:
+    result = await read("recruitee", fixture_handler("recruitee"))
+    described = [role.description_clean for role in result.roles if role.description_clean]
+    assert len(described) == len(result.roles)
+    for text in described:
+        assert "<p" not in text
+        assert "<li" not in text
+        assert "&nbsp;" not in text
+        assert "&amp;" not in text
+
+
+async def test_recruitee_remote_is_the_offers_own_flag() -> None:
+    offers = [
+        recruitee_offer(1, remote=True),
+        recruitee_offer(2, remote=False),
+        recruitee_offer(3, remote="true", locations=[{"name": "Remote", "country": "India"}]),
+    ]
+    result = await read("recruitee", answering(200, json={"offers": offers}), "acme")
+    assert [role.is_remote for role in result.roles] == [True, False, False]
+
+
+async def test_recruitee_company_name_is_the_offers_own() -> None:
+    result = await read("recruitee", fixture_handler("recruitee"))
+    assert {(role.extra_metadata or {}).get("company_name") for role in result.roles} == {
+        "Lenskart"
+    }
+
+
+# ── Keka ─────────────────────────────────────────────────────────────────────
+
+KEKA_API = "https://spyneai.keka.com/careers/api/jobs/default/active"
+KEKA_PORTAL = "https://spyneai.keka.com/careers/api/organization/default/careerportalinfo"
+
+
+def keka_job(number: int = 1, **more: Any) -> dict[str, Any]:
+    return {
+        "id": number,
+        "title": f"Role {number}",
+        "description": "<div>Build things.</div>",
+        "jobLocations": [{"name": "Pune", "city": "Pune", "countryName": "India"}],
+        "publishedOn": "2026-10-30T08:17:09.217Z",
+        **more,
+    }
+
+
+def keka_answers(jobs: Any, portal: Any = None, seen: list[httpx.Request] | None = None) -> Handler:
+    """Keka's two answers: the jobs list, and the careers portal's description of the company."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if seen is not None:
+            seen.append(request)
+        if str(request.url) == KEKA_API:
+            return httpx.Response(200, json=jobs)
+        if str(request.url) == KEKA_PORTAL and portal is not None:
+            return httpx.Response(200, json=portal)
+        return httpx.Response(404)
+
+    return handler
+
+
+async def test_keka_requests_only_careers_paths() -> None:
+    seen: list[httpx.Request] = []
+    result = await read("keka", fixture_handler("keka", seen))
+
+    assert result.outcome == "ok"
+    assert [str(request.url) for request in seen] == [KEKA_API, KEKA_PORTAL]
+    assert all(str(request.url).startswith("https://spyneai.keka.com/careers/") for request in seen)
+
+
+async def test_keka_company_name_comes_from_the_careers_portal() -> None:
+    result = await read("keka", fixture_handler("keka"))
+    assert result.company_name == "SPYNE"
+    assert {(role.extra_metadata or {}).get("company_name") for role in result.roles} == {"SPYNE"}
+
+
+async def test_keka_urls_are_built_from_the_board_and_the_job_id() -> None:
+    from domain.posting_urls import PostingRef, parse_posting_url
+
+    result = await read("keka", fixture_handler("keka"))
+    for role in result.roles:
+        assert role.source_url == f"https://spyneai.keka.com/careers/jobdetails/{role.external_id}"
+        assert parse_posting_url(role.source_url) == PostingRef(
+            "keka", "spyneai", role.external_id or ""
+        )
+
+
+async def test_keka_dates_are_publishedon() -> None:
+    result = await read("keka", fixture_handler("keka"))
+    body = json.loads(next(iter(load_fixture("keka")["requests"].values()))["body"])
+    stated = {str(job["id"]): job for job in body}
+    for role in result.roles:
+        assert role.posted_at == parse_source_timestamp(
+            stated[role.external_id or ""]["publishedOn"]
+        )
+        assert role.source_updated_at is None
+
+
+async def test_keka_locations_are_the_name_and_country_and_several_are_joined() -> None:
+    def place(**fields: Any) -> list[Any]:
+        return [fields]
+
+    jobs = [
+        keka_job(
+            1, jobLocations=place(name="Gurgaon, Haryana", city="Gurgaon", countryName="India")
+        ),
+        keka_job(2, jobLocations=place(name="Gurugram", city="Gurugram", countryName="India")),
+        keka_job(3, jobLocations=place(name="Mumbai, India", countryName="India")),
+        keka_job(
+            4,
+            jobLocations=[
+                {"name": "London", "countryName": "United Kingdom"},
+                {"name": "Pune", "countryName": "India"},
+                {"name": "pune", "countryName": "India"},
+            ],
+        ),
+        keka_job(5, jobLocations=place(city="Noida", countryName="India")),
+        keka_job(6, jobLocations=[{"countryName": "India"}, "junk", None, {}]),
+        keka_job(7, jobLocations=[]),
+        keka_job(8, jobLocations=None),
+        keka_job(9, jobLocations=place(name="Remote", countryName="India")),
+    ]
+    result = await read("keka", keka_answers(jobs), "spyneai")
+    assert [role.location_raw for role in result.roles] == [
+        "Gurgaon, Haryana, India",
+        "Gurugram, India",
+        "Mumbai, India",
+        "London, United Kingdom; Pune, India",
+        "Noida, India",
+        "India",
+        None,
+        None,
+        "Remote, India",
+    ]
+    assert [is_india_role(role.location_raw) for role in result.roles] == [
+        True, True, True, True, True, True, False, False, True,
+    ]  # fmt: skip
+    assert [role.is_remote for role in result.roles] == [False] * 8 + [True]
+
+
+async def test_keka_description_is_the_text_of_the_description_or_the_excerpt() -> None:
+    jobs = [
+        keka_job(1, description="<div>Build <b>things</b>.</div><ul><li>Python</li></ul>"),
+        keka_job(2, description="", excerpt="Only the excerpt"),
+        keka_job(3, description=None, excerpt=None),
+    ]
+    result = await read("keka", keka_answers(jobs), "spyneai")
+    first, second, third = result.roles
+    assert first.description_clean == "Build things.\nPython"
+    assert second.description_clean == "Only the excerpt"
+    assert third.description_clean is None
+
+
+async def test_keka_recorded_descriptions_are_plain_text() -> None:
+    result = await read("keka", fixture_handler("keka"))
+    for role in result.roles:
+        assert role.description_clean
+        assert "<div" not in role.description_clean
+        assert "<li" not in role.description_clean
+
+
+@pytest.mark.parametrize("job_id", [None, "", "abc", "12/34", -5, 1.5, True, "1" * 13])
+async def test_keka_an_id_that_is_not_a_job_number_makes_the_job_unreadable(job_id: Any) -> None:
+    jobs = [keka_job(1), keka_job(2, id=job_id)]
+    result = await read("keka", keka_answers(jobs, {"name": "Acme"}), "spyneai")
+    assert [role.external_id for role in result.roles] == ["1"]
+    assert result.total == 2
+    assert result.complete is False
+
+
+async def test_keka_a_name_that_cannot_be_read_leaves_the_read_ok() -> None:
+    portal: Any
+    for portal in (None, [], "text", {"name": ""}, {"name": 7}, {}):
+        seen: list[httpx.Request] = []
+        result = await read("keka", keka_answers([keka_job()], portal, seen), "spyneai")
+        assert result.outcome == "ok"
+        assert result.complete is True
+        assert result.company_name is None
+        assert len(result.roles) == 1
+        assert (result.roles[0].extra_metadata or {}).get("company_name") == "Spyneai"
+        assert len(seen) == 2
+
+
+@pytest.mark.parametrize("status", [429, 500, 200])
+async def test_keka_a_failing_name_request_does_not_fail_the_read(status: int) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == KEKA_API:
+            return httpx.Response(200, json=[keka_job()])
+        return httpx.Response(status, text=HTML_PAGE)
+
+    result = await read("keka", handler, "spyneai")
+    assert result.outcome == "ok"
+    assert len(result.roles) == 1
+    assert result.company_name is None
+
+
+async def test_keka_asks_for_the_name_only_when_there_are_jobs_to_name() -> None:
+    for status, body in ((429, "slow"), (404, "no"), (500, "boom"), (200, HTML_PAGE), (200, "[]")):
+        seen: list[httpx.Request] = []
+
+        def handler(
+            request: httpx.Request,
+            status: int = status,
+            body: str = body,
+            seen: list[httpx.Request] = seen,
+        ) -> httpx.Response:
+            seen.append(request)
+            return httpx.Response(status, text=body)
+
+        await read("keka", handler, "spyneai")
+        assert [str(request.url) for request in seen] == [KEKA_API]
+
+
+# ── a board id becomes part of a host ────────────────────────────────────────
+
+
+@pytest.mark.parametrize("ats", ["recruitee", "keka"])
+@pytest.mark.parametrize(
+    "board",
+    [
+        "evil.example/x",
+        "evil.example",
+        "a.b",
+        "-lead",
+        "trail-",
+        "has space",
+        "../admin",
+        "a@b",
+        "a:80",
+        "a_b",
+        "x" * 64,
+        "ünï",
+        "a/b",
+        "a#b",
+        "a?b",
+    ],
+)
+async def test_a_board_that_cannot_be_a_host_label_is_never_requested(
+    ats: AtsName, board: str
+) -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=[])
+
+    result = await read(ats, handler, board)
+
+    assert seen == [], "a board id must not be able to choose the host that is asked"
+    assert result.outcome == "not_found"
+    assert result.roles == []
+    assert result.complete is False
+
+
+async def test_an_empty_board_id_is_never_requested() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=[])
+
+    for ats in ("recruitee", "keka"):
+        async with client_for(handler) as client:
+            result = await READERS[ats](client, BoardRef(ats, ""))
+        assert result.outcome == "not_found"
+    assert seen == []
+
+
+@pytest.mark.parametrize(
+    ("ats", "board", "host"),
+    [
+        ("recruitee", "LensKartCareers", "lenskartcareers.recruitee.com"),
+        ("recruitee", "a", "a.recruitee.com"),
+        ("recruitee", "my-company-2", "my-company-2.recruitee.com"),
+        ("recruitee", "x" * 63, f"{'x' * 63}.recruitee.com"),
+        ("keka", "SpyneAI", "spyneai.keka.com"),
+        ("keka", "9lives", "9lives.keka.com"),
+    ],
+)
+async def test_a_board_that_is_a_host_label_is_asked_for_on_its_own_host(
+    ats: AtsName, board: str, host: str
+) -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(404)
+
+    await read(ats, handler, board)
+    assert [request.url.host for request in seen] == [host]
+    assert seen[0].url.scheme == "https"
+
+
+def test_place_name_and_join_locations_drop_what_is_already_said() -> None:
+    from ingestion.boards.base import host_label, join_locations, place_name
+
+    assert place_name("Delhi", "Delhi", None, "India") == "Delhi, India"
+    assert place_name("Gurgaon, Haryana", "Gurgaon", "India") == "Gurgaon, Haryana, India"
+    assert place_name("Mumbai, India", "India") == "Mumbai, India"
+    assert place_name("  Pune \n", 7, None, "") == "Pune"
+    assert place_name() == ""
+    assert join_locations(["Pune", "", "pune", "Mumbai"]) == "Pune; Mumbai"
+    assert join_locations([]) == ""
+    assert host_label("LensKart") == "lenskart"
+    assert host_label("a.b") is None
+    assert host_label("") is None
+
+
+# ── the capture script records what a reader asks for ────────────────────────
+
+
+async def test_the_capture_script_records_kekas_second_request_scrubbed_and_paced() -> None:
+    from scripts.capture_board_fixtures import CAPTURES, record
+
+    jobs = [{**keka_job(1), "hiringManager": {"name": "Ravi K"}, "departmentIdentifier": "x"}]
+    portal = {"name": "SPYNE", "socialLinks": ["https://x.com/spyne"], "shortName": "SPYNE"}
+    pauses: list[float] = []
+
+    async def pause(seconds: float) -> None:
+        pauses.append(seconds)
+
+    async with client_for(keka_answers(jobs, portal)) as client:
+        fixture = await record("keka", CAPTURES["keka"], client, pause=pause)
+
+    assert fixture is not None
+    assert pauses == [2.0], "a second request to Keka waits Keka's pace"
+    assert list(fixture["requests"]) == [KEKA_API, KEKA_PORTAL]
+    assert "hiringManager" not in fixture["requests"][KEKA_API]["body"]
+    assert json.loads(fixture["requests"][KEKA_PORTAL]["body"]) == {
+        "name": "SPYNE",
+        "shortName": "SPYNE",
+    }
+
+
+async def test_the_capture_script_records_nothing_when_the_second_request_fails() -> None:
+    from scripts.capture_board_fixtures import CAPTURES, record
+
+    async def pause(_seconds: float) -> None:
+        return None
+
+    portal: Any
+    for portal in (None, {}, {"socialLinks": []}):
+        async with client_for(keka_answers([keka_job()], portal)) as client:
+            assert await record("keka", CAPTURES["keka"], client, pause=pause) is None
+
+
+@pytest.mark.parametrize(
+    ("ats", "payload"),
+    [
+        ("workable", {"name": "Acme", "jobs": []}),
+        ("recruitee", {"offers": []}),
+        ("recruitee", {"jobs": [{"title": "wrong key"}]}),
+        ("keka", []),
+        ("keka", {"jobs": [keka_job()]}),
+    ],
+)
+async def test_the_capture_script_records_nothing_that_proves_nothing(
+    ats: str, payload: Any
+) -> None:
+    from scripts.capture_board_fixtures import CAPTURES, record
+
+    async def pause(_seconds: float) -> None:
+        return None
+
+    async with client_for(answering(200, json=payload)) as client:
+        assert await record(ats, CAPTURES[ats], client, pause=pause) is None
+
 
 # ── live search still filters as it did ──────────────────────────────────────
 
@@ -1088,7 +1921,7 @@ async def test_live_lever_keeps_a_remote_workplace_whatever_its_location() -> No
     assert jobs[1].is_remote is True
 
 
-@pytest.mark.parametrize("ats", ATSES)
+@pytest.mark.parametrize("ats", LIVE_ATSES)
 async def test_live_search_returns_nothing_when_the_board_cannot_be_read(ats: AtsName) -> None:
     fetch = {
         "greenhouse": ATSScraper.fetch_greenhouse_company,

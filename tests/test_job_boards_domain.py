@@ -396,6 +396,30 @@ def test_is_india_role(text, expected):
     assert is_india_role(text) is expected
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # Readers join a role's several locations with "; ": any India part is enough,
+        # though domain.geo lets a foreign country beat a city within one string.
+        ("United Kingdom; Bengaluru", True),
+        ("Bengaluru; United Kingdom", True),
+        ("San Francisco; Mumbai; London", True),
+        (" United Kingdom ;  Pune ", True),
+        ("London; Berlin", False),
+        ("United Kingdom; Germany", False),
+        ("Remote; ", False),
+        (";", False),
+        ("; ;", False),
+        ("Hyderabad, Pakistan; London", False),
+        ("Hyderabad, Pakistan; Hyderabad, India", True),
+        (None, False),
+        ("", False),
+    ],
+)
+def test_is_india_role_reads_each_semicolon_part_on_its_own(text, expected):
+    assert is_india_role(text) is expected
+
+
 def test_names_match():
     assert names_match("Razorpay Software Pvt. Ltd.", "razorpay software")
     assert names_match("CRED", "Cred")
