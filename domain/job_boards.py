@@ -232,6 +232,22 @@ def board_from_url(url: str) -> BoardRef | None:
     return None
 
 
+def board_for_posting(ats: str, board: str, url: str | None) -> BoardRef | None:
+    """
+    The board a stored posting is read from, when its own URL names that same board; else ``None``.
+
+    The posting's URL is the proof of where it lives. A URL on another board, or on
+    another ATS, proves nothing about this one, so it is never checked against it.
+    A Personio posting's region is the host its URL names (the reader built that URL
+    from the board's region, so it is the board's own region).
+    """
+    expected = board_ref(ats, board)
+    named = board_from_url(url or "")
+    if expected is None or named is None or (named.ats, named.board) != (expected.ats, expected.board):
+        return None
+    return board_ref(expected.ats, expected.board, named.region)
+
+
 # A URL anywhere in the text: an attribute value, a script string or a bare
 # link. ``//host`` is a protocol-relative link; the lookbehind keeps ``ftp://``
 # and ``x-https://`` from being read as one.

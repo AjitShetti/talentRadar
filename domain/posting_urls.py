@@ -156,6 +156,30 @@ def posting_ref(
     return PostingRef(ats=ats, company_slug=slug, external_id=stored)
 
 
+def posting_url_key(url: str | None) -> str | None:
+    """
+    A posting URL in the one form every URL for that posting shares, or ``None``.
+
+    The scheme is always ``https`` (a posting is the same whichever scheme a link
+    names), the host is lower-cased, and the query and fragment are dropped (a
+    tracking parameter is not part of the posting). A trailing slash is removed.
+    The path keeps its case: a Workable shortcode is upper case. ``None`` for
+    anything that is not an http(s) URL with a host, or that carries a login or a port.
+    """
+    text = (url or "").strip()
+    if not text or len(text) > MAX_URL_LENGTH:
+        return None
+    try:
+        parts = urlsplit(text)
+        port = parts.port
+    except ValueError:
+        return None
+    host = (parts.hostname or "").lower()
+    if parts.scheme not in ("http", "https") or not host or port is not None or "@" in parts.netloc:
+        return None
+    return f"https://{host}{parts.path.rstrip('/')}"
+
+
 def _slugify(text: str | None, limit: int) -> str:
     return _NON_SLUG.sub("-", (text or "").lower()).strip("-")[:limit].strip("-")
 

@@ -22,13 +22,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
-from domain.job_boards import ATS
+import httpx
+
+from domain.job_boards import ATS, PACE_SECONDS, BoardRef
 from domain.liveness import (
     VERIFICATION_VALID_FOR,
     LivenessEvidence,
@@ -40,6 +44,7 @@ from domain.liveness import (
     title_key,
 )
 from domain.posting_urls import PostingRef, posting_ref
+from ingestion.boards.base import BoardRead, failed
 from ingestion.scrapers.ats_scraper import ATSScraper, PostingCheck
 
 logger = logging.getLogger(__name__)
@@ -49,6 +54,15 @@ logger = logging.getLogger(__name__)
 DEFAULT_BATCH_LIMIT = 150
 MAX_BATCH_LIMIT = 500
 RECHECK_CONCURRENCY = 5
+
+#: The board reads a batch may make before the rest are answered ``error``. The workflow's
+#: curl waits 300 s; a Workable board alone waits its 10 s pace, so the reads are bounded
+#: and what is not read in time is unknown, never closed.
+BOARD_READ_BUDGET_SECONDS = 200.0
+
+#: How a batch waits between two board reads of one ATS: a module-level reference, so a
+#: test can replace it and not really wait.
+_sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
 
 
 # A closure is looked at again for this long. Postings do come back, and an
@@ -217,6 +231,29 @@ async def _apply_results(
         await session.commit()
 
 
+async def _read_boards_once(
+    wanted: list[BoardRef], boards: dict[BoardRef, BoardRead], client: httpx.AsyncClient
+) -> None:
+    """
+    Read each board in ``wanted`` once, in order, into ``boards``.
+
+    A board's reads of one ATS are ``PACE_SECONDS`` apart. Past ``BOARD_READ_BUDGET_SECONDS``
+    a board is not read: it is recorded as a failed read, so its postings are ``ERROR``.
+    """
+    started = time.monotonic()
+    seen_ats: set[str] = set()
+    for board in dict.fromkeys(wanted):
+        if board in boards:
+            continue
+        if time.monotonic() - started > BOARD_READ_BUDGET_SECONDS:
+            boards[board] = failed("error")
+            continue
+        if board.ats in seen_ats:
+            await _sleep(PACE_SECONDS[board.ats])
+        seen_ats.add(board.ats)
+        await ATSScraper.read_board_once(board, boards=boards, client=client)
+
+
 async def reverify_batch(limit: int = DEFAULT_BATCH_LIMIT) -> dict[str, int]:
     """Re-check up to ``limit`` postings against their ATS. Never raises."""
     summary = {"checked": 0, "open": 0, "closed": 0, "errors": 0}
@@ -230,32 +267,44 @@ async def reverify_batch(limit: int = DEFAULT_BATCH_LIMIT) -> dict[str, int]:
     if not candidates:
         return summary
 
-    # Each Ashby board is read once, up front, so six postings from one
-    # company cost one request rather than six racing ones.
-    #
     # ``refs`` is what each row is asked about: the id in its posting URL, not
     # the stored external_id (see ``posting_ref``). A row with no real id is
     # an error, never a closure.
     refs = [posting_ref(c.source, c.source_url, c.external_id) for c in candidates]
-    ashby_boards: dict[str, set[str] | None] = {}
-    for slug in sorted({r.company_slug for r in refs if r is not None and r.ats == "ashby"}):
-        ashby_boards[slug] = await ATSScraper.fetch_ashby_open_ids(slug)
+
+    # Each board that a membership check needs is read once, before any posting is
+    # checked, so ten postings on one board cost one read rather than ten racing ones.
+    boards: dict[BoardRef, BoardRead] = {}
+    wanted: list[BoardRef] = []
+    for candidate, ref in zip(candidates, refs, strict=True):
+        board = ATSScraper.board_for(ref.source, candidate.source_url) if ref is not None else None
+        if board is not None:
+            wanted.append(board)
 
     gate = asyncio.Semaphore(RECHECK_CONCURRENCY)
 
-    async def check(ref: PostingRef | None) -> PostingCheck:
-        if ref is None:
-            return PostingCheck.ERROR
-        async with gate:
-            try:
-                return await ATSScraper.check_posting(
-                    ref.source, ref.external_id, ashby_boards=ashby_boards
-                )
-            except Exception as exc:
-                logger.debug("Re-check of %s raised: %s", ref.external_id, exc)
-                return PostingCheck.ERROR
+    async with ATSScraper.recheck_client() as client:
+        await _read_boards_once(wanted, boards, client)
 
-    results = await asyncio.gather(*(check(r) for r in refs))
+        async def check(candidate: Candidate, ref: PostingRef | None) -> PostingCheck:
+            if ref is None:
+                return PostingCheck.ERROR
+            async with gate:
+                try:
+                    return await ATSScraper.check_posting(
+                        ref.source,
+                        ref.external_id,
+                        source_url=candidate.source_url,
+                        boards=boards,
+                        client=client,
+                    )
+                except Exception as exc:
+                    logger.debug("Re-check of %s raised: %s", ref.external_id, exc)
+                    return PostingCheck.ERROR
+
+        results = await asyncio.gather(
+            *(check(c, r) for c, r in zip(candidates, refs, strict=True))
+        )
 
     open_ids = [c.job_id for c, r in zip(candidates, results, strict=True) if r is PostingCheck.OPEN]
     closed_ids = [
@@ -288,7 +337,9 @@ async def reverify_job(job: Any) -> PostingCheck:
     if ref is None:
         return PostingCheck.ERROR
     try:
-        result = await ATSScraper.check_posting(ref.source, ref.external_id)
+        result = await ATSScraper.check_posting(
+            ref.source, ref.external_id, source_url=getattr(job, "source_url", None)
+        )
     except Exception as exc:
         logger.debug("On-demand re-check raised: %s", exc)
         return PostingCheck.ERROR

@@ -25,8 +25,10 @@ from typing import Any
 import httpx
 
 from domain.entities import Job
-from domain.job_boards import AtsName, BoardRef
+from domain.job_boards import AtsName, BoardRef, board_for_posting
+from domain.posting_urls import posting_url_key
 from ingestion.boards import READERS
+from ingestion.boards.base import BoardRead, failed
 from ingestion.scrapling_manager import ScraplingManager
 
 logger = logging.getLogger(__name__)
@@ -153,6 +155,11 @@ RECHECK_TIMEOUT_SECONDS = 5.0
 _RETRY_PAUSE_SECONDS = 0.2
 _GONE_STATUSES = frozenset({404, 410})
 
+#: The ATSes whose postings are asked about one at a time. Every other ATS is checked by
+#: membership: its board is read once through ``READERS`` and the posting's URL is looked
+#: for among the board's roles.
+PER_POSTING_ATS: frozenset[str] = frozenset({"greenhouse", "lever"})
+
 
 class ATSScraper:
     """
@@ -180,19 +187,78 @@ class ATSScraper:
                 await asyncio.sleep(_RETRY_PAUSE_SECONDS)
         return status, data
 
-    @classmethod
-    async def fetch_ashby_open_ids(cls, company_slug: str) -> set[str] | None:
+    @staticmethod
+    def recheck_client() -> httpx.AsyncClient:
+        """The client a re-check reads boards with: the re-check's own timeout, and no redirect is followed."""
+        return httpx.AsyncClient(timeout=RECHECK_TIMEOUT_SECONDS, follow_redirects=False)
+
+    @staticmethod
+    def board_for(source: str, source_url: str | None) -> BoardRef | None:
         """
-        Ids currently on an Ashby board, or ``None`` when the board could not
-        be read. Ashby has no per-posting endpoint, so membership of the board
-        is the only check available.
+        The board a stored posting is checked on, or ``None`` when it is asked about one at a
+        time (Greenhouse, Lever), its source names no known board, or its URL names another board.
         """
-        status, data = await cls._fetch_for_recheck(
-            f"https://api.ashbyhq.com/posting-api/job-board/{company_slug}"
-        )
-        if status != 200 or not isinstance(data, dict) or not isinstance(data.get("jobs"), list):
+        ats, _, slug = (source or "").partition(":")
+        ats, slug = ats.strip().lower(), slug.strip()
+        if not slug or ats in PER_POSTING_ATS or ats not in READERS:
             return None
-        return {str(item.get("id")) for item in data["jobs"] if isinstance(item, dict)}
+        return board_for_posting(ats, slug, source_url)
+
+    @classmethod
+    async def read_board_once(
+        cls,
+        board: BoardRef,
+        *,
+        boards: dict[BoardRef, BoardRead],
+        client: httpx.AsyncClient | None = None,
+    ) -> BoardRead:
+        """
+        ``board``'s read: from ``boards`` when this batch has read it already, else read now
+        through ``READERS`` and remembered there. A reader that raises is a failed read, and is
+        remembered as one, never raised.
+        """
+        cached = boards.get(board)
+        if cached is not None:
+            return cached
+        try:
+            if client is not None:
+                read = await READERS[board.ats](client, board)
+            else:
+                async with cls.recheck_client() as own:
+                    read = await READERS[board.ats](own, board)
+        except Exception as exc:
+            logger.debug("Board %s could not be read: %s", board.source, exc)
+            read = failed("error")
+        boards[board] = read
+        return read
+
+    @classmethod
+    async def _check_on_board(
+        cls,
+        source: str,
+        source_url: str | None,
+        *,
+        boards: dict[BoardRef, BoardRead] | None,
+        client: httpx.AsyncClient | None,
+    ) -> PostingCheck:
+        """
+        Membership: the posting's URL among the roles of its board.
+
+        Only a board read whole (``ok`` and ``complete``) can show that a posting is absent.
+        A failed or rate-limited read, a 404 for the board (which is not proof that one
+        posting closed) and an incomplete read all answer ``ERROR``.
+        """
+        board = cls.board_for(source, source_url)
+        wanted = posting_url_key(source_url)
+        if board is None or wanted is None:
+            return PostingCheck.ERROR
+        read = await cls.read_board_once(
+            board, boards=boards if boards is not None else {}, client=client
+        )
+        if read.outcome != "ok" or not read.complete:
+            return PostingCheck.ERROR
+        listed = {posting_url_key(role.source_url) for role in read.roles}
+        return PostingCheck.OPEN if wanted in listed else PostingCheck.CLOSED
 
     @classmethod
     async def check_posting(
@@ -200,36 +266,31 @@ class ATSScraper:
         source: str,
         external_id: str,
         *,
-        ashby_boards: dict[str, set[str] | None] | None = None,
+        source_url: str | None = None,
+        boards: dict[BoardRef, BoardRead] | None = None,
+        client: httpx.AsyncClient | None = None,
     ) -> PostingCheck:
         """
         Ask the employer's ATS whether it still serves this posting.
 
-        ``ashby_boards`` lets a batch read each Ashby board once instead of
-        once per posting.
+        Greenhouse and Lever are asked about the posting by its id. Every other ATS is
+        checked by membership of its board (``_check_on_board``), which needs the posting's
+        own ``source_url``. ``boards`` is a batch's cache of board reads, so each board is read
+        once, and ``client`` is the batch's one HTTP client.
         """
         ats, _, slug = (source or "").partition(":")
         ats, slug = ats.strip().lower(), slug.strip()
         if not slug or not external_id:
             return PostingCheck.ERROR
 
-        if ats == "ashby":
-            if ashby_boards is not None and slug in ashby_boards:
-                open_ids = ashby_boards[slug]
-            else:
-                open_ids = await cls.fetch_ashby_open_ids(slug)
-                if ashby_boards is not None:
-                    ashby_boards[slug] = open_ids
-            if open_ids is None:
-                return PostingCheck.ERROR
-            return PostingCheck.OPEN if external_id in open_ids else PostingCheck.CLOSED
-
         if ats == "greenhouse":
             url = f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs/{external_id}"
         elif ats == "lever":
             url = f"https://api.lever.co/v0/postings/{slug}/{external_id}"
         else:
-            return PostingCheck.ERROR
+            return await cls._check_on_board(
+                source, source_url, boards=boards, client=client
+            )
 
         status, data = await cls._fetch_for_recheck(url)
         if status in _GONE_STATUSES:

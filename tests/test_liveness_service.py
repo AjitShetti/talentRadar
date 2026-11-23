@@ -11,13 +11,18 @@ can raise into the scheduler that calls it.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
+import httpx
 import pytest
 
+from domain.job_boards import PACE_SECONDS, AtsName, BoardRef
 from domain.liveness import LivenessState
+from ingestion.boards import READERS
+from ingestion.boards.base import BoardRead, build_job, failed
 from ingestion.scrapers.ats_scraper import ATSScraper, PostingCheck
 from ingestion.scrapling_manager import ScraplingManager
 from services import liveness
@@ -37,6 +42,28 @@ def serve(monkeypatch: pytest.MonkeyPatch, responses: dict[str, Any]) -> list[st
         return result
 
     monkeypatch.setattr(ScraplingManager, "fetch_html_or_json", fake_fetch)
+    return calls
+
+
+def replay(monkeypatch: pytest.MonkeyPatch, responses: dict[str, tuple[int, Any]]) -> list[str]:
+    """
+    Answer board reads from a url -> (status, JSON) map, through the real readers.
+
+    The readers make their requests through an ``httpx.MockTransport``, so nothing
+    leaves the process. Returns the urls asked for, query string removed.
+    """
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        key = str(request.url.copy_with(query=None))
+        calls.append(key)
+        status, payload = responses.get(key, (404, ""))
+        return httpx.Response(status, json=payload)
+
+    def client() -> httpx.AsyncClient:
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    monkeypatch.setattr(ATSScraper, "recheck_client", staticmethod(client))
     return calls
 
 
@@ -62,15 +89,113 @@ async def test_lever_posting_is_checked_by_id(monkeypatch):
     assert await ATSScraper.check_posting("lever:spotify", "abc") is PostingCheck.OPEN
 
 
+ASHBY_JOB = "https://jobs.ashbyhq.com/linear/{id}"
+
+
+def ashby_board(*ids: str) -> dict[str, Any]:
+    return {"jobs": [{"id": i, "title": "Engineer", "jobUrl": ASHBY_JOB.format(id=i)} for i in ids]}
+
+
 async def test_ashby_posting_is_looked_up_on_its_board(monkeypatch):
-    serve(monkeypatch, {ASHBY: (200, {"jobs": [{"id": "x1"}, {"id": "x2"}]})})
-    assert await ATSScraper.check_posting("ashby:linear", "x2") is PostingCheck.OPEN
-    assert await ATSScraper.check_posting("ashby:linear", "gone") is PostingCheck.CLOSED
+    replay(monkeypatch, {ASHBY: (200, ashby_board("x1", "x2"))})
+    listed = ASHBY_JOB.format(id="x2")
+    assert await ATSScraper.check_posting("ashby:linear", "x2", source_url=listed) is PostingCheck.OPEN
+    gone = ASHBY_JOB.format(id="gone")
+    assert await ATSScraper.check_posting("ashby:linear", "gone", source_url=gone) is PostingCheck.CLOSED
 
 
 async def test_ashby_board_that_fails_to_load_closes_nothing(monkeypatch):
-    serve(monkeypatch, {ASHBY: (503, "")})
-    assert await ATSScraper.check_posting("ashby:linear", "x2") is PostingCheck.ERROR
+    replay(monkeypatch, {ASHBY: (503, "")})
+    listed = ASHBY_JOB.format(id="x2")
+    assert await ATSScraper.check_posting("ashby:linear", "x2", source_url=listed) is PostingCheck.ERROR
+
+
+# ── a board checked by membership ────────────────────────────────────────────
+#
+# Workable, Recruitee, Keka, Rippling, Personio, Breezy and Ashby have no per-posting
+# endpoint. A posting is open when its URL is among the roles of its board, read once
+# through READERS; the readers are replaced here, so each test says what the board lists.
+
+WORKABLE_BOARD = BoardRef("workable", "acme")
+POSTED = "https://apply.workable.com/acme/j/ABC123/"
+
+
+def role(url: str) -> Any:
+    """A role as a reader builds it. A membership check reads only its posting URL."""
+    return build_job(
+        WORKABLE_BOARD,
+        external_id=None,
+        title="Engineer",
+        url=url,
+        location="Bengaluru, Karnataka, India",
+        description=None,
+    )
+
+
+def board_read(*roles: Any, complete: bool = True) -> BoardRead:
+    return BoardRead(outcome="ok", roles=list(roles), total=len(roles), complete=complete)
+
+
+def fake_reader(
+    monkeypatch: pytest.MonkeyPatch, ats: AtsName, answer: Callable[[BoardRef], BoardRead]
+) -> list[BoardRef]:
+    """Replace ``ats``'s reader in ``READERS`` with ``answer``; return the boards it was asked for."""
+    asked: list[BoardRef] = []
+
+    async def reader(client: httpx.AsyncClient, board: BoardRef) -> BoardRead:
+        asked.append(board)
+        return answer(board)
+
+    monkeypatch.setitem(READERS, ats, reader)
+    return asked
+
+
+async def test_check_posting_workable_open_by_membership(monkeypatch):
+    listed = [role(POSTED), role("https://apply.workable.com/acme/j/XYZ789/")]
+    asked = fake_reader(monkeypatch, "workable", lambda board: board_read(*listed))
+    boards: dict[BoardRef, BoardRead] = {}
+
+    check = ATSScraper.check_posting
+    assert await check("workable:acme", "ABC123", source_url=POSTED, boards=boards) is PostingCheck.OPEN
+    # The same posting written without the trailing slash is the same posting.
+    bare = POSTED.rstrip("/")
+    assert await check("workable:acme", "ABC123", source_url=bare, boards=boards) is PostingCheck.OPEN
+    # A posting the board no longer lists is closed; all three checks read the board once.
+    gone = "https://apply.workable.com/acme/j/QQQ111/"
+    assert await check("workable:acme", "QQQ111", source_url=gone, boards=boards) is PostingCheck.CLOSED
+    assert asked == [WORKABLE_BOARD]
+
+
+@pytest.mark.parametrize("code", ["ABC123", "QQQ111"])  # one listed, one absent
+async def test_check_posting_incomplete_board_is_error(monkeypatch, code):
+    # A read with a posting it could not parse is not a whole board: it proves nothing.
+    fake_reader(monkeypatch, "workable", lambda board: board_read(role(POSTED), complete=False))
+    url = f"https://apply.workable.com/acme/j/{code}/"
+    assert await ATSScraper.check_posting("workable:acme", code, source_url=url) is PostingCheck.ERROR
+
+
+@pytest.mark.parametrize("outcome", ["rate_limited", "not_found", "error"])
+async def test_check_posting_rate_limited_is_error_not_closed(monkeypatch, outcome):
+    # A rate limit, an outage or a 404 for the whole board says nothing about one posting.
+    fake_reader(monkeypatch, "workable", lambda board: failed(outcome))
+    gone = "https://apply.workable.com/acme/j/QQQ111/"
+    assert await ATSScraper.check_posting("workable:acme", "QQQ111", source_url=gone) is PostingCheck.ERROR
+
+
+async def test_a_posting_whose_url_names_another_board_is_not_checked_against_this_one(monkeypatch):
+    asked = fake_reader(monkeypatch, "workable", lambda board: board_read(role(POSTED)))
+    other = "https://apply.workable.com/other/j/ABC123/"
+    assert await ATSScraper.check_posting("workable:acme", "ABC123", source_url=other) is PostingCheck.ERROR
+    assert asked == []
+
+
+def test_a_personio_posting_is_checked_on_the_region_its_url_names():
+    assert ATSScraper.board_for("personio:acme", "https://acme.jobs.personio.com/job/12") == BoardRef(
+        "personio", "acme", "com"
+    )
+    assert ATSScraper.board_for("personio:acme", "https://acme.jobs.personio.de/job/12") == BoardRef(
+        "personio", "acme", "de"
+    )
 
 
 @pytest.mark.parametrize("status", [0, 403, 429, 500, 503])
@@ -118,8 +243,10 @@ async def test_a_timeout_is_retried_once(monkeypatch):
 # ── the batch ────────────────────────────────────────────────────────────────
 
 
-def candidate(source: str, external_id: str) -> liveness.Candidate:
-    return liveness.Candidate(job_id=uuid.uuid4(), source=source, external_id=external_id)
+def candidate(source: str, external_id: str, source_url: str | None = None) -> liveness.Candidate:
+    return liveness.Candidate(
+        job_id=uuid.uuid4(), source=source, external_id=external_id, source_url=source_url
+    )
 
 
 @pytest.fixture
@@ -167,13 +294,46 @@ async def test_batch_respects_its_limit(monkeypatch, batch):
 
 
 async def test_batch_fetches_an_ashby_board_once_for_all_its_postings(monkeypatch, batch):
-    batch["candidates"] = [candidate("ashby:linear", f"x{i}") for i in range(6)]
-    calls = serve(monkeypatch, {ASHBY: (200, {"jobs": [{"id": "x0"}, {"id": "x1"}]})})
+    batch["candidates"] = [candidate("ashby:linear", f"x{i}", ASHBY_JOB.format(id=f"x{i}")) for i in range(6)]
+    calls = replay(monkeypatch, {ASHBY: (200, ashby_board("x0", "x1"))})
 
     summary = await liveness.reverify_batch(limit=10)
 
     assert calls == [ASHBY]
     assert summary == {"checked": 6, "open": 2, "closed": 4, "errors": 0}
+
+
+async def test_reverify_reads_each_board_once(monkeypatch, batch):
+    # Two Workable boards share one pace; the Ashby board has its own. Each board is read
+    # once for all of its postings, and the second Workable read waits its pace first.
+    sleeps: list[float] = []
+
+    async def record_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(liveness, "_sleep", record_sleep)
+    workable = {
+        "acme": [role("https://apply.workable.com/acme/j/ABC111/"), role("https://apply.workable.com/acme/j/ABC222/")],
+        "beta": [],
+    }
+    ashby = {"linear": [role("https://jobs.ashbyhq.com/linear/x1")]}
+    asked_workable = fake_reader(monkeypatch, "workable", lambda board: board_read(*workable[board.board]))
+    asked_ashby = fake_reader(monkeypatch, "ashby", lambda board: board_read(*ashby[board.board]))
+    batch["candidates"] = [
+        candidate("workable:acme", "ABC111", "https://apply.workable.com/acme/j/ABC111/"),
+        candidate("workable:acme", "ABC222", "https://apply.workable.com/acme/j/ABC222/"),
+        candidate("workable:acme", "ABC333", "https://apply.workable.com/acme/j/ABC333/"),
+        candidate("workable:beta", "BET001", "https://apply.workable.com/beta/j/BET001/"),
+        candidate("ashby:linear", "x1", "https://jobs.ashbyhq.com/linear/x1"),
+        candidate("ashby:linear", "x2", "https://jobs.ashbyhq.com/linear/x2"),
+    ]
+
+    summary = await liveness.reverify_batch(limit=10)
+
+    assert asked_workable == [BoardRef("workable", "acme"), BoardRef("workable", "beta")]
+    assert asked_ashby == [BoardRef("ashby", "linear")]
+    assert sleeps == [PACE_SECONDS["workable"]]
+    assert summary == {"checked": 6, "open": 3, "closed": 3, "errors": 0}
 
 
 async def test_batch_never_raises_when_the_database_is_down(monkeypatch):

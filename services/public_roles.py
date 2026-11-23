@@ -350,7 +350,7 @@ async def check_url(url: str) -> dict[str, Any]:
         return _answer("unsupported", _UNSUPPORTED_MESSAGE)
 
     try:
-        outcome = await ATSScraper.check_posting(ref.source, ref.external_id)
+        outcome = await ATSScraper.check_posting(ref.source, ref.external_id, source_url=text)
     except Exception as exc:
         logger.debug("Public check could not reach the ATS: %s", exc)
         outcome = PostingCheck.ERROR
