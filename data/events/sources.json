@@ -28,34 +28,13 @@
         "id": "cal-zIHj6Pbh14Wv7I6",
         "name": "OLake Community Events",
         "trusted_tech": true,
-        "india": false,
-        "checked": "2026-11-23"
-      },
-      {
-        "id": "cal-E74MDlDKBaeAwXK",
-        "name": "The AI Collective",
-        "trusted_tech": true,
-        "india": false,
-        "checked": "2026-11-23"
-      },
-      {
-        "id": "cal-WL2eqVCGWPgrxCy",
-        "name": "DevRev",
-        "trusted_tech": true,
-        "india": false,
+        "india": true,
         "checked": "2026-11-23"
       },
       {
         "id": "cal-9b03CQxSp3BXjMp",
         "name": "Null Bangalore Events",
         "trusted_tech": true,
-        "india": true,
-        "checked": "2026-11-23"
-      },
-      {
-        "id": "cal-dAKUN6sySu9JYuc",
-        "name": "SPC India Events",
-        "trusted_tech": false,
         "india": true,
         "checked": "2026-11-23"
       }
