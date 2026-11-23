@@ -700,6 +700,153 @@ async def test_a_de_read_never_closes_a_com_boards_roles(session: AsyncSession) 
     assert (await job_at(session, gone_de.source_url or "")).closed_at is not None
 
 
+# -- a role whose URL changed is the same role -------------------------------------------
+
+OLD_URL = "https://boards.greenhouse.io/northwind/jobs/123"
+JOB_BOARDS_URL = "https://job-boards.greenhouse.io/northwind/jobs/123"
+CAREERS_URL = "https://careers.northwind.example/jobs?gh_jid=123"
+
+
+async def test_a_posting_moved_to_another_greenhouse_host_is_not_closed_or_duplicated(
+    session: AsyncSession,
+) -> None:
+    board = await add_board(session)
+    await write(session, board, read_of(role(123, url=OLD_URL)))
+    (before,) = await jobs_of(session)
+
+    # Greenhouse now lists the same posting (id 123) under its job-boards host.
+    summary, items = await write(session, board, read_of(role(123, url=JOB_BOARDS_URL)))
+
+    assert summary.closed == 0 and summary.inserted == 0 and summary.updated == 1
+    (row,) = await jobs_of(session)
+    assert row.id == before.id
+    assert row.closed_at is None
+    assert row.source_url == JOB_BOARDS_URL
+    assert row.external_id == _stable_external_id(role(123, url=JOB_BOARDS_URL))
+    assert row.last_verified_at is not None
+    # Its key changed, so it is embedded again under the new one.
+    assert [item["internal_job_id"] for item in items] == [row.id]
+    assert items[0]["job_id"] == row.external_id
+
+
+async def test_a_posting_moved_to_the_employers_own_careers_url_is_not_closed_or_duplicated(
+    session: AsyncSession,
+) -> None:
+    board = await add_board(session)
+    await write(session, board, read_of(role(123, url=OLD_URL)))
+    (before,) = await jobs_of(session)
+
+    summary, _ = await write(session, board, read_of(role(123, url=CAREERS_URL)))
+
+    assert summary.closed == 0 and summary.inserted == 0 and summary.updated == 1
+    (row,) = await jobs_of(session)
+    assert row.id == before.id and row.closed_at is None
+    assert row.source_url == CAREERS_URL
+
+
+async def test_a_posting_stored_on_a_careers_url_is_found_again_on_the_boards_host(
+    session: AsyncSession,
+) -> None:
+    board = await add_board(session)
+    await write(session, board, read_of(role(123, url=CAREERS_URL)))
+    (before,) = await jobs_of(session)
+
+    summary, _ = await write(session, board, read_of(role(123, url=OLD_URL)))
+
+    assert summary.closed == 0 and summary.inserted == 0 and summary.updated == 1
+    (row,) = await jobs_of(session)
+    assert row.id == before.id and row.source_url == OLD_URL and row.closed_at is None
+
+
+async def test_a_tracking_parameter_does_not_make_a_second_row(session: AsyncSession) -> None:
+    board = await add_board(session)
+    await write(session, board, read_of(role(123, url=OLD_URL)))
+
+    summary, _ = await write(session, board, read_of(role(123, url=OLD_URL + "?gh_src=feed")))
+
+    assert summary.closed == 0 and summary.inserted == 0
+    assert len(await jobs_of(session)) == 1
+
+
+async def test_a_moved_posting_is_closed_once_the_board_drops_its_id(
+    session: AsyncSession,
+) -> None:
+    board = await add_board(session)
+    await write(session, board, read_of(role(123, url=OLD_URL)))
+    await write(session, board, read_of(role(123, url=JOB_BOARDS_URL)))
+
+    # Another posting (id 124) is all the board lists now.
+    summary, _ = await write(
+        session,
+        board,
+        read_of(role(124, url="https://job-boards.greenhouse.io/northwind/jobs/124")),
+    )
+
+    assert summary.closed == 1 and summary.inserted == 1
+    gone = await job_at(session, JOB_BOARDS_URL)
+    assert gone.closed_at is not None
+
+
+async def test_a_closed_row_whose_posting_is_listed_again_under_a_new_url_is_reopened_in_place(
+    session: AsyncSession,
+) -> None:
+    board = await add_board(session)
+    await write(session, board, read_of(role(123, url=OLD_URL)))
+    (before,) = await jobs_of(session)
+    await session.execute(update(JobRow).values(closed_at=datetime.now(UTC) - timedelta(days=2)))
+
+    summary, _ = await write(session, board, read_of(role(123, url=JOB_BOARDS_URL)))
+
+    assert summary.inserted == 0 and summary.updated == 1
+    (row,) = await jobs_of(session)
+    assert row.id == before.id and row.closed_at is None and row.source_url == JOB_BOARDS_URL
+
+
+async def test_a_moved_posting_is_updated_even_when_no_new_rows_are_allowed(
+    session: AsyncSession,
+) -> None:
+    board = await add_board(session)
+    await write(session, board, read_of(role(123, url=OLD_URL)))
+
+    summary, _ = await write(
+        session, board, read_of(role(123, url=JOB_BOARDS_URL)), allow_new=False
+    )
+
+    assert summary.updated == 1 and summary.skipped_budget == 0 and summary.closed == 0
+    (row,) = await jobs_of(session)
+    assert row.source_url == JOB_BOARDS_URL
+
+
+async def test_another_posting_id_is_a_different_role(session: AsyncSession) -> None:
+    board = await add_board(session)
+    await write(session, board, read_of(role(123, url=OLD_URL)))
+
+    summary, _ = await write(
+        session,
+        board,
+        read_of(role(124, url="https://job-boards.greenhouse.io/northwind/jobs/124")),
+    )
+
+    assert summary.inserted == 1 and summary.closed == 1
+    assert len(await jobs_of(session)) == 2
+
+
+async def test_two_listed_urls_for_one_posting_move_one_row_not_two(session: AsyncSession) -> None:
+    board = await add_board(session)
+    await write(session, board, read_of(role(123, url=OLD_URL)))
+
+    # The board lists the posting under both its new host and a careers URL.
+    summary, _ = await write(
+        session,
+        board,
+        read_of(role(123, url=JOB_BOARDS_URL), role(123, url=CAREERS_URL)),
+    )
+
+    assert summary.closed == 0
+    assert summary.updated == 1 and summary.inserted == 1
+    assert {row.source_url for row in await jobs_of(session)} == {JOB_BOARDS_URL, CAREERS_URL}
+
+
 # -- which company ---------------------------------------------------------------------
 
 

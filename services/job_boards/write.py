@@ -32,13 +32,17 @@ What it keeps and what it does not
   still listed, so it is not closed (it is simply no longer an India role, and no longer
   refreshed, so it ages out). An incomplete read, and an absent role under a cap, close
   nothing.
+* "The same role" is its URL **or** its ATS posting id (``_posting_key``): Greenhouse moves a
+  board between hosts and employers link the posting on their own site (``?gh_jid=``), and a
+  role whose URL changed is neither closed nor stored twice. The stored row follows the new URL.
 * A role a complete read lists is confirmed open (``last_verified_at``, as an OPEN re-check
   records it). The re-check never reads a whole board of six of the ATSes on a request or on its
   own schedule: this read is how those rows are confirmed, and how they close.
 
 The caller owns the transaction: nothing here commits, and nothing here makes a request.
 Rows are written structurally (``enrichment_status='raw'``, no LLM call), and the items
-to embed are returned for new rows only, for the caller to embed once it has committed.
+to embed are returned for new rows, and for a row that moved to a new URL (its key, the URL's
+MD5, changed), for the caller to embed once it has committed.
 """
 
 from __future__ import annotations
@@ -54,6 +58,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from domain.entities import Job
 from domain.job_boards import is_india_role
+from domain.posting_urls import posting_ref
 from ingestion.boards.base import BoardRead
 from ingestion.validation import validate_job_url
 from services.job_persistence import (
@@ -204,17 +209,77 @@ def _embedding_item(
     }
 
 
+def _posting_key(board: JobBoard, source_url: str | None, external_id: str | None) -> str | None:
+    """
+    The ATS's own id for a posting of this board, in one spelling, or ``None``.
+
+    Read the way a re-check reads it (``domain.posting_urls.posting_ref``): from the URL, from a
+    Greenhouse ``gh_jid`` on the employer's own site, else from an id that is not our URL hash.
+    So a posting's id survives a change of host, of path prefix, of query string and of case,
+    which its URL (and the MD5 of it) does not.
+    """
+    ref = posting_ref(board.source, source_url, external_id)
+    if ref is None:
+        return None
+    return ref.external_id if ref.ats == "workable" else ref.external_id.lower()
+
+
+async def _stored_by_posting(
+    session: AsyncSession, board: JobBoard, keys: set[str], *, exclude: set[uuid.UUID]
+) -> dict[str, JobRow]:
+    """
+    The stored rows of this board, open or closed, whose posting id is one of ``keys``.
+
+    One row per id, an open one in preference to a closed one. A row in ``exclude`` (one the read
+    already matched by its own URL) and a Personio row of the other region are never returned.
+    """
+    rows = (
+        await session.execute(
+            select(JobRow.id, JobRow.external_id, JobRow.source_url, JobRow.closed_at).where(
+                JobRow.source == board.source
+            )
+        )
+    ).all()
+    own_host = _own_host(board)
+
+    found: dict[str, uuid.UUID] = {}
+    for job_id, external_id, source_url, _closed_at in sorted(
+        rows, key=lambda row: row.closed_at is not None
+    ):
+        if job_id in exclude or external_id is None:
+            continue
+        if own_host is not None and _host_of(source_url) != own_host:
+            continue
+        key = _posting_key(board, source_url, external_id)
+        if key is not None and key in keys and key not in found:
+            found[key] = job_id
+    if not found:
+        return {}
+    matched = (
+        (await session.execute(select(JobRow).where(JobRow.id.in_(list(found.values())))))
+        .scalars()
+        .all()
+    )
+    by_id = {row.id: row for row in matched}
+    return {key: by_id[job_id] for key, job_id in found.items() if job_id in by_id}
+
+
 async def _settle_complete_read(
-    session: AsyncSession, board: JobBoard, listed_ids: set[str], listed_urls: set[str]
+    session: AsyncSession,
+    board: JobBoard,
+    listed_ids: set[str],
+    listed_urls: set[str],
+    listed_keys: set[str],
 ) -> int:
     """
     What a **complete** read says about the board's open rows: close the absent, confirm the listed.
     Returns how many were closed.
 
-    A row is listed when its id *or* its URL is anywhere in the read: the URL is the
-    evidence that matters, and a row whose id was derived some other way still shows up by it.
-    A listed row is confirmed open (``last_verified_at``, the same stamp an OPEN re-check
-    leaves), so the re-check does not read again a board the sweep has just read whole.
+    A row is listed when its id, its URL *or* its posting id (``_posting_key``) is anywhere in
+    the read: the URL is the evidence that matters, a row whose id was derived some other way
+    still shows up by it, and a posting the board now links under another URL is still the
+    posting. A listed row is confirmed open (``last_verified_at``, the same stamp an OPEN
+    re-check leaves), so the re-check does not read again a board the sweep has just read whole.
     A row with no ``external_id`` cannot be matched to anything and is left alone, and so is a
     Personio row of the other region. ``closed_at`` keeps the date a role was first found gone
     (only ``closed_at IS NULL`` rows move).
@@ -235,7 +300,12 @@ async def _settle_complete_read(
             continue
         if own_host is not None and _host_of(source_url) != own_host:
             continue
-        if external_id in listed_ids or (source_url and source_url in listed_urls):
+        key = _posting_key(board, source_url, external_id)
+        if (
+            external_id in listed_ids
+            or (source_url and source_url in listed_urls)
+            or (key is not None and key in listed_keys)
+        ):
             listed.append(job_id)
         else:
             gone.append(job_id)
@@ -256,6 +326,16 @@ async def _settle_complete_read(
     return len(gone)
 
 
+def _company_label(board: JobBoard, read: BoardRead, role: Job) -> str:
+    """The company's name as the embedding's metadata states it."""
+    return str(
+        board.company_name
+        or read.company_name
+        or (role.extra_metadata or {}).get("company_name")
+        or board.board
+    )
+
+
 async def write_board_roles(
     session: AsyncSession, board: JobBoard, read: BoardRead, *, allow_new: bool
 ) -> tuple[WriteSummary, list[dict[str, Any]]]:
@@ -264,7 +344,8 @@ async def write_board_roles(
 
     ``allow_new`` is the sweep's row budget: when false only roles already stored are
     refreshed, and each new one is counted in ``skipped_budget``. Returns the summary and the
-    items to embed, for the rows inserted by this call. Does not commit.
+    items to embed, for the rows inserted by this call and the ones that moved to a new URL.
+    Does not commit.
     """
     summary = WriteSummary()
     embedding_items: list[dict[str, Any]] = []
@@ -293,15 +374,48 @@ async def write_board_roles(
             [external_id for external_id, _role in candidates], board.source
         )
     }
+    # A role not found by its URL's key may still be a row we hold under the URL it had before:
+    # the board moved, or the employer links it on its own site. It is found by its posting id.
+    wanted_keys = {
+        key
+        for external_id, role in candidates
+        if external_id not in stored
+        and (key := _posting_key(board, role.source_url, role.external_id)) is not None
+    }
+    moved_from: dict[str, JobRow] = {}
+    if wanted_keys:
+        moved_from = await _stored_by_posting(
+            session, board, wanted_keys, exclude={row.id for row in stored.values()}
+        )
+    taken: set[uuid.UUID] = set()  # rows already claimed by a role that moved in this call
+
     company_id: uuid.UUID | None = None  # resolved on the first row that needs one
     written: list[tuple[JobRow, Job, datetime]] = []
     for external_id, role in candidates:
         kwargs = build_job_kwargs(role)
         row = stored.get(external_id)
+        moved = False
+        if row is None:
+            key = _posting_key(board, role.source_url, role.external_id)
+            earlier = moved_from.get(key) if key is not None else None
+            if earlier is not None and earlier.id not in taken:
+                row, moved = earlier, True
+                taken.add(row.id)
         if row is not None:
             # A re-read restates what the board says, never what enrichment derived.
             for column, value in board_refresh_values(kwargs).items():
                 setattr(row, column, value)
+            if moved:
+                # The key follows the URL, so live search (which keys by the URL) finds this row
+                # and not a second one. It cannot collide: no row of this board holds the new key,
+                # or the role would have been found above. The old vector no longer names a row.
+                row.external_id = external_id
+                row.embedding_id = None
+                embedding_items.append(
+                    _embedding_item(
+                        role, row, external_id, _company_label(board, read, role), board.source
+                    )
+                )
             if board.company_id is not None:
                 # A link made after the row was first stored (by live search, under a
                 # placeholder or a name match) is the authority from then on.
@@ -319,13 +433,11 @@ async def write_board_roles(
             )
             session.add(row)
             summary.inserted += 1
-            name = (
-                board.company_name
-                or read.company_name
-                or (role.extra_metadata or {}).get("company_name")
-                or board.board
+            embedding_items.append(
+                _embedding_item(
+                    role, row, external_id, _company_label(board, read, role), board.source
+                )
             )
-            embedding_items.append(_embedding_item(role, row, external_id, name, board.source))
         else:
             summary.skipped_budget += 1
             continue
@@ -350,5 +462,10 @@ async def write_board_roles(
             board,
             {_stable_external_id(role) for role in read.roles},
             {role.source_url for role in read.roles if role.source_url},
+            {
+                key
+                for role in read.roles
+                if (key := _posting_key(board, role.source_url, role.external_id)) is not None
+            },
         )
     return summary, embedding_items
