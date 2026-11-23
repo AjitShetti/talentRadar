@@ -291,11 +291,13 @@ async def test_pruning_jobs_never_touches_role_sightings(monkeypatch):
     assert not any("role_sightings" in s for s in statements)
 
 
-def test_retention_age_rule_binds_days_as_a_number():
+def test_retention_age_rule_binds_its_cutoff_as_a_value():
     """
     ``(:days || ' days')::interval`` with an integer bound through asyncpg
     raises "expected str, got int". The prune swallowed that and reported
     ``ran: False``, so retention never deleted anything on a real database.
+    Rule 1 binds its cut-off as a timestamp computed in Python, so no interval
+    is built in SQL and the string-concatenated form cannot come back.
     """
     import inspect
 
@@ -303,7 +305,7 @@ def test_retention_age_rule_binds_days_as_a_number():
 
     source = inspect.getsource(job_retention.prune_stale_jobs)
     assert "|| ' days'" not in source
-    assert "make_interval(days => :days)" in source
+    assert "raw_cutoff = datetime.now(UTC)" in source
 
 
 # ── which posting to ask about ───────────────────────────────────────────────

@@ -14,7 +14,10 @@ Two rules, in order:
 
 1. **Age.** Structural rows (``enrichment_status='raw'``) older than
    ``RAW_RETENTION_DAYS`` go, unless somebody applied to them. A stale scraped
-   posting is worse than no posting: the link is usually dead.
+   posting is worse than no posting: the link is usually dead. A job-board row
+   (``source`` is ``"<ats>:<board>"`` for one of the nine ATSes) is aged by when
+   the sweep last saw it, not by when it was created: a role still on its board
+   is kept, and one gone from its board for the window goes.
 2. **Pressure.** Above ``STORAGE_HIGH_WATER_BYTES``, oldest-raw-first rows go
    regardless of age, until back under budget.
 
@@ -40,9 +43,12 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from sqlalchemy import CursorResult, text
+from sqlalchemy import CursorResult, case, delete, exists, func, or_, select, text
+from sqlalchemy.orm import aliased
 
 from domain.event_time import DEFAULT_DURATION
+from domain.job_boards import ATS
+from storage.models import Job, JobApplication
 
 logger = logging.getLogger(__name__)
 
@@ -214,23 +220,30 @@ async def prune_stale_jobs() -> dict[str, Any]:
 
             # Rule 1: age. The NOT EXISTS clause is the important part - a job
             # someone applied to is part of their history and outlives any
-            # retention window.
-            aged = await session.execute(
-                text(
-                    """
-                    DELETE FROM jobs
-                    WHERE id IN (
-                        SELECT j.id FROM jobs j
-                        WHERE j.enrichment_status = 'raw'
-                          AND j.created_at < NOW() - make_interval(days => :days)
-                          AND NOT EXISTS (
-                              SELECT 1 FROM job_applications a WHERE a.job_id = j.id
-                          )
-                        LIMIT :cap
+            # retention window. A job-board row is aged by when the sweep last saw
+            # it (coalesce(last_seen_at, created_at)); every other row by when it
+            # was created. The cut-off is a bound timestamp, as in prune_events, so
+            # the statement is the same on PostgreSQL and in the SQLite tests.
+            raw_cutoff = datetime.now(UTC) - timedelta(days=RAW_RETENTION_DAYS)
+            candidate = aliased(Job)
+            on_board = or_(*(candidate.source.like(f"{ats}:%") for ats in ATS))
+            aged_ids = (
+                select(candidate.id)
+                .where(
+                    candidate.enrichment_status == "raw",
+                    case(
+                        (on_board, func.coalesce(candidate.last_seen_at, candidate.created_at)),
+                        else_=candidate.created_at,
                     )
-                    """
-                ),
-                {"days": RAW_RETENTION_DAYS, "cap": MAX_DELETIONS_PER_RUN},
+                    < raw_cutoff,
+                    ~exists().where(JobApplication.job_id == candidate.id),
+                )
+                .limit(MAX_DELETIONS_PER_RUN)
+            )
+            aged = await session.execute(
+                delete(Job)
+                .where(Job.id.in_(aged_ids))
+                .execution_options(synchronize_session=False)
             )
             summary["deleted_by_age"] = cast("CursorResult[Any]", aged).rowcount or 0
             await session.commit()
