@@ -18,7 +18,7 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from agents.merge_rank import SOURCE_TRUST
-from domain.job_boards import ATS
+from domain.job_boards import ATS, SWEEP_ONLY_ATS
 from domain.posting_urls import PostingRef, parse_posting_url, posting_ref
 from services import liveness, public_roles
 from storage.database import Base
@@ -31,7 +31,11 @@ RIPPLING_ID = "0b6c1f3e-1a2b-4c5d-8e9f-001122334455"
 
 NEW_ATS_URLS = [
     ("https://apply.workable.com/apna/j/1A2B3C4D5E/", "workable", "apna"),
-    ("https://lenskartcareers.recruitee.com/o/store-manager-bengaluru", "recruitee", "lenskartcareers"),
+    (
+        "https://lenskartcareers.recruitee.com/o/store-manager-bengaluru",
+        "recruitee",
+        "lenskartcareers",
+    ),
     ("https://spyneai.keka.com/careers/jobdetails/12345", "keka", "spyneai"),
     (f"https://ats.rippling.com/rippling/jobs/{RIPPLING_ID}", "rippling", "rippling"),
     ("https://acme.breezy.hr/p/0123abcd4567-backend-engineer", "breezy", "acme"),
@@ -56,7 +60,10 @@ def test_new_ats_posting_urls_parse(url: str, ats: str, slug: str) -> None:
         # Workable's shortcode is upper case and keeps its case: the id is
         # looked for in the stored URL and handed back to Workable as written.
         ("https://apply.workable.com/apna/j/1A2B3C4D5E/", "1A2B3C4D5E"),
-        ("https://lenskartcareers.recruitee.com/o/store-manager-bengaluru", "store-manager-bengaluru"),
+        (
+            "https://lenskartcareers.recruitee.com/o/store-manager-bengaluru",
+            "store-manager-bengaluru",
+        ),
         ("https://spyneai.keka.com/careers/jobdetails/12345", "12345"),
         (f"https://ats.rippling.com/rippling/jobs/{RIPPLING_ID.upper()}", RIPPLING_ID),
         ("https://acme.breezy.hr/p/0123abcd4567-backend-engineer", "0123abcd4567-backend-engineer"),
@@ -198,7 +205,9 @@ def test_unsupported_message_names_all_nine() -> None:
 
 
 @pytest_asyncio.fixture
-async def factory(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+async def factory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -261,7 +270,12 @@ async def test_company_page_reads_every_ats(factory: async_sessionmaker[AsyncSes
 
 
 @pytest.mark.asyncio
-async def test_reverification_candidates_include_every_ats(factory: async_sessionmaker[AsyncSession]) -> None:
+async def test_reverification_candidates_are_every_ats_but_the_sweep_only_ones(
+    factory: async_sessionmaker[AsyncSession],
+) -> None:
     await _seed(factory)
     candidates = await liveness._load_candidates(100)
-    assert {c.source for c in candidates} == {f"{ats}:acme" for ats in ATS}
+    # The six sweep-only ATSes are re-checked by the sweep's complete reads, never one by one.
+    assert {c.source for c in candidates} == {
+        f"{ats}:acme" for ats in ATS if ats not in SWEEP_ONLY_ATS
+    }
