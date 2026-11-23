@@ -10,10 +10,12 @@ This is not ``persist_live_jobs``, for two reasons that are the point of the mod
   cache), so a daily read of a board would never refresh a role the index already
   holds, and ``last_seen_at`` would stop moving for exactly the rows a board still
   lists. Here a role already stored is refreshed on every read.
-* ``persist_live_jobs`` picks the company by *name* (``posting_company``), which is how
-  Greenhouse's ``slice`` (a company in Skopje) would land on the Indian fintech of the
-  same name. A board's jobs go to the company the board is linked to, or to a
-  placeholder company keyed by the board itself, and never to a name match.
+* ``persist_live_jobs`` picks a non-board job's company by *name* (``posting_company``),
+  which is how Greenhouse's ``slice`` (a company in Skopje) would land on the Indian
+  fintech of the same name. A board's jobs go to the company the board is linked to, or
+  to a placeholder company keyed by the board itself, and never to a name match. Live
+  search files a board role the same way (``live_board_company_id``), and an existing
+  board row keeps the company it was given.
 
 What it keeps and what it does not
 ----------------------------------
@@ -83,9 +85,34 @@ class WriteSummary:
     skipped_budget: int = 0
 
 
+def _placeholder_domain_for(ats: str, board: str) -> str:
+    return f"{ats}-{board}{PLACEHOLDER_SUFFIX}"
+
+
 def placeholder_domain(board: JobBoard) -> str:
     """The ``companies.domain`` of the placeholder company of an unlinked board."""
-    return f"{board.ats}-{board.board}{PLACEHOLDER_SUFFIX}"
+    return _placeholder_domain_for(board.ats, board.board)
+
+
+async def placeholder_company_id(
+    session: AsyncSession, *, ats: str, board: str, name: str | None
+) -> uuid.UUID:
+    """
+    The placeholder company of one board, keyed by the board and created on first use, named
+    ``name`` or else the board id. Never matched by name. The caller owns the transaction.
+    """
+    domain = _placeholder_domain_for(ats, board)
+    found = (
+        await session.execute(select(Company.id).where(Company.domain == domain))
+    ).scalar_one_or_none()
+    if found is not None:
+        return found
+
+    label = (name or "").strip() or board
+    company = Company(id=uuid.uuid4(), name=label[:_COMPANY_NAME_MAX], domain=domain)
+    session.add(company)
+    await session.flush()
+    return company.id
 
 
 async def board_company_id(session: AsyncSession, board: JobBoard) -> uuid.UUID:
@@ -98,19 +125,29 @@ async def board_company_id(session: AsyncSession, board: JobBoard) -> uuid.UUID:
     """
     if board.company_id is not None:
         return board.company_id
+    return await placeholder_company_id(
+        session, ats=board.ats, board=board.board, name=board.company_name
+    )
 
-    domain = placeholder_domain(board)
-    found = (
-        await session.execute(select(Company.id).where(Company.domain == domain))
+
+async def live_board_company_id(session: AsyncSession, ats: str, board: str) -> uuid.UUID:
+    """
+    The company a live search's role from ``ats:board`` is filed under: the same one the sweep
+    files that board's roles under. The board's row decides it (its link, or its placeholder)
+    when the board is on the roster; otherwise the board's placeholder, keyed by the board id.
+    Never matched by name. ``persist_live_jobs`` calls this for board sources only.
+    """
+    row = (
+        await session.execute(
+            select(JobBoard)
+            .where(JobBoard.ats == ats, JobBoard.board == board)
+            .order_by(JobBoard.company_id.is_(None), JobBoard.region.asc().nulls_first())
+            .limit(1)
+        )
     ).scalar_one_or_none()
-    if found is not None:
-        return found
-
-    name = (board.company_name or "").strip() or board.board
-    company = Company(id=uuid.uuid4(), name=name[:_COMPANY_NAME_MAX], domain=domain)
-    session.add(company)
-    await session.flush()
-    return company.id
+    if row is None:
+        return await placeholder_company_id(session, ats=ats, board=board, name=None)
+    return await board_company_id(session, row)
 
 
 def _host_of(url: str | None) -> str:

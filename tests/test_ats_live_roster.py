@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any
@@ -35,6 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 import storage.database as database
 from domain.entities import Job
+from domain.enums import EmploymentType, JobStatus, SeniorityLevel
 from domain.job_boards import BoardRef
 from ingestion.boards import READERS
 from ingestion.engine import job_dicts_to_entities, job_to_dict
@@ -49,8 +51,8 @@ from services.cache_backend import CacheBackend
 from services.job_boards.write import write_board_roles
 from services.job_persistence import _stable_external_id, persist_live_jobs
 from storage.database import Base
+from storage.models import Company, JobBoard
 from storage.models import Job as JobRow
-from storage.models import JobBoard
 
 LIVE_CACHE_KEY = "tr:boards:live-top"
 NOW = datetime(2026, 11, 23, 9, 0, tzinfo=UTC)
@@ -417,3 +419,172 @@ async def test_live_and_sweep_agree_on_row_key(
     (swept,) = read.roles
     assert _key_of(row) == (_stable_external_id(swept), "greenhouse:stripe")
     assert _key_of(row) == (_stable_external_id(live[0]), "greenhouse:stripe")
+
+
+# -- a board's role is filed where the sweep files the board, never by name ----------------
+
+
+async def _add_company(
+    factory: async_sessionmaker[AsyncSession], name: str, domain: str
+) -> uuid.UUID:
+    async with factory() as session:
+        company = Company(id=uuid.uuid4(), name=name, domain=domain)
+        session.add(company)
+        await session.commit()
+        return company.id
+
+
+async def _companies_named(factory: async_sessionmaker[AsyncSession], name: str) -> list[Company]:
+    async with factory() as session:
+        return list(
+            (await session.execute(select(Company).where(Company.name == name))).scalars().all()
+        )
+
+
+@pytest.fixture
+def no_embedding(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def skip(_items: list[dict[str, Any]]) -> None:
+        return None
+
+    monkeypatch.setattr(job_persistence, "_embed_quietly", skip)
+
+
+async def test_live_board_row_never_name_matched(
+    factory: async_sessionmaker[AsyncSession],
+    hosts: AtsHosts,
+    no_embedding: None,
+) -> None:
+    """
+    A map company called "Slice" exists. A live greenhouse:slice role is filed under the board's
+    placeholder, not under the company that shares the name.
+    """
+    slice_map = await _add_company(factory, "Slice", "slice.example")
+
+    (role,) = await ATSScraper.fetch_greenhouse_company(
+        "slice", "", None, None, client=hosts.client()
+    )
+    assert role.extra_metadata is not None
+    assert role.extra_metadata["company_name"] == "Slice"
+
+    summary = await persist_live_jobs([role])
+
+    assert summary.inserted == 1
+    async with factory() as session:
+        (row,) = await _stored(session)
+        placeholder = (
+            await session.execute(
+                select(Company).where(
+                    Company.domain == "greenhouse-slice.board.talentradar.internal"
+                )
+            )
+        ).scalar_one()
+    assert row.company_id == placeholder.id
+    assert row.company_id != slice_map
+    assert placeholder.name == "slice"
+    assert len(await _companies_named(factory, "Slice")) == 1
+
+
+async def test_live_board_row_is_filed_under_the_linked_company(
+    factory: async_sessionmaker[AsyncSession],
+    hosts: AtsHosts,
+    no_embedding: None,
+) -> None:
+    """A board linked to a company we hold files its live roles under that company."""
+    linked = await _add_company(factory, "Slice Logistics", "slice-logistics.example")
+    async with factory() as session:
+        session.add(
+            JobBoard(
+                ats="greenhouse",
+                board="slice",
+                company_id=linked,
+                discovered_via="manual",
+                status="active",
+                first_seen_at=NOW,
+            )
+        )
+        await session.commit()
+
+    (role,) = await ATSScraper.fetch_greenhouse_company(
+        "slice", "", None, None, client=hosts.client()
+    )
+    await persist_live_jobs([role])
+
+    async with factory() as session:
+        (row,) = await _stored(session)
+    assert row.company_id == linked
+
+
+async def test_live_update_keeps_sweep_company(
+    factory: async_sessionmaker[AsyncSession],
+    hosts: AtsHosts,
+    no_embedding: None,
+) -> None:
+    """
+    The sweep stored a role under the company its board is linked to. The same posting found by
+    live search keeps that company, though a company of the same name exists.
+    """
+    await _add_company(factory, "Slice", "slice.example")
+    linked = await _add_company(factory, "Slice Logistics", "slice-logistics.example")
+    async with factory() as session:
+        board = JobBoard(
+            ats="greenhouse",
+            board="slice",
+            company_id=linked,
+            discovered_via="manual",
+            status="active",
+            first_seen_at=NOW,
+        )
+        session.add(board)
+        await session.commit()
+        board_id = board.id
+
+    read = await READERS["greenhouse"](hosts.client(), BoardRef("greenhouse", "slice"))
+    async with factory() as session:
+        board = await session.get(JobBoard, board_id)
+        assert board is not None
+        await write_board_roles(session, board, read, allow_new=True)
+        await session.commit()
+    async with factory() as session:
+        (swept,) = await _stored(session)
+    assert swept.company_id == linked
+
+    (role,) = await ATSScraper.fetch_greenhouse_company(
+        "slice", "", None, None, client=hosts.client()
+    )
+    summary = await persist_live_jobs([role])
+
+    assert summary.updated == 1 and summary.inserted == 0
+    async with factory() as session:
+        (row,) = await _stored(session)
+    assert row.company_id == linked
+
+
+async def test_a_non_board_source_still_matches_by_name(
+    factory: async_sessionmaker[AsyncSession],
+    no_embedding: None,
+) -> None:
+    """A posting from a source that is not an ATS board is filed under the company its name matches."""
+    listed = await _add_company(factory, "Slice", "slice.example")
+    role = Job(
+        id=uuid.uuid4(),
+        company_id=uuid.uuid4(),
+        external_id=None,
+        source="tavily",
+        source_url="https://boards.greenhouse.io/slice/jobs/777",
+        title="Backend Engineer",
+        status=JobStatus.ACTIVE,
+        employment_type=EmploymentType.FULL_TIME,
+        seniority=SeniorityLevel.MID,
+        location_raw="Bengaluru, India",
+        country="IN",
+        city="Bengaluru",
+        is_remote=False,
+        extra_metadata={"company_name": "Slice"},
+    )
+
+    summary = await persist_live_jobs([role])
+
+    assert summary.inserted == 1
+    async with factory() as session:
+        (row,) = await _stored(session)
+    assert row.company_id == listed

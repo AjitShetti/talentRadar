@@ -97,6 +97,14 @@ def _stable_external_id(job: Job) -> str:
     return hashlib.md5(basis.encode("utf-8")).hexdigest()
 
 
+def _board_source(source: str) -> tuple[str, str] | None:
+    """``(ats, board)`` when ``source`` is one of the nine ATS boards (``ats:board``), else None."""
+    ats, separator, board = source.partition(":")
+    if separator and board and ats in ATS:
+        return ats, board
+    return None
+
+
 def _external_id_for(job: Job, source: str) -> str:
     """
     The ``external_id`` a live posting is stored under.
@@ -106,8 +114,7 @@ def _external_id_for(job: Job, source: str) -> str:
     the ATS's, and a row keyed by it would be a second row for the same posting. Any other
     source keeps the id the job carries.
     """
-    ats, separator, board = source.partition(":")
-    if separator and board and ats in ATS:
+    if _board_source(source) is not None:
         return _stable_external_id(job)
     return job.external_id or _stable_external_id(job)
 
@@ -267,6 +274,7 @@ async def persist_live_jobs(
     # 3. Write. One session, one commit.
     embedding_items: list[dict[str, Any]] = []
     try:
+        from services.job_boards.write import live_board_company_id
         from services.liveness import record_sighting
         from storage.database import AsyncSessionLocal
         from storage.repository import UnitOfWork
@@ -275,12 +283,21 @@ async def persist_live_jobs(
             for job in fresh:
                 try:
                     company_name = (job.extra_metadata or {}).get("company_name") or "Company"
-                    company = await posting_company(uow, company_name)
-
                     source = job.source or source_label
                     external_id = _external_id_for(job, source)
                     kwargs = build_job_kwargs(job)
-                    kwargs["company_id"] = company.id
+
+                    board = _board_source(source)
+                    if board is None:
+                        company = await posting_company(uow, company_name)
+                        kwargs["company_id"] = company.id
+                    elif await uow.jobs.get_by_external_id(external_id, source) is None:
+                        # A board's role is filed where the sweep files its board, never by
+                        # name. A row that already exists keeps the company it was stored
+                        # with: its company_id is left out of the update.
+                        kwargs["company_id"] = await live_board_company_id(
+                            uow.companies.session, board[0], board[1]
+                        )
 
                     stored, created = await uow.jobs.upsert_by_external_id(
                         external_id=external_id,
@@ -297,7 +314,7 @@ async def persist_live_jobs(
                     # a re-listing. It cannot fail the write above.
                     await record_sighting(
                         session,
-                        company_id=company.id,
+                        company_id=stored.company_id,
                         title=job.title or "",
                         external_id=external_id,
                         seen_at=kwargs["last_seen_at"],
