@@ -53,12 +53,12 @@ from urllib.parse import SplitResult, quote, urlsplit
 
 import httpx
 
-from domain.event_facts import EventFacts, flatten
+from domain.event_facts import PRICE_MAX, EventFacts, flatten
 from services.events.http import get_bounded
 
 API = "https://www.eventbriteapi.com/v3"
 HOST = "www.eventbriteapi.com"
-EXPAND = "venue,organizer,format"
+EXPAND = "venue,organizer,format,ticket_availability"
 
 TITLE_MAX = 300
 SNIPPET_MAX = 600
@@ -199,8 +199,27 @@ def _timezone(value: object) -> str | None:
 # ── parsing ──────────────────────────────────────────────────────────────────
 
 
+def _display_price(value: object) -> str | None:
+    return _text(_map(value).get("display"), PRICE_MAX)
+
+
+def _price(payload: Mapping[str, Any], is_free: object) -> str | None:
+    """The ticket range Eventbrite prints ("₹500.00–₹1,500.00"); ``None`` for a free event."""
+    if is_free is True:
+        return None
+    tickets = _map(payload.get("ticket_availability"))
+    low = _display_price(tickets.get("minimum_ticket_price"))
+    high = _display_price(tickets.get("maximum_ticket_price"))
+    if low is None:
+        return high
+    if high is None or high == low:
+        return low
+    joined = f"{low}–{high}"
+    return joined if len(joined) <= PRICE_MAX else low
+
+
 def parse_event(payload: Mapping[str, Any]) -> EventFacts | None:
-    """One v3 event object (with ``expand=venue,organizer,format``) as :class:`EventFacts`.
+    """One v3 event object (with ``expand=venue,organizer,format,ticket_availability``) as :class:`EventFacts`.
 
     Total: ``None`` for anything that is not a usable event (no digit id, no title,
     no aware start within 2000 to 2100, no https Eventbrite url), and ``None`` for
@@ -256,6 +275,7 @@ def parse_event(payload: Mapping[str, Any]) -> EventFacts | None:
         lng=lng,
         is_online=payload.get("online_event") is True,
         is_free=is_free if isinstance(is_free, bool) else None,
+        price=_price(payload, is_free),
         organiser_name=_text(organizer.get("name"), ORGANISER_MAX),
         organiser_url=organiser_url,
         is_cancelled=payload.get("status") == "canceled",
@@ -352,7 +372,7 @@ async def _get_object(client: httpx.AsyncClient, token: str, url: str) -> dict[s
 
 
 async def get_event(client: httpx.AsyncClient, token: str, event_id: str) -> dict[str, Any]:
-    """``GET /events/<id>/?expand=venue,organizer,format`` as the API's JSON object.
+    """``GET /events/<id>/?expand=venue,organizer,format,ticket_availability`` as the API's JSON object.
 
     ``event_id`` must be all digits and ``token`` a plain token, else ``ValueError``
     before any request. Feed the result to :func:`parse_event`.

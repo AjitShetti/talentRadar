@@ -99,6 +99,8 @@ _SCOPE_KEY_MAX = 120
 _TAXONOMY_MAX = 32
 _TIMEZONE_MAX = 64
 _LOCALITY_MAX = 120
+_PRICE_MAX = 40
+_REGISTER_URL_MAX = 512
 #: A reason is a short phrase; ``assess`` builds some from the facts, so it is cut too.
 _REASON_MAX = 200
 
@@ -476,6 +478,8 @@ def _sanitise(facts: EventFacts) -> EventFacts:
         organiser_name=_text(facts.organiser_name, _ORGANISER_MAX),
         organiser_url=_link(facts.organiser_url, _ORGANISER_URL_MAX),
         hosts=_hosts(facts.hosts),
+        price=_text(facts.price, _PRICE_MAX),
+        register_url=_https_url(facts.register_url, _REGISTER_URL_MAX),
     )
 
 
@@ -558,6 +562,11 @@ def _metadata(
     locality = _text(facts.locality, _LOCALITY_MAX)
     if locality:
         meta["locality"] = locality
+    # Entry: what a sighting states replaces what was stored; silence keeps it.
+    if facts.price:
+        meta["price"] = facts.price
+    if facts.register_url:
+        meta["register_url"] = facts.register_url
     # Only ever on: a later sighting that no longer carries the sentence does not mean
     # the address was published.
     meta["address_withheld"] = bool(facts.address_withheld) or bool(meta.get("address_withheld"))

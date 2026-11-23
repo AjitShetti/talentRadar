@@ -1529,3 +1529,37 @@ async def test_a_pin_with_no_recorded_origin_is_never_exact(session: AsyncSessio
     assert (again.lat, again.lng) == (row.lat, row.lng)
     assert again.geo_precision == "area"
     assert (again.extra_metadata or {}).get("pin") is None  # nothing invented
+
+
+# ── entry: price and the registration page live in metadata ──────────────────
+
+
+async def test_store_keeps_price_and_register_url(session: AsyncSession) -> None:
+    from services.events.read import _card
+
+    first = stored(
+        await upsert(
+            session,
+            make_facts(price="₹499", is_free=False, register_url="https://konfhub.com/x"),
+        )
+    )
+    assert first.extra_metadata["price"] == "₹499"
+    assert first.extra_metadata["register_url"] == "https://konfhub.com/x"
+
+    again = stored(await upsert(session, make_facts(), now=NOW + timedelta(hours=12)))
+    assert again.extra_metadata["price"] == "₹499"
+    assert again.extra_metadata["register_url"] == "https://konfhub.com/x"
+    card = _card(again, [], None)
+    assert card["price"] == "₹499"
+    assert card["register_url"] == "https://konfhub.com/x"
+
+
+async def test_store_refuses_a_register_url_it_cannot_vouch_for(session: AsyncSession) -> None:
+    from services.events.read import _card
+
+    row = stored(
+        await upsert(session, make_facts(price="x" * 80, register_url="http://konfhub.com/x"))
+    )
+    assert "register_url" not in row.extra_metadata
+    assert len(row.extra_metadata["price"]) <= 40
+    assert _card(row, [], None)["register_url"] is None

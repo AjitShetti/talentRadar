@@ -228,6 +228,11 @@ def _utc(moment: datetime | None) -> datetime | None:
     return as_utc(moment) if moment is not None else None
 
 
+def _meta_text(event: Event, key: str) -> str | None:
+    value = (event.extra_metadata or {}).get(key)
+    return value if isinstance(value, str) and value else None
+
+
 def _card(event: Event, companies: list[dict[str, Any]], my_status: str | None) -> dict[str, Any]:
     return {
         "id": str(event.id),
@@ -241,6 +246,8 @@ def _card(event: Event, companies: list[dict[str, Any]], my_status: str | None) 
         "lng": event.lng,
         "geo_precision": event.geo_precision,
         "is_free": event.is_free,
+        "price": _meta_text(event, "price"),
+        "register_url": _meta_text(event, "register_url"),
         "organiser_name": event.organiser_name,
         "format": event.format,
         "topics": list(event.topics or []),

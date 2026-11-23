@@ -53,7 +53,7 @@ import httpx
 from bs4 import BeautifulSoup
 from bs4.exceptions import ParserRejectedMarkup
 
-from domain.event_facts import EventFacts, flatten
+from domain.event_facts import EventFacts, flatten, price_label
 from services.events.http import get_bounded
 
 BASE = "https://gdg.community.dev"
@@ -400,6 +400,7 @@ def parse_event_page(html: bytes, *, slug: str, chapter: str) -> EventFacts | No
         )
     else:
         address = locality = None
+    is_free, price, register_url = _entry(block)
     return EventFacts(
         source="gdg",
         external_id=slug,
@@ -412,9 +413,72 @@ def parse_event_page(html: bytes, *, slug: str, chapter: str) -> EventFacts | No
         address=address,
         locality=locality,
         is_online=_last_segment(block.get("eventAttendanceMode")) == _ONLINE_MODE,
+        is_free=is_free,
+        price=price,
+        register_url=register_url,
         organiser_name=flatten(chapter, ORGANISER_MAX),
         is_cancelled=_last_segment(block.get("eventStatus")) == _CANCELLED,
     )
+
+
+# ── entry: offers ────────────────────────────────────────────────────────────
+
+REGISTER_URL_MAX = 512
+_VISIBLE_ASCII = re.compile(r"[!-~]+")
+
+
+def _offers(block: dict[str, Any]) -> list[dict[str, Any]]:
+    offers = block.get("offers")
+    items = offers if isinstance(offers, list) else [offers]
+    return [item for item in items[:10] if isinstance(item, dict)]
+
+
+def _is_zero(value: object) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, (int, float)):
+        return value == 0
+    return isinstance(value, str) and value.strip() in {"0", "0.0", "0.00"}
+
+
+def _register_url(value: object) -> str | None:
+    """An https page on another site, as the JSON-LD names it; never requested."""
+    if not isinstance(value, str):
+        return None
+    url = value.strip()
+    if len(url) > REGISTER_URL_MAX or _VISIBLE_ASCII.fullmatch(url) is None:
+        return None
+    try:
+        parts = urlsplit(url)
+        port = parts.port
+    except ValueError:
+        return None
+    host = parts.hostname
+    if parts.scheme != "https" or host is None or port or parts.username or parts.password:
+        return None
+    if parts.netloc.lower() != host or host == "gdg.community.dev":
+        return None
+    return url
+
+
+def _entry(block: dict[str, Any]) -> tuple[bool | None, str | None, str | None]:
+    """``(is_free, price, register_url)`` from ``offers`` and ``isAccessibleForFree``."""
+    offers = _offers(block)
+    free: bool | None = True if block.get("isAccessibleForFree") is True else None
+    price: str | None = None
+    for offer in offers:
+        if _is_zero(offer.get("price")):
+            free = True
+        elif price is None:
+            price = price_label(offer.get("price"), offer.get("priceCurrency"))
+    if price is not None and free is None:
+        free = False
+    if free:
+        price = None
+    register = next(
+        (url for url in map(_register_url, (o.get("url") for o in offers)) if url), None
+    )
+    return free, price, register
 
 
 # ── fetching ─────────────────────────────────────────────────────────────────

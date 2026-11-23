@@ -527,7 +527,8 @@ async def test_card_has_exactly_the_documented_keys(
 
     assert set(card) == {
         "id", "title", "starts_at", "ends_at", "is_online", "venue_name", "area", "lat", "lng",
-        "geo_precision", "is_free", "organiser_name", "format", "topics", "source", "url",
+        "geo_precision", "is_free", "price", "register_url", "organiser_name", "format", "topics",
+        "source", "url",
         "companies", "my_status", "is_cancelled",
     }  # fmt: skip
     assert card["starts_at"].endswith("Z") or card["starts_at"].endswith("+00:00")
