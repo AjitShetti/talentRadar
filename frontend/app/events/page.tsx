@@ -296,7 +296,7 @@ function EventsView() {
     <header className="day-title">
       <div className="day-head">
         <h1 className="day-h1">Where to meet people this week.</h1>
-        <span className="ov2-date"><FlapText value={meta ? meta.counts.upcoming : '—'} /> upcoming</span>
+        <span className="ov2-date"><FlapText value={meta ? meta.counts.upcoming : '—'} /> upcoming in <CitySelect /></span>
       </div>
       <p className="ov2-lead">{LIVE_CITY.name} tech meetups, talks and demo nights, with what entry costs and where to register. We never register for you.</p>
     </header>
@@ -411,15 +411,12 @@ function WhenSelect({ value, bare, disabled, onChange }: { value: When; bare?: b
 }
 
 /** Bengaluru is collected; the other cities are named so people know they are coming, and pick nothing. */
-function CitySelect({ bare }: { bare?: boolean }) {
-  return <label className={bare ? undefined : 'cm-field'}>
-    <span>City</span>
-    <select defaultValue={LIVE_CITY.id} data-testid="city-select">
-      {EVENT_CITIES.map(city => <option key={city.id} value={city.id} disabled={!city.live}>
-        {city.live ? city.name : `${city.name} · coming soon`}
-      </option>)}
-    </select>
-  </label>
+function CitySelect() {
+  return <select className="ev-city" aria-label="City" defaultValue={LIVE_CITY.id} data-testid="city-select">
+    {EVENT_CITIES.map(city => <option key={city.id} value={city.id} disabled={!city.live}>
+      {city.live ? city.name : `${city.name} · coming soon`}
+    </option>)}
+  </select>
 }
 
 /** One chip per topic the other filters leave, with its count; pressing the current one clears it. */
@@ -482,9 +479,7 @@ function Toolbar({ filters, set, counts, activeCount, view, mapDown, onView, onO
       {addLink}
     </div>
     <div className="ev-controls">
-      <CitySelect />
       <WhenSelect value={filters.when} disabled={filters.rail !== 'all'} onChange={value => set('when', value)} />
-      <TopicSelect value={filters.topic} onChange={value => set('topic', value)} />
       <FormatSelect value={filters.format} onChange={value => set('format', value)} />
       <ToggleChip pressed={filters.online} disabled={filters.rail !== 'all'} onToggle={() => set('online', !filters.online)}>Online too</ToggleChip>
       <ToggleChip pressed={filters.hidePaid} onToggle={() => set('hidePaid', !filters.hidePaid)}>Hide paid</ToggleChip>
@@ -562,7 +557,6 @@ function FilterSheet({ filters, set, count, onClear, onClose, addLink }: {
         <h2 id="ev-sheet-title">Filters</h2>
         <button type="button" className="ci-close" onClick={onClose} aria-label="Close filters" data-autofocus>Close</button>
       </div>
-      <CitySelect bare />
       <WhenSelect bare value={filters.when} disabled={filters.rail !== 'all'} onChange={value => set('when', value)} />
       <TopicSelect bare value={filters.topic} onChange={value => set('topic', value)} />
       <FormatSelect bare value={filters.format} onChange={value => set('format', value)} />
