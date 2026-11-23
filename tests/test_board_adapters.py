@@ -29,6 +29,7 @@ import httpx
 import pytest
 
 from domain.entities import Job
+from domain.geo import INDIA_COUNTRY_CODE
 from domain.job_boards import AtsName, BoardRef, is_india_role
 from domain.liveness import parse_source_timestamp
 from ingestion.boards import READERS
@@ -421,6 +422,69 @@ def test_the_recorded_board_names_no_people(ats: str) -> None:
             local = address.split("@", 1)[0].casefold()
             assert address == PLACEHOLDER_BOARD_EMAIL or local in ROLE_INBOXES, address
         assert not keys(body) & {"mailbox_email", "recruiter", "hiring_manager", "hiringManager"}
+
+
+# ── country follows the same per-place India rule as the keep decision ───────
+
+
+@pytest.mark.parametrize(
+    ("location", "country"),
+    [
+        ("United Kingdom; Bengaluru", INDIA_COUNTRY_CODE),
+        ("Singapore; Bengaluru", INDIA_COUNTRY_CODE),
+        ("Bengaluru; United Kingdom", INDIA_COUNTRY_CODE),
+        ("San Francisco; Mumbai; London", INDIA_COUNTRY_CODE),
+        ("Bengaluru, Karnataka, India", INDIA_COUNTRY_CODE),
+        ("London; Berlin", None),
+        ("Remote", None),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_build_job_country_agrees_with_is_india_role(
+    location: str | None, country: str | None
+) -> None:
+    from ingestion.boards.base import build_job
+
+    job = build_job(
+        BoardRef("greenhouse", "acme"),
+        external_id="1",
+        title="Engineer",
+        url="https://job-boards.greenhouse.io/acme/jobs/1",
+        location=location,
+        description=None,
+    )
+    assert job.country == country
+    assert (job.country == INDIA_COUNTRY_CODE) is is_india_role(location)
+
+
+@pytest.mark.parametrize(("ats", "board"), RECORDED)
+async def test_a_recorded_roles_country_agrees_with_the_keep_decision(
+    ats: AtsName, board: str
+) -> None:
+    result = await read(ats, fixture_handler(ats), board)
+    for role in result.roles:
+        assert (role.country == INDIA_COUNTRY_CODE) is is_india_role(role.location_raw), (
+            role.location_raw
+        )
+
+
+async def test_ashby_secondary_india_location_sets_the_country() -> None:
+    payload = {
+        "jobs": [
+            {
+                "id": "a1",
+                "title": "Engineer",
+                "jobUrl": "https://jobs.ashbyhq.com/b/a1",
+                "location": "London, United Kingdom",
+                "secondaryLocations": [{"location": "Bengaluru"}],
+            }
+        ]
+    }
+    result = await read("ashby", answering(200, json=payload), "b")
+    (role,) = result.roles
+    assert role.location_raw == "London, United Kingdom; Bengaluru"
+    assert role.country == INDIA_COUNTRY_CODE
 
 
 # ── what a board can answer instead of its JSON ──────────────────────────────
@@ -1278,7 +1342,23 @@ async def test_workable_published_on_is_the_stated_day_and_nothing_else_is_a_dat
     assert all(role.source_updated_at is None for role in result.roles)
 
 
-@pytest.mark.parametrize("shortcode", ["", "  ", "../x", "AB CD", None, 7, "a/b", "A" * 40])
+@pytest.mark.parametrize(
+    "shortcode",
+    [
+        "",
+        "  ",
+        "../x",
+        "AB CD",
+        None,
+        7,
+        "a/b",
+        "A" * 40,
+        "abc123def4",
+        "ABC12",
+        "A" * 13,
+        "ÅBC123DEF4",
+    ],
+)
 async def test_workable_a_shortcode_that_is_not_one_makes_the_posting_unreadable(
     shortcode: Any,
 ) -> None:
@@ -1291,6 +1371,27 @@ async def test_workable_a_shortcode_that_is_not_one_makes_the_posting_unreadable
     assert [role.external_id for role in result.roles] == ["AAAAAAAAAA"]
     assert result.total == 2
     assert result.complete is False
+
+
+@pytest.mark.parametrize("shortcode", ["ABC123", "A1B2C3D4E5F6", "E47E4A2E42", "0000000000"])
+async def test_workable_every_shortcode_the_reader_takes_is_one_the_url_rules_read_back(
+    shortcode: str,
+) -> None:
+    """The reader and ``domain.posting_urls`` share one shape, so a stored URL can be re-verified."""
+    from domain.posting_urls import PostingRef, parse_posting_url
+
+    postings = [workable_posting(shortcode)]
+    result = await read("workable", answering(200, json=workable_board(*postings)), "acme")
+    (role,) = result.roles
+    assert result.complete is True
+    assert parse_posting_url(role.source_url or "") == PostingRef("workable", "acme", shortcode)
+
+
+def test_workable_reader_uses_the_shortcode_pattern_of_the_url_rules() -> None:
+    from domain.posting_urls import WORKABLE_SHORTCODE
+    from ingestion.boards import workable
+
+    assert workable.SHORTCODE is WORKABLE_SHORTCODE
 
 
 # ── Recruitee ────────────────────────────────────────────────────────────────

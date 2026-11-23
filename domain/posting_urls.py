@@ -36,12 +36,16 @@ _PATTERNS: dict[str, tuple[str, re.Pattern[str]]] = {
     "jobs.ashbyhq.com": ("ashby", re.compile(rf"^/({_SLUG})/({_UUID})(?:/application)?/?$")),
 }
 
+#: A Workable posting's shortcode, as written (upper case). The Workable reader keeps a
+#: posting only when its code has this shape, so every URL it stores can be read back.
+WORKABLE_SHORTCODE = re.compile(r"[A-Z0-9]{6,12}")
+
 # The six ATSes the board roster added. The host decides which board a link
 # names (``domain.job_boards.board_from_url``: an exact host, or one label in
 # front of a fixed suffix, never ``www`` or ``app``); this is the shape of the
 # path of one posting on that board, with the posting id as group 1.
 _ROSTER_POSTING_PATHS: dict[str, re.Pattern[str]] = {
-    "workable": re.compile(rf"^/{_SLUG}/j/([A-Z0-9]{{6,12}})/?$"),
+    "workable": re.compile(rf"^/{_SLUG}/j/({WORKABLE_SHORTCODE.pattern})/?$"),
     "recruitee": re.compile(r"^/o/([a-z0-9-]{1,120})/?$"),
     "keka": re.compile(r"^/careers/jobdetails/(\d{1,12})/?$"),
     "rippling": re.compile(rf"^/{_SLUG}/jobs/({_UUID})/?$"),

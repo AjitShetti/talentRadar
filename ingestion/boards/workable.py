@@ -10,8 +10,10 @@ page, which :func:`get_json` reads as ``error``; the pace is the caller's.
 
 The widget's own ``url`` is the short link ``apply.workable.com/j/<shortcode>``, which
 names no board, so the posting URL is built as ``apply.workable.com/{board}/j/{shortcode}/``,
-the form ``domain.posting_urls`` can read back. ``published_on`` is the day a role was
-published; ``created_at`` is when it was drafted and is not a date we use. A location is
+the form ``domain.posting_urls`` can read back; a posting whose shortcode is not the shape
+that module accepts (``WORKABLE_SHORTCODE``) is unreadable, so the read is incomplete.
+``published_on`` is the day a role was published; ``created_at`` is when it was drafted
+and is not a date we use. A location is
 ``city, region, country``; a role open in several places lists each, ``;`` apart, and a
 place Workable marks ``hidden`` is not named (a role with only hidden places has none, or
 is ``Remote`` when it is telecommuting). A posting with no ``locations`` list at all
@@ -20,7 +22,6 @@ falls back to its own ``city``, ``state`` and ``country``.
 
 from __future__ import annotations
 
-import re
 from dataclasses import replace
 from typing import Any
 from urllib.parse import quote
@@ -30,6 +31,7 @@ import httpx
 from domain.entities import Job
 from domain.job_boards import BoardRef
 from domain.liveness import parse_source_timestamp
+from domain.posting_urls import WORKABLE_SHORTCODE
 from ingestion.boards.base import (
     BoardRead,
     build_job,
@@ -44,7 +46,8 @@ from ingestion.boards.base import (
 
 _API = "https://apply.workable.com/api/v1/widget/accounts/{board}"
 _POSTING = "https://apply.workable.com/{board}/j/{shortcode}/"
-_SHORTCODE = re.compile(r"[A-Za-z0-9]{1,20}")
+#: The one shape of shortcode ``domain.posting_urls`` reads back, so a role stored here can be re-verified.
+SHORTCODE = WORKABLE_SHORTCODE
 
 
 def _location(item: dict[str, Any], remote: bool) -> str:
@@ -69,7 +72,7 @@ def _parse(item: Any, ref: BoardRef, company_name: str | None) -> Job | None:
         return None
     title = one_line(item.get("title"))
     shortcode = text_value(item.get("shortcode")).strip()
-    if not title or _SHORTCODE.fullmatch(shortcode) is None:
+    if not title or SHORTCODE.fullmatch(shortcode) is None:
         return None
 
     remote = item.get("telecommuting") is True

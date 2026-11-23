@@ -37,8 +37,8 @@ import httpx
 
 from domain.entities import Job
 from domain.enums import EmploymentType, JobStatus, SeniorityLevel
-from domain.geo import INDIA_COUNTRY_CODE, is_india, resolve_city
-from domain.job_boards import BoardRef, ReadOutcome
+from domain.geo import INDIA_COUNTRY_CODE, resolve_city
+from domain.job_boards import BoardRef, ReadOutcome, is_india_role
 from ingestion.scrapers._parsing import parse_html_sync
 from services.job_persistence import MAX_DESCRIPTION_CHARS
 
@@ -341,7 +341,7 @@ def build_job(
         employment_type=EmploymentType.FULL_TIME,
         seniority=SeniorityLevel.MID,
         location_raw=location or None,
-        country=INDIA_COUNTRY_CODE if is_india(location) else None,
+        country=INDIA_COUNTRY_CODE if is_india_role(location) else None,
         city=resolve_city(location),
         is_remote=is_remote,
         skills=[],
