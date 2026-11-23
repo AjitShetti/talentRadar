@@ -14,13 +14,14 @@ request.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 from datetime import UTC, datetime
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from domain.job_boards import LIVE_SEARCH_ATS, SWEPT_STATUSES, BoardRef, Schedule
+from domain.job_boards import ATS, LIVE_SEARCH_ATS, SWEPT_STATUSES, AtsName, BoardRef, Schedule
 from ingestion.boards.base import BoardRead
 from storage.models import JobBoard
 
@@ -89,22 +90,50 @@ async def upsert_board(
     return True
 
 
-async def due_boards(session: AsyncSession, limit: int, *, now: datetime) -> list[JobBoard]:
+async def _due(
+    session: AsyncSession, limit: int, *, now: datetime, ats: str | None = None
+) -> list[JobBoard]:
+    """Up to ``limit`` due boards (of one ATS when given), never-read first and then oldest first."""
+    stmt = select(JobBoard).where(
+        JobBoard.status.in_(sorted(SWEPT_STATUSES)),
+        or_(JobBoard.next_read_at.is_(None), JobBoard.next_read_at <= now),
+    )
+    if ats is not None:
+        stmt = stmt.where(JobBoard.ats == ats)
+    stmt = stmt.order_by(
+        JobBoard.next_read_at.asc().nulls_first(), JobBoard.first_seen_at.asc(), JobBoard.id.asc()
+    ).limit(max(limit, 0))
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def due_boards(
+    session: AsyncSession,
+    limit: int,
+    *,
+    now: datetime,
+    per_ats_caps: Mapping[AtsName, int] | None = None,
+) -> list[JobBoard]:
     """
     The boards the sweep should read now, at most ``limit``, never-read first and then oldest first.
 
     A board is due when its status is one the sweep reads (``candidate``, ``active``,
     ``no_india``; never ``gone`` or ``blocked``) and its ``next_read_at`` is unset or has
     passed.
+
+    With ``per_ats_caps`` the list is filled one ATS at a time, in ``domain.job_boards.ATS``
+    order, each taking at most its cap (oldest first within it) until ``limit`` is reached. A
+    slow ATS's backlog (Workable can be read about 48 boards in a run) then cannot fill the
+    whole limit and starve the rest. An ATS the mapping does not name is not capped, and a cap
+    is never made up from another ATS's boards: those could not be read in the run anyway.
     """
-    stmt = select(JobBoard).where(
-        JobBoard.status.in_(sorted(SWEPT_STATUSES)),
-        or_(JobBoard.next_read_at.is_(None), JobBoard.next_read_at <= now),
-    )
-    stmt = stmt.order_by(
-        JobBoard.next_read_at.asc().nulls_first(), JobBoard.first_seen_at.asc(), JobBoard.id.asc()
-    ).limit(max(limit, 0))
-    return list((await session.execute(stmt)).scalars().all())
+    if per_ats_caps is None:
+        return await _due(session, limit, now=now)
+    due: list[JobBoard] = []
+    for ats in ATS:
+        take = min(limit - len(due), per_ats_caps.get(ats, limit))
+        if take > 0:
+            due.extend(await _due(session, take, now=now, ats=ats))
+    return due
 
 
 async def apply_schedule(

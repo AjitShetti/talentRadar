@@ -6,8 +6,10 @@ roles. Design: docs/superpowers/specs/2026-11-23-job-board-roster-design.md, "Th
 
 How a run goes
 --------------
-* The boards due now (``store.due_boards``: oldest read first, never-read first) are taken,
-  at most ``limit`` of them, and split into **one queue per ATS**. The queues run
+* The boards due now (``store.due_boards``: never-read first, then oldest read first) are taken,
+  at most ``limit`` of them and at most :func:`queue_caps` per ATS (what its pace lets one run
+  read), so one slow ATS's backlog cannot crowd the others out; they are split into **one
+  queue per ATS**. The queues run
   concurrently; each keeps its ATS's pace (``PACE_SECONDS``) between two requests, so the
   slow ones (Workable answers a faster client with an HTML 429 page) never hold the fast ones.
 * A queue whose breaker (``boards:<ats>``) is open is skipped. The first ``rate_limited``
@@ -135,6 +137,17 @@ class _Run:
             self.paused = "cap"
             return False
         return True
+
+
+def queue_caps() -> dict[AtsName, int]:
+    """
+    How many boards one run can read from each ATS: its budget divided by its pace, rounded down.
+
+    Workable's 10 s pace allows 48 in the 480 s budget, Keka's 2 s allows 240. A longer queue
+    could not finish in the run, so :func:`~services.job_boards.store.due_boards` is given
+    these and never lets a slow ATS's backlog crowd the fast ones out of the run's limit.
+    """
+    return {ats: int(RUN_BUDGET_SECONDS // PACE_SECONDS[ats]) for ats in ATS}
 
 
 def _ordered(ats_names: set[AtsName]) -> list[AtsName]:
@@ -309,7 +322,7 @@ async def sweep(
     now = datetime.now(UTC)
 
     async with AsyncSessionLocal() as session:
-        due_rows = await due_boards(session, limit, now=now)
+        due_rows = await due_boards(session, limit, now=now, per_ats_caps=queue_caps())
         queues: dict[AtsName, list[_Due]] = {}
         for row in due_rows:
             if row.ats in READERS:

@@ -428,6 +428,127 @@ async def test_due_boards_is_limited(factory: OpenSessions) -> None:
     assert [row.board for row in due] == ["b4", "b3"], "oldest first"
 
 
+async def add_many(
+    factory: OpenSessions, ats: AtsName, count: int, *, prefix: str = "b", **extra: Any
+) -> list[uuid.UUID]:
+    """``count`` boards of one ATS in one transaction, first seen in numbered order."""
+    async with factory() as session:
+        rows = [
+            JobBoard(
+                ats=ats,
+                board=f"{prefix}{number}",
+                discovered_via="manual",
+                first_seen_at=datetime(2026, 1, 1, tzinfo=UTC)
+                + timedelta(seconds=next(_first_seen)),
+                **extra,
+            )
+            for number in range(count)
+        ]
+        session.add_all(rows)
+        await session.commit()
+        return [row.id for row in rows]
+
+
+def test_queue_caps_are_what_the_pace_lets_one_run_read() -> None:
+    caps = sweep.queue_caps()
+
+    assert set(caps) == set(ATS)
+    assert caps["workable"] == 48
+    assert caps["keka"] == 240
+    assert caps["lever"] == caps["rippling"] == caps["recruitee"] == 480
+    assert caps["greenhouse"] == caps["ashby"] == 960
+    assert all(caps[ats] == int(sweep.RUN_BUDGET_SECONDS // PACE_SECONDS[ats]) for ats in ATS)
+
+
+def test_queue_caps_follow_the_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sweep, "RUN_BUDGET_SECONDS", 100)
+
+    assert sweep.queue_caps()["workable"] == 10
+    assert sweep.queue_caps()["greenhouse"] == 200
+
+
+async def test_due_boards_never_starves_other_ats(factory: OpenSessions) -> None:
+    await add_many(factory, "workable", 400, prefix="w")
+    greens = await add_many(factory, "greenhouse", 5, prefix="g")
+
+    async with factory() as session:
+        due = await due_boards(session, 300, now=NOW, per_ats_caps=sweep.queue_caps())
+
+    by_ats = [row.ats for row in due]
+    assert {row.id for row in due if row.ats == "greenhouse"} == set(greens)
+    assert by_ats.count("greenhouse") == 5
+    assert by_ats.count("workable") == 48, "what one run can read at Workable's pace, and no more"
+    assert len(due) == 53, "the caps are not made up from other boards"
+
+
+async def test_due_boards_without_caps_is_one_global_oldest_first_list(
+    factory: OpenSessions,
+) -> None:
+    await add_many(factory, "workable", 400, prefix="w")
+    await add_many(factory, "greenhouse", 5, prefix="g")
+
+    async with factory() as session:
+        due = await due_boards(session, 300, now=NOW)
+
+    assert len(due) == 300
+    assert [row.ats for row in due].count("greenhouse") == 0, (
+        "the starvation the caps exist to prevent"
+    )
+
+
+async def test_due_boards_caps_stop_at_the_limit_in_ats_order(factory: OpenSessions) -> None:
+    await add_many(factory, "greenhouse", 20, prefix="g")
+    await add_many(factory, "ashby", 20, prefix="a")
+    await add_many(factory, "workable", 20, prefix="w")
+
+    async with factory() as session:
+        due = await due_boards(
+            session, 25, now=NOW, per_ats_caps={"greenhouse": 15, "ashby": 15, "workable": 15}
+        )
+
+    assert [row.ats for row in due].count("greenhouse") == 15
+    assert [row.ats for row in due].count("ashby") == 10
+    assert len(due) == 25, "never more than the limit"
+
+
+async def test_due_boards_takes_each_atss_oldest_first(factory: OpenSessions) -> None:
+    day = timedelta(days=1)
+    for name, age in (("w-old", 9), ("w-mid", 5), ("w-new", 1)):
+        await add_board(factory, "workable", name, next_read_at=NOW - age * day)
+    never = await add_board(factory, "workable", "w-never")
+
+    async with factory() as session:
+        due = await due_boards(session, 10, now=NOW, per_ats_caps={"workable": 3})
+
+    assert [row.board for row in due] == ["w-never", "w-old", "w-mid"]
+    assert due[0].id == never
+
+
+async def test_due_boards_an_ats_the_caps_do_not_name_is_not_capped(factory: OpenSessions) -> None:
+    await add_many(factory, "lever", 7, prefix="l")
+    await add_many(factory, "workable", 7, prefix="w")
+
+    async with factory() as session:
+        due = await due_boards(session, 100, now=NOW, per_ats_caps={"workable": 2})
+
+    assert [row.ats for row in due].count("lever") == 7
+    assert [row.ats for row in due].count("workable") == 2
+
+
+async def test_due_boards_caps_still_leave_out_gone_blocked_and_future(
+    factory: OpenSessions,
+) -> None:
+    await add_many(factory, "workable", 3, prefix="gone", status="gone")
+    await add_many(factory, "workable", 3, prefix="blocked", status="blocked")
+    await add_many(factory, "workable", 3, prefix="later", next_read_at=NOW + timedelta(days=1))
+    ready = await add_many(factory, "workable", 2, prefix="ready")
+
+    async with factory() as session:
+        due = await due_boards(session, 100, now=NOW, per_ats_caps=sweep.queue_caps())
+
+    assert {row.id for row in due} == set(ready)
+
+
 # -- store: recording a read -----------------------------------------------------------------
 
 
@@ -1291,3 +1412,21 @@ async def test_a_table_under_its_cap_writes_for_every_board(
 async def _count_jobs(factory: OpenSessions) -> int:
     async with factory() as session:
         return int((await session.execute(select(func.count()).select_from(JobRow))).scalar_one())
+
+
+async def test_a_huge_slow_backlog_does_not_keep_the_fast_ats_from_a_run(
+    factory: OpenSessions,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_time: FakeTime,
+    embedded: list[list[dict[str, Any]]],
+) -> None:
+    await add_many(factory, "workable", 400, prefix="w")
+    await add_many(factory, "greenhouse", 5, prefix="g")
+    workable, greenhouse = Fake(), Fake()
+    install(monkeypatch, workable=workable, greenhouse=greenhouse)
+
+    result = await run_sweep(300, clock=fake_time.clock, sleep=fake_time.sleep)
+
+    assert len(greenhouse.calls) == 5
+    assert len(workable.calls) == 48
+    assert result["read"] == 53
