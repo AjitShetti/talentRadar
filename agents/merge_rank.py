@@ -165,7 +165,20 @@ def recency_score(job: dict[str, Any], now: datetime | None = None) -> float:
 
 
 def source_score(job: dict[str, Any]) -> float:
-    return SOURCE_TRUST.get((job.get("source") or "").lower(), DEFAULT_SOURCE_TRUST)
+    """
+    How much the posting's source is trusted.
+
+    A stored board row's source is ``<ats>:<board>`` (``workable:apna``,
+    ``greenhouse:groww``), not the bare ATS name; it earns its ATS's trust. A
+    prefix that is not one of the nine ATSes (``foo:bar``) gets no such credit.
+    """
+    source = (job.get("source") or "").lower()
+    if source in SOURCE_TRUST:
+        return SOURCE_TRUST[source]
+    prefix, sep, _ = source.partition(":")
+    if sep and prefix in ATS:
+        return SOURCE_TRUST[prefix]
+    return DEFAULT_SOURCE_TRUST
 
 
 def completeness_score(job: dict[str, Any]) -> float:
