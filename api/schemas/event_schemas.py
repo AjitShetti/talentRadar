@@ -211,6 +211,13 @@ class EventSourceStatus(BaseModel):
     status: str = Field(description="unknown | healthy | degraded | failing | off")
 
 
+class EventTopicCount(BaseModel):
+    """One topic chip: how many events the list's other filters leave with this topic."""
+
+    topic: str
+    count: int
+
+
 class EventPage(BaseModel):
     """``GET /events``."""
 
@@ -218,6 +225,7 @@ class EventPage(BaseModel):
     events: list[EventCard]
     counts: EventCounts
     sources: list[EventSourceStatus]
+    topics: list[EventTopicCount] = Field(default_factory=list)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
