@@ -12,6 +12,8 @@ import {
   api, EventCard, EventContact, EventContactIn, EventDetail, EventFormat, EventListParams, EventPage, EventSaveStatus,
   EventSource, ImportReason, ManualEventIn,
 } from '@/lib/api'
+import { EVENT_CITIES, LIVE_CITY } from '@/lib/event-cities'
+import { entryCode, entryLabel, registerHref } from '@/lib/event-entry'
 import { clock, dayLabel, effectiveEndMs, ist, istDay, knownEndMs, MONTHS, pad, startMs, whenLabel } from '@/lib/event-time'
 import { FEATURES } from '@/lib/features'
 import { usePersistentState } from '@/lib/persistent-state'
@@ -37,9 +39,9 @@ const READ_TIMES_IST: ReadonlyArray<number> = [4 * 60 + 50, 16 * 60 + 50]
 
 // ── Vocabularies ─────────────────────────────────────────────────────────────
 // Mirrors domain/event_relevance.py (FORMATS, TOPICS, TOPIC_LABELS).
-const SOURCE_LABEL: Record<EventSource, string> = { luma: 'Luma', gdg: 'GDG', eventbrite: 'Eventbrite', user: 'the organiser\'s page' }
+const SOURCE_LABEL: Record<EventSource, string> = { luma: 'Luma', gdg: 'GDG', eventbrite: 'Eventbrite', hasgeek: 'Hasgeek', user: 'the organiser\'s page' }
 /** How a source reads as a code beside the event, and in the ledger line. */
-const SOURCE_NAME: Record<EventSource, string> = { luma: 'Luma', gdg: 'GDG', eventbrite: 'Eventbrite', user: 'Added by you' }
+const SOURCE_NAME: Record<EventSource, string> = { luma: 'Luma', gdg: 'GDG', eventbrite: 'Eventbrite', hasgeek: 'Hasgeek', user: 'Added by you' }
 const FORMAT_LABELS: Record<EventFormat, string> = {
   hackathon: 'Hackathon', conference: 'Conference', demo: 'Demo', workshop: 'Workshop', talk: 'Talk',
   mixer: 'Mixer', meetup: 'Meetup', hiring: 'Hiring', other: 'Other',
@@ -65,8 +67,8 @@ type SetFilter = <K extends keyof Filters>(key: K, value: Filters[K]) => void
 
 /** Why a pasted link did not resolve, in the words the manual form opens with (spec 4.4). */
 const MANUAL_REASON: Record<ImportReason, string> = {
-  unrecognised: 'We read links from Luma, GDG and Eventbrite, and this one is not a page we recognise.',
-  luma_not_indexed: 'We read links from Luma, GDG and Eventbrite, and this one isn\'t in our Luma index yet.',
+  unrecognised: 'We read links from Luma, GDG, Eventbrite and Hasgeek, and this one is not a page we recognise.',
+  luma_not_indexed: 'We read links from Luma, GDG, Eventbrite and Hasgeek, and this one isn\'t in our Luma index yet.',
   eventbrite_off: 'Eventbrite links need an API key on our side, and it is not set up.',
   not_readable: 'We could not read that page.',
   daily_cap: 'You have added 10 links today.',
@@ -153,7 +155,7 @@ function EventsView() {
   const [mapDown, setMapDown] = useState('')
 
   const [events, setEvents] = useState<EventCard[]>([])
-  const [meta, setMeta] = useState<Pick<EventPage, 'total' | 'counts' | 'sources'> | null>(null)
+  const [meta, setMeta] = useState<Pick<EventPage, 'total' | 'counts' | 'sources' | 'topics'> | null>(null)
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading')
   const [loadError, setLoadError] = useState('')
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -203,7 +205,7 @@ function EventsView() {
       const result = await api.events.list({ ...query, offset: options.append ? shownCount.current : undefined })
       if (seq !== readSeq.current) return
       setEvents(current => (options.append ? current.concat(result.events) : result.events))
-      setMeta({ total: result.total, counts: result.counts, sources: result.sources })
+      setMeta({ total: result.total, counts: result.counts, sources: result.sources, topics: result.topics ?? [] })
       setLoadState('ready')
       setLoadError('')
     } catch (err) {
@@ -296,7 +298,7 @@ function EventsView() {
         <h1 className="day-h1">Where to meet people this week.</h1>
         <span className="ov2-date"><FlapText value={meta ? meta.counts.upcoming : '—'} /> upcoming</span>
       </div>
-      <p className="ov2-lead">Bengaluru meetups, talks and demo nights. We never register for you.</p>
+      <p className="ov2-lead">{LIVE_CITY.name} tech meetups, talks and demo nights, with what entry costs and where to register. We never register for you.</p>
     </header>
     {meta && <Ledger counts={meta.counts} sources={meta.sources} now={now} />}
 
@@ -311,6 +313,7 @@ function EventsView() {
       onOpenSheet={() => setSheetOpen(true)}
       addLink={addLink('inline')}
     />
+    {meta && <TopicChips topics={meta.topics} value={filters.topic} onChange={value => set('topic', value)} />}
 
     {manual && <ManualForm draft={manual} onCancel={() => setManual(null)} onAdded={manualAdded} />}
     {notice && <p className={notice.kind === 'error' ? 'form-error' : 'ci-empty-small'} role={notice.kind === 'error' ? 'alert' : 'status'}>{notice.text}</p>}
@@ -407,6 +410,29 @@ function WhenSelect({ value, bare, disabled, onChange }: { value: When; bare?: b
   </label>
 }
 
+/** Bengaluru is collected; the other cities are named so people know they are coming, and pick nothing. */
+function CitySelect({ bare }: { bare?: boolean }) {
+  return <label className={bare ? undefined : 'cm-field'}>
+    <span>City</span>
+    <select defaultValue={LIVE_CITY.id} data-testid="city-select">
+      {EVENT_CITIES.map(city => <option key={city.id} value={city.id} disabled={!city.live}>
+        {city.live ? city.name : `${city.name} · coming soon`}
+      </option>)}
+    </select>
+  </label>
+}
+
+/** One chip per topic the other filters leave, with its count; pressing the current one clears it. */
+function TopicChips({ topics, value, onChange }: { topics: EventPage['topics']; value: string; onChange: (value: string) => void }) {
+  if (!topics.length) return null
+  return <div className="ci-chips ev-topics" role="group" aria-label="Topics">
+    <ToggleChip pressed={!value} onToggle={() => onChange('')}>All topics</ToggleChip>
+    {topics.map(({ topic, count }) => <ToggleChip key={topic} pressed={value === topic} onToggle={() => onChange(value === topic ? '' : topic)}>
+      {topicLabel(topic)} <b>{count}</b>
+    </ToggleChip>)}
+  </div>
+}
+
 function TopicSelect({ value, bare, onChange }: { value: string; bare?: boolean; onChange: (value: string) => void }) {
   return <label className={bare ? undefined : 'cm-field'}>
     <span>Topic</span>
@@ -456,6 +482,7 @@ function Toolbar({ filters, set, counts, activeCount, view, mapDown, onView, onO
       {addLink}
     </div>
     <div className="ev-controls">
+      <CitySelect />
       <WhenSelect value={filters.when} disabled={filters.rail !== 'all'} onChange={value => set('when', value)} />
       <TopicSelect value={filters.topic} onChange={value => set('topic', value)} />
       <FormatSelect value={filters.format} onChange={value => set('format', value)} />
@@ -484,7 +511,7 @@ function Toolbar({ filters, set, counts, activeCount, view, mapDown, onView, onO
   </div>
 }
 
-/** Paste a Luma, GDG or Eventbrite link. Inline in the search bar on desktop, a field in the filter sheet below 700 px. */
+/** Paste a Luma, GDG, Eventbrite or Hasgeek link. Inline in the search bar on desktop, a field in the filter sheet below 700 px. */
 function AddByLink({ variant, onSubmit }: { variant: 'inline' | 'sheet'; onSubmit: (url: string) => Promise<boolean> }) {
   const [value, setValue] = useState('')
   const [busy, setBusy] = useState(false)
@@ -499,7 +526,7 @@ function AddByLink({ variant, onSubmit }: { variant: 'inline' | 'sheet'; onSubmi
   }
   const input = <input
     aria-label={variant === 'sheet' ? undefined : 'Add an event by link'}
-    placeholder="Paste a Luma, GDG or Eventbrite link"
+    placeholder="Paste a Luma, GDG, Eventbrite or Hasgeek link"
     value={value}
     onChange={e => setValue(e.target.value)}
     maxLength={2048}
@@ -535,6 +562,7 @@ function FilterSheet({ filters, set, count, onClear, onClose, addLink }: {
         <h2 id="ev-sheet-title">Filters</h2>
         <button type="button" className="ci-close" onClick={onClose} aria-label="Close filters" data-autofocus>Close</button>
       </div>
+      <CitySelect bare />
       <WhenSelect bare value={filters.when} disabled={filters.rail !== 'all'} onChange={value => set('when', value)} />
       <TopicSelect bare value={filters.topic} onChange={value => set('topic', value)} />
       <FormatSelect bare value={filters.format} onChange={value => set('format', value)} />
@@ -606,6 +634,9 @@ function EventRow({ event, now, selected, onToggleSave }: {
   const meta = [event.organiser_name, place].filter(Boolean).join(' · ')
   const saved = event.my_status !== null
   const format = event.format && event.format !== 'other' ? FORMAT_LABELS[event.format] : null
+  const entry = entryCode(event)
+  // Only while it can still be registered for: not cancelled, not over.
+  const register = !event.is_cancelled && now < effectiveEndMs(event) ? registerHref(event) : null
   return <article
     className={`ev-row ${selected ? 'is-selected' : ''} ${event.is_cancelled ? 'is-cancelled' : ''}`}
     data-tone={toneFor(event, now)}
@@ -620,7 +651,10 @@ function EventRow({ event, now, selected, onToggleSave }: {
       {event.is_cancelled && <span className="ev-code is-cancelled">Cancelled</span>}
       {format && <span className="ev-code">{format}</span>}
       {event.topics[0] && <span className="ev-code">{topicLabel(event.topics[0])}</span>}
-      {event.is_free && <span className="ev-code">Free</span>}
+      {entry && <span className="ev-code">{entry}</span>}
+      {register && <a className="ev-register" href={register} {...EXTERNAL_LINK_PROPS} aria-label={`Register: ${event.title}`}>
+        Register <span aria-hidden="true">↗</span>
+      </a>}
     </span>
     <button
       type="button"
@@ -775,7 +809,7 @@ function Head({ event, now }: { event: DrawerHeadData; now: number }) {
       {event.is_cancelled && <span className="ev-code is-cancelled">Cancelled</span>}
       {event.format && event.format !== 'other' && <span className="ev-code">{FORMAT_LABELS[event.format]}</span>}
       {event.topics.slice(0, 3).map(topic => <span className="ev-code" key={topic}>{topicLabel(topic)}</span>)}
-      {event.is_free && <span className="ev-code">Free</span>}
+      <span className="ev-code">{entryLabel(event)}</span>
       <span className="ev-code">{SOURCE_NAME[event.source]}</span>
     </div>
   </>
@@ -802,8 +836,11 @@ function Actions({ detail, started, onChange, onStatus, onDeleted }: {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const status = detail.my?.status ?? null
-  const link = externalHref(detail.url)
-  const label = SOURCE_LABEL[detail.source]
+  const register = !started && !detail.is_cancelled
+  // A registration page on another site (DevFest on KonfHub) is named by its own host.
+  const elsewhere = register ? externalHref(detail.register_url) : null
+  const link = elsewhere ?? externalHref(detail.url)
+  const label = elsewhere ? new URL(elsewhere).hostname.replace(/^www\./, '') : SOURCE_LABEL[detail.source]
 
   const run = async (work: () => Promise<void>, fallback: string) => {
     if (busy) return
@@ -827,7 +864,6 @@ function Actions({ detail, started, onChange, onStatus, onDeleted }: {
     onDeleted()
   }, 'Could not delete this event.')
 
-  const register = !started && !detail.is_cancelled
   return <div className="ev-actions-wrap">
     <div className="ev-actions">
       {link && <a className="primary-button" href={link} {...EXTERNAL_LINK_PROPS}>

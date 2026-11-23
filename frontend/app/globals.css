@@ -2069,6 +2069,11 @@ p.pack-hint{margin:8px 0 0}
 .ev-codes{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}
 .ev-code{font:11px var(--font-label);letter-spacing:-.005em;border-radius:10px;padding:4px 7px;background:var(--line-soft);color:var(--muted);white-space:nowrap}
 .ev-code.is-cancelled{background:var(--danger-soft);color:var(--danger-dark)}
+.ev-register{font:500 11px var(--font-label);letter-spacing:-.005em;padding:4px 2px 4px 4px;color:var(--accent-dark);white-space:nowrap}
+.ev-register:hover{text-decoration:underline;text-underline-offset:3px}
+.ev-topics{padding:12px 2px 14px}
+.ev-topics .ci-chip b{margin-left:5px;font-weight:600;color:var(--faint)}
+.ev-topics .ci-chip.active b{color:inherit}
 .ev-save{min-width:56px;height:36px;padding:0 8px;font:500 12px var(--font-text);display:grid;place-items:center;background:transparent;border:1px solid transparent;border-radius:10px;color:var(--faint);transition:border-color var(--t-fast) var(--ease-fast),color var(--t-fast) var(--ease-fast)}
 .ev-save:hover{border-color:var(--line);color:var(--ink)}
 .ev-save[aria-pressed=true]{color:var(--ink-2)}

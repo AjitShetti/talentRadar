@@ -157,11 +157,11 @@ export type OutreachPack = { day: string; companies: PackCompany[]; follow_ups: 
 
 // Events (api/schemas/event_schemas.py): each type copies its server model key for key.
 export type EventFormat = 'hackathon' | 'conference' | 'demo' | 'workshop' | 'talk' | 'mixer' | 'meetup' | 'hiring' | 'other'
-export type EventSource = 'luma' | 'gdg' | 'eventbrite' | 'user'
+export type EventSource = 'luma' | 'gdg' | 'eventbrite' | 'hasgeek' | 'user'
 export type EventSaveStatus = 'saved' | 'going'
 export type EventCompanyRef = { id: string; name: string }
 // What a list row and the drawer share. A null `ends_at` means start + 2 h.
-type EventBase = { id: string; title: string; starts_at: string; ends_at: string | null; is_online: boolean; venue_name: string | null; area: string | null; lat: number | null; lng: number | null; geo_precision: 'exact' | 'area' | 'none' | null; is_free: boolean | null; organiser_name: string | null; format: EventFormat | null; topics: string[]; source: EventSource; url: string | null; my_status: EventSaveStatus | null; is_cancelled: boolean }
+type EventBase = { id: string; title: string; starts_at: string; ends_at: string | null; is_online: boolean; venue_name: string | null; area: string | null; lat: number | null; lng: number | null; geo_precision: 'exact' | 'area' | 'none' | null; is_free: boolean | null; price: string | null; register_url: string | null; organiser_name: string | null; format: EventFormat | null; topics: string[]; source: EventSource; url: string | null; my_status: EventSaveStatus | null; is_cancelled: boolean }
 export type EventCard = EventBase & { companies: EventCompanyRef[] }
 export type EventMy = { status: EventSaveStatus; note: string | null }
 export type EventAlsoOn = { source: EventSource; url: string }
@@ -170,7 +170,8 @@ export type EventContact = { id: string; event_id: string; name: string; title: 
 export type EventDetail = EventBase & { companies: Array<EventCompanyRef & { role: 'organiser' | 'host' }>; snippet: string | null; reasons: string[]; hosts: string[]; also_on: EventAlsoOn[]; my: EventMy | null; people: EventContact[] }
 export type EventCounts = { upcoming: number; this_week: number; going: number }
 export type EventSourceStatus = { source: 'luma' | 'gdg' | 'eventbrite'; last_read_at: string | null; status: string }
-export type EventPage = { total: number; events: EventCard[]; counts: EventCounts; sources: EventSourceStatus[] }
+export type EventTopicCount = { topic: string; count: number }
+export type EventPage = { total: number; events: EventCard[]; counts: EventCounts; sources: EventSourceStatus[]; topics: EventTopicCount[] }
 // The writable fields of a person met. Only `name` is required when one is added.
 type EventContactFields = { title?: string | null; company_name?: string | null; linkedin_url?: string | null; x_url?: string | null; github_url?: string | null; email?: string | null; note?: string | null }
 export type EventContactIn = EventContactFields & { name: string }
