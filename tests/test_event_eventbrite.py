@@ -653,7 +653,7 @@ class _Recorder:
 
 def test_the_module_constants_are_the_documented_ones() -> None:
     assert API == "https://www.eventbriteapi.com/v3"
-    assert EXPAND == "venue,organizer,format"
+    assert EXPAND == "venue,organizer,format,ticket_availability"
 
 
 async def test_get_event_requests_the_event_with_the_expansions() -> None:
@@ -944,3 +944,29 @@ def test_a_blank_token_means_no_token(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_the_token_does_not_appear_in_the_settings_repr(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _settings(monkeypatch, EVENTBRITE_TOKEN=TOKEN)
     assert TOKEN not in repr(settings) and TOKEN not in str(settings)
+
+
+# ── entry: the ticket price ──────────────────────────────────────────────────
+
+
+def _tickets(low: str | None, high: str | None) -> dict[str, Any]:
+    def price(display: str | None) -> dict[str, Any] | None:
+        return None if display is None else {"display": display, "currency": "INR"}
+
+    return {"minimum_ticket_price": price(low), "maximum_ticket_price": price(high)}
+
+
+def test_eventbrite_price_range() -> None:
+    paid = _facts(is_free=False, ticket_availability=_tickets("₹500.00", "₹1,500.00"))
+    assert paid.price == "₹500.00–₹1,500.00"
+    one = _facts(is_free=False, ticket_availability=_tickets("₹500.00", "₹500.00"))
+    assert one.price == "₹500.00"
+    assert _facts(is_free=True, ticket_availability=_tickets("₹0.00", "₹0.00")).price is None
+    assert _facts(is_free=False, ticket_availability=...).price is None
+    assert _facts(is_free=False, ticket_availability="nonsense").price is None
+
+
+def test_eventbrite_asks_for_the_ticket_range() -> None:
+    from services.events.eventbrite import EXPAND
+
+    assert "ticket_availability" in EXPAND.split(",")

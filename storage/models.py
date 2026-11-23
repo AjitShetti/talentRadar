@@ -1757,12 +1757,12 @@ class Event(Base):
         server_default=func.gen_random_uuid(),
     )
     source: Mapped[str] = mapped_column(
-        String(16), nullable=False, comment="luma | gdg | eventbrite | user"
+        String(16), nullable=False, comment="luma | gdg | eventbrite | hasgeek | user"
     )
     external_id: Mapped[str] = mapped_column(
         String(160),
         nullable=False,
-        comment="Luma evt-…; GDG slug; Eventbrite numeric id; for user, the row id",
+        comment="Luma evt-…; GDG slug; Eventbrite numeric id; Hasgeek org/project; for user, the row id",
     )
     url: Mapped[str | None] = mapped_column(
         String(1024),

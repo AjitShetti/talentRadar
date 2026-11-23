@@ -527,7 +527,8 @@ async def test_card_has_exactly_the_documented_keys(
 
     assert set(card) == {
         "id", "title", "starts_at", "ends_at", "is_online", "venue_name", "area", "lat", "lng",
-        "geo_precision", "is_free", "organiser_name", "format", "topics", "source", "url",
+        "geo_precision", "is_free", "price", "register_url", "organiser_name", "format", "topics",
+        "source", "url",
         "companies", "my_status", "is_cancelled",
     }  # fmt: skip
     assert card["starts_at"].endswith("Z") or card["starts_at"].endswith("+00:00")
@@ -1234,3 +1235,41 @@ async def test_topic_filter_runs_on_either_schema_in_postgres(column_type: str |
         pytest.skip("no Postgres to run against")
     finally:
         await engine.dispose()
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# topic counts
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+async def test_list_topic_facet(client: AsyncClient, add: Callable[..., Any]) -> None:
+    await add(
+        make_event(days(1), title="Agents", topics=["ai"]),
+        make_event(days(2), title="Full stack AI", topics=["ai", "web"]),
+        make_event(days(3), title="CSS night", topics=["web"]),
+        make_event(days(4), title="Untagged", topics=[]),
+    )
+
+    everything = await listing(client)
+    assert everything["topics"] == [{"topic": "ai", "count": 2}, {"topic": "web", "count": 2}]
+
+    narrowed = await listing(client, topic="ai")
+    assert titles(narrowed) == ["Agents", "Full stack AI"]
+    # The counts ignore the topic filter, so another topic stays one click away.
+    assert narrowed["topics"] == everything["topics"]
+
+    searched = await listing(client, q="CSS")
+    assert searched["topics"] == [{"topic": "web", "count": 1}]
+
+
+async def test_topic_facet_orders_by_count_then_vocabulary(
+    client: AsyncClient, add: Callable[..., Any]
+) -> None:
+    await add(
+        make_event(days(1), topics=["web"]),
+        make_event(days(2), topics=["data"]),
+        make_event(days(3), topics=["data"]),
+        make_event(days(4), topics=["cloud"]),
+    )
+    facet = (await listing(client))["topics"]
+    assert [entry["topic"] for entry in facet] == ["data", "cloud", "web"]

@@ -130,10 +130,14 @@ class _EventBase(BaseModel):
     lng: float | None = None
     geo_precision: str | None = Field(None, description="exact | area | none")
     is_free: bool | None = Field(None, description="Null when the source did not say")
+    price: str | None = Field(None, description="What entry costs, as the source prints it")
+    register_url: str | None = Field(
+        None, description="A registration page on another site (never fetched); else use url"
+    )
     organiser_name: str | None = None
     format: str | None = None
     topics: list[str] = Field(default_factory=list)
-    source: str = Field(description="luma | gdg | eventbrite | user")
+    source: str = Field(description="luma | gdg | eventbrite | hasgeek | user")
     url: str | None = Field(None, description="Null for a manual event with no link")
     my_status: SaveStatus | None = None
     is_cancelled: bool = False
@@ -207,6 +211,13 @@ class EventSourceStatus(BaseModel):
     status: str = Field(description="unknown | healthy | degraded | failing | off")
 
 
+class EventTopicCount(BaseModel):
+    """One topic chip: how many events the list's other filters leave with this topic."""
+
+    topic: str
+    count: int
+
+
 class EventPage(BaseModel):
     """``GET /events``."""
 
@@ -214,6 +225,7 @@ class EventPage(BaseModel):
     events: list[EventCard]
     counts: EventCounts
     sources: list[EventSourceStatus]
+    topics: list[EventTopicCount] = Field(default_factory=list)
 
 
 # ═════════════════════════════════════════════════════════════════════════════

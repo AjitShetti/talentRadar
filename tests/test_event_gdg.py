@@ -889,3 +889,52 @@ async def test_fetch_page_raises_on_a_non_2xx(status: int) -> None:
     async with _client(httpx.MockTransport(handler)) as client:
         with pytest.raises(httpx.HTTPStatusError):
             await fetch_page(client, chapter_url("gdg-bangalore"))
+
+
+# ── entry: offers (price, free, the registration page) ─────────────────────
+
+
+def test_gdg_offers_price() -> None:
+    facts = _facts(offers={"@type": "Offer", "price": "499", "priceCurrency": "INR"})
+    assert facts.price == "₹499"
+    assert facts.is_free is False
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"offers": {"@type": "Offer", "price": "0", "priceCurrency": "INR"}},
+        {"offers": [{"@type": "Offer", "price": 0}]},
+        {"isAccessibleForFree": True},
+    ],
+    ids=["zero", "zero-in-a-list", "accessible-for-free"],
+)
+def test_gdg_offers_free(overrides: dict[str, Any]) -> None:
+    facts = _facts(**overrides)
+    assert facts.is_free is True
+    assert facts.price is None
+
+
+def test_gdg_offers_say_nothing_about_entry() -> None:
+    facts = _facts(offers={"@type": "Offer", "url": "https://konfhub.com/devfestblr26"})
+    assert facts.is_free is None
+    assert facts.price is None
+
+
+def test_gdg_offers_other_currency_and_amount_as_stated() -> None:
+    assert _facts(offers={"price": "12.50", "priceCurrency": "EUR"}).price == "EUR 12.50"
+    assert _facts(offers={"price": 10, "priceCurrency": "USD"}).price == "$10"
+    assert _facts(offers={"price": "abc", "priceCurrency": "INR"}).price is None
+
+
+def test_gdg_offers_register_url() -> None:
+    kept = _facts(offers={"@type": "Offer", "url": "https://konfhub.com/devfestblr26"})
+    assert kept.register_url == "https://konfhub.com/devfestblr26"
+    for url in (
+        "https://gdg.community.dev/events/details/x/",
+        "http://konfhub.com/devfestblr26",
+        "https://konfhub.com/" + "a" * 600,
+        "javascript:alert(1)",
+        "https://user@konfhub.com/x",
+    ):
+        assert _facts(offers={"url": url}).register_url is None, url

@@ -43,7 +43,8 @@ from domain.event_time import as_utc, ist_date
 from domain.event_urls import parse_event_url
 from services.cache_backend import CacheBackend
 from services.company_map.store import find_existing
-from services.events import eventbrite, gdg, read
+from services.events import eventbrite, gdg, hasgeek, read
+from services.events.hasgeek import HASGEEK_KEY
 from services.events.refresh import EVENTBRITE_KEY, GDG_KEY
 from services.events.sources import scope_for
 from services.events.store import upsert_event
@@ -73,6 +74,10 @@ Reason = Literal[
 #: A pasted GDG page names no chapter, and GDG chapters exist worldwide: nothing about it
 #: vouches for India, so an online event needs an India signal of its own.
 _PASTED_GDG = SourceScope(key="gdg", india=False, trusted_tech=True)
+
+#: Hasgeek is a technology-community platform, worldwide in principle: the relevance
+#: rules still decide whether a pasted project is in Bengaluru.
+_PASTED_HASGEEK = SourceScope(key="hasgeek", india=False, trusted_tech=True)
 
 #: What a source says about one link and not about itself. Such a failure is the link's
 #: fault, so a typo cannot open the breaker the scheduled refresh also sits behind.
@@ -320,6 +325,31 @@ async def _import_gdg(session: AsyncSession, slug: str, now: datetime) -> Event 
     return await _store(session, facts, _PASTED_GDG, now)
 
 
+async def _import_hasgeek(session: AsyncSession, key: str, now: datetime) -> Event | Reason:
+    held = await _held(session, "hasgeek", key)
+    if held is not None:
+        return held
+    if not await SourceHealthService.is_available(HASGEEK_KEY):
+        return "not_readable"
+    started = time.monotonic()
+    try:
+        async with httpx.AsyncClient() as client:
+            body = await hasgeek.fetch_schedule(client, key)
+    except (httpx.HTTPError, ValueError) as exc:
+        await _record(HASGEEK_KEY, 0, started, exc)
+        logger.info("Hasgeek schedule unavailable: %s", _describe(exc))
+        return "not_readable"
+    try:
+        facts = await asyncio.to_thread(hasgeek.parse_schedule, body, key)
+    except Exception as exc:  # our parser failing is not the schedule failing
+        logger.warning("Hasgeek schedule could not be parsed: %s", type(exc).__name__)
+        return "not_readable"
+    await _record(HASGEEK_KEY, 0 if facts is None else 1, started)
+    if facts is None:
+        return "not_readable"
+    return await _store(session, facts, _PASTED_HASGEEK, now)
+
+
 async def _primary(session: AsyncSession, event: Event) -> Event:
     """The event the lists show: a cross-source duplicate stands behind its primary."""
     if event.duplicate_of is None:
@@ -350,6 +380,8 @@ async def import_link(
         found = await _indexed_luma_event(session, pasted.key) or "luma_not_indexed"
     elif pasted.source == "eventbrite":
         found = await _import_eventbrite(session, pasted.key, now)
+    elif pasted.source == "hasgeek":
+        found = await _import_hasgeek(session, pasted.key, now)
     else:
         found = await _import_gdg(session, pasted.key, now)
     if not isinstance(found, Event):

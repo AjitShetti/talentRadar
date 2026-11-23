@@ -42,6 +42,12 @@ class EventFacts:
     address_withheld: bool = False
     is_online: bool = False
     is_free: bool | None = None
+    #: What entry costs, as the source prints it ("₹500", "₹500.00–₹1,500.00"). ``None``
+    #: when the source states no price, which is also the case for a free event.
+    price: str | None = None
+    #: The page a person registers on when it is not the event page itself (GDG's
+    #: ``offers.url``, e.g. KonfHub). A string read from the source, never fetched.
+    register_url: str | None = None
     organiser_name: str | None = None
     organiser_url: str | None = None
     hosts: tuple[str, ...] = ()
@@ -62,6 +68,30 @@ class SourceScope:
     key: str
     india: bool
     trusted_tech: bool
+
+
+PRICE_MAX = 40
+_CURRENCY_SYMBOLS = {"INR": "₹", "USD": "$"}
+_AMOUNT = re.compile(r"\d{1,9}(?:\.\d{1,2})?")
+_CURRENCY = re.compile(r"[A-Z]{3}")
+
+
+def price_label(amount: object, currency: object) -> str | None:
+    """``"₹499"`` for 499 INR; ``None`` for zero, a negative or an amount that is not a number.
+
+    The amount is shown as the source states it ("12.50" stays "12.50"). Only INR and USD
+    get a symbol; any other ISO code is written before the amount ("EUR 12.50").
+    """
+    if isinstance(amount, bool) or not isinstance(amount, (int, float, str)):
+        return None
+    text = str(amount).strip()
+    if _AMOUNT.fullmatch(text) is None or float(text) <= 0:
+        return None
+    code = currency.strip().upper() if isinstance(currency, str) else ""
+    if _CURRENCY.fullmatch(code) is None:
+        return None
+    symbol = _CURRENCY_SYMBOLS.get(code)
+    return f"{symbol}{text}" if symbol else f"{code} {text}"
 
 
 # A tag is "<" or "</" and a letter, or "<!" for a comment or doctype, up to the

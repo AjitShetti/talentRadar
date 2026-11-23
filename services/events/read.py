@@ -46,6 +46,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from config.settings import get_settings
+from domain.event_relevance import TOPICS
 from domain.event_time import (
     DEFAULT_DURATION,
     IST,
@@ -168,7 +169,7 @@ def _search_text(raw: str | None) -> str:
 
 
 def _filters(
-    query: EventQuery, me: uuid.UUID, now: datetime, dialect: str
+    query: EventQuery, me: uuid.UUID, now: datetime, dialect: str, *, include_topic: bool = True
 ) -> list[ColumnElement[bool]]:
     own = query.saved != "all"
     # What the caller saved is theirs to see whether or not the relevance verdict listed it.
@@ -185,7 +186,7 @@ def _filters(
         where.append(Event.is_online.is_(False))
     elif mode == "online":
         where.append(Event.is_online.is_(True))
-    if query.topic:
+    if query.topic and include_topic:
         where.append(topic_clause(dialect, query.topic))
     if query.format:
         where.append(Event.format == query.format)
@@ -228,6 +229,11 @@ def _utc(moment: datetime | None) -> datetime | None:
     return as_utc(moment) if moment is not None else None
 
 
+def _meta_text(event: Event, key: str) -> str | None:
+    value = (event.extra_metadata or {}).get(key)
+    return value if isinstance(value, str) and value else None
+
+
 def _card(event: Event, companies: list[dict[str, Any]], my_status: str | None) -> dict[str, Any]:
     return {
         "id": str(event.id),
@@ -241,6 +247,8 @@ def _card(event: Event, companies: list[dict[str, Any]], my_status: str | None) 
         "lng": event.lng,
         "geo_precision": event.geo_precision,
         "is_free": event.is_free,
+        "price": _meta_text(event, "price"),
+        "register_url": _meta_text(event, "register_url"),
         "organiser_name": event.organiser_name,
         "format": event.format,
         "topics": list(event.topics or []),
@@ -348,6 +356,31 @@ async def _counts(session: AsyncSession, me: uuid.UUID, now: datetime) -> dict[s
     return {"upcoming": int(upcoming), "this_week": int(this_week), "going": int(going or 0)}
 
 
+#: The topic chips read at most this many matching rows; an upcoming Bengaluru list is
+#: far smaller, and a bound keeps one page load from reading the whole table.
+FACET_ROWS_MAX = 2000
+_TOPIC_ORDER = {topic: index for index, topic in enumerate(TOPICS)}
+
+
+async def _topic_facet(
+    session: AsyncSession, where: list[ColumnElement[bool]]
+) -> list[dict[str, Any]]:
+    """``[{topic, count}]`` over the rows ``where`` matches, most first, then vocabulary order.
+
+    ``where`` is the list's filters without its topic, so a chip's count says what pressing
+    it would show. Counted here rather than in SQL: ``topics`` is an array on PostgreSQL and
+    JSON on SQLite, and the rows are few.
+    """
+    rows = await session.execute(select(Event.topics).where(*where).limit(FACET_ROWS_MAX))
+    counts: dict[str, int] = {}
+    for topics in rows.scalars():
+        for topic in set(topics or ()):
+            if topic in _TOPIC_ORDER:
+                counts[topic] = counts.get(topic, 0) + 1
+    ordered = sorted(counts.items(), key=lambda item: (-item[1], _TOPIC_ORDER[item[0]]))
+    return [{"topic": topic, "count": count} for topic, count in ordered]
+
+
 async def _sources() -> list[dict[str, Any]]:
     """When each source was last read. A cache that is down reads as "unknown", not an error."""
     has_token = bool(get_settings().eventbrite_token)
@@ -375,7 +408,7 @@ async def _sources() -> list[dict[str, Any]]:
 async def list_events(
     session: AsyncSession, user_id: str, query: EventQuery, *, now: datetime
 ) -> dict[str, Any]:
-    """``{total, events, counts, sources}`` for the caller.
+    """``{total, events, counts, sources, topics}`` for the caller.
 
     ``events`` is one page, soonest first. ``total`` counts every match, not the page.
     """
@@ -384,7 +417,8 @@ async def list_events(
     # The cache first: the session takes its connection at its first query, and that
     # connection must not wait on Redis round trips.
     sources = await _sources()
-    where = _filters(query, me, instant, session.get_bind().dialect.name)
+    dialect = session.get_bind().dialect.name
+    where = _filters(query, me, instant, dialect)
     limit = max(1, min(query.limit, MAX_LIMIT))
     offset = max(0, min(query.offset, MAX_OFFSET))
 
@@ -413,6 +447,9 @@ async def list_events(
         ],
         "counts": await _counts(session, me, instant),
         "sources": sources,
+        "topics": await _topic_facet(
+            session, _filters(query, me, instant, dialect, include_topic=False)
+        ),
     }
 
 
