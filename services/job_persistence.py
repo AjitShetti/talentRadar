@@ -46,6 +46,7 @@ from ingestion.validation import validate_job_url
 
 if TYPE_CHECKING:
     from storage.models import Company
+    from storage.models import Job as JobRow
     from storage.repository import UnitOfWork
 
 logger = logging.getLogger(__name__)
@@ -181,6 +182,43 @@ def build_job_kwargs(job: Job) -> dict[str, Any]:
     return kwargs
 
 
+#: What a board's own listing states about a posting, and so what a re-read of that board may
+#: refresh on a row it already holds. Everything else on the row (the status, skills, seniority,
+#: employment type, tags and salary the enrichment pass derived) is not the board's to restate:
+#: a listing carries none of them, only this module's structural defaults for them.
+_BOARD_STATED_COLUMNS: tuple[str, ...] = (
+    "source_url",
+    "title",
+    "location_raw",
+    "country",
+    "city",
+    "is_remote",
+    "posted_at",
+    "source_posted_at",
+    "source_updated_at",
+    "last_seen_at",
+    "closed_at",
+)
+
+
+def board_refresh_values(kwargs: dict[str, Any]) -> dict[str, Any]:
+    """
+    The part of :func:`build_job_kwargs` a re-read of a board may write onto a row it holds.
+
+    A role read from an ATS board arrives as structural defaults (``enrichment_status='raw'``,
+    no skills, a mid seniority, a full-time type, the board's own tags): right for a new row, and
+    destructive for one the enrichment pass has since parsed. So a stored row takes only what the
+    board states: the title, the place, the link, the dates it supplied (``build_job_kwargs``
+    leaves out one it did not, so a stored date is never cleared), ``last_seen_at`` and a reopen
+    (``closed_at=None``), and a description only when the read has one: a Greenhouse board that
+    was too big to read with its content states none, and must not blank the stored text.
+    """
+    values = {column: kwargs[column] for column in _BOARD_STATED_COLUMNS if column in kwargs}
+    if kwargs.get("description_clean"):
+        values["description_clean"] = kwargs["description_clean"]
+    return values
+
+
 def _structural_kwargs(job: Job, description: str) -> dict[str, Any]:
     return {
         "source_url": job.source_url,
@@ -288,22 +326,32 @@ async def persist_live_jobs(
                     kwargs = build_job_kwargs(job)
 
                     board = _board_source(source)
+                    held: JobRow | None = None
                     if board is None:
                         company = await posting_company(uow, company_name)
                         kwargs["company_id"] = company.id
-                    elif await uow.jobs.get_by_external_id(external_id, source) is None:
-                        # A board's role is filed where the sweep files its board, never by
-                        # name. A row that already exists keeps the company it was stored
-                        # with: its company_id is left out of the update.
-                        kwargs["company_id"] = await live_board_company_id(
-                            uow.companies.session, board[0], board[1]
-                        )
+                    else:
+                        held = await uow.jobs.get_by_external_id(external_id, source)
+                        if held is None:
+                            # A board's role is filed where the sweep files its board, never
+                            # by name.
+                            kwargs["company_id"] = await live_board_company_id(
+                                uow.companies.session, board[0], board[1]
+                            )
 
-                    stored, created = await uow.jobs.upsert_by_external_id(
-                        external_id=external_id,
-                        source=source,
-                        defaults=kwargs,
-                    )
+                    if held is not None:
+                        # A board row we already hold keeps its company and whatever the
+                        # enrichment pass derived: only what the board states is refreshed.
+                        for column, value in board_refresh_values(kwargs).items():
+                            setattr(held, column, value)
+                        await session.flush()
+                        stored, created = held, False
+                    else:
+                        stored, created = await uow.jobs.upsert_by_external_id(
+                            external_id=external_id,
+                            source=source,
+                            defaults=kwargs,
+                        )
                     if created:
                         summary.inserted += 1
                     else:

@@ -53,7 +53,12 @@ from domain.entities import Job
 from domain.job_boards import is_india_role
 from ingestion.boards.base import BoardRead
 from ingestion.validation import validate_job_url
-from services.job_persistence import _stable_external_id, build_job_kwargs, embedding_text
+from services.job_persistence import (
+    _stable_external_id,
+    board_refresh_values,
+    build_job_kwargs,
+    embedding_text,
+)
 from services.liveness import record_sighting
 from storage.models import Company, JobBoard
 from storage.models import Job as JobRow
@@ -279,7 +284,8 @@ async def write_board_roles(
         kwargs = build_job_kwargs(role)
         row = stored.get(external_id)
         if row is not None:
-            for column, value in kwargs.items():
+            # A re-read restates what the board says, never what enrichment derived.
+            for column, value in board_refresh_values(kwargs).items():
                 setattr(row, column, value)
             if board.company_id is not None:
                 # A link made after the row was first stored (by live search, under a

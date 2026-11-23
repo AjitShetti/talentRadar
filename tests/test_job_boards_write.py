@@ -99,6 +99,7 @@ def role(
     title: str | None = None,
     ref: BoardRef = GREENHOUSE,
     url: str | None = None,
+    description: str | None = "Build and run the services behind the product.",
 ) -> Job:
     """A role as a reader returns it: the ATS's own id as ``external_id``, India or not."""
     return build_job(
@@ -107,7 +108,7 @@ def role(
         title=title or f"Backend Engineer {number}",
         url=url or f"https://boards.greenhouse.io/{ref.board}/jobs/{number}",
         location=location,
-        description="Build and run the services behind the product.",
+        description=description,
         company_name="Northwind Labs",
     )
 
@@ -251,6 +252,145 @@ async def test_a_posting_listed_twice_in_one_read_is_one_row(session: AsyncSessi
 
     assert summary.inserted == 1
     assert len(await jobs_of(session)) == 1
+
+
+# -- a refresh is not a re-parse ----------------------------------------------------------
+
+
+async def enrich(session: AsyncSession) -> None:
+    """What the deferred LLM pass leaves on a row: a status, skills, a level, a type, tags."""
+    await session.execute(
+        update(JobRow).values(
+            enrichment_status="enriched",
+            skills=["python", "kafka"],
+            seniority=SeniorityLevel.SENIOR,
+            employment_type=EmploymentType.CONTRACT,
+            tags=["backend", "payments"],
+        )
+    )
+    await session.flush()
+
+
+def live_of(listed: Job) -> Job:
+    """What live search hands ``persist_live_jobs`` for a posting: no id of its own, the URL's MD5."""
+    return Job(
+        id=uuid.uuid4(),
+        company_id=uuid.uuid4(),
+        external_id=None,
+        source="greenhouse:northwind",
+        source_url=listed.source_url,
+        title=listed.title,
+        description_clean=listed.description_clean,
+        status=JobStatus.ACTIVE,
+        employment_type=EmploymentType.FULL_TIME,
+        seniority=SeniorityLevel.MID,
+        location_raw=listed.location_raw,
+        country="IN",
+        city="Bengaluru",
+        is_remote=False,
+        extra_metadata={"company_name": "Northwind Labs"},
+    )
+
+
+async def test_a_sweep_reread_keeps_what_enrichment_filled_in(session: AsyncSession) -> None:
+    board = await add_board(session)
+    await write(session, board, read_of(role(1)))
+    await enrich(session)
+
+    # The board edited the title and moved the role; it states none of the enriched fields.
+    again = role(1, title="Staff Backend Engineer", location="Pune, Maharashtra, India")
+    summary, _ = await write(session, board, read_of(again))
+
+    assert summary.updated == 1
+    (row,) = await jobs_of(session)
+    assert row.title == "Staff Backend Engineer"
+    assert row.location_raw == "Pune, Maharashtra, India"
+    assert row.enrichment_status == "enriched"
+    assert row.skills == ["python", "kafka"]
+    assert row.seniority == SeniorityLevel.SENIOR
+    assert row.employment_type == EmploymentType.CONTRACT
+    assert row.tags == ["backend", "payments"]
+
+
+async def test_a_live_reread_keeps_what_enrichment_filled_in(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def no_embedding(_items: list[dict[str, Any]]) -> None:
+        return None
+
+    monkeypatch.setattr(job_persistence, "_embed_quietly", no_embedding)
+    board = await add_board(session)
+    listed = role(5)
+    await write(session, board, read_of(listed))
+    await enrich(session)
+    await session.commit()
+
+    summary = await persist_live_jobs([live_of(listed)])
+
+    assert summary.updated == 1 and summary.inserted == 0
+    (row,) = await jobs_of(session)
+    assert row.enrichment_status == "enriched"
+    assert row.skills == ["python", "kafka"]
+    assert row.seniority == SeniorityLevel.SENIOR
+    assert row.employment_type == EmploymentType.CONTRACT
+    assert row.tags == ["backend", "payments"]
+
+
+async def test_a_read_with_no_description_keeps_the_stored_one(session: AsyncSession) -> None:
+    board = await add_board(session)
+    await write(session, board, read_of(role(1)))
+
+    # Greenhouse's fallback read (too big with content) carries no description at all.
+    summary, _ = await write(session, board, read_of(role(1, description=None)))
+
+    assert summary.updated == 1
+    (row,) = await jobs_of(session)
+    assert row.description_clean == "Build and run the services behind the product."
+
+
+async def test_a_live_read_with_no_description_keeps_the_stored_one(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def no_embedding(_items: list[dict[str, Any]]) -> None:
+        return None
+
+    monkeypatch.setattr(job_persistence, "_embed_quietly", no_embedding)
+    board = await add_board(session)
+    await write(session, board, read_of(role(5)))
+    await session.commit()
+
+    await persist_live_jobs([live_of(role(5, description=None))])
+
+    (row,) = await jobs_of(session)
+    assert row.description_clean == "Build and run the services behind the product."
+
+
+async def test_a_read_that_states_a_description_replaces_the_stored_one(
+    session: AsyncSession,
+) -> None:
+    board = await add_board(session)
+    await write(session, board, read_of(role(1)))
+
+    await write(session, board, read_of(role(1, description="A newer description of the role.")))
+
+    (row,) = await jobs_of(session)
+    assert row.description_clean == "A newer description of the role."
+
+
+async def test_a_read_that_states_no_date_never_clears_a_stored_one(session: AsyncSession) -> None:
+    board = await add_board(session)
+    posted = datetime(2026, 11, 2, 9, 30, tzinfo=UTC)
+    await write(
+        session,
+        board,
+        read_of(role(1).model_copy(update={"posted_at": posted, "source_posted_at": posted})),
+    )
+
+    await write(session, board, read_of(role(1)))
+
+    (row,) = await jobs_of(session)
+    assert row.posted_at is not None and row.posted_at.replace(tzinfo=UTC) == posted
+    assert row.source_posted_at is not None and row.source_posted_at.replace(tzinfo=UTC) == posted
 
 
 # -- the same posting from two paths -----------------------------------------------------
