@@ -54,6 +54,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from domain.entities import Job
@@ -107,24 +108,40 @@ def placeholder_domain(board: JobBoard) -> str:
     return _placeholder_domain_for(board.ats, board.board)
 
 
+async def _find_placeholder(session: AsyncSession, domain: str) -> uuid.UUID | None:
+    """The id of the company holding this placeholder domain, if any."""
+    return (
+        await session.execute(select(Company.id).where(Company.domain == domain))
+    ).scalar_one_or_none()
+
+
 async def placeholder_company_id(
     session: AsyncSession, *, ats: str, board: str, name: str | None
 ) -> uuid.UUID:
     """
     The placeholder company of one board, keyed by the board and created on first use, named
     ``name`` or else the board id. Never matched by name. The caller owns the transaction.
+
+    The sweep and live search can both create the same placeholder at once. The insert is made in
+    a savepoint, so the loser's unique-key failure (``companies.domain``) rolls back only itself
+    and the caller's transaction, which may hold a whole batch, survives; the winner's row is
+    then the answer.
     """
     domain = _placeholder_domain_for(ats, board)
-    found = (
-        await session.execute(select(Company.id).where(Company.domain == domain))
-    ).scalar_one_or_none()
+    found = await _find_placeholder(session, domain)
     if found is not None:
         return found
 
     label = (name or "").strip() or board
     company = Company(id=uuid.uuid4(), name=label[:_COMPANY_NAME_MAX], domain=domain)
-    session.add(company)
-    await session.flush()
+    try:
+        async with session.begin_nested():
+            session.add(company)
+    except IntegrityError:
+        winner = await _find_placeholder(session, domain)
+        if winner is None:
+            raise
+        return winner
     return company.id
 
 

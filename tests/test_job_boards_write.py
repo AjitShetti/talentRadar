@@ -26,7 +26,7 @@ from typing import Any
 import pytest
 import pytest_asyncio
 from sqlalchemy import event as sa_event
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import storage.database as database
@@ -888,6 +888,64 @@ async def test_the_placeholder_company_is_reused_by_the_next_write(session: Asyn
     placeholder = await session.get(Company, first)
     assert placeholder is not None and placeholder.name == "northwind"
     assert {row.company_id for row in await jobs_of(session)} == {first}
+
+
+PLACEHOLDER = "greenhouse-northwind.board.talentradar.internal"
+
+
+async def _race_the_placeholder(session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> uuid.UUID:
+    """
+    Another writer (live search, or the sweep) creates the board's placeholder company between
+    this one's lookup and its insert: the lookup is blinded once, and the table carries the unique
+    key on ``companies.domain`` that the migration gives Postgres (the models leave it off).
+    """
+    await session.execute(text("CREATE UNIQUE INDEX uq_test_companies_domain ON companies (domain)"))
+    winner = Company(id=uuid.uuid4(), name="Northwind Labs", domain=PLACEHOLDER)
+    session.add(winner)
+    await session.commit()
+
+    real = write_module._find_placeholder
+    blind = [True]
+
+    async def lookup(db: AsyncSession, domain: str) -> uuid.UUID | None:
+        if blind[0]:
+            blind[0] = False
+            return None
+        return await real(db, domain)
+
+    monkeypatch.setattr(write_module, "_find_placeholder", lookup)
+    return winner.id
+
+
+async def test_a_placeholder_created_concurrently_is_found_not_a_failure(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    winner = await _race_the_placeholder(session, monkeypatch)
+    board = await add_board(session, company_name=None)
+
+    found = await board_company_id(session, board)
+
+    assert found == winner
+    # The session is still good: the lost insert was rolled back on its own savepoint.
+    summary, _ = await write(session, board, read_of(role(1)))
+    assert summary.inserted == 1
+
+
+async def test_a_live_batch_survives_a_placeholder_created_concurrently(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def no_embedding(_items: list[dict[str, Any]]) -> None:
+        return None
+
+    monkeypatch.setattr(job_persistence, "_embed_quietly", no_embedding)
+    winner = await _race_the_placeholder(session, monkeypatch)
+
+    stored = await persist_live_jobs([live_of(role(1)), live_of(role(2))])
+
+    assert stored.inserted == 2 and stored.failed == 0
+    rows = await jobs_of(session)
+    assert len(rows) == 2
+    assert {row.company_id for row in rows} == {winner}
 
 
 async def test_a_linked_board_writes_to_its_company(session: AsyncSession) -> None:
