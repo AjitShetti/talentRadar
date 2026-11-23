@@ -1,0 +1,53 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//HasGeek//NONSGML Funnel//EN
+DESCRIPTION:The minds behind the machinery
+X-WR-CALDESC:The minds behind the machinery
+NAME:Women in Systems
+X-WR-CALNAME:Women in Systems
+REFRESH-INTERVAL;VALUE=DURATION:PT12H
+SUMMARY:Women in Systems
+TIMEZONE-ID:Asia/Kolkata
+X-PUBLISHED-TTL:PT12H
+X-WR-TIMEZONE:Asia/Kolkata
+BEGIN:VEVENT
+SUMMARY:Women in Systems
+DTSTART:20261128T043000Z
+DTEND:20261128T080000Z
+DTSTAMP:20261123T173425Z
+UID:session/2R7rYYUWMPayUAfTwgBuZr@hasgeek.com
+SEQUENCE:13
+CREATED:20261022T170339Z
+DESCRIPTION:### Women in Systems:\nJoin Women in Systems for a meetup brin
+ ging together researchers and practitioners to exchange ideas and experien
+ ces across systems. Through lightning talks and a panel discussion\, we wi
+ ll explore topics spanning databases\, distributed systems\, Kubernetes an
+ d cloud infrastructure\, lakehouse analytics\, inference systems\, securit
+ y\, reliability\, and observability.\n\nOne part of the discussion will lo
+ ok at where systems are headed: how changing workloads\, new applications\
+ , and evolving infrastructure are challenging existing designs. This inclu
+ des the systems questions raised by AI and agentic workloads\, alongside b
+ roader developments in storage\, query processing\, orchestration\, and re
+ source management.\n\nThe meetup will make room for both research and less
+ ons from building and operating real systems -- design choices\, engineeri
+ ng trade-offs\, challenges\, and open questions. Rather than centring on a
+  single technology\, the aim is to bring together perspectives from across
+  the systems community.\n\nThe speakers are exclusively women\, but regist
+ ration is open to **everyone**\n\nTo encourage women's participation\, esp
+ ecially from tier 2 and tier 3 cities\, we have travel grants: https://doc
+ s.google.com/forms/d/e/1FAIpQLSdh6ETV8iS6TYTKxVY3Hp-1PLocIlDA0TX9VtTYhP0Ee
+ FoskA/viewform?usp=preview\n\n#### Event Details\nDate: Saturday\, 28 Nove
+ mber 2026\n\nTime: 10:00 a.m.–1:30 p.m.\n\nVenue: Microsoft Office (Bell
+ andur)\n\nFormat: Lightning talks and a panel discussion
+LAST-MODIFIED:20261117T060609Z
+LOCATION:Bengaluru - https://hasgeek.com/bengalurusystemsmeetup/women-in-s
+ ystems2/
+ORGANIZER;CN="Bengaluru Systems Meetup":MAILTO:no-reply@example.com
+URL:https://hasgeek.com/bengalurusystemsmeetup/women-in-systems2/
+BEGIN:VALARM
+ACTION:display
+DESCRIPTION:Women in Systems in 5 minutes
+TRIGGER:-PT5M
+END:VALARM
+END:VEVENT
+END:VCALENDAR

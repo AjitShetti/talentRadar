@@ -4,7 +4,7 @@ domain/event_urls.py
 Recognising a link a person pasted to "add an event by link".
 
 The URL is never fetched. It is only *read*: if it is an event page on one of
-the three sources we know, the identifier is lifted out of it - matched against
+the sources we know, the identifier is lifted out of it - matched against
 a strict pattern - and the caller builds any request from that piece alone, as
 ``domain/posting_urls.py`` does for the posting check. A URL that does not match
 exactly is not something we can resolve, and the answer is ``None`` (the caller
@@ -34,7 +34,7 @@ from urllib.parse import urlsplit
 
 MAX_URL_LENGTH = 512
 
-EventSource = Literal["eventbrite", "gdg", "luma"]
+EventSource = Literal["eventbrite", "gdg", "luma", "hasgeek"]
 
 
 @dataclass(frozen=True)
@@ -57,6 +57,14 @@ _GDG_PATH = re.compile(r"/events/details/([a-z0-9-]{1,160})/?")
 # "/event" is the prefix of the event-id route, never a calendar or event slug.
 _LUMA_PATH = re.compile(r"/(?:event/(evt-[A-Za-z0-9]{3,64})|(?!event/?\Z)([A-Za-z0-9-]{3,64}))/?")
 
+# A Hasgeek project page is "/<org>/<project>/"; the key is "<org>/<project>". The first
+# segment must not be one of the site's own routes, which share the shape.
+HASGEEK_KEY_PATTERN = re.compile(
+    r"(?!(?:account|login|logout|about|api|search|static|embed|new|auth)/)"
+    r"[a-z0-9_-]{1,80}/[a-z0-9_-]{1,80}"
+)
+_HASGEEK_PATH = re.compile(rf"/({HASGEEK_KEY_PATTERN.pattern})/?")
+
 _EVENTBRITE_TLDS = ("com", "co.in", "co.uk", "com.au", "ca", "ie")
 
 _PATTERNS: dict[str, tuple[EventSource, re.Pattern[str]]] = {
@@ -64,6 +72,7 @@ _PATTERNS: dict[str, tuple[EventSource, re.Pattern[str]]] = {
     "gdg.community.dev": ("gdg", _GDG_PATH),
     "lu.ma": ("luma", _LUMA_PATH),
     "luma.com": ("luma", _LUMA_PATH),
+    "hasgeek.com": ("hasgeek", _HASGEEK_PATH),
 }
 
 

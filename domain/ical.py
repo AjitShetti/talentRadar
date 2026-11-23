@@ -235,6 +235,39 @@ def parse_ical(data: bytes) -> list[IcalEvent]:
     return events
 
 
+def calendar_property(data: bytes, name: str) -> str | None:
+    """The first value of ``name`` stated on the calendar itself, outside every component.
+
+    A schedule names itself at the top (``NAME``, ``X-WR-CALNAME``); the same property
+    inside a ``VEVENT`` or any other component is not the calendar's. ``None`` for bad
+    input or a property the calendar does not state.
+    """
+    if len(data) > MAX_ICAL_BYTES:
+        return None
+    wanted = name.upper()
+    depth = 0  # components open below VCALENDAR
+    in_calendar = False
+    for line in _unfold(data.decode("utf-8-sig", errors="replace")):
+        parsed = _parse_line(line)
+        if parsed is None:
+            continue
+        key, prop = parsed
+        keyword = prop.value.strip().upper()
+        if key == "BEGIN":
+            if not in_calendar and keyword == "VCALENDAR":
+                in_calendar = True
+            elif in_calendar:
+                depth += 1
+        elif key == "END":
+            if depth:
+                depth -= 1
+            elif keyword == "VCALENDAR":
+                in_calendar = False
+        elif in_calendar and not depth and key == wanted:
+            return _unescape_text(prop.value).strip() or None
+    return None
+
+
 # ── building ─────────────────────────────────────────────────────────────────
 
 # Control characters other than a line break, which text escapes to "\n".
