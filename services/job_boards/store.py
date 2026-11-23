@@ -22,22 +22,49 @@ from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from domain.job_boards import ATS, LIVE_SEARCH_ATS, SWEPT_STATUSES, AtsName, BoardRef, Schedule
+from domain.job_boards import (
+    ATS,
+    CASE_KEPT_ATS,
+    LIVE_SEARCH_ATS,
+    SWEPT_STATUSES,
+    AtsName,
+    BoardRef,
+    Schedule,
+)
 from ingestion.boards.base import BoardRead
 from storage.models import JobBoard
 
 
 async def _find(session: AsyncSession, ref: BoardRef) -> JobBoard | None:
-    """The row for ``ref``, matched on the table's unique key: ats, board and region (``None`` is ``''``)."""
+    """
+    The row for ``ref``: its ats, board and region (``None`` is ``''``), as the table's unique key.
+
+    A Lever or Ashby board id keeps the case it was written in, so two discoverers can name one
+    board ``Sarvam`` and ``sarvam``; the key is case-sensitive and would hold both. They are one
+    board here, and the spelling already stored stays. (Every other ATS's id is lower-cased
+    before it gets here.)
+    """
+    same_board = (
+        func.lower(JobBoard.board) == ref.board.lower()
+        if ref.ats in CASE_KEPT_ATS
+        else JobBoard.board == ref.board
+    )
     return (
-        await session.execute(
-            select(JobBoard).where(
-                JobBoard.ats == ref.ats,
-                JobBoard.board == ref.board,
-                func.coalesce(JobBoard.region, "") == (ref.region or ""),
+        (
+            await session.execute(
+                select(JobBoard)
+                .where(
+                    JobBoard.ats == ref.ats,
+                    same_board,
+                    func.coalesce(JobBoard.region, "") == (ref.region or ""),
+                )
+                .order_by(JobBoard.first_seen_at.asc(), JobBoard.id.asc())
+                .limit(1)
             )
         )
-    ).scalar_one_or_none()
+        .scalars()
+        .first()
+    )
 
 
 def _gain_company(row: JobBoard, company_id: uuid.UUID | None) -> None:

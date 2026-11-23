@@ -125,7 +125,7 @@ _MAX_URL_LENGTH = 2048
 _SLUG = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}")
 
 #: ATSes whose slug keeps the case it was written in (the rest are lower-cased).
-_CASE_KEPT: frozenset[AtsName] = frozenset({"lever", "ashby"})
+CASE_KEPT_ATS: frozenset[AtsName] = frozenset({"lever", "ashby"})
 
 #: Hosts where the board is the first path segment. Matched exactly.
 _PATH_HOSTS: dict[str, AtsName] = {
@@ -170,7 +170,7 @@ def _first_segment(path: str) -> str | None:
 def _board(ats: AtsName, slug: str | None, region: str | None = None) -> BoardRef | None:
     if not slug or _SLUG.fullmatch(slug) is None:
         return None
-    return BoardRef(ats=ats, board=slug if ats in _CASE_KEPT else slug.lower(), region=region)
+    return BoardRef(ats=ats, board=slug if ats in CASE_KEPT_ATS else slug.lower(), region=region)
 
 
 #: The two hosts a Personio board lives on: ``{board}.jobs.personio.de`` and ``.com``.

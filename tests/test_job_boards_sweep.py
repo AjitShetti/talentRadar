@@ -362,6 +362,46 @@ async def test_upsert_board_keys_on_ats_board_and_region(factory: OpenSessions) 
     assert len(await _all_boards(factory)) == 4
 
 
+@pytest.mark.parametrize("ats", ["lever", "ashby"])
+@pytest.mark.parametrize(("first", "second"), [("Sarvam", "sarvam"), ("sarvam", "SARVAM")])
+async def test_upsert_board_folds_the_case_of_a_lever_or_ashby_board(
+    factory: OpenSessions, ats: AtsName, first: str, second: str
+) -> None:
+    """
+    Lever and Ashby slugs keep the case they were written in, so two discoverers can name one
+    board two ways. They are one board: the first spelling stays, and the second is not added.
+    """
+    company_id = None
+    async with factory() as session:
+        company = Company(id=uuid.uuid4(), name="Sarvam AI")
+        session.add(company)
+        await session.commit()
+        company_id = company.id
+
+    async with factory() as session:
+        assert await upsert_board(session, BoardRef(ats, first), via="open_list") is True
+        assert (
+            await upsert_board(session, BoardRef(ats, second), via="yc", company_id=company_id)
+            is False
+        )
+        await session.commit()
+
+    (row,) = await _all_boards(factory)
+    assert row.board == first and row.ats == ats
+    assert row.discovered_via == "open_list"
+    assert row.company_id == company_id, "the second finder's company link is still gained"
+
+
+async def test_upsert_board_still_tells_other_atses_apart_by_name(factory: OpenSessions) -> None:
+    async with factory() as session:
+        assert await upsert_board(session, BoardRef("ashby", "sarvam"), via="manual") is True
+        assert await upsert_board(session, BoardRef("lever", "sarvam"), via="manual") is True
+        assert await upsert_board(session, BoardRef("greenhouse", "sarvam"), via="manual") is True
+        await session.commit()
+
+    assert len(await _all_boards(factory)) == 3
+
+
 async def test_upsert_board_survives_losing_an_insert_race(
     factory: OpenSessions, monkeypatch: pytest.MonkeyPatch
 ) -> None:
