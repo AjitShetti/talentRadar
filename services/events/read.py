@@ -46,6 +46,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from config.settings import get_settings
+from domain.event_relevance import TOPICS
 from domain.event_time import (
     DEFAULT_DURATION,
     IST,
@@ -55,7 +56,6 @@ from domain.event_time import (
     ist_date,
     window,
 )
-from domain.event_relevance import TOPICS
 from domain.ical import build_ics
 from domain.linkedin_links import person_search_link
 from services.source_health import SourceHealthService
