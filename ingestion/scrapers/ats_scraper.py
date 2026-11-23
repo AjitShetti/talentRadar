@@ -29,7 +29,7 @@ import httpx
 from domain.entities import Job
 from domain.job_boards import LIVE_SEARCH_ATS, AtsName, BoardRef, board_for_posting, board_ref
 from domain.posting_urls import parse_posting_url, posting_url_key
-from ingestion.boards import READERS
+from ingestion.boards import READERS, greenhouse
 from ingestion.boards.base import BoardRead, failed
 from ingestion.scrapling_manager import ScraplingManager
 from services.cache_backend import CacheBackend
@@ -432,9 +432,21 @@ class ATSScraper:
         if ref is None:
             return []
         if client is not None:
-            return (await READERS[ats](client, ref)).roles
+            return (await cls._read_for_search(ats, client, ref)).roles
         async with _board_client() as own:
-            return (await READERS[ats](own, ref)).roles
+            return (await cls._read_for_search(ats, own, ref)).roles
+
+    @staticmethod
+    async def _read_for_search(ats: AtsName, client: httpx.AsyncClient, ref: BoardRef) -> BoardRead:
+        """
+        One board for a live search: the sweep's reader, except that Greenhouse is read without its
+        descriptions (``content=true`` is ~2 MB a busy board, parsed on threads that outlive the
+        search's timeout). The sweep, which owns the pace and the memory, reads them and the
+        rows it stores take them from there.
+        """
+        if ats == "greenhouse":
+            return await greenhouse.read_board(client, ref, descriptions=False)
+        return await READERS[ats](client, ref)
 
     @staticmethod
     def _select(

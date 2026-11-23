@@ -154,9 +154,11 @@ class AtsHosts:
 
     def __init__(self) -> None:
         self.asked: list[str] = []
+        self.urls: list[str] = []  # the full URLs, query strings included
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.asked.append(f"{request.url.host}{request.url.path}")
+        self.urls.append(str(request.url))
         parts = request.url.path.strip("/").split("/")
         if request.url.host == "boards-api.greenhouse.io":
             return httpx.Response(200, json=greenhouse_payload(parts[2]))
@@ -324,6 +326,41 @@ async def test_a_corrupt_cached_roster_is_ignored(
     await search()
 
     assert hosts.boards_read() == {("greenhouse", "acme")}
+
+
+async def test_live_search_reads_greenhouse_without_content(
+    factory: async_sessionmaker[AsyncSession], hosts: AtsHosts
+) -> None:
+    """
+    ``content=true`` makes every posting carry its HTML description (about 2 MB a busy board), and
+    each is parsed to text on a worker thread that outlives the search's 2 s timeout. A search reads
+    25 boards, so it asks for none: the sweep, which owns the pace and the memory, reads them.
+    """
+    await seed_board(factory, "greenhouse", "acme", india_jobs=3)
+    await seed_board(factory, "ashby", "zeta", india_jobs=9)
+
+    jobs = await search()
+
+    assert hosts.boards_read() == {("greenhouse", "acme"), ("ashby", "zeta")}
+    greenhouse_urls = [url for url in hosts.urls if "greenhouse" in url]
+    assert greenhouse_urls
+    assert not any("content" in url for url in greenhouse_urls)
+    # The role is still found, and states no description (the fake board sent none to read).
+    assert {job.source for job in jobs} == {"greenhouse:acme", "ashby:zeta"}
+    assert all(not job.description_clean for job in jobs if job.source == "greenhouse:acme")
+
+
+async def test_the_sweeps_reader_still_asks_greenhouse_for_content(hosts: AtsHosts) -> None:
+    await READERS["greenhouse"](hosts.client(), BoardRef("greenhouse", "acme"))
+
+    assert any("content=true" in url for url in hosts.urls)
+
+
+async def test_the_fallback_boards_are_read_without_content_too(hosts: AtsHosts) -> None:
+    await ATSScraper.fetch_greenhouse_company("stripe", "", None, None, client=hosts.client())
+
+    assert hosts.urls
+    assert not any("content" in url for url in hosts.urls)
 
 
 def test_constants_drop_dead_boards() -> None:
