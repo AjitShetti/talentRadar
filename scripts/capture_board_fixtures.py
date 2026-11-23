@@ -76,7 +76,13 @@ CAPTURES: dict[str, Capture] = {
         {"content": "true"},
     ),
     "ashby": Capture("sarvam", "https://api.ashbyhq.com/posting-api/job-board/sarvam"),
-    "lever": Capture("meesho", "https://api.lever.co/v0/postings/meesho", {"mode": "json"}),
+    # The reader's first page. (The committed recording predates paging and was made
+    # without skip and limit; Meesho has under 100 roles, so it is the same body.)
+    "lever": Capture(
+        "meesho",
+        "https://api.lever.co/v0/postings/meesho",
+        {"mode": "json", "skip": "0", "limit": "100"},
+    ),
 }
 
 

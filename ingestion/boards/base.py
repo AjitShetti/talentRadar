@@ -51,6 +51,19 @@ _GONE_STATUSES = frozenset({404, 410})
 _REQUEST_HEADERS = {"User-Agent": USER_AGENT, "Accept": "application/json"}
 
 
+class _OverCap:
+    """The data of an ``error`` read that stopped because the body passed the size cap."""
+
+    def __repr__(self) -> str:
+        return "OVER_CAP"
+
+
+#: What :func:`get_json` returns in place of data when its ``error`` is the size cap
+#: and nothing else (not a 5xx, a timeout or a body that is not JSON). A reader that
+#: can ask for less (Greenhouse without ``content``) tells that case apart with it.
+OVER_CAP = _OverCap()
+
+
 @dataclass(frozen=True)
 class BoardRead:
     """The result of reading one board once.
@@ -95,7 +108,8 @@ async def get_json(
     inflates past the cap is caught too). 404 and 410 are ``not_found``, 429 is
     ``rate_limited``; any other status, a timeout, a transport error, a body over
     the cap and a body that is not JSON (an HTML page at 200 included) are ``error``.
-    Never raises, other than cancellation.
+    A body over the cap is the one ``error`` whose data is :data:`OVER_CAP` rather than
+    ``None``. Never raises, other than cancellation.
     """
     body = bytearray()
     try:
@@ -116,11 +130,11 @@ async def get_json(
                 return "error", None
             declared = response.headers.get("content-length", "").strip()
             if declared.isdigit() and int(declared) > MAX_BODY_BYTES:
-                return "error", None
+                return "error", OVER_CAP
             async for chunk in response.aiter_bytes():
                 body += chunk
                 if len(body) > MAX_BODY_BYTES:
-                    return "error", None
+                    return "error", OVER_CAP
     except (httpx.HTTPError, httpx.InvalidURL):
         return "error", None
 
@@ -132,19 +146,28 @@ async def get_json(
 
 
 async def read_items(
-    items: list[Any], ref: BoardRef, parse: Callable[[Any, BoardRef], Job | None]
+    items: list[Any],
+    ref: BoardRef,
+    parse: Callable[[Any, BoardRef], Job | None],
+    *,
+    exhaustive: bool = True,
 ) -> BoardRead:
     """
     Turn a board's list of postings into an ``ok`` read, off the event loop.
 
     ``parse`` returns ``None`` for a posting it cannot use (no title, no URL); that
     posting still counts in ``total``, so the read is then ``complete=False``.
+    ``exhaustive`` is false when the reader stopped before the end of the board (a
+    page cap hit), which also makes the read incomplete.
     """
 
     def work() -> BoardRead:
         roles = [role for item in items if (role := parse(item, ref)) is not None]
         return BoardRead(
-            outcome="ok", roles=roles, total=len(items), complete=len(roles) == len(items)
+            outcome="ok",
+            roles=roles,
+            total=len(items),
+            complete=exhaustive and len(roles) == len(items),
         )
 
     return await asyncio.to_thread(work)

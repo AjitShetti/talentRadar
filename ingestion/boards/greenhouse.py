@@ -4,10 +4,11 @@ ingestion/boards/greenhouse.py
 Greenhouse boards: ``GET boards-api.greenhouse.io/v1/boards/{board}/jobs?content=true``.
 
 ``content=true`` is what puts each posting's description in the one list response,
-so a board is one request. The description arrives double-encoded (``&lt;p&gt;``):
-it is unescaped once, then cleaned to text. ``first_published`` is when the role
-went up and ``updated_at`` moves on every edit, so only the first is a publish
-date.
+so a board is one request, unless it is too big for the body cap with descriptions in
+it: then it is read again without ``content`` and its roles carry no description. The
+description arrives double-encoded (``&lt;p&gt;``): it is unescaped once, then cleaned
+to text. ``first_published`` is when the role went up and ``updated_at`` moves on every
+edit, so only the first is a publish date.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from domain.entities import Job
 from domain.job_boards import BoardRef
 from domain.liveness import parse_source_timestamp
 from ingestion.boards.base import (
+    OVER_CAP,
     BoardRead,
     build_job,
     clean_url,
@@ -70,10 +72,18 @@ def _parse(item: Any, ref: BoardRef) -> Job | None:
 
 
 async def read_board(client: httpx.AsyncClient, ref: BoardRef) -> BoardRead:
-    """Every posting on the board, descriptions included, in one request."""
-    outcome, data = await get_json(
-        client, _API.format(board=quote(ref.board, safe="")) + "/jobs", params={"content": "true"}
-    )
+    """
+    Every posting on the board, descriptions included, in one request.
+
+    A big board's ``content=true`` response can pass the body cap (about 9 KB a role).
+    When that is why the read failed, and only then, the board is read again without
+    ``content``: its roles then have no description, but the read is as complete as
+    any other. Any other failure is reported as it is.
+    """
+    url = _API.format(board=quote(ref.board, safe="")) + "/jobs"
+    outcome, data = await get_json(client, url, params={"content": "true"})
+    if outcome == "error" and data is OVER_CAP:
+        outcome, data = await get_json(client, url)
     if outcome != "ok":
         return failed(outcome)
     if not isinstance(data, dict) or not isinstance(data.get("jobs"), list):

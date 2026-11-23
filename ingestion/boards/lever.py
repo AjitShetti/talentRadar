@@ -1,7 +1,12 @@
 """
 ingestion/boards/lever.py
 ~~~~~~~~~~~~~~~~~~~~~~~~~
-Lever boards: ``GET api.lever.co/v0/postings/{board}?mode=json``.
+Lever boards: ``GET api.lever.co/v0/postings/{board}?mode=json&skip=N&limit=100``.
+
+A posting is about 17 KB with its description, so a big board does not fit one
+response under the body cap. The board is read a page of 100 at a time, one page
+after another, until a page comes back short; at most ``MAX_PAGES`` pages, and a read
+that ends on a full last page is ``complete=False`` (there may be more).
 
 The list carries each posting's description as plain text: the opening
 (``descriptionPlain``), the requirement lists (``lists``, where "what you will need"
@@ -38,6 +43,10 @@ from ingestion.boards.base import (
 
 _API = "https://api.lever.co/v0/postings/{board}"
 _FALLBACK_POSTING = "https://jobs.lever.co/{board}/{posting}"
+
+#: Postings asked for per request, and the most requests one read makes.
+PAGE_SIZE = 100
+MAX_PAGES = 10
 
 
 def _location(item: dict[str, Any]) -> str:
@@ -97,12 +106,25 @@ def _parse(item: Any, ref: BoardRef) -> Job | None:
 
 
 async def read_board(client: httpx.AsyncClient, ref: BoardRef) -> BoardRead:
-    """Every posting on the board, descriptions included, in one request."""
-    outcome, data = await get_json(
-        client, _API.format(board=quote(ref.board, safe="")), params={"mode": "json"}
-    )
-    if outcome != "ok":
-        return failed(outcome)
-    if not isinstance(data, list):
-        return failed("error")
-    return await read_items(data, ref, _parse)
+    """
+    Every posting on the board, descriptions included, a page at a time.
+
+    A page that fails or is not a list fails the whole read: a half-read board says
+    nothing about the roles it did not reach. Pages are sequential; pacing between
+    them is the caller's.
+    """
+    url = _API.format(board=quote(ref.board, safe=""))
+    postings: list[Any] = []
+    reached_the_end = False
+    for page in range(MAX_PAGES):
+        params = {"mode": "json", "skip": str(page * PAGE_SIZE), "limit": str(PAGE_SIZE)}
+        outcome, data = await get_json(client, url, params=params)
+        if outcome != "ok":
+            return failed(outcome)
+        if not isinstance(data, list):
+            return failed("error")
+        postings.extend(data)
+        if len(data) < PAGE_SIZE:
+            reached_the_end = True
+            break
+    return await read_items(postings, ref, _parse, exhaustive=reached_the_end)

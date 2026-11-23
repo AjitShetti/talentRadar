@@ -33,6 +33,7 @@ from domain.liveness import parse_source_timestamp
 from ingestion.boards import READERS
 from ingestion.boards.base import (
     MAX_BODY_BYTES,
+    OVER_CAP,
     USER_AGENT,
     BoardRead,
     clean_url,
@@ -65,13 +66,19 @@ def load_fixture(ats: str) -> dict[str, Any]:
 
 
 def fixture_handler(ats: str, seen: list[httpx.Request] | None = None) -> Handler:
-    """Answer each request from the recording, by full URL; anything unrecorded is a 404."""
+    """
+    Answer each request from the recording, by full URL; anything unrecorded is a 404.
+
+    ``skip`` and ``limit`` are not part of the key: the Lever recording predates paging
+    and holds a whole board (under one page), which is what its first page answers.
+    """
     requests: dict[str, Any] = load_fixture(ats)["requests"]
 
     def handler(request: httpx.Request) -> httpx.Response:
         if seen is not None:
             seen.append(request)
-        entry = requests.get(str(request.url))
+        url = request.url.copy_remove_param("skip").copy_remove_param("limit")
+        entry = requests.get(str(url))
         if entry is None:
             return httpx.Response(404, text="not recorded")
         return httpx.Response(
@@ -291,8 +298,23 @@ async def test_body_is_not_read_past_the_cap() -> None:
         outcome, data = await get_json(client, "https://example.test/board")
 
     assert outcome == "error"
-    assert data is None
+    assert data is OVER_CAP
     assert sent <= MAX_BODY_BYTES + 2 * len(chunk)
+
+
+@pytest.mark.parametrize(
+    "handler",
+    [
+        answering(500, text="boom"),
+        answering(200, text=HTML_PAGE),
+        answering(301, headers={"location": "https://example.test/x"}),
+    ],
+)
+async def test_only_the_size_cap_is_marked_over_cap(handler: Handler) -> None:
+    async with client_for(handler) as client:
+        outcome, data = await get_json(client, "https://example.test/board")
+    assert outcome == "error"
+    assert data is None
 
 
 async def test_a_declared_length_over_the_cap_is_refused_without_reading() -> None:
@@ -485,6 +507,173 @@ def test_clean_url_refuses_anything_but_an_absolute_http_url(value: object) -> N
 
 def test_clean_url_keeps_a_posting_url() -> None:
     assert clean_url(" https://jobs.lever.co/acme/1 ") == "https://jobs.lever.co/acme/1"
+
+
+# ── big boards stay under the body cap ───────────────────────────────────────
+
+
+def over_cap_body() -> bytes:
+    return b"[" + b"1," * (MAX_BODY_BYTES // 2 + 1000) + b"1]"
+
+
+GREENHOUSE_POSTING = {
+    "id": 5,
+    "title": "Engineer",
+    "absolute_url": "https://job-boards.greenhouse.io/big/jobs/5",
+    "location": {"name": "Bengaluru, India"},
+    "first_published": "2026-03-01T00:00:00Z",
+}
+
+
+async def test_greenhouse_over_cap_falls_back_without_content() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.url.params.get("content") == "true":
+            return httpx.Response(200, content=over_cap_body())
+        return httpx.Response(200, json={"jobs": [GREENHOUSE_POSTING]})
+
+    result = await read("greenhouse", handler, "big")
+
+    assert result.outcome == "ok"
+    assert result.complete is True
+    assert result.total == len(result.roles) == 1
+    assert [request.url.params.get("content") for request in seen] == ["true", None]
+    assert seen[0].url.path == seen[1].url.path
+    (role,) = result.roles
+    assert role.description_clean is None
+    assert role.title == "Engineer"
+    assert role.posted_at == datetime(2026, 3, 1, tzinfo=UTC)
+
+
+async def test_greenhouse_over_cap_without_content_is_still_error() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, content=over_cap_body())
+
+    result = await read("greenhouse", handler, "big")
+
+    assert result.outcome == "error"
+    assert result.roles == []
+    assert result.complete is False
+    assert len(seen) == 2, "one retry without content, then it is reported"
+
+
+@pytest.mark.parametrize(
+    "handler",
+    [
+        answering(500, text="boom"),
+        answering(429, text=HTML_PAGE),
+        answering(404, json={"error": "no"}),
+        answering(200, text=HTML_PAGE),
+        answering(301, headers={"location": "https://example.test/x"}),
+    ],
+)
+async def test_greenhouse_falls_back_only_for_the_size_cap(handler: Handler) -> None:
+    seen: list[httpx.Request] = []
+
+    def counting(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return handler(request)
+
+    result = await read("greenhouse", counting, "big")
+
+    assert result.outcome in ("error", "rate_limited", "not_found")
+    assert len(seen) == 1
+
+
+def lever_posting(number: int) -> dict[str, Any]:
+    return {
+        "id": f"l{number}",
+        "text": f"Role {number}",
+        "hostedUrl": f"https://jobs.lever.co/big/l{number}",
+        "categories": {"location": "Pune"},
+    }
+
+
+def lever_pages(total: int, seen: list[httpx.Request]) -> Handler:
+    """A Lever board of ``total`` postings, answering ``skip`` and ``limit`` as Lever does."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        skip = int(request.url.params["skip"])
+        limit = int(request.url.params["limit"])
+        return httpx.Response(
+            200, json=[lever_posting(n) for n in range(skip, min(skip + limit, total))]
+        )
+
+    return handler
+
+
+async def test_lever_pages_until_short_page() -> None:
+    seen: list[httpx.Request] = []
+
+    result = await read("lever", lever_pages(230, seen), "big")
+
+    assert result.outcome == "ok"
+    assert result.complete is True
+    assert result.total == len(result.roles) == 230
+    assert [role.external_id for role in result.roles] == [f"l{n}" for n in range(230)]
+    assert [request.url.params["skip"] for request in seen] == ["0", "100", "200"]
+    assert {request.url.params["limit"] for request in seen} == {"100"}
+    assert {request.url.params["mode"] for request in seen} == {"json"}
+
+
+async def test_lever_board_of_exactly_one_page_asks_once_more_and_is_complete() -> None:
+    seen: list[httpx.Request] = []
+
+    result = await read("lever", lever_pages(100, seen), "big")
+
+    assert result.outcome == "ok"
+    assert result.complete is True
+    assert result.total == len(result.roles) == 100
+    assert [request.url.params["skip"] for request in seen] == ["0", "100"]
+
+
+@pytest.mark.parametrize("total", [1000, 5000])
+async def test_lever_page_cap_is_incomplete(total: int) -> None:
+    seen: list[httpx.Request] = []
+
+    result = await read("lever", lever_pages(total, seen), "big")
+
+    assert result.outcome == "ok"
+    assert result.complete is False, "page 10 was full: there may be more"
+    assert result.total == len(result.roles) == 1000
+    assert len(seen) == 10
+    assert seen[-1].url.params["skip"] == "900"
+
+
+async def test_lever_a_page_that_fails_fails_the_whole_read() -> None:
+    for status, outcome in ((429, "rate_limited"), (500, "error"), (404, "not_found")):
+        seen: list[httpx.Request] = []
+        pages = lever_pages(300, seen)
+
+        def handler(
+            request: httpx.Request, status: int = status, pages: Handler = pages
+        ) -> httpx.Response:
+            if request.url.params["skip"] == "100":
+                return httpx.Response(status, text="no")
+            return pages(request)
+
+        result = await read("lever", handler, "big")
+        assert result.outcome == outcome
+        assert result.roles == []
+        assert result.complete is False
+        assert len(seen) == 1, "the page after the failure is never asked for"
+
+
+async def test_lever_a_page_that_is_not_a_list_is_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.params["skip"] == "100":
+            return httpx.Response(200, json={"ok": False})
+        return httpx.Response(200, json=[lever_posting(n) for n in range(100)])
+
+    result = await read("lever", handler, "big")
+    assert result.outcome == "error"
+    assert result.roles == []
 
 
 # ── Greenhouse's board name ──────────────────────────────────────────────────
