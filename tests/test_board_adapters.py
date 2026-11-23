@@ -31,10 +31,12 @@ import pytest
 
 from domain.entities import Job
 from domain.geo import INDIA_COUNTRY_CODE
-from domain.job_boards import AtsName, BoardRef, is_india_role
+from domain.job_boards import PACE_SECONDS, AtsName, BoardRef, is_india_role
 from domain.liveness import parse_source_timestamp
 from domain.posting_urls import parse_posting_url
 from ingestion.boards import READERS
+from ingestion.boards import lever as lever_reader
+from ingestion.boards import rippling as rippling_reader
 from ingestion.boards.base import (
     MAX_BODY_BYTES,
     OVER_CAP,
@@ -146,6 +148,22 @@ def ref_for(ats: AtsName, board: str | None = None) -> BoardRef:
 async def read(ats: AtsName, handler: Handler, board: str | None = None) -> BoardRead:
     async with client_for(handler) as client:
         return await READERS[ats](client, ref_for(ats, board))
+
+
+@pytest.fixture(autouse=True)
+def pages_do_not_wait(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """
+    The readers that make several requests wait ``PACE_SECONDS`` between them. Here the wait is
+    recorded instead of taken, so the 20-page Lever board does not cost twenty seconds.
+    """
+    waits: list[float] = []
+
+    async def record(seconds: float) -> None:
+        waits.append(seconds)
+
+    monkeypatch.setattr(lever_reader, "_sleep", record)
+    monkeypatch.setattr(rippling_reader, "_sleep", record)
+    return waits
 
 
 # ── the recordings ───────────────────────────────────────────────────────────
@@ -1055,6 +1073,37 @@ async def test_lever_a_page_that_is_not_a_list_is_error() -> None:
     result = await read("lever", handler, "big")
     assert result.outcome == "error"
     assert result.roles == []
+
+
+async def test_lever_waits_its_pace_between_pages_and_not_before_the_first(
+    pages_do_not_wait: list[float],
+) -> None:
+    seen: list[httpx.Request] = []
+
+    await read("lever", lever_pages(PAGE_SIZE * 2 + 5, seen), "big")
+
+    assert len(seen) == 3
+    assert pages_do_not_wait == [PACE_SECONDS["lever"]] * 2
+
+
+async def test_lever_a_one_page_board_does_not_wait(pages_do_not_wait: list[float]) -> None:
+    await read("lever", lever_pages(7, []), "big")
+
+    assert pages_do_not_wait == []
+
+
+async def test_lever_a_page_that_fails_is_not_followed_by_a_wait(
+    pages_do_not_wait: list[float],
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.params["skip"] == str(PAGE_SIZE):
+            return httpx.Response(429, text="slow down")
+        return lever_pages(PAGE_SIZE * 3, [])(request)
+
+    result = await read("lever", handler, "big")
+
+    assert result.outcome == "rate_limited"
+    assert pages_do_not_wait == [PACE_SECONDS["lever"]], "one wait: before the page that failed"
 
 
 # ── Greenhouse's board name ──────────────────────────────────────────────────
@@ -2035,6 +2084,23 @@ def test_rippling_reads_at_most_the_capped_pages() -> None:
     from ingestion.boards.rippling import MAX_PAGES
 
     assert MAX_PAGES == RIPPLING_PAGE_CAP
+
+
+async def test_rippling_waits_its_pace_between_pages_and_not_before_the_first(
+    pages_do_not_wait: list[float],
+) -> None:
+    seen: list[httpx.Request] = []
+
+    await read("rippling", rippling_pages(3, 20, seen), "acme")
+
+    assert len(seen) == 3
+    assert pages_do_not_wait == [PACE_SECONDS["rippling"]] * 2
+
+
+async def test_rippling_a_one_page_board_does_not_wait(pages_do_not_wait: list[float]) -> None:
+    await read("rippling", rippling_pages(1, 5, []), "acme")
+
+    assert pages_do_not_wait == []
 
 
 async def test_rippling_a_page_that_fails_fails_the_whole_read() -> None:

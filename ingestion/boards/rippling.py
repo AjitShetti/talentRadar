@@ -18,18 +18,20 @@ invented. A place whose ``workplaceType`` is ``REMOTE`` makes the role remote.
 
 The board is a path segment, not a host, but it still goes into a request and into a posting
 URL, so its id is checked to be a slug first; one that is not makes no request. Pages are
-sequential; pacing between them is the caller's.
+sequential, ``PACE_SECONDS`` apart; pacing between boards is the caller's.
 """
 
 from __future__ import annotations
 
+import asyncio
 import re
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
 
 from domain.entities import Job
-from domain.job_boards import BoardRef
+from domain.job_boards import PACE_SECONDS, BoardRef
 from ingestion.boards.base import (
     BoardRead,
     build_job,
@@ -50,6 +52,10 @@ _POSTING_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a
 
 #: The most pages one read asks for.
 MAX_PAGES = 10
+
+#: How the reader waits between two pages of one board: a module-level reference, so a
+#: test can replace it and not really wait.
+_sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
 
 
 def _places(item: dict[str, Any]) -> list[dict[str, Any]]:
@@ -121,6 +127,8 @@ async def read_board(client: httpx.AsyncClient, ref: BoardRef) -> BoardRead:
     url = _API.format(board=ref.board)
     rows: list[Any] = []
     for page in range(1, MAX_PAGES + 1):
+        if page > 1:
+            await _sleep(PACE_SECONDS["rippling"])
         outcome, data = await get_json(client, url, params={"page": str(page)})
         if outcome != "ok":
             return failed(outcome)

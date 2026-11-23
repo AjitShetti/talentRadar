@@ -19,13 +19,15 @@ is the pace the sweep keeps.
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Awaitable, Callable
 from typing import Any
 from urllib.parse import quote
 
 import httpx
 
 from domain.entities import Job
-from domain.job_boards import BoardRef
+from domain.job_boards import PACE_SECONDS, BoardRef
 from domain.liveness import parse_source_timestamp
 from ingestion.boards.base import (
     BoardRead,
@@ -48,6 +50,10 @@ _FALLBACK_POSTING = "https://jobs.lever.co/{board}/{posting}"
 #: Postings asked for per request, and the most requests one read makes.
 PAGE_SIZE = 50
 MAX_PAGES = 20
+
+#: How the reader waits between two pages of one board: a module-level reference, so a
+#: test can replace it and not really wait.
+_sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
 
 
 def _location(item: dict[str, Any]) -> str:
@@ -111,13 +117,15 @@ async def read_board(client: httpx.AsyncClient, ref: BoardRef) -> BoardRead:
     Every posting on the board, descriptions included, a page at a time.
 
     A page that fails or is not a list fails the whole read: a half-read board says
-    nothing about the roles it did not reach. Pages are sequential; pacing between
-    them is the caller's.
+    nothing about the roles it did not reach. Pages are sequential, ``PACE_SECONDS``
+    apart (Lever's ``Crawl-delay``); pacing between boards is the caller's.
     """
     url = _API.format(board=quote(ref.board, safe=""))
     postings: list[Any] = []
     reached_the_end = False
     for page in range(MAX_PAGES):
+        if page:
+            await _sleep(PACE_SECONDS["lever"])
         params = {"mode": "json", "skip": str(page * PAGE_SIZE), "limit": str(PAGE_SIZE)}
         outcome, data = await get_json(client, url, params=params)
         if outcome != "ok":
