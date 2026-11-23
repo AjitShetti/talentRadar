@@ -393,6 +393,68 @@ async def test_a_read_that_states_no_date_never_clears_a_stored_one(session: Asy
     assert row.source_posted_at is not None and row.source_posted_at.replace(tzinfo=UTC) == posted
 
 
+# -- a complete read confirms what it lists ---------------------------------------------
+
+
+async def test_a_complete_read_confirms_the_rows_it_lists(session: AsyncSession) -> None:
+    board = await add_board(session)
+    listed = role(1)
+
+    before = datetime.now(UTC)
+    await write(session, board, read_of(listed))
+
+    (row,) = await jobs_of(session)
+    assert row.last_verified_at is not None
+    assert row.last_verified_at.replace(tzinfo=UTC) >= before - timedelta(seconds=1)
+
+    # A later read confirms it again.
+    long_ago = datetime.now(UTC) - timedelta(days=5)
+    await session.execute(update(JobRow).values(last_verified_at=long_ago))
+    await write(session, board, read_of(listed))
+    (row,) = await jobs_of(session)
+    assert row.last_verified_at is not None
+    assert row.last_verified_at.replace(tzinfo=UTC) > long_ago + timedelta(days=4)
+
+
+async def test_an_incomplete_read_confirms_nothing(session: AsyncSession) -> None:
+    board = await add_board(session)
+    listed = role(1)
+    await write(session, board, read_of(listed, complete=False))
+    (row,) = await jobs_of(session)
+    assert row.last_verified_at is None
+
+    # An existing, never-confirmed row stays so under an incomplete read too.
+    await write(session, board, read_of(listed, complete=False))
+    (row,) = await jobs_of(session)
+    assert row.last_verified_at is None
+
+
+async def test_a_listed_role_that_is_not_written_is_confirmed_too(session: AsyncSession) -> None:
+    board = await add_board(session)
+    await write(session, board, read_of(role(3, location="Bengaluru, India")))
+    await session.execute(update(JobRow).values(last_verified_at=None))
+
+    # Still on the board, but its location no longer says India: it is not rewritten, yet the
+    # read did list it.
+    await write(session, board, read_of(role(3, location="Remote")))
+
+    (row,) = await jobs_of(session)
+    assert row.last_verified_at is not None
+
+
+async def test_a_role_the_board_no_longer_lists_is_not_confirmed(session: AsyncSession) -> None:
+    board = await add_board(session)
+    stays, goes = role(1), role(2)
+    await write(session, board, read_of(stays, goes))
+    await session.execute(update(JobRow).values(last_verified_at=None))
+
+    await write(session, board, read_of(stays))
+
+    assert (await job_at(session, stays.source_url or "")).last_verified_at is not None
+    gone = await job_at(session, goes.source_url or "")
+    assert gone.closed_at is not None and gone.last_verified_at is None
+
+
 # -- the same posting from two paths -----------------------------------------------------
 
 

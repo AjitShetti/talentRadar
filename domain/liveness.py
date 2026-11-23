@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 
-from domain.job_boards import ATS
+from domain.job_boards import ATS, SWEEP_ONLY_ATS
 
 # A role open longer than this is called out. Most filled roles close well
 # inside six weeks; one that has not is either hard to fill or not being filled.
@@ -133,6 +133,14 @@ def _day(value: datetime) -> str:
 def is_verifiable_source(source: str) -> bool:
     """True for sources whose postings can be re-checked against the employer's ATS."""
     return (source or "").split(":", 1)[0].strip().lower() in _VERIFIABLE_PREFIXES
+
+
+def is_sweep_only_source(source: str) -> bool:
+    """
+    True for a source whose postings only the board sweep confirms: re-checking one means reading
+    its whole board, which no request and no re-check batch may do (``SWEEP_ONLY_ATS``).
+    """
+    return (source or "").split(":", 1)[0].strip().lower() in SWEEP_ONLY_ATS
 
 
 def title_key(title: str) -> str:

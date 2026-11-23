@@ -32,6 +32,9 @@ What it keeps and what it does not
   still listed, so it is not closed (it is simply no longer an India role, and no longer
   refreshed, so it ages out). An incomplete read, and an absent role under a cap, close
   nothing.
+* A role a complete read lists is confirmed open (``last_verified_at``, as an OPEN re-check
+  records it). The re-check never reads a whole board of six of the ATSes on a request or on its
+  own schedule: this read is how those rows are confirmed, and how they close.
 
 The caller owns the transaction: nothing here commits, and nothing here makes a request.
 Rows are written structurally (``enrichment_status='raw'``, no LLM call), and the items
@@ -201,16 +204,20 @@ def _embedding_item(
     }
 
 
-async def _close_absent(
+async def _settle_complete_read(
     session: AsyncSession, board: JobBoard, listed_ids: set[str], listed_urls: set[str]
 ) -> int:
     """
-    Close every open row of this board that the board no longer lists. Returns how many.
+    What a **complete** read says about the board's open rows: close the absent, confirm the listed.
+    Returns how many were closed.
 
-    A row is kept open when its id *or* its URL is anywhere in the read: the URL is the
+    A row is listed when its id *or* its URL is anywhere in the read: the URL is the
     evidence that matters, and a row whose id was derived some other way still shows up by it.
-    A row with no ``external_id`` cannot be matched to anything and is left alone. ``closed_at``
-    keeps the date a role was first found gone (only ``closed_at IS NULL`` rows move).
+    A listed row is confirmed open (``last_verified_at``, the same stamp an OPEN re-check
+    leaves), so the re-check does not read again a board the sweep has just read whole.
+    A row with no ``external_id`` cannot be matched to anything and is left alone, and so is a
+    Personio row of the other region. ``closed_at`` keeps the date a role was first found gone
+    (only ``closed_at IS NULL`` rows move).
     """
     rows = (
         await session.execute(
@@ -222,16 +229,24 @@ async def _close_absent(
     own_host = _own_host(board)
 
     gone: list[uuid.UUID] = []
+    listed: list[uuid.UUID] = []
     for job_id, external_id, source_url in rows:
-        if external_id is None or external_id in listed_ids:
-            continue
-        if source_url and source_url in listed_urls:
+        if external_id is None:
             continue
         if own_host is not None and _host_of(source_url) != own_host:
             continue
-        gone.append(job_id)
+        if external_id in listed_ids or (source_url and source_url in listed_urls):
+            listed.append(job_id)
+        else:
+            gone.append(job_id)
 
     now = datetime.now(UTC)
+    for start in range(0, len(listed), _CLOSE_CHUNK):
+        await session.execute(
+            update(JobRow)
+            .where(JobRow.id.in_(listed[start : start + _CLOSE_CHUNK]))
+            .values(last_verified_at=now)
+        )
     for start in range(0, len(gone), _CLOSE_CHUNK):
         await session.execute(
             update(JobRow)
@@ -329,8 +344,8 @@ async def write_board_roles(
 
     # 4. A complete read is the whole board. Presence is judged on every role it listed, India
     #    or not and cap or not, so a role that moved to "Remote" is not mistaken for one that left.
-    if read.complete:
-        summary.closed = await _close_absent(
+    if read.outcome == "ok" and read.complete:
+        summary.closed = await _settle_complete_read(
             session,
             board,
             {_stable_external_id(role) for role in read.roles},

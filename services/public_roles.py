@@ -32,7 +32,7 @@ from typing import Any
 
 from domain.geo import is_india
 from domain.job_boards import ATS
-from domain.liveness import is_verifiable_source, title_key
+from domain.liveness import is_sweep_only_source, is_verifiable_source, title_key
 from domain.posting_urls import (
     PostingRef,
     company_slug,
@@ -332,7 +332,9 @@ async def check_url(url: str) -> dict[str, Any]:
       indexed      we already track this role; ``liveness`` is its verdict
       open_now     the employer's ATS serves it right now; we have no history
       closed_now   the employer's ATS no longer serves it
-      unreachable  a supported ATS, but it could not be asked just now
+      unreachable  a supported ATS, but it could not be asked just now (or, for the six
+                   whose only check is a whole-board read, it is the sweep's to make and we
+                   do not hold this posting yet)
       unsupported  not a source we can verify
     """
     text = (url or "").strip()
@@ -348,6 +350,16 @@ async def check_url(url: str) -> dict[str, Any]:
 
     if ref is None:
         return _answer("unsupported", _UNSUPPORTED_MESSAGE)
+
+    if is_sweep_only_source(ref.source):
+        # Confirming one of these means reading the employer's whole board, which only the
+        # paced sweep does: an anonymous request must not be able to trigger it. A posting
+        # the sweep has read is answered above, from the index.
+        return _answer(
+            "unreachable",
+            "We read this employer's careers site on a daily schedule, not when asked, and "
+            "this posting is not one we hold yet. Check back after the next read.",
+        )
 
     try:
         outcome = await ATSScraper.check_posting(ref.source, ref.external_id, source_url=text)

@@ -32,13 +32,14 @@ from typing import Any
 
 import httpx
 
-from domain.job_boards import ATS, PACE_SECONDS, BoardRef
+from domain.job_boards import ATS, PACE_SECONDS, SWEEP_ONLY_ATS, BoardRef
 from domain.liveness import (
     VERIFICATION_VALID_FOR,
     LivenessEvidence,
     LivenessVerdict,
     SightingState,
     assess,
+    is_sweep_only_source,
     is_verifiable_source,
     next_sighting,
     title_key,
@@ -174,14 +175,22 @@ async def _load_candidates(limit: int) -> list[Candidate]:
     """
     Postings due a re-check: roles someone is tracking first, then whichever
     has gone longest without one.
+
+    Never a posting of a ``SWEEP_ONLY_ATS``: confirming one means reading its whole board,
+    which is the sweep's paced read and nobody else's. Its complete reads confirm and close
+    those rows, so a batch that came for them would only read again, and on the cron's own
+    schedule, a board the sweep has just read.
     """
     from sqlalchemy import text
 
     from storage.database import AsyncSessionLocal
 
-    # One bound pattern per ATS on the roster (``greenhouse:%``, ``workable:%``
+    # One bound pattern per ATS the re-check can ask (``greenhouse:%``, ``ashby:%``
     # ...), so the list cannot drift from ``domain.job_boards.ATS``.
-    source_params = {f"ats_{i}": f"{ats}:%" for i, ats in enumerate(ATS)}
+    source_params = {
+        f"ats_{i}": f"{ats}:%"
+        for i, ats in enumerate(ats for ats in ATS if ats not in SWEEP_ONLY_ATS)
+    }
     source_clause = " OR ".join(f"j.source LIKE :{name}" for name in source_params)
 
     async with AsyncSessionLocal() as session:
@@ -330,11 +339,15 @@ async def reverify_job(job: Any) -> PostingCheck:
     """
     Re-check one posting now and record the result on the given ORM row.
     The caller owns the session and the commit. Never raises.
+
+    A posting of a ``SWEEP_ONLY_ATS`` is not re-checked here: that would read its whole
+    board, unpaced, for whoever asked (a public check, a dossier). The row is answered from
+    what the sweep last recorded, and this says ``ERROR``, not ``CLOSED``.
     """
     ref = posting_ref(
         job.source, getattr(job, "source_url", None), getattr(job, "external_id", None)
     )
-    if ref is None:
+    if ref is None or is_sweep_only_source(ref.source):
         return PostingCheck.ERROR
     try:
         result = await ATSScraper.check_posting(
@@ -353,8 +366,12 @@ async def reverify_job(job: Any) -> PostingCheck:
 
 
 def recheck_is_due(job: Any, now: datetime) -> bool:
-    """True when a verifiable, open role has no confirmation fresh enough to show."""
-    if not is_verifiable_source(job.source or "") or job.closed_at is not None:
+    """
+    True when a verifiable, open role has no confirmation fresh enough to show, and a request
+    may ask for one. A ``SWEEP_ONLY_ATS`` row is never due: only the sweep confirms it.
+    """
+    source = job.source or ""
+    if not is_verifiable_source(source) or is_sweep_only_source(source) or job.closed_at is not None:
         return False
     verified = job.last_verified_at
     if verified is None:

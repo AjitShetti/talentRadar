@@ -67,6 +67,16 @@ PACE_SECONDS: Mapping[AtsName, float] = MappingProxyType(
 #: The two ATSes live search scrapes on demand (the rest are swept on a schedule).
 LIVE_SEARCH_ATS: frozenset[AtsName] = frozenset({"greenhouse", "ashby"})
 
+#: The six ATSes with no per-posting endpoint and no cheap board: a posting is confirmed only by
+#: reading its whole board through the paced reader (10 s apart for Workable, up to ten pages for
+#: Rippling), and a wrong pace is answered with a block of the whole IP. That read is the sweep's
+#: alone: the re-check never makes it, on a schedule or on someone's request, and the sweep's
+#: complete reads are what confirm and close these rows. Greenhouse and Lever are asked about one
+#: posting, and Ashby's whole board is one request.
+SWEEP_ONLY_ATS: frozenset[AtsName] = frozenset(
+    {"workable", "recruitee", "keka", "rippling", "personio", "breezy"}
+)
+
 #: ATSes whose board id can be guessed from a company name: an unknown slug
 #: answers 404 there. Rippling, Personio and Breezy are found by link only.
 PROBE_ATS: tuple[AtsName, ...] = ("greenhouse", "ashby", "lever", "workable", "recruitee", "keka")

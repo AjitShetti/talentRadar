@@ -345,6 +345,10 @@ class ATSScraper:
         """
         Membership: is this posting among the roles of its board?
 
+        This reads a whole board, so it is only for a caller that owns the pace: no request path
+        and no re-check batch calls it for a ``SWEEP_ONLY_ATS`` (``services.liveness`` and
+        ``services.public_roles`` answer those from the stored row), and Ashby's board is one request.
+
         A role is the same posting when it has the same posting id, each read from its URL by
         ``parse_posting_url`` (so a query string, a trailing slash or the case of an id does not
         matter). A URL that does not parse is compared by its normalised form instead. Only a

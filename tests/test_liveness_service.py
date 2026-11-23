@@ -674,3 +674,145 @@ def test_a_stored_role_is_matched_to_a_pasted_url_by_the_id_in_its_own_url():
     assert not _is_the_posting(
         _stored(source_url="https://job-boards.greenhouse.io/inmobi/jobs/73934339"), ref
     )
+
+
+# ── six ATSes are confirmed by the sweep, never by a request or the re-check batch ────────
+#
+# Workable, Recruitee, Keka, Rippling, Personio and Breezy have no per-posting endpoint: a posting
+# is confirmed only by reading its whole board, 10 s apart for Workable and ten pages for Rippling.
+# That read is the sweep's. A request (a dossier, a public page, the public check) never makes it,
+# and the re-check batch never selects those rows: the sweep's complete reads confirm and close them.
+
+RIPPLING_ID = "0f1e2d3c-4b5a-6978-8695-a4b3c2d1e0f9"
+SWEEP_ONLY_ROWS = [
+    ("workable:acme", "https://apply.workable.com/acme/j/ABC123/"),
+    ("recruitee:acme", "https://acme.recruitee.com/o/backend-engineer"),
+    ("keka:acme", "https://acme.keka.com/careers/jobdetails/12"),
+    ("rippling:acme", f"https://ats.rippling.com/acme/jobs/{RIPPLING_ID}"),
+    ("personio:acme", "https://acme.jobs.personio.de/job/12"),
+    ("breezy:acme", "https://acme.breezy.hr/p/0123456789abcdef-backend"),
+]
+
+
+def _no_board_read(monkeypatch: pytest.MonkeyPatch) -> tuple[list[BoardRef], list[str]]:
+    """Every reader and every HTTP call answers by recording: returns (boards read, urls asked)."""
+    asked: list[BoardRef] = []
+
+    async def reader(client: httpx.AsyncClient, board: BoardRef) -> BoardRead:
+        asked.append(board)
+        return board_read(complete=True)
+
+    for ats in READERS:
+        monkeypatch.setitem(READERS, ats, reader)
+    calls = replay(monkeypatch, {})
+    return asked, calls
+
+
+@pytest.mark.parametrize(("source", "url"), SWEEP_ONLY_ROWS)
+async def test_an_on_demand_recheck_never_reads_a_sweep_only_board(monkeypatch, source, url):
+    asked, calls = _no_board_read(monkeypatch)
+    job = SimpleNamespace(
+        source=source, external_id=HASHED, closed_at=None, last_verified_at=None, source_url=url
+    )
+
+    assert await liveness.reverify_job(job) is PostingCheck.ERROR
+
+    assert asked == [] and calls == []
+    assert job.closed_at is None and job.last_verified_at is None
+
+
+@pytest.mark.parametrize(("source", "url"), SWEEP_ONLY_ROWS)
+async def test_a_sweep_only_row_is_never_due_for_an_on_demand_recheck(monkeypatch, source, url):
+    asked, calls = _no_board_read(monkeypatch)
+    session, job = _Session(), _stored(source=source, source_url=url)
+
+    assert liveness.recheck_is_due(job, datetime.now(UTC)) is False
+    await liveness.refresh_if_due(session, job)
+
+    assert asked == [] and calls == []
+    assert session.commits == 0 and job.last_verified_at is None
+
+
+async def test_an_ashby_row_is_still_due_for_an_on_demand_recheck():
+    job = _stored(source="ashby:linear", source_url=ASHBY_JOB.format(id="x1"))
+    assert liveness.recheck_is_due(job, datetime.now(UTC)) is True
+
+
+@pytest.fixture
+async def memory_db(monkeypatch: pytest.MonkeyPatch):
+    """An in-memory database from the real models, behind ``AsyncSessionLocal``."""
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+    import storage.database as database
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(database.Base.metadata.create_all)
+    sessions = async_sessionmaker(
+        bind=engine, class_=AsyncSession, expire_on_commit=False, autoflush=False
+    )
+    monkeypatch.setattr(database, "AsyncSessionLocal", sessions)
+    yield sessions
+    await engine.dispose()
+
+
+async def test_the_batch_never_selects_a_sweep_only_row(memory_db):
+    from storage.models import Company, Job
+
+    company = Company(name="Acme", domain="acme.example")
+    sources = [
+        "greenhouse:acme",
+        "lever:acme",
+        "ashby:acme",
+        "workable:acme",
+        "recruitee:acme",
+        "keka:acme",
+        "rippling:acme",
+        "personio:acme",
+        "breezy:acme",
+        "linkedin",
+    ]
+    async with memory_db() as session:
+        session.add(company)
+        await session.flush()
+        for number, source in enumerate(sources):
+            session.add(
+                Job(
+                    company_id=company.id,
+                    source=source,
+                    external_id=f"id-{number}",
+                    source_url=f"https://example.com/{number}",
+                    title=f"Engineer {number}",
+                )
+            )
+        await session.commit()
+
+    chosen = await liveness._load_candidates(50)
+
+    assert sorted(c.source for c in chosen) == ["ashby:acme", "greenhouse:acme", "lever:acme"]
+
+
+async def test_the_batch_reads_no_sweep_only_board_even_when_they_are_all_due(monkeypatch, memory_db):
+    from storage.models import Company, Job
+
+    asked, calls = _no_board_read(monkeypatch)
+    async with memory_db() as session:
+        company = Company(name="Acme", domain="acme.example")
+        session.add(company)
+        await session.flush()
+        for number, (source, url) in enumerate(SWEEP_ONLY_ROWS):
+            session.add(
+                Job(
+                    company_id=company.id,
+                    source=source,
+                    external_id=HASHED[:-1] + str(number),
+                    source_url=url,
+                    title=f"Engineer {number}",
+                )
+            )
+        await session.commit()
+
+    summary = await liveness.reverify_batch(limit=50)
+
+    assert summary == {"checked": 0, "open": 0, "closed": 0, "errors": 0}
+    assert asked == [] and calls == []
