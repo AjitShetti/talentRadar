@@ -26,7 +26,7 @@ import httpx
 
 from domain.entities import Job
 from domain.job_boards import AtsName, BoardRef, board_for_posting
-from domain.posting_urls import posting_url_key
+from domain.posting_urls import parse_posting_url, posting_url_key
 from ingestion.boards import READERS
 from ingestion.boards.base import BoardRead, failed
 from ingestion.scrapling_manager import ScraplingManager
@@ -242,23 +242,33 @@ class ATSScraper:
         client: httpx.AsyncClient | None,
     ) -> PostingCheck:
         """
-        Membership: the posting's URL among the roles of its board.
+        Membership: is this posting among the roles of its board?
 
-        Only a board read whole (``ok`` and ``complete``) can show that a posting is absent.
-        A failed or rate-limited read, a 404 for the board (which is not proof that one
-        posting closed) and an incomplete read all answer ``ERROR``.
+        A role is the same posting when it has the same posting id, each read from its URL by
+        ``parse_posting_url`` (so a query string, a trailing slash or the case of an id does not
+        matter). A URL that does not parse is compared by its normalised form instead. Only a
+        board read whole (``ok`` and ``complete``) can show that a posting is absent: a failed or
+        rate-limited read, a 404 for the board (which is not proof that one posting closed) and
+        an incomplete read all answer ``ERROR``.
         """
         board = cls.board_for(source, source_url)
+        held = parse_posting_url(source_url or "")
         wanted = posting_url_key(source_url)
-        if board is None or wanted is None:
+        if board is None or (held is None and wanted is None):
             return PostingCheck.ERROR
         read = await cls.read_board_once(
             board, boards=boards if boards is not None else {}, client=client
         )
         if read.outcome != "ok" or not read.complete:
             return PostingCheck.ERROR
-        listed = {posting_url_key(role.source_url) for role in read.roles}
-        return PostingCheck.OPEN if wanted in listed else PostingCheck.CLOSED
+        for role in read.roles:
+            if held is not None:
+                listed = parse_posting_url(role.source_url or "")
+                if listed is not None and listed.external_id == held.external_id:
+                    return PostingCheck.OPEN
+            if wanted is not None and posting_url_key(role.source_url) == wanted:
+                return PostingCheck.OPEN
+        return PostingCheck.CLOSED
 
     @classmethod
     async def check_posting(

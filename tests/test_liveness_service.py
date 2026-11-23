@@ -198,6 +198,34 @@ def test_a_personio_posting_is_checked_on_the_region_its_url_names():
     )
 
 
+SARVAM_UUID = "0f1e2d3c-4b5a-6978-8695-a4b3c2d1e0f9"
+SARVAM_OTHER = "0a0a0a0a-0000-4000-8000-000000000000"
+
+
+async def test_membership_by_id_survives_url_drift(monkeypatch):
+    # The board lists the posting under a URL with a query string and an upper-case id; the
+    # stored URL is the plain one. The posting id is the same, so the posting is still open.
+    listed = f"https://jobs.ashbyhq.com/Sarvam/{SARVAM_UUID.upper()}?utm_source=feed"
+    fake_reader(monkeypatch, "ashby", lambda board: board_read(role(listed)))
+    stored = f"https://jobs.ashbyhq.com/sarvam/{SARVAM_UUID}"
+    check = ATSScraper.check_posting
+    assert await check("ashby:sarvam", SARVAM_UUID, source_url=stored) is PostingCheck.OPEN
+    # Another posting, not on the board, is still closed.
+    other = f"https://jobs.ashbyhq.com/sarvam/{SARVAM_OTHER}"
+    assert await check("ashby:sarvam", SARVAM_OTHER, source_url=other) is PostingCheck.CLOSED
+
+
+async def test_unparsed_urls_are_matched_by_their_url(monkeypatch):
+    # An Ashby id that is not a UUID does not parse, so only the posting's URL can say which
+    # posting it is.
+    listed = "https://jobs.ashbyhq.com/sarvam/x1"
+    fake_reader(monkeypatch, "ashby", lambda board: board_read(role(listed)))
+    check = ATSScraper.check_posting
+    assert await check("ashby:sarvam", "x1", source_url=listed) is PostingCheck.OPEN
+    absent = "https://jobs.ashbyhq.com/sarvam/x2"
+    assert await check("ashby:sarvam", "x2", source_url=absent) is PostingCheck.CLOSED
+
+
 @pytest.mark.parametrize("status", [0, 403, 429, 500, 503])
 async def test_anything_but_200_or_gone_is_an_error_not_a_closure(monkeypatch, status):
     # A rate limit or an outage must never be recorded as "the role closed".
