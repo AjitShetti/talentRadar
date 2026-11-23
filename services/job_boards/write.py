@@ -202,7 +202,7 @@ def _own_host(board: JobBoard) -> str | None:
 def _embedding_item(
     role: Job, row: JobRow, external_id: str, company_name: str, source: str
 ) -> dict[str, Any]:
-    """What the vector store is given for a new row (the shape ``persist_live_jobs`` uses)."""
+    """What the vector store is given for a row to embed (the shape ``persist_live_jobs`` uses)."""
     named = role.model_copy(
         update={"extra_metadata": {**(role.extra_metadata or {}), "company_name": company_name}}
     )
@@ -419,9 +419,20 @@ async def write_board_roles(
                 row, moved = earlier, True
                 taken.add(row.id)
         if row is not None:
+            had_description = bool(row.description_clean)
             # A re-read restates what the board says, never what enrichment derived.
             for column, value in board_refresh_values(kwargs).items():
                 setattr(row, column, value)
+            if not moved and not had_description and row.description_clean:
+                # Live search stored this role without a description (it reads Greenhouse
+                # without one), so its vector and any parse were built from the title alone.
+                # The first description re-embeds it and sends it back to the parse once.
+                row.enrichment_status = "raw"
+                embedding_items.append(
+                    _embedding_item(
+                        role, row, external_id, _company_label(board, read, role), board.source
+                    )
+                )
             if moved:
                 # The key follows the URL, so live search (which keys by the URL) finds this row
                 # and not a second one. It cannot collide: no row of this board holds the new key,

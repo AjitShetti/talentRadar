@@ -368,6 +368,10 @@ async def persist_live_jobs(
                         seen_at=kwargs["last_seen_at"],
                     )
 
+                    if held is not None and held.embedding_id is not None:
+                        # A held board row already has the sweep's vector, built from its
+                        # description; live search may have read the board without one.
+                        continue
                     embedding_items.append(
                         {
                             "job_id": external_id,

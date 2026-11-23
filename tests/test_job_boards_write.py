@@ -490,7 +490,8 @@ async def test_same_posting_from_live_search_is_one_row(
     summary, items = await write(session, board, read_of(listed))
 
     assert summary.inserted == 0 and summary.updated == 1
-    assert items == []
+    # Live search stored it with no description; the sweep's first one re-embeds that one row.
+    assert [item["internal_job_id"] for item in items] == [(await jobs_of(session))[0].id]
     assert len(await jobs_of(session)) == 1
 
 
@@ -893,13 +894,17 @@ async def test_the_placeholder_company_is_reused_by_the_next_write(session: Asyn
 PLACEHOLDER = "greenhouse-northwind.board.talentradar.internal"
 
 
-async def _race_the_placeholder(session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> uuid.UUID:
+async def _race_the_placeholder(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> uuid.UUID:
     """
     Another writer (live search, or the sweep) creates the board's placeholder company between
     this one's lookup and its insert: the lookup is blinded once, and the table carries the unique
     key on ``companies.domain`` that the migration gives Postgres (the models leave it off).
     """
-    await session.execute(text("CREATE UNIQUE INDEX uq_test_companies_domain ON companies (domain)"))
+    await session.execute(
+        text("CREATE UNIQUE INDEX uq_test_companies_domain ON companies (domain)")
+    )
     winner = Company(id=uuid.uuid4(), name="Northwind Labs", domain=PLACEHOLDER)
     session.add(winner)
     await session.commit()
@@ -1034,6 +1039,77 @@ async def test_embedding_items_are_for_new_rows_only(session: AsyncSession) -> N
 
     _, items = await write(session, board, read_of(first, second))
     assert [entry["metadata"]["title"] for entry in items] == ["Backend Engineer 2"]
+
+
+async def test_a_live_reread_never_replaces_a_stored_vector(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    embedded: list[dict[str, Any]] = []
+
+    async def capture(items: list[dict[str, Any]]) -> None:
+        embedded.extend(items)
+
+    monkeypatch.setattr(job_persistence, "_embed_quietly", capture)
+    board = await add_board(session)
+    await write(session, board, read_of(role(5)))
+    await session.execute(update(JobRow).values(embedding_id="stored-vector"))
+    await session.commit()
+
+    # Live search reads Greenhouse without descriptions: its text must not replace the sweep's.
+    summary = await persist_live_jobs([live_of(role(5, description=None))])
+
+    assert summary.updated == 1
+    assert embedded == []
+
+
+async def test_a_live_reread_embeds_a_held_row_that_has_no_vector(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    embedded: list[dict[str, Any]] = []
+
+    async def capture(items: list[dict[str, Any]]) -> None:
+        embedded.extend(items)
+
+    monkeypatch.setattr(job_persistence, "_embed_quietly", capture)
+    board = await add_board(session)
+    await write(session, board, read_of(role(5)))
+    await session.commit()
+
+    await persist_live_jobs([live_of(role(5))])
+
+    assert len(embedded) == 1
+
+
+async def test_a_read_that_brings_the_first_description_re_embeds_and_reparses(
+    session: AsyncSession,
+) -> None:
+    board = await add_board(session)
+    # Live search stored the role first, with no description, and enrichment parsed the title.
+    await write(session, board, read_of(role(1, description=None)))
+    await enrich(session)
+    await session.execute(update(JobRow).values(embedding_id="title-only-vector"))
+
+    _, items = await write(session, board, read_of(role(1)))
+
+    (row,) = await jobs_of(session)
+    assert row.description_clean == "Build and run the services behind the product."
+    assert row.enrichment_status == "raw"
+    assert len(items) == 1
+    assert "Build and run the services" in items[0]["text"]
+
+
+async def test_a_read_that_restates_a_description_neither_re_embeds_nor_reparses(
+    session: AsyncSession,
+) -> None:
+    board = await add_board(session)
+    await write(session, board, read_of(role(1)))
+    await enrich(session)
+
+    _, items = await write(session, board, read_of(role(1, description="An edited description.")))
+
+    (row,) = await jobs_of(session)
+    assert row.enrichment_status == "enriched"
+    assert items == []
 
 
 async def test_nothing_is_committed(session: AsyncSession) -> None:
