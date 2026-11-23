@@ -14,6 +14,8 @@ import logging
 import re
 from urllib.parse import parse_qs, urlparse
 
+from domain.posting_urls import parse_posting_url
+
 logger = logging.getLogger(__name__)
 
 # Known non-job domains to block unconditionally (defense-in-depth)
@@ -74,6 +76,14 @@ ALLOWED_JOB_DOMAINS = [
     "bamboohr.com",
     "talentradar.internal",
 ]
+
+# ATSes allowlisted by suffix above, where a customer's board is a subdomain and
+# the ATS's own site shares the suffix. ``(domain, label)``.
+_SUFFIX_ALLOWED_ATS = (
+    ("recruitee.com", "Recruitee"),
+    ("keka.com", "Keka"),
+    ("breezy.hr", "Breezy"),
+)
 
 # Blacklisted path tokens that identify search, category, or listing aggregations
 LISTING_PATH_PATTERNS = [
@@ -200,6 +210,15 @@ def validate_job_url(url: str) -> tuple[bool, str]:
         if len(segments) < 2:
             return False, "Ashby URL points to company index, missing posting ID"
         return True, "Valid Ashby posting URL"
+
+    for ats_domain, ats_label in _SUFFIX_ALLOWED_ATS:
+        if _url_matches_domain(url_clean, ats_domain):
+            # Allowlisted by suffix, so the ATS's own marketing, help and app
+            # hosts match too. Only one customer's board hosts a posting: let
+            # the strict posting parser decide.
+            if parse_posting_url(url_clean) is None:
+                return False, f"{ats_label} URL is not an individual job posting on a customer board"
+            return True, f"Valid {ats_label} posting URL"
 
     if _url_matches_domain(url_clean, "naukri.com"):
         # naukri.com/job-listings-<slug>-<id> or naukri.com/job-detail/...
