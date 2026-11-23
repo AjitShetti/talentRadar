@@ -23,6 +23,7 @@ from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 import pytest
@@ -40,9 +41,11 @@ from ingestion.boards.base import (
     describe,
     get_json,
     html_to_text,
+    looks_remote,
     one_line,
 )
 from ingestion.boards.greenhouse import read_board_name
+from ingestion.boards.lever import MAX_PAGES, PAGE_SIZE
 from ingestion.scrapers.ats_scraper import ATSScraper
 from ingestion.validation import validate_job_url
 
@@ -65,20 +68,31 @@ def load_fixture(ats: str) -> dict[str, Any]:
     return data
 
 
-def fixture_handler(ats: str, seen: list[httpx.Request] | None = None) -> Handler:
+def lookup_key(url: str | httpx.URL) -> str:
     """
-    Answer each request from the recording, by full URL; anything unrecorded is a 404.
+    A request's key with ``skip`` and ``limit`` taken out, and its parameters in order.
 
-    ``skip`` and ``limit`` are not part of the key: the Lever recording predates paging
-    and holds a whole board (under one page), which is what its first page answers.
+    The Lever recording predates paging and holds a whole board (under one page), which
+    is what any first page answers. Stored keys and requests are both reduced this way,
+    so a re-record, whose key carries ``skip=0&limit=50``, replays the same.
     """
-    requests: dict[str, Any] = load_fixture(ats)["requests"]
+    parts = urlsplit(str(url))
+    pairs = sorted(
+        (name, value)
+        for name, value in parse_qsl(parts.query, keep_blank_values=True)
+        if name not in ("skip", "limit")
+    )
+    return urlunsplit(parts._replace(query=urlencode(pairs)))
+
+
+def recording_handler(requests: dict[str, Any], seen: list[httpx.Request] | None = None) -> Handler:
+    """Answer each request from recorded ``{url: {status, headers, body}}``; anything else is a 404."""
+    recorded = {lookup_key(key): entry for key, entry in requests.items()}
 
     def handler(request: httpx.Request) -> httpx.Response:
         if seen is not None:
             seen.append(request)
-        url = request.url.copy_remove_param("skip").copy_remove_param("limit")
-        entry = requests.get(str(url))
+        entry = recorded.get(lookup_key(request.url))
         if entry is None:
             return httpx.Response(404, text="not recorded")
         return httpx.Response(
@@ -86,6 +100,11 @@ def fixture_handler(ats: str, seen: list[httpx.Request] | None = None) -> Handle
         )
 
     return handler
+
+
+def fixture_handler(ats: str, seen: list[httpx.Request] | None = None) -> Handler:
+    """Answer each request from the committed recording of ``ats``."""
+    return recording_handler(load_fixture(ats)["requests"], seen)
 
 
 def client_for(handler: Handler) -> httpx.AsyncClient:
@@ -132,6 +151,35 @@ async def test_recorded_board_reads_whole(ats: AtsName, board: str) -> None:
     assert (
         any(not is_india_role(role.location_raw) for role in result.roles) or ats != "greenhouse"
     ), "the reader returns every role; India filtering is the caller's"
+
+
+@pytest.mark.parametrize("ats", ATSES)
+def test_the_capture_script_records_what_the_committed_fixture_holds(ats: str) -> None:
+    """A re-record keys the same request the same way, so the replay still finds it."""
+    from scripts.capture_board_fixtures import CAPTURES, request_key
+
+    capture = CAPTURES[ats]
+    committed = {lookup_key(key) for key in load_fixture(ats)["requests"]}
+    assert lookup_key(request_key(capture.url, capture.params)) in committed
+
+
+async def test_a_rerecorded_lever_board_replays_like_the_committed_one() -> None:
+    from scripts.capture_board_fixtures import CAPTURES, request_key
+
+    capture = CAPTURES["lever"]
+    rerecorded_key = request_key(capture.url, capture.params)
+    assert "skip=0" in rerecorded_key
+    assert rerecorded_key not in load_fixture("lever")["requests"]
+    (entry,) = load_fixture("lever")["requests"].values()
+
+    again = await read("lever", recording_handler({rerecorded_key: entry}))
+    committed = await read("lever", fixture_handler("lever"))
+
+    assert again.outcome == "ok"
+    assert [role.source_url for role in again.roles] == [
+        role.source_url for role in committed.roles
+    ]
+    assert len(again.roles) == 47
 
 
 @pytest.mark.parametrize(("ats", "board"), RECORDED)
@@ -505,6 +553,54 @@ def test_clean_url_refuses_anything_but_an_absolute_http_url(value: object) -> N
     assert clean_url(value) is None
 
 
+@pytest.mark.parametrize(
+    ("location", "remote"),
+    [
+        ("Remote", True),
+        ("Remote - India", True),
+        ("Bengaluru (Remote)", True),
+        ("Remote-first, India", True),
+        ("WFH", True),
+        ("Work from home", True),
+        ("Pune, work  from   home", True),
+        ("Pune – Global Capability Centre", False),
+        ("Global Business Services, Chennai", False),
+        ("Anywhere Road, Pune", False),
+        ("Worldwide Plaza, Mumbai", False),
+        ("Remotely Bengaluru", False),
+        ("Bengaluru", False),
+        ("", False),
+        (None, False),
+    ],
+)
+def test_looks_remote_matches_whole_words_only(location: str | None, remote: bool) -> None:
+    assert looks_remote(location) is remote
+
+
+async def test_greenhouse_does_not_mark_a_global_capability_centre_remote() -> None:
+    payload = {
+        "jobs": [
+            {
+                "id": 1,
+                "title": "Engineer",
+                "absolute_url": "https://job-boards.greenhouse.io/b/jobs/1",
+                "location": {"name": "Pune – Global Capability Centre"},
+            },
+            {
+                "id": 2,
+                "title": "Engineer",
+                "absolute_url": "https://job-boards.greenhouse.io/b/jobs/2",
+                "location": {"name": "Remote - India"},
+            },
+        ]
+    }
+    result = await read("greenhouse", answering(200, json=payload), "b")
+    centre, remote = result.roles
+    assert centre.is_remote is False
+    assert is_india_role(centre.location_raw)
+    assert remote.is_remote is True
+
+
 def test_clean_url_keeps_a_posting_url() -> None:
     assert clean_url(" https://jobs.lever.co/acme/1 ") == "https://jobs.lever.co/acme/1"
 
@@ -608,53 +704,61 @@ def lever_pages(total: int, seen: list[httpx.Request]) -> Handler:
     return handler
 
 
+def test_lever_pages_are_small_enough_for_the_body_cap() -> None:
+    """A page of 100 at Paytm was 1.5 MB (15.7 KB a role); 50 leaves the cap real headroom."""
+    assert PAGE_SIZE == 50
+    assert MAX_PAGES == 20
+    assert PAGE_SIZE * 16 * 1024 < MAX_BODY_BYTES // 2
+
+
 async def test_lever_pages_until_short_page() -> None:
     seen: list[httpx.Request] = []
+    total = PAGE_SIZE * 4 + 30
 
-    result = await read("lever", lever_pages(230, seen), "big")
+    result = await read("lever", lever_pages(total, seen), "big")
 
     assert result.outcome == "ok"
     assert result.complete is True
-    assert result.total == len(result.roles) == 230
-    assert [role.external_id for role in result.roles] == [f"l{n}" for n in range(230)]
-    assert [request.url.params["skip"] for request in seen] == ["0", "100", "200"]
-    assert {request.url.params["limit"] for request in seen} == {"100"}
+    assert result.total == len(result.roles) == total
+    assert [role.external_id for role in result.roles] == [f"l{n}" for n in range(total)]
+    assert [request.url.params["skip"] for request in seen] == ["0", "50", "100", "150", "200"]
+    assert {request.url.params["limit"] for request in seen} == {"50"}
     assert {request.url.params["mode"] for request in seen} == {"json"}
 
 
 async def test_lever_board_of_exactly_one_page_asks_once_more_and_is_complete() -> None:
     seen: list[httpx.Request] = []
 
-    result = await read("lever", lever_pages(100, seen), "big")
+    result = await read("lever", lever_pages(PAGE_SIZE, seen), "big")
 
     assert result.outcome == "ok"
     assert result.complete is True
-    assert result.total == len(result.roles) == 100
-    assert [request.url.params["skip"] for request in seen] == ["0", "100"]
+    assert result.total == len(result.roles) == PAGE_SIZE
+    assert [request.url.params["skip"] for request in seen] == ["0", str(PAGE_SIZE)]
 
 
-@pytest.mark.parametrize("total", [1000, 5000])
+@pytest.mark.parametrize("total", [PAGE_SIZE * MAX_PAGES, PAGE_SIZE * MAX_PAGES * 5])
 async def test_lever_page_cap_is_incomplete(total: int) -> None:
     seen: list[httpx.Request] = []
 
     result = await read("lever", lever_pages(total, seen), "big")
 
     assert result.outcome == "ok"
-    assert result.complete is False, "page 10 was full: there may be more"
-    assert result.total == len(result.roles) == 1000
-    assert len(seen) == 10
-    assert seen[-1].url.params["skip"] == "900"
+    assert result.complete is False, "page 20 was full: there may be more"
+    assert result.total == len(result.roles) == PAGE_SIZE * MAX_PAGES
+    assert len(seen) == MAX_PAGES
+    assert seen[-1].url.params["skip"] == str(PAGE_SIZE * (MAX_PAGES - 1))
 
 
 async def test_lever_a_page_that_fails_fails_the_whole_read() -> None:
     for status, outcome in ((429, "rate_limited"), (500, "error"), (404, "not_found")):
         seen: list[httpx.Request] = []
-        pages = lever_pages(300, seen)
+        pages = lever_pages(PAGE_SIZE * 6, seen)
 
         def handler(
             request: httpx.Request, status: int = status, pages: Handler = pages
         ) -> httpx.Response:
-            if request.url.params["skip"] == "100":
+            if request.url.params["skip"] == str(PAGE_SIZE):
                 return httpx.Response(status, text="no")
             return pages(request)
 
@@ -667,9 +771,9 @@ async def test_lever_a_page_that_fails_fails_the_whole_read() -> None:
 
 async def test_lever_a_page_that_is_not_a_list_is_error() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.params["skip"] == "100":
+        if request.url.params["skip"] == str(PAGE_SIZE):
             return httpx.Response(200, json={"ok": False})
-        return httpx.Response(200, json=[lever_posting(n) for n in range(100)])
+        return httpx.Response(200, json=[lever_posting(n) for n in range(PAGE_SIZE)])
 
     result = await read("lever", handler, "big")
     assert result.outcome == "error"
@@ -741,6 +845,77 @@ async def test_ashby_location_falls_back_to_remote_and_carries_the_remote_flag()
     assert office.is_remote is False
     assert office.posted_at is None, "a posting with no stated date stays dateless"
     assert office.source_posted_at is None
+
+
+async def test_ashby_secondary_locations_follow_the_primary_in_location_raw() -> None:
+    def posting(number: int, location: str, secondary: Any, **more: Any) -> dict[str, Any]:
+        return {
+            "id": f"a{number}",
+            "title": f"Role {number}",
+            "jobUrl": f"https://jobs.ashbyhq.com/b/a{number}",
+            "location": location,
+            "secondaryLocations": secondary,
+            **more,
+        }
+
+    payload = {
+        "jobs": [
+            posting(
+                1,
+                "San Francisco",
+                [
+                    {
+                        "location": "Bengaluru",
+                        "address": {"postalAddress": {"addressCountry": "India"}},
+                    },
+                    {"location": "Mumbai"},
+                    {"location": "bengaluru"},
+                    {"location": " san francisco "},
+                    {"location": ""},
+                    {},
+                    "junk",
+                    None,
+                ],
+            ),
+            posting(2, "San Francisco", []),
+            posting(3, "", [{"location": "Pune"}], isRemote=True),
+            posting(4, "", [{"location": "Chennai"}, {"location": "Hyderabad"}]),
+            posting(5, "London", "not a list"),
+            posting(6, "Berlin", [{"location": "Berlin"}]),
+        ]
+    }
+
+    result = await read("ashby", answering(200, json=payload), "b")
+
+    assert [role.location_raw for role in result.roles] == [
+        "San Francisco; Bengaluru; Mumbai",
+        "San Francisco",
+        "Remote; Pune",
+        "Chennai; Hyderabad",
+        "London",
+        "Berlin",
+    ]
+    assert [is_india_role(role.location_raw) for role in result.roles] == [
+        True,
+        False,
+        True,
+        True,
+        False,
+        False,
+    ]
+
+
+async def test_ashby_recorded_roles_open_in_several_places_name_them_all() -> None:
+    result = await read("ashby", fixture_handler("ashby"))
+    body = json.loads(next(iter(load_fixture("ashby")["requests"].values()))["body"])
+    stated = {item["id"]: item for item in body["jobs"]}
+    several = 0
+    for role in result.roles:
+        item = stated[role.external_id or ""]
+        names = [item["location"]] + [entry["location"] for entry in item["secondaryLocations"]]
+        assert role.location_raw == "; ".join(dict.fromkeys(names))
+        several += len(names) > 1
+    assert several, "the recording has roles with secondary locations"
 
 
 async def test_lever_location_falls_back_to_the_first_of_all_locations() -> None:

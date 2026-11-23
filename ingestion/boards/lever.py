@@ -1,12 +1,13 @@
 """
 ingestion/boards/lever.py
 ~~~~~~~~~~~~~~~~~~~~~~~~~
-Lever boards: ``GET api.lever.co/v0/postings/{board}?mode=json&skip=N&limit=100``.
+Lever boards: ``GET api.lever.co/v0/postings/{board}?mode=json&skip=N&limit=50``.
 
-A posting is about 17 KB with its description, so a big board does not fit one
-response under the body cap. The board is read a page of 100 at a time, one page
-after another, until a page comes back short; at most ``MAX_PAGES`` pages, and a read
-that ends on a full last page is ``complete=False`` (there may be more).
+A posting is 15-17 KB with its description (a page of 100 at Paytm was 1.5 MB), so a
+big board does not fit one response under the body cap. The board is read a page of 50
+at a time, one page after another, until a page comes back short; at most ``MAX_PAGES``
+pages, and a read that ends on a full last page is ``complete=False`` (there may be
+more).
 
 The list carries each posting's description as plain text: the opening
 (``descriptionPlain``), the requirement lists (``lists``, where "what you will need"
@@ -45,8 +46,8 @@ _API = "https://api.lever.co/v0/postings/{board}"
 _FALLBACK_POSTING = "https://jobs.lever.co/{board}/{posting}"
 
 #: Postings asked for per request, and the most requests one read makes.
-PAGE_SIZE = 100
-MAX_PAGES = 10
+PAGE_SIZE = 50
+MAX_PAGES = 20
 
 
 def _location(item: dict[str, Any]) -> str:

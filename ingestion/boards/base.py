@@ -182,7 +182,9 @@ _BLOCK_TAGS = (
     "p", "div", "li", "ul", "ol", "tr", "table", "blockquote", "pre", "section", "article",
     "h1", "h2", "h3", "h4", "h5", "h6",
 )  # fmt: skip
-_REMOTE_WORDS = ("remote", "anywhere", "worldwide", "global", "wfh")
+#: Whole words only: "global" and "anywhere" also sit inside place names ("Pune - Global
+#: Capability Centre"), and a substring match marked such a role remote.
+_REMOTE_RE = re.compile(r"\b(?:remote|work\s+from\s+home|wfh)\b", re.IGNORECASE)
 
 
 def text_value(value: object) -> str:
@@ -251,9 +253,11 @@ def describe(*parts: str) -> str | None:
 
 
 def looks_remote(location: str | None) -> bool:
-    """Whether a location's own words say remote. Only for an ATS that states no remote flag."""
-    lowered = (location or "").lower()
-    return any(word in lowered for word in _REMOTE_WORDS)
+    """
+    Whether a location's own words say remote: the whole word "remote", "work from home"
+    or "wfh". Only for an ATS that states no remote flag.
+    """
+    return bool(_REMOTE_RE.search(location or ""))
 
 
 def build_job(

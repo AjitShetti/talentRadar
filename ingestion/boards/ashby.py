@@ -4,7 +4,8 @@ ingestion/boards/ashby.py
 Ashby boards: ``GET api.ashbyhq.com/posting-api/job-board/{board}``.
 
 The list carries ``descriptionPlain`` (and ``descriptionHtml``), so a board is one
-request. ``publishedAt`` is the publish date. A posting Ashby marks
+request. ``publishedAt`` is the publish date. ``location_raw`` is the posting's
+location followed by its ``secondaryLocations``, ``;`` apart. A posting Ashby marks
 ``isListed: false`` is not on the public board and is left out of the count, so it
 is never read as a role that closed.
 """
@@ -38,6 +39,27 @@ _API = "https://api.ashbyhq.com/posting-api/job-board/{board}"
 _FALLBACK_POSTING = "https://jobs.ashbyhq.com/{board}/{posting}"
 
 
+def _location(item: dict[str, Any], remote: bool) -> str:
+    """
+    The primary location, then each secondary one: "San Francisco; Bengaluru".
+
+    A role open in several places lists its first as ``location`` and the rest as
+    ``secondaryLocations``; the India filter reads the one string, so it has to carry
+    them all. A secondary already named (case aside) is not repeated.
+    """
+    names = [one_line(item.get("location")) or ("Remote" if remote else "")]
+    secondary = item.get("secondaryLocations")
+    for entry in secondary if isinstance(secondary, list) else []:
+        names.append(one_line(entry.get("location")) if isinstance(entry, dict) else "")
+    seen: set[str] = set()
+    kept: list[str] = []
+    for name in names:
+        if name and name.casefold() not in seen:
+            seen.add(name.casefold())
+            kept.append(name)
+    return "; ".join(kept)
+
+
 def _parse(item: Any, ref: BoardRef) -> Job | None:
     if not isinstance(item, dict):
         return None
@@ -52,7 +74,7 @@ def _parse(item: Any, ref: BoardRef) -> Job | None:
         return None
 
     remote = item.get("isRemote") is True
-    location = one_line(item.get("location")) or ("Remote" if remote else "")
+    location = _location(item, remote)
     description = plain_text(text_value(item.get("descriptionPlain"))) or html_to_text(
         text_value(item.get("descriptionHtml"))
     )
