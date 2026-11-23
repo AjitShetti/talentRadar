@@ -496,7 +496,7 @@ async def test_due_boards_without_caps_is_one_global_oldest_first_list(
     )
 
 
-async def test_due_boards_caps_stop_at_the_limit_in_ats_order(factory: OpenSessions) -> None:
+async def test_due_boards_never_exceeds_a_cap_or_the_limit(factory: OpenSessions) -> None:
     await add_many(factory, "greenhouse", 20, prefix="g")
     await add_many(factory, "ashby", 20, prefix="a")
     await add_many(factory, "workable", 20, prefix="w")
@@ -506,9 +506,83 @@ async def test_due_boards_caps_stop_at_the_limit_in_ats_order(factory: OpenSessi
             session, 25, now=NOW, per_ats_caps={"greenhouse": 15, "ashby": 15, "workable": 15}
         )
 
-    assert [row.ats for row in due].count("greenhouse") == 15
-    assert [row.ats for row in due].count("ashby") == 10
-    assert len(due) == 25, "never more than the limit"
+    counts = {
+        ats: [row.ats for row in due].count(ats) for ats in ("greenhouse", "ashby", "workable")
+    }
+    assert sum(counts.values()) == len(due) == 25, "exactly the limit, never more"
+    assert max(counts.values()) <= 15
+    assert min(counts.values()) >= 7, "each of the three has a share"
+
+
+async def test_due_boards_shares_limit_across_ats(factory: OpenSessions) -> None:
+    await add_many(factory, "greenhouse", 1000, prefix="g")
+    await add_many(factory, "lever", 100, prefix="l")
+    await add_many(factory, "ashby", 100, prefix="a")
+
+    async with factory() as session:
+        due = await due_boards(session, 300, now=NOW, per_ats_caps=sweep.queue_caps())
+
+    counts = {ats: [row.ats for row in due].count(ats) for ats in ("greenhouse", "lever", "ashby")}
+    assert len(due) == 300
+    assert counts == {"greenhouse": 100, "lever": 100, "ashby": 100}, (
+        "a backlog takes a share, not the run"
+    )
+
+
+async def test_due_boards_gives_unused_share_to_the_ats_that_has_more(
+    factory: OpenSessions,
+) -> None:
+    await add_many(factory, "greenhouse", 1000, prefix="g")
+    await add_many(factory, "lever", 10, prefix="l")
+
+    async with factory() as session:
+        due = await due_boards(session, 300, now=NOW, per_ats_caps=sweep.queue_caps())
+
+    counts = {ats: [row.ats for row in due].count(ats) for ats in ("greenhouse", "lever")}
+    assert counts == {"greenhouse": 290, "lever": 10}, (
+        "the share Lever does not need is filled, oldest first"
+    )
+
+
+async def test_due_boards_filling_the_rest_never_passes_a_cap(factory: OpenSessions) -> None:
+    await add_many(factory, "workable", 400, prefix="w")
+    await add_many(factory, "greenhouse", 50, prefix="g")
+
+    async with factory() as session:
+        due = await due_boards(
+            session, 100, now=NOW, per_ats_caps={"workable": 60, "greenhouse": 5}
+        )
+
+    counts = {ats: [row.ats for row in due].count(ats) for ats in ("workable", "greenhouse")}
+    # Shares of 50: Workable 50, Greenhouse 5; the 45 left go to Workable up to its 60, no further.
+    assert counts == {"workable": 60, "greenhouse": 5}
+
+
+async def test_due_boards_fills_the_rest_with_the_oldest_across_ats(factory: OpenSessions) -> None:
+    day = timedelta(days=1)
+    for number in range(5):
+        await add_board(factory, "greenhouse", f"g{number}", next_read_at=NOW - (50 - number) * day)
+        await add_board(factory, "ashby", f"a{number}", next_read_at=NOW - (100 - number) * day)
+    await add_board(factory, "lever", "l0", next_read_at=NOW - 5 * day)
+
+    async with factory() as session:
+        due = await due_boards(session, 10, now=NOW, per_ats_caps=sweep.queue_caps())
+
+    # Shares of 4: Greenhouse g0-g3, Ashby a0-a3, Lever l0. The one place left goes to the
+    # oldest board still due anywhere: Ashby's a4 (96 days), not Greenhouse's g4 (46 days),
+    # which would be first in ATS order.
+    assert {row.board for row in due} == {
+        "g0",
+        "g1",
+        "g2",
+        "g3",
+        "a0",
+        "a1",
+        "a2",
+        "a3",
+        "a4",
+        "l0",
+    }
 
 
 async def test_due_boards_takes_each_atss_oldest_first(factory: OpenSessions) -> None:

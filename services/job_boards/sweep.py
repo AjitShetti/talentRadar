@@ -8,8 +8,9 @@ How a run goes
 --------------
 * The boards due now (``store.due_boards``: never-read first, then oldest read first) are taken,
   at most ``limit`` of them and at most :func:`queue_caps` per ATS (what its pace lets one run
-  read), so one slow ATS's backlog cannot crowd the others out; they are split into **one
-  queue per ATS**. The queues run
+  read). The run is shared out: each ATS with due boards first takes an equal share of
+  ``limit``, and the room left is filled oldest first, so neither a slow ATS nor a big backlog
+  at one ATS crowds the others out; they are split into **one queue per ATS**. The queues run
   concurrently; each keeps its ATS's pace (``PACE_SECONDS``) between two requests, so the
   slow ones (Workable answers a faster client with an HTML 429 page) never hold the fast ones.
 * A queue whose breaker (``boards:<ats>``) is open is skipped. The first ``rate_limited``
