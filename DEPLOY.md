@@ -279,6 +279,21 @@ The job-board roster (`job_boards`, migration 026) takes its boards from:
 The `job-boards` workflow runs these steps on a schedule; `make job-boards
 step=sweep` runs one of them locally.
 
+### Events (Bengaluru)
+
+`.github/workflows/events.yml` reads the Luma calendars and GDG chapters
+listed in `data/events/sources.json` twice a day (it needs `CRON_TOKEN`).
+Eventbrite is off until it has a token:
+
+1. Sign in to Eventbrite, open **Account settings → Developer links → API
+   keys**, and create a key. It is free; the **private token** is what we use.
+2. Set it as `EVENTBRITE_TOKEN` on Render (API service → Environment).
+3. Add vetted Bengaluru tech organiser ids to `eventbrite.organizers` in
+   `data/events/sources.json`. Without any, the token only serves pasted links.
+
+A Hasgeek event can be added by pasting its link on `/events`. Hasgeek's terms
+forbid crawling, so it is never read on a schedule.
+
 ## What is still worth doing later
 
 Deliberately not done here, because none of it blocks a free launch:
