@@ -382,6 +382,32 @@ async def test_open_list_commits_in_batches_and_holds_no_transaction_between_the
     assert not session.in_transaction()
 
 
+async def test_open_list_ends_the_callers_transaction_before_it_downloads(
+    session: AsyncSession, factory: async_sessionmaker[AsyncSession]
+) -> None:
+    # The caller has read something, so its session holds a transaction (and a connection).
+    await session.execute(select(JobBoard))
+    assert session.in_transaction()
+    during: list[bool] = []
+
+    async def body() -> AsyncIterator[bytes]:
+        during.append(session.in_transaction())  # the response has started
+        yield b"ats,slug,company_name\n"
+        during.append(session.in_transaction())  # mid-download, before any batch is written
+        yield b"greenhouse,one,One\n"
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        during.append(session.in_transaction())  # the request is being answered
+        return httpx.Response(200, content=body())
+
+    async with client_for(handler) as client:
+        result = await discover_open_list(session, client, limit=100)
+
+    assert during == [False, False, False]
+    assert result == {"rows": 1, "kept": 1, "inserted": 1}
+    assert len(await boards_of(factory)) == 1
+
+
 # -- the name probe: a fake web -----------------------------------------------------------------
 
 
@@ -392,16 +418,18 @@ def _place(city_country: tuple[str, str]) -> str:
 @dataclass
 class FakeWeb:
     """
-    Just enough of five ATSes for the probe: Greenhouse, Ashby, Workable and Keka by board id.
+    Just enough of five ATSes for the probe: Greenhouse, Ashby, Workable, Recruitee and Keka by board id.
 
     ``greenhouse["slice"] = ("Slice", [INDIA])`` is a board named "Slice" with one Bengaluru role
-    (a ``None`` name answers 404 on the name endpoint). The board id ``"*"`` answers for any id.
-    Anything not listed is a 404, as on the real ATSes. ``status`` overrides the answer of a host.
+    (a ``None`` name answers 404 on the name endpoint; on Recruitee it is an offer that states no
+    ``company_name``). The board id ``"*"`` answers for any id. Anything not listed is a 404, as
+    on the real ATSes. ``status`` overrides the answer of a host.
     """
 
     greenhouse: dict[str, tuple[str | None, list[tuple[str, str]]]] = field(default_factory=dict)
     ashby: dict[str, list[tuple[str, str]]] = field(default_factory=dict)
     workable: dict[str, tuple[str | None, list[tuple[str, str]]]] = field(default_factory=dict)
+    recruitee: dict[str, tuple[str | None, list[tuple[str, str]]]] = field(default_factory=dict)
     keka: dict[str, tuple[str | None, list[tuple[str, str]]]] = field(default_factory=dict)
     status: dict[str, int] = field(default_factory=dict)
     requests: list[httpx.Request] = field(default_factory=list)
@@ -485,6 +513,27 @@ class FakeWeb:
                 },
             )
 
+        if host.endswith(".recruitee.com") and path == "/api/offers/":
+            board = self._find(self.recruitee, host.removesuffix(".recruitee.com"))
+            if board is None:
+                return httpx.Response(404)
+            name, roles = board
+            return httpx.Response(
+                200,
+                json={
+                    "offers": [
+                        {
+                            "id": 500 + n,
+                            "title": f"Engineer {n}",
+                            "slug": f"engineer-{n}",
+                            "locations": [{"city": place[0], "country": place[1]}],
+                            **({"company_name": name} if name else {}),
+                        }
+                        for n, place in enumerate(roles)
+                    ]
+                },
+            )
+
         if host.endswith(".keka.com") and path.startswith("/careers/api/"):
             board = self._find(self.keka, host.removesuffix(".keka.com"))
             if board is None:
@@ -523,12 +572,73 @@ async def test_probe_accepts_groww() -> None:
     assert sleeper.calls == [PACE_SECONDS["greenhouse"]]
 
 
-async def test_probe_accepts_a_board_on_an_ats_that_states_no_name() -> None:
+async def test_probe_accepts_an_unnamed_ats_board_that_is_the_domains_label() -> None:
     web = FakeWeb(ashby={"cred": [INDIA]})
     async with client_for(web) as client:
         found = await probe_company(client, name="CRED", domain="cred.club", sleep=Sleeper())
 
     assert found == BoardRef("ashby", "cred")
+
+
+async def test_probe_unnamed_ats_needs_domain_label() -> None:
+    # Ashby states no company name, so an India role alone does not make a board the company's.
+    # Observe.AI's site is observe.ai: "observe" is the id its own domain names, "observeai" is
+    # only a guess from its name.
+    guessed = FakeWeb(ashby={"observeai": [INDIA]})
+    async with client_for(guessed) as client:
+        assert (
+            await probe_company(client, name="Observe.AI", domain="observe.ai", sleep=Sleeper())
+            is None
+        )
+    # The "observeai" board was read, and then not trusted.
+    assert any(r.url.path.endswith("/observeai") for r in guessed.requests)
+
+    own_label = FakeWeb(ashby={"observe": [INDIA]})
+    async with client_for(own_label) as client:
+        found = await probe_company(
+            client, name="Observe.AI", domain="https://www.observe.ai/careers", sleep=Sleeper()
+        )
+    assert found == BoardRef("ashby", "observe")
+
+
+async def test_probe_unnamed_ats_without_a_domain_is_a_miss() -> None:
+    # Another company's "slice" board with India roles must not be filed under Slice.
+    web = FakeWeb(ashby={"slice": [INDIA]}, recruitee={"slice": (None, [INDIA])})
+    async with client_for(web) as client:
+        assert await probe_company(client, name="Slice", domain=None, sleep=Sleeper()) is None
+        assert (
+            await probe_company(client, name="Slice", domain="slicepay.in", sleep=Sleeper()) is None
+        )
+        found = await probe_company(client, name="Slice", domain="slice.in", sleep=Sleeper())
+
+    assert found == BoardRef("ashby", "slice")  # the same board, once the company's site names it
+
+
+async def test_probe_recruitee_accepts_stated_name() -> None:
+    # Recruitee's offers state the company: a matching name is accepted whatever the guess.
+    web = FakeWeb(recruitee={"acmerobotics": ("Acme Robotics Pvt Ltd", [INDIA])})
+    async with client_for(web) as client:
+        found = await probe_company(client, name="Acme Robotics", domain="acme.in", sleep=Sleeper())
+
+    assert found == BoardRef("recruitee", "acmerobotics")
+
+
+async def test_probe_recruitee_rejects_another_stated_name() -> None:
+    web = FakeWeb(recruitee={"acmerobotics": ("Acme Foods", [INDIA])})
+    async with client_for(web) as client:
+        found = await probe_company(client, name="Acme Robotics", domain="acme.in", sleep=Sleeper())
+
+    assert found is None
+
+
+async def test_probe_recruitee_default_name_is_not_evidence() -> None:
+    # An offer that states no company is filed under "Acme", the board id capitalised. That is the
+    # guess read back, not a name the board gave, so it cannot confirm the guess.
+    web = FakeWeb(recruitee={"acme": (None, [INDIA])})
+    async with client_for(web) as client:
+        found = await probe_company(client, name="Acme", domain="acmeinc.com", sleep=Sleeper())
+
+    assert found is None
 
 
 async def test_probe_rejects_board_without_india_roles() -> None:
@@ -656,11 +766,14 @@ async def test_probe_budget_covers_the_second_request_of_a_read(
 
 
 async def test_probe_does_not_ask_an_ats_again_after_a_429() -> None:
-    web = FakeWeb(status={"boards-api.greenhouse.io": 429}, ashby={"acmerobotics": [INDIA]})
+    web = FakeWeb(
+        status={"boards-api.greenhouse.io": 429},
+        keka={"acmerobotics": ("Acme Robotics", [INDIA])},
+    )
     async with client_for(web) as client:
         found = await probe_company(client, name="Acme Robotics", domain="acme.in", sleep=Sleeper())
 
-    assert found == BoardRef("ashby", "acmerobotics")
+    assert found == BoardRef("keka", "acmerobotics")  # the second guess
     assert web.hosts().count("boards-api.greenhouse.io") == 1  # one guess, then left alone
 
 

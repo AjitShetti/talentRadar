@@ -17,6 +17,7 @@ from domain.job_boards import (
     board_from_url,
     board_ref,
     boards_in_html,
+    domain_label,
     is_india_role,
     names_match,
     next_read,
@@ -287,6 +288,30 @@ def test_slug_candidates():
     assert slug_candidates("Observe.AI", "observe.ai") == ["observe", "observeai", "observe-ai"]
     assert slug_candidates("Cars 24 Services", None) == ["cars24services", "cars-24-services"]
     assert len(slug_candidates("A B C D E", "abcde.com")) <= 4
+
+
+@pytest.mark.parametrize(
+    ("domain", "expected"),
+    [
+        ("groww.in", "groww"),
+        ("observe.ai", "observe"),
+        ("https://www.acme.co.in/careers", "acme"),
+        ("careers.acmelabs.com", "acmelabs"),
+        ("ACME.COM", "acme"),
+    ],
+)
+def test_domain_label_is_the_registrable_domains_first_label(domain, expected):
+    assert domain_label(domain) == expected
+
+
+@pytest.mark.parametrize("domain", [None, "", "   ", "linkedin.com/company/acme", "not a host"])
+def test_domain_label_is_none_without_a_usable_domain(domain):
+    assert domain_label(domain) is None
+
+
+def test_domain_label_is_the_first_slug_candidate():
+    assert slug_candidates("Observe.AI", "observe.ai")[0] == domain_label("observe.ai")
+    assert domain_label("groww.in") in slug_candidates("Groww Technologies", "groww.in")
 
 
 def test_slug_candidates_domain_label_comes_from_the_registrable_domain():

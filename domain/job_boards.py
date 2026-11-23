@@ -271,20 +271,32 @@ _MAX_GUESSES = 4
 _ALNUM_RUN = re.compile(r"[a-z0-9]+")
 
 
+def domain_label(domain: str | None) -> str | None:
+    """
+    The registrable domain's first label (``https://www.groww.in/careers`` -> ``groww``), or ``None``.
+
+    The one guess that rests on something the company itself published, its own site: a
+    board id equal to it is the company's, where an id guessed from the name alone may
+    belong to anyone with a similar name.
+    """
+    registrable = normalize_domain(domain)
+    return registrable.split(".", 1)[0] if registrable else None
+
+
 def slug_candidates(name: str, domain: str | None) -> list[str]:
     """
     Up to four board ids to try for a company, most likely first.
 
-    The registrable domain's label (``groww.in`` -> ``groww``), then the name
-    with everything but letters and digits removed, then the name's words
+    The registrable domain's label (``groww.in`` -> ``groww``, :func:`domain_label`), then
+    the name with everything but letters and digits removed, then the name's words
     joined by ``-``. A legal suffix is kept on purpose: Razorpay's board is
     ``razorpaysoftwareprivatelimited``. A guess that is not a valid slug is
     dropped, and so is a repeat.
     """
     guesses: list[str] = []
-    registrable = normalize_domain(domain)
-    if registrable:
-        guesses.append(registrable.split(".", 1)[0])
+    label = domain_label(domain)
+    if label:
+        guesses.append(label)
     folded = unicodedata.normalize("NFKD", name or "").encode("ascii", "ignore").decode("ascii")
     words = _ALNUM_RUN.findall(folded.lower())
     if words:

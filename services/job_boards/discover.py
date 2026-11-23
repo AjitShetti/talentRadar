@@ -20,8 +20,15 @@ their own steps.
 ``probe_company`` / ``discover_probe``
     Guesses a listed tech company's board id from its name and site (``slug_candidates``) on the
     ATSes whose unknown ids answer 404 (``PROBE_ATS``). A guess is kept only when the board
-    has at least one India role **and**, where the ATS states a company name, that name is the
-    company's: ``slice`` on Greenhouse is not Slice, the Bengaluru payments company.
+    has at least one India role **and** it is shown to be the company's, because a hit sets the
+    board's ``company_id`` and its roles are then filed under that company (``slice`` on any ATS
+    is not necessarily Slice, the Bengaluru payments company):
+
+    * Greenhouse, Workable and Keka state a company name: it must be read and match the company's.
+    * Ashby, Lever and Recruitee state none on the board, so the guess must be the company's own
+      domain label (``slice.in`` -> ``slice``): an id the company's own site names, not one
+      guessed from its name alone. Recruitee's offers do carry a ``company_name``; one that
+      matches the company's name is accepted for any guess.
 
 Rules every step here follows
 -----------------------------
@@ -59,6 +66,7 @@ from domain.job_boards import (
     BoardRef,
     board_from_url,
     board_ref,
+    domain_label,
     is_india_role,
     names_match,
     slug_candidates,
@@ -204,11 +212,15 @@ async def discover_open_list(
     :data:`BATCH_SIZE` at a time, so a board already on the roster is left exactly as it is and
     a second run inserts nothing.
 
+    Any transaction the caller left open on ``session`` is committed before the download starts, so
+    none is held while the list is fetched.
+
     Returns ``{"rows": data rows read, "kept": rows that named a usable board, "inserted": new
     rows}``. Raises :class:`OpenListError` when the list cannot be read; the rows read before
     that are kept, which is safe because every row is independent.
     """
     url = get_settings().job_boards_open_list_url
+    await session.commit()
     rows = kept = inserted = 0
     batch: list[tuple[BoardRef, str | None]] = []
 
@@ -277,8 +289,9 @@ PROBE_BUDGET_SECONDS = 480.0
 
 #: The ATSes that state a company name a probe can check: Greenhouse's ``/v1/boards/{board}``,
 #: Workable's account name and Keka's ``careerportalinfo``. A hit on one of them is kept only
-#: when that name was read and is the company's; the others state none, so an India role is
-#: all a hit on them can show.
+#: when that name was read and is the company's. The others (Ashby, Lever, Recruitee) state none
+#: on the board, so a hit on them needs the company's own domain label or, for Recruitee, a
+#: name its offers state (see :func:`_is_the_company`).
 _NAMED_ATS: frozenset[AtsName] = frozenset({"greenhouse", "workable", "keka"})
 
 
@@ -351,21 +364,51 @@ async def _read(ats: AtsName, client: httpx.AsyncClient, ref: BoardRef) -> Board
         return None
 
 
+def _recruitee_stated_names(read: BoardRead, ref: BoardRef) -> set[str]:
+    """
+    The company names a Recruitee board's offers state.
+
+    The reader files an offer under ``board.capitalize()`` when it states none, so a name equal
+    to that is the reader's own default, not evidence, and is left out.
+    """
+    default = ref.board.capitalize()
+    names: set[str] = set()
+    for role in read.roles:
+        stated = (role.extra_metadata or {}).get("company_name")
+        if isinstance(stated, str) and stated.strip() and stated != default:
+            names.add(stated)
+    return names
+
+
 async def _is_the_company(
-    client: httpx.AsyncClient, ref: BoardRef, read: BoardRead, name: str
+    client: httpx.AsyncClient, ref: BoardRef, read: BoardRead, name: str, domain: str | None
 ) -> bool:
     """
-    Whether a board that has India roles is ``name``'s.
+    Whether a board that has India roles is ``name``'s (site ``domain``).
 
-    On an ATS that states a name (:data:`_NAMED_ATS`) the name must have been read and must
-    match under ``domain.company_identity.normalize_name``: one that could not be read is no
-    confirmation, and a wrong match would file another company's roles under this one. The
-    other ATSes state none, so there is nothing more to check.
+    A wrong match files another company's roles under this one, so a hit needs evidence:
+
+    * On an ATS that states a name (:data:`_NAMED_ATS`) the name must have been read and must
+      match under ``domain.company_identity.normalize_name``; one that could not be read is no
+      confirmation.
+    * On the others the board id must be the company's own domain label
+      (``domain.job_boards.domain_label``): ``slice`` for ``slice.in`` is an id the company's
+      site names, where ``slicepay`` guessed from a name could be anyone's. A Recruitee board
+      also passes when the company name its offers state matches.
+
+    Anything else is a miss.
     """
-    if ref.ats not in _NAMED_ATS:
+    if ref.ats in _NAMED_ATS:
+        stated = (
+            await read_board_name(client, ref) if ref.ats == "greenhouse" else read.company_name
+        )
+        return stated is not None and names_match(name, stated)
+    label = domain_label(domain)
+    if label is not None and ref.board.lower() == label:
         return True
-    stated = await read_board_name(client, ref) if ref.ats == "greenhouse" else read.company_name
-    return stated is not None and names_match(name, stated)
+    if ref.ats == "recruitee":
+        return any(names_match(name, stated) for stated in _recruitee_stated_names(read, ref))
+    return False
 
 
 async def _probe(
@@ -389,7 +432,7 @@ async def _probe(
                 continue
             if read.outcome != "ok" or not any(is_india_role(r.location_raw) for r in read.roles):
                 continue
-            if await _is_the_company(metered, ref, read, name):
+            if await _is_the_company(metered, ref, read, name, domain):
                 return ref
     return None
 
@@ -405,8 +448,10 @@ async def probe_company(
     The board of the company ``name`` (site ``domain``) on one of the :data:`PROBE_ATS`, or ``None``.
 
     Tries each of ``slug_candidates(name, domain)`` on each ATS, likeliest guess first, and
-    returns the first board that has at least one India role and, on an ATS that states a company
-    name (Greenhouse, Workable, Keka), whose name matches ``name``. At most
+    returns the first board that has at least one India role and is shown to be the company's: on
+    an ATS that states a company name (Greenhouse, Workable, Keka) by a name that matches ``name``;
+    on the others (Ashby, Lever, Recruitee) by being the domain's own label, or for Recruitee by
+    a matching name its offers state (:func:`_is_the_company`). At most
     :data:`MAX_PROBE_REQUESTS` requests are made, the name check's included. A second request to
     one ATS host waits its ``PACE_SECONDS`` through ``sleep`` (injectable, so a test does not
     wait); an ATS that answers 429 is not asked again by this call.
